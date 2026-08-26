@@ -2640,7 +2640,7 @@
 //          las ramas de director y coordinador que anadio v610/v611 se AVERIABAN
 //          en el simulador y nadie las probaba. 8 casos nuevos -> 46/46.
 const VERSION = 'v399';
-const CACHE_NAME = 'cronos-cache-v633';
+const CACHE_NAME = 'cronos-cache-v634';
 
 const ASSETS = [
     './',
@@ -2808,10 +2808,18 @@ const ASSETS = [
 //    marcador muerto.
 //  · gstatic/firebasejs      → el CÓDIGO del SDK. Ver el bloque de arriba: que
 //    lo sirva el navegador, que para eso está.
+//  · recaptcha (v634)        → App Check. Es infraestructura ANTIABUSO: su
+//    script y sus peticiones son de un solo uso y llevan estado. Servir
+//    cualquiera de las dos cosas desde caché es garantizar que el token no se
+//    pueda emitir. ⚠️ Vive en `www.google.com`, que NO entra por gstatic — por
+//    eso hace falta esta línea aparte. Se acota a `/recaptcha/` para no dejar
+//    pasar todo www.google.com.
 function _esCanalVivo(url) {
     return url.includes('googleapis.com') ||
            url.includes('firebaseio.com') ||
-           url.includes('gstatic.com');
+           url.includes('gstatic.com') ||
+           url.includes('/recaptcha/') ||
+           url.includes('recaptcha.net');
 }
 
 self.addEventListener('install', event => {

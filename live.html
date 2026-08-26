@@ -1717,6 +1717,44 @@ const firebaseConfig = {
 window._cronosLiveBooted = true;
 
 const app  = initializeApp(firebaseConfig);
+
+// ══════════════════════════════════════════════════════════════════
+//  🛡️ v634 · APP CHECK TAMBIEN AQUI
+//
+//  🔑 ESTE VISOR ARRANCA SU PROPIA APP DE FIREBASE (es un documento aparte,
+//  abierto con window.open). Si App Check solo se activara en
+//  firebase-init.js, el dia que la obligatoriedad se ponga en ENFORCED el
+//  visor se quedaria FUERA: pantalla en negro justo durante un partido.
+//  Media medida = corte.
+//
+//  Misma regla que en firebase-init.js —de donde se copia a proposito, para
+//  que el visor siga siendo autonomo—: solo en los dominios que reCAPTCHA
+//  tiene registrados. En los demas ni se intenta, para no disparar el
+//  throttle de 24 h. Si se toca la lista alli, tocarla aqui.
+// ══════════════════════════════════════════════════════════════════
+(async () => {
+    const HOSTS = ['cronos-futbol-app.web.app', 'cronos-futbol-app.firebaseapp.com'];
+    const h = location.hostname;
+    const local = h === 'localhost' || h === '127.0.0.1';
+    if (!HOSTS.includes(h) && !local) {
+        console.log('[Chronos] Visor: App Check inactivo en ' + h + ' (dominio no registrado).');
+        return;
+    }
+    try {
+        if (local) self.FIREBASE_APPCHECK_DEBUG_TOKEN = true;
+        const { initializeAppCheck, ReCaptchaV3Provider } =
+            await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-app-check.js');
+        initializeAppCheck(app, {
+            provider: new ReCaptchaV3Provider('6Ld5cEQtAAAAAA0OCimDVsOORapoEKfsVmJmGI23'),
+            isTokenAutoRefreshEnabled: true
+        });
+        console.log('[Chronos] Visor: App Check activo.');
+    } catch (e) {
+        // Nunca tumba el visor. Ver la nota de firebase-init.js.
+        console.warn('[Chronos] Visor: App Check no arrancó:', e && e.message);
+    }
+})();
+
 const auth = getAuth(app);
 
 // ── Firestore con cache PERSISTENTE en disco ──────────────────────
@@ -6994,9 +7032,9 @@ setInterval(function() {
 }
 </style>
 <!-- v434 · Inmutabilidad: antes de retroactive-modal.js, que la consulta. -->
-<script src="js/match/immutability.js?v=v633"></script>
-<script src="js/match/replay/replay-player.js?v=v633"></script>
-<script src="js/match/events/retroactive-modal.js?v=v633"></script>
+<script src="js/match/immutability.js?v=v634"></script>
+<script src="js/match/replay/replay-player.js?v=v634"></script>
+<script src="js/match/events/retroactive-modal.js?v=v634"></script>
 
 <!-- ══════════════════════════════════════════════════════════════════
      🟩 v577 · FRANJA DE VERSIÓN TAMBIÉN EN EL VISOR
@@ -7009,7 +7047,7 @@ setInterval(function() {
      El sello lo escribe `scripts/cache-bust.js` a partir del CACHE_NAME de
      sw.js, nunca a mano: un número puesto a mano miente en cuanto alguien
      olvida cambiarlo (v527 lo encontró mintiendo 185 versiones seguidas). -->
-<div id="cronos-version-badge" data-version="v633" style="position:fixed;bottom:calc(4px + env(safe-area-inset-bottom, 0px));right:6px;z-index:2147483000;pointer-events:none;background:rgba(0,0,0,0.55);color:#2ea043;font-family:monospace;font-size:0.6rem;font-weight:700;letter-spacing:0.5px;padding:2px 6px;border-radius:4px;">CHRONOS v633</div>
+<div id="cronos-version-badge" data-version="v634" style="position:fixed;bottom:calc(4px + env(safe-area-inset-bottom, 0px));right:6px;z-index:2147483000;pointer-events:none;background:rgba(0,0,0,0.55);color:#2ea043;font-family:monospace;font-size:0.6rem;font-weight:700;letter-spacing:0.5px;padding:2px 6px;border-radius:4px;">CHRONOS v634</div>
 <script>
 /* 🧪 v577 · Y DE QUÉ ENTORNO ES ESA VERSIÓN.
    El problema real del autor no era no ver la versión: era no saber si la

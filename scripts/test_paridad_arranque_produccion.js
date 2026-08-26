@@ -65,11 +65,25 @@ ok('1f · 🔑🔑 el arranque de Firebase NO reintenta ni envuelve los imports'
    !/_importaCDN|_cronosFirebaseReady|_cronosAvisaSinFirebase/.test(INIT),
    'los reintentos de v543 son un parche experimental que producción no tiene');
 // ⚠️ SÓLO EL BLOQUE DE ARRANQUE. Contando sobre el fichero entero salían 5:
-// el quinto es el de App Check, que vive DENTRO de un comentario de bloque
-// (desactivado en v227), y el sexto grupo son los de `saFS()` al final.
+// el quinto es el de App Check y el sexto grupo son los de `saFS()` al final.
+//
+// 🔴 v634 · LA MARCA DE FIN CAMBIÓ, Y EL GUARD SE PUSO ROJO SIN QUE HUBIERA
+// NINGUNA REGRESIÓN. Cortaba por la cadena 'App Check DESACTIVADO', que
+// desapareció al reactivar App Check: `indexOf` devolvió **-1**, el `slice`
+// se llevó casi el fichero entero y aparecieron imports de más.
+//
+// 🔑 Un `indexOf` sin comprobar es una bomba de relojería en un guard: el -1
+// no falla, MIENTE — y miente en la dirección de "hay una regresión". Por eso
+// ahora se corta por el inicio del bloque de App Check y **se verifica que la
+// marca existe**: si alguien la vuelve a mover, el guard lo dice en vez de
+// disfrazarlo de otra cosa.
 {
-    const arranque = INIT.slice(INIT.indexOf('const { initializeApp }'),
-                                INIT.indexOf('App Check DESACTIVADO'));
+    const ini = INIT.indexOf('const { initializeApp }');
+    const fin = INIT.indexOf('🛡️ v634 · APP CHECK');
+    ok('1g-0 · las marcas del bloque de arranque siguen existiendo',
+       ini >= 0 && fin > ini,
+       'si esto falla, 1g estaría midiendo un trozo equivocado del fichero');
+    const arranque = INIT.slice(ini, fin > ini ? fin : undefined);
     ok('1g · los cuatro imports vuelven a ser los literales de producción',
        (arranque.match(/await import\('https:\/\/www\.gstatic\.com\/firebasejs\/10\.12\.2\//g) || []).length === 4,
        'producción arranca con los cuatro import directos, sin envoltorio');

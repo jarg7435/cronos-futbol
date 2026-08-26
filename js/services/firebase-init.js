@@ -81,30 +81,68 @@
 
     const app  = initializeApp(firebaseConfig);
 
-    // v227: App Check DESACTIVADO en el código.
-    // Motivo: Firebase App Check está registrado en la consola con reCAPTCHA v3,
-    // pero al intentar intercambiar el token devuelve 403 Forbidden y entra en
-    // throttle de 24h. Como App Check NO está "enforced" para Firestore ni Auth
-    // (lo verificamos en la consola), la app funciona perfectamente sin él.
-    // Si en el futuro quieres reactivar App Check:
-    //   1. Verifica que la site key Y la secret key estén bien en Firebase Console
-    //   2. Verifica que el dominio cronos-futbol-app.web.app esté en reCAPTCHA
-    //   3. Descomenta el bloque de abajo
-    /*
-    try {
-        const { initializeAppCheck, ReCaptchaV3Provider } =
-            await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-app-check.js');
-        const _RECAPTCHA_SITE_KEY = '6Ld5cEQtAAAAAA0OCimDVsOORapoEKfsVmJmGI23';
-        initializeAppCheck(app, {
-            provider: new ReCaptchaV3Provider(_RECAPTCHA_SITE_KEY),
-            isTokenAutoRefreshEnabled: true
-        });
-        console.log('[Chronos] App Check inicializado correctamente con reCAPTCHA v3.');
-    } catch (e) {
-        console.warn('[Chronos] No se pudo inicializar App Check:', e.message);
+    // ══════════════════════════════════════════════════════════════
+    //  🛡️ v634 · APP CHECK, REACTIVADO — pero SOLO donde puede funcionar
+    //
+    //  Estuvo apagado desde la v227: el intercambio de token daba 403 y
+    //  entraba en throttle de 24 h. Aquella nota dejaba tres cosas por
+    //  comprobar; MEDIDAS hoy contra los servidores de Google:
+    //
+    //    · el secreto SÍ está puesto en la consola (siteSecretSet=true)
+    //    · la API firebaseappcheck está ENABLED
+    //    · la clave de sitio es válida y v3/invisible
+    //    · 🔴 …pero SOLO tiene registrado `cronos-futbol-app.web.app`.
+    //      `cronos-futbol-test.web.app` da la MISMA respuesta que un dominio
+    //      inventado: reCAPTCHA no lo conoce.
+    //
+    //  🔑 POR ESO NO SE ARRANCA EN TODAS PARTES. En un dominio no registrado
+    //  el intercambio falla y **vuelve a disparar el throttle de 24 h** — el
+    //  mismo agujero de la v227. Y como él prueba en TESTEO y produccion en
+    //  el MISMO navegador, un throttle provocado en testeo le estropearia la
+    //  sesion de produccion. Se arranca solo donde reCAPTCHA nos conoce.
+    //
+    //  ➕ PARA AÑADIR TESTEO: registrar `cronos-futbol-test.web.app` en
+    //  https://www.google.com/recaptcha/admin (la clave de abajo) y meter el
+    //  host en APPCHECK_HOSTS. Es lo unico que hace falta.
+    //
+    //  ⚠️ ACTIVAR EL SDK NO BASTA. App Check solo defiende cuando la
+    //  OBLIGATORIEDAD esta encendida por servicio en Firebase Console
+    //  (Firestore, Identity Toolkit...). Es un paso APARTE, y puede dejar
+    //  clientes fuera: consultar alli el estado antes de tocarlo.
+    // ══════════════════════════════════════════════════════════════
+    const _RECAPTCHA_SITE_KEY = '6Ld5cEQtAAAAAA0OCimDVsOORapoEKfsVmJmGI23';
+    const APPCHECK_HOSTS = ['cronos-futbol-app.web.app', 'cronos-futbol-app.firebaseapp.com'];
+    const _host  = (typeof location !== 'undefined' && location.hostname) || '';
+    const _local = _host === 'localhost' || _host === '127.0.0.1';
+
+    if (APPCHECK_HOSTS.includes(_host) || _local) {
+        try {
+            // En desarrollo se usa el token de DEPURACION: localhost tampoco
+            // esta en reCAPTCHA, y sin esto `npm run dev` quedaria igual de
+            // roto que testeo. El token lo imprime el SDK en la consola y hay
+            // que darlo de alta en Firebase Console > App Check > Apps.
+            // ⚠️ Va detras del `if`: NUNCA se activa en produccion.
+            if (_local) self.FIREBASE_APPCHECK_DEBUG_TOKEN = true;
+
+            const { initializeAppCheck, ReCaptchaV3Provider } =
+                await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-app-check.js');
+            initializeAppCheck(app, {
+                provider: new ReCaptchaV3Provider(_RECAPTCHA_SITE_KEY),
+                isTokenAutoRefreshEnabled: true
+            });
+            window._cronosAppCheck = 'on';
+            console.log('[Chronos] App Check activo (reCAPTCHA v3) en ' + _host);
+        } catch (e) {
+            // ⚠️ JAMAS puede tumbar el arranque. Mientras la obligatoriedad
+            // no este encendida, la app funciona igual sin token.
+            window._cronosAppCheck = 'error';
+            console.warn('[Chronos] App Check no arrancó:', e && e.message);
+        }
+    } else {
+        window._cronosAppCheck = 'off';
+        console.log('[Chronos] App Check inactivo en ' + _host +
+                    ': ese dominio no está registrado en la clave de reCAPTCHA.');
     }
-    */
-    console.log('[Chronos] App Check desactivado (v227). Si lo necesitas, verifícalo en Firebase Console.');
 
     const auth = getAuth(app);
 
