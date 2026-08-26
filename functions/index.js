@@ -4,6 +4,43 @@ const nodemailer = require('nodemailer');
 
 admin.initializeApp();
 
+/* ══════════════════════════════════════════════════════════════════════
+   🔴🔴 v633 · firebase-admin 14 BORRO LA API CON ESPACIO DE NOMBRES
+
+   `admin.firestore()`, `admin.auth()` y `admin.firestore.FieldValue` YA NO
+   EXISTEN en la v14: el export de raiz solo trae initializeApp/getApp/cert.
+   Todo lo demas se pide por su propia puerta (`firebase-admin/firestore`,
+   `firebase-admin/auth`).
+
+   🚨 Y ASI ES COMO SE MANIFESTO: **el deploy dijo "Successful update"**.
+   Es un fallo de EJECUCION, no de compilacion, asi que nada se quejo hasta
+   que alguien pulso el boton. Cada funcion que tocaba Firestore o Auth
+   moria con `TypeError: admin.firestore is not a function` y devolvia un
+   500 — o sea, el backend ENTERO: 40 usos de firestore(), 10 de auth() y
+   21 de FieldValue. Se vio por el correo de invitacion porque es lo que se
+   estaba probando, pero el correo no tenia nada que ver.
+
+   🔑 SE ADAPTA AQUI, EN UN SITIO, en vez de reescribir 71 puntos de
+   llamada. Reescribirlos seria 71 ocasiones de equivocarse a cambio de
+   ningun beneficio: estas tres lineas dan exactamente la misma API.
+
+   ⚠️ `admin.firestore` tiene que ser FUNCION **Y** ESPACIO DE NOMBRES a la
+   vez: se usa como `admin.firestore()` (40 veces) y como
+   `admin.firestore.FieldValue.serverTimestamp()` (21). Por eso el
+   Object.assign — una funcion pelada dejaria las 21 en `undefined`, y ese
+   fallo se veria igual de tarde que este.
+
+   Guard: scripts/test_functions_api_admin.js
+   ══════════════════════════════════════════════════════════════════════ */
+const { getFirestore, FieldValue, Timestamp, FieldPath, GeoPoint } = require('firebase-admin/firestore');
+const { getAuth } = require('firebase-admin/auth');
+if (typeof admin.firestore !== 'function') {
+  admin.firestore = Object.assign(() => getFirestore(), { FieldValue, Timestamp, FieldPath, GeoPoint });
+}
+if (typeof admin.auth !== 'function') {
+  admin.auth = () => getAuth();
+}
+
 /* ----------------------------------------------------------- */
 /* Diccionario de pseudónimos (server-side — coincidir con cliente) */
 /* ----------------------------------------------------------- */
@@ -1355,14 +1392,40 @@ exports.sendInviteEmail = functions
   };
   const roleLabel = roleLabels[role] || role || 'Usuario';
 
-  /* ---- Construir URL de invitación con todos los parámetros ---- */
+  /* ══════════════════════════════════════════════════════════════════
+     🎟️ v633 · LA URL DE INVITACION, CON TOKEN OPACO
+
+     Antes esta funcion metia el correo, el rol y el club EN CLARO en la
+     direccion. Eso acaba en el historial del navegador, en los registros
+     del servidor de correo y en la cabecera `Referer` de cualquier
+     recurso que cargue la pagina de alta. Ahora los datos viven en
+     `invites/{token}` y la direccion solo lleva el token.
+
+     🔑 EL CLIENTE MANDA EL TOKEN, NUNCA LA URL. La direccion la compone
+     el servidor con su propia constante APP_URL: si aceptara una URL de
+     fuera, cualquiera con permiso para invitar podria colar un enlace a
+     un sitio ajeno DENTRO de un correo con el logo y la firma de la
+     plataforma. Eso es phishing con marca propia.
+
+     ⚠️ Se admite que no venga token: los enlaces clasicos siguen
+     funcionando y la Secretaria cae a ellos si no puede acuñar. Se
+     valida la FORMA del token (solo hex/guiones) para que no pueda
+     inyectarse nada en el atributo href del HTML.
+     ══════════════════════════════════════════════════════════════════ */
   const APP_URL = 'https://cronos-futbol-app.web.app';
-  const inviteParams = new URLSearchParams();
-  inviteParams.set('register', 'true');
-  inviteParams.set('email', to);
-  if (role) inviteParams.set('role', role);
-  if (clubName) inviteParams.set('clubName', clubName);
-  const inviteUrl = APP_URL + '/?' + inviteParams.toString();
+  const tokenLimpio = String((data && data.inviteToken) || '').trim();
+  let inviteUrl;
+  if (/^[A-Za-z0-9_-]{8,64}$/.test(tokenLimpio)) {
+    inviteUrl = APP_URL + '/?invite=' + encodeURIComponent(tokenLimpio);
+  } else {
+    if (tokenLimpio) console.warn('[sendInviteEmail] token con forma invalida; se usa el enlace clasico');
+    const inviteParams = new URLSearchParams();
+    inviteParams.set('register', 'true');
+    inviteParams.set('email', to);
+    if (role) inviteParams.set('role', role);
+    if (clubName) inviteParams.set('clubName', clubName);
+    inviteUrl = APP_URL + '/?' + inviteParams.toString();
+  }
 
   /* ---- Nombre del invitante ---- */
   /* v594: el remitente por defecto ya no es "SuperAdmin" para todo el     */

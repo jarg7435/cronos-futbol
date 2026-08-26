@@ -211,7 +211,8 @@ window.saSecretary = async function saSecretary(opciones) {
                     </button>
                 </div>
                 <span style="font-size:0.68rem;color:#8b949e;margin-top:3px;display:block;">
-                    Lleva dentro el correo, el rol y el club: quien lo abra aterriza en el alta con todo relleno.
+                    Pulsa 📋 para generarlo. Es de un solo uso y caduca a los 14 días: los datos
+                    no viajan en la dirección, quien lo abra aterriza en el alta con todo relleno.
                 </span>
             </div>
 
@@ -312,6 +313,59 @@ window.secRenderPlantilla = function(plantilla, datos) {
         .replace(/\{\s*(nombre|rol|club|enlace)\s*\}/gi, (m, clave) => val[String(clave).toLowerCase()]);
 };
 
+// ════════════════════════════════════════════════════════════════════
+//  🎟️ v633 · EL ENLACE CON TOKEN OPACO
+//
+//  Lo que se ve mientras nadie ha pedido todavía un enlace. NO es una URL a
+//  medias: si lo fuera, alguien la copiaría y mandaría un enlace roto.
+// ════════════════════════════════════════════════════════════════════
+const SEC_ENLACE_PENDIENTE = '(se genera al copiar o al enviar)';
+window.SEC_ENLACE_PENDIENTE = SEC_ENLACE_PENDIENTE;
+
+// Acuña —o reutiliza— la invitación para el estado ACTUAL del formulario.
+// Reutilizar importa: sin caché, «Copiar» y luego «Enviar» dejarían dos
+// invitaciones vivas para la misma persona, y sólo una se consumiría.
+async function _secEnlaceReal() {
+    const email   = document.getElementById('sec-email')?.value.trim() || '';
+    const roleVal = document.getElementById('sec-role')?.value || 'individual';
+    const club    = document.getElementById('sec-club')?.value.trim() || '';
+    const clave   = email + '|' + roleVal + '|' + club;
+
+    const cache = window._secTokenActual;
+    if (cache && cache.clave === clave && cache.url) return cache.url;
+
+    if (typeof window.cronosCrearInvitacion === 'function') {
+        try {
+            const inv = await window.cronosCrearInvitacion({
+                email: email, role: roleVal, clubName: club,
+            });
+            window._secTokenActual = { clave: clave, url: inv.url, token: inv.token };
+            return inv.url;
+        } catch (e) {
+            // ⚠️ SE CAE AL ENLACE ANTIGUO, y no es descuido: sin esto, un fallo
+            // de red dejaría a la Secretaría SIN PODER INVITAR A NADIE. El
+            // enlace viejo funciona —el resolutor acepta las dos formas—, pero
+            // lleva el correo a la vista y no caduca. Por eso se AVISA en vez
+            // de degradar en silencio.
+            console.warn('[secretaría] no se pudo acuñar el token:', e && e.message);
+            if (typeof _saToast === 'function') {
+                _saToast('⚠️ No se pudo generar el enlace seguro. Se usa el clásico.', 5000);
+            }
+        }
+    }
+
+    const url = (typeof window.cronosInviteUrl === 'function')
+        ? window.cronosInviteUrl({ email: email, role: roleVal, clubName: club })
+        : ('https://cronos-futbol-app.web.app/?register=true' +
+           (email ? '&email=' + encodeURIComponent(email) : '') +
+           (roleVal ? '&role=' + encodeURIComponent(roleVal) : '') +
+           (club ? '&clubName=' + encodeURIComponent(club) : ''));
+    // No se cachea el respaldo: así el siguiente intento vuelve a probar el
+    // camino bueno en lugar de quedarse clavado en el malo.
+    return url;
+}
+window._secEnlaceReal = _secEnlaceReal;
+
 // Datos actuales del formulario, ya resueltos.
 function _secDatosActuales() {
     const roleVal = document.getElementById('sec-role')?.value || 'individual';
@@ -326,15 +380,27 @@ function _secDatosActuales() {
     };
     const email = document.getElementById('sec-email')?.value.trim() || '';
     const club  = document.getElementById('sec-club')?.value.trim() || '';
-    // 🔑 UN SOLO CONSTRUCTOR DEL ENLACE (utils.js). El respaldo de aquí abajo
-    // existe porque el guard ejecuta este archivo en un sandbox sin utils.js
-    // cargado — y porque un orden de <script> distinto tiene el mismo efecto.
-    const enlace = (typeof window.cronosInviteUrl === 'function')
-        ? window.cronosInviteUrl({ email: email, role: roleVal, clubName: club })
-        : ('https://cronos-futbol-app.web.app/?register=true' +
-           (email ? '&email=' + encodeURIComponent(email) : '') +
-           (roleVal ? '&role=' + encodeURIComponent(roleVal) : '') +
-           (club ? '&clubName=' + encodeURIComponent(club) : ''));
+    // ════════════════════════════════════════════════════════════════
+    //  🎟️ v633 · EL ENLACE YA NO SE FABRICA AQUÍ
+    //
+    //  Antes esta función construía la URL con el correo, el rol y el club EN
+    //  CLARO. Ahora el enlace es `?invite=<token>` y vive en un documento, así
+    //  que ACUÑARLO CUESTA UNA ESCRITURA.
+    //
+    //  🔑 Y ESTA FUNCIÓN CORRE EN CADA PULSACIÓN DE TECLA (`oninput` →
+    //  saUpdateInvitePreview). Crear una invitación por tecla dejaría cientos
+    //  de tokens vivos por cada envío: cada uno un enlace válido de verdad.
+    //  Por eso aquí sólo se DEVUELVE lo que ya haya en la caché, y quien acuña
+    //  es `_secEnlaceReal()`, al COPIAR o al ENVIAR.
+    //
+    //  ⚠️ El respaldo de abajo se conserva porque el guard ejecuta este archivo
+    //  en un sandbox sin utils.js cargado.
+    // ════════════════════════════════════════════════════════════════
+    const clave  = email + '|' + roleVal + '|' + club;
+    const cache  = window._secTokenActual;
+    const enlace = (cache && cache.clave === clave && cache.url)
+        ? cache.url
+        : SEC_ENLACE_PENDIENTE;
     return {
         nombre: document.getElementById('sec-name')?.value.trim() || '',
         rol:    roleLabels[roleVal] || 'Usuario',
@@ -586,7 +652,12 @@ window.saGuardarPlantilla = async function() {
 // ── Copiar el enlace al portapapeles ────────────────────────────────
 window.saCopiarEnlace = async function() {
     const link = document.getElementById('sec-link');
-    const url = link?.value || '';
+    // 🎟️ v633 · Copiar es UNA DE LAS DOS PUERTAS que acuñan el token (la otra
+    // es enviar). Hasta aquí el campo sólo enseñaba el aviso de pendiente.
+    let url = '';
+    try { url = await _secEnlaceReal(); }
+    catch (e) { console.warn('[saCopiarEnlace]', e && e.message); }
+    if (link && url) link.value = url;
     if (!url) { _saToast('⚠️ Todavía no hay enlace que copiar', 2500); return; }
     try {
         // El API moderno sólo existe en contexto seguro y con permiso.
@@ -617,7 +688,9 @@ window.saSendInvite = async function() {
     if (method === 'email') {
         await window.saSendInviteEmail();
     } else {
-        window.saSendInviteWhatsApp();
+        // 🎟️ v633 · Ahora es async (acuña el token): sin el await, el
+        // formulario se limpiaría antes de que se abriera WhatsApp.
+        await window.saSendInviteWhatsApp();
     }
 };
 
@@ -647,6 +720,13 @@ window.saSendInviteEmail = async function() {
     const role    = document.getElementById('sec-role')?.value || 'individual';
     const clubName= document.getElementById('sec-club')?.value.trim() || '';
     const subject = document.getElementById('sec-subject')?.value.trim() || 'Invitación a Chronos Fútbol';
+    if (!to) { _saToast('⚠️ El email de destino es obligatorio', 3000); return; }
+
+    // 🎟️ v633 · Se acuña el token ANTES de componer nada: el cuerpo lleva
+    // `{enlace}` y sin esto saldría el aviso de "pendiente" dentro del correo.
+    await _secEnlaceReal();
+    const inviteToken = (window._secTokenActual || {}).token || '';
+
     // 🔑 SE ENVÍA LA PLANTILLA YA SUSTITUIDA, no las marcas: el servidor no
     // sabe nada de {nombre} y mandaría el correo con las llaves dentro.
     const datos   = _secDatosActuales();
@@ -655,8 +735,6 @@ window.saSendInviteEmail = async function() {
     const body    = window.secRenderPlantilla(
         _secCuerpoParaEnviar(document.getElementById('sec-body')?.value || ''), datos).trim();
 
-    if (!to) { _saToast('⚠️ El email de destino es obligatorio', 3000); return; }
-
     const _mailto = () => `mailto:${to}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
 
     _saShowSpinner('Enviando invitación por email...');
@@ -664,7 +742,10 @@ window.saSendInviteEmail = async function() {
         const { fa, httpsCallable } = await saFS();
         if (!fa.functions) throw new Error('Firebase Functions no disponible. Recarga la página.');
         const sendEmail = httpsCallable(fa.functions, 'sendInviteEmail');
-        const result = await sendEmail({ to, subject, body, role, clubName });
+        // 🎟️ v633 · Va el TOKEN, no la URL. El servidor compone el enlace con su
+        // propia constante: así el cliente no puede colar una dirección ajena
+        // dentro de un correo que va firmado por la plataforma.
+        const result = await sendEmail({ to, subject, body, role, clubName, inviteToken });
         _saHideSpinner();
 
         const d = result.data || {};
@@ -707,22 +788,31 @@ window.saSendInviteEmail = async function() {
 function _limpiarFormularioSecretaria() {
     const fields = ['sec-email', 'sec-name', 'sec-phone'];
     fields.forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+    // 🎟️ v633 · Se suelta el token ya usado. Sin esto, la siguiente invitación
+    // reutilizaría el enlace de la anterior si el formulario volviera a quedar
+    // con los mismos rol y club — y esa persona entraría con la invitación de
+    // otra.
+    window._secTokenActual = null;
     window.saUpdateInvitePreview?.();
 }
 
 
 // Enviar invitación vía WhatsApp Web/App
-window.saSendInviteWhatsApp = function() {
+window.saSendInviteWhatsApp = async function() {
     const phone = document.getElementById('sec-phone')?.value.trim();
+
+    // Se valida el teléfono ANTES de acuñar: si el número está mal, no tiene
+    // sentido dejar una invitación viva que nadie va a recibir.
+    if (!phone) { _saToast('⚠️ El teléfono de destino es obligatorio', 3000); return; }
+    const cleanPhone = phone.replace(/[^0-9]/g, '');
+    if (cleanPhone.length < 7) { _saToast('⚠️ El número de teléfono no parece ser válido', 3000); return; }
+
+    // 🎟️ v633 · En WhatsApp `{enlace}` es el ÚNICO camino: no hay botón ni
+    // frase de respaldo como en el correo. Acuñar aquí no es opcional.
+    await _secEnlaceReal();
     const datos = _secDatosActuales();
     const body  = window.secRenderPlantilla(
         document.getElementById('sec-body')?.value || '', datos).trim();
-
-    if (!phone) { _saToast('⚠️ El teléfono de destino es obligatorio', 3000); return; }
-
-    // Limpiar caracteres del número telefónico
-    const cleanPhone = phone.replace(/[^0-9]/g, '');
-    if (cleanPhone.length < 7) { _saToast('⚠️ El número de teléfono no parece ser válido', 3000); return; }
 
     const waUrl = `https://wa.me/${cleanPhone}?text=${encodeURIComponent(body)}`;
     window.open(waUrl, '_blank');

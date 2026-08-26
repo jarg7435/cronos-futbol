@@ -11,6 +11,31 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 
+/* ══════════════════════════════════════════════════════════════════════
+   🔴 v633 · ADAPTADOR PARA firebase-admin 14 (mismo caso que index.js)
+
+   La v14 borro la API con espacio de nombres: `admin.credential`,
+   `admin.auth` y `admin.firestore` ya no existen. Las fabricas de
+   credencial subieron a la raiz (`admin.refreshToken`, `admin.cert`,
+   `admin.applicationDefault`) y el resto se pide por su propia puerta.
+
+   ⚠️ AQUI EL ADAPTADOR VA PARTIDO EN DOS, y esa es la diferencia con
+   index.js: la credencial hace falta ANTES de initializeApp, y `getAuth()`
+   solo funciona DESPUES. Ponerlo todo junto arriba lanzaria; ponerlo todo
+   junto abajo dejaria sin arreglar la linea que construye la credencial.
+
+   🚨 Este guion NO se despliega, asi que nadie lo prueba: reventaria en la
+   cara el dia que haga falta usarlo — que es justo un dia de urgencia,
+   porque lo que hace es devolverle los claims al SuperAdmin.
+   ══════════════════════════════════════════════════════════════════════ */
+if (!admin.credential) {
+    admin.credential = {
+        refreshToken:       admin.refreshToken,
+        applicationDefault: admin.applicationDefault,
+        cert:               admin.cert,
+    };
+}
+
 // ── Obtener refresh token del Firebase CLI ──
 const configPath = path.join(os.homedir(), '.config', 'configstore', 'firebase-tools.json');
 let refreshToken;
@@ -45,6 +70,13 @@ admin.initializeApp({
     credential: credential,
     projectId: 'cronos-futbol-app'
 });
+
+/* 🔴 v633 · La segunda mitad del adaptador: `getAuth()` necesita la app ya
+   inicializada, por eso va aqui y no arriba con la credencial. */
+const { getAuth } = require('firebase-admin/auth');
+if (typeof admin.auth !== 'function') {
+    admin.auth = () => getAuth();
+}
 
 // ── Ejecutar ──
 const TARGET_UID = 'uvtqRyO3OjWEGUZ7qkhnpMtThwS2';

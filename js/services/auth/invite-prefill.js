@@ -143,6 +143,38 @@
             var rol   = p.get('role');
             var club  = p.get('clubName');
 
+            // ── 🎟️ SEC-INV (2026-08-26) · EL TOKEN OPACO ────────────
+            //  La forma nueva es `?invite=<token>`: el correo, el rol y el
+            //  club ya no viajan en la URL. Se resuelven leyendo
+            //  `invites/{token}`, cuya regla permite `get` sin sesión —quien
+            //  abre la invitación todavía no tiene cuenta— pero prohíbe
+            //  enumerar, y deniega si caducó o ya se usó.
+            //
+            //  ⚠️ SE ACEPTAN LAS DOS FORMAS, y no es transición perezosa: los
+            //  enlaces ya enviados con `?register=true&email=…` tienen que
+            //  seguir funcionando. Si vienen las dos, MANDA EL TOKEN: es el
+            //  dato que puso quien invita, no lo que traiga la barra.
+            var token = p.get('invite');
+            if (token && typeof window.cronosLeerInvitacion === 'function') {
+                var inv = await window.cronosLeerInvitacion(token);
+                if (inv) {
+                    email = inv.email || email;
+                    rol   = inv.role || rol;
+                    club  = inv.clubName || club;
+                    // Se recuerda para consumirla en cuanto haya sesión.
+                    window._cronosInviteToken = inv.token;
+                } else {
+                    // Token invalido, caducado o ya usado. NO se bloquea el
+                    // alta: se avisa y se deja el formulario a mano, que es
+                    // mucho mejor que una pantalla que no explica nada.
+                    var _ae = _el('auth-email');
+                    if (_ae) _nota('inv-nota-token', _ae,
+                        '⚠️ Este enlace de invitación ya no es válido (puede haber caducado ' +
+                        'o haberse usado). Puedes registrarte igualmente rellenando los datos.',
+                        'rgba(240,136,62,0.9)');
+                }
+            }
+
             // ── Correo ──────────────────────────────────────────────
             if (email) {
                 var e = _el('auth-email');
@@ -263,5 +295,49 @@
         return String(s == null ? '' : s)
             .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
     }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  🎟️ v633 · CONSUMIR LA INVITACIÓN — UN SOLO SITIO
+    //
+    //  Una invitación es de un solo uso, y para marcarla hace falta sesión:
+    //  la regla exige que `usedBy` sea el uid de quien escribe, así que no se
+    //  puede hacer antes del alta.
+    //
+    //  🔑 SE ENGANCHA AL ESTADO DE SESIÓN, NO AL FORMULARIO. El alta de
+    //  auth.js tiene CINCO ramas que escriben el documento del usuario —rol
+    //  nuevo, segundo equipo, bajo entidad individual…— y varias salen con
+    //  `return` por el camino. Colgarlo de cada una sería garantizar que
+    //  alguna se queda sin marcar. Aquí basta con que aparezca una sesión.
+    //
+    //  ⚠️ Es a fuego y olvido: si falla, la invitación se queda sin marcar y
+    //  caducará sola a los 14 días. Lo que NUNCA puede hacer es tumbar un alta
+    //  que ya se completó.
+    // ══════════════════════════════════════════════════════════════════
+    var _yaConsumida = false;
+    var _intentosSesion = 0;
+    function _vigilarSesion() {
+        if (!window._cronosInviteToken || _yaConsumida) return;
+        var fa = window._cronos_auth;
+        if (!fa || !fa.auth || typeof fa.onAuthStateChanged !== 'function') {
+            // Firebase todavía no está montado. Se reintenta un rato acotado.
+            if (++_intentosSesion < 60) setTimeout(_vigilarSesion, 250);
+            return;
+        }
+        try {
+            fa.onAuthStateChanged(fa.auth, function (u) {
+                if (!u || _yaConsumida || !window._cronosInviteToken) return;
+                _yaConsumida = true;
+                var t = window._cronosInviteToken;
+                window._cronosInviteToken = null;
+                if (typeof window.cronosConsumirInvitacion === 'function') {
+                    window.cronosConsumirInvitacion(t);
+                }
+            });
+        } catch (e) {
+            if (window._CRONOS_DEBUG) console.warn('[Invitación] no se pudo vigilar la sesión:', e);
+        }
+    }
+    // Se arranca en cuanto el resolutor haya podido dejar el token puesto.
+    setTimeout(_vigilarSesion, 400);
 
 })();

@@ -23,9 +23,39 @@
 
 const admin = require('firebase-admin');
 
+/* ══════════════════════════════════════════════════════════════════════
+   🔴 v633 · ADAPTADOR PARA firebase-admin 14 (mismo caso que index.js)
+
+   La v14 borro la API con espacio de nombres: `admin.credential` y
+   `admin.firestore` ya no existen. Las fabricas de credencial subieron a la
+   raiz (`admin.applicationDefault`, `admin.cert`) y Firestore se pide por su
+   propia puerta.
+
+   ⚠️ VA PARTIDO EN DOS: la credencial hace falta ANTES de initializeApp y
+   `getFirestore()` solo funciona DESPUES.
+
+   🚨 Este guion NO se despliega, asi que nadie lo prueba. Y lo que hace es
+   rellenar `clubs_public`, que es de donde el FORMULARIO DE ALTA saca la
+   lista de clubes: si reventara, el sintoma seria un desplegable vacio en el
+   registro, no un error hablando de este fichero.
+   ══════════════════════════════════════════════════════════════════════ */
+if (!admin.credential) {
+  admin.credential = {
+    applicationDefault: admin.applicationDefault,
+    cert:               admin.cert,
+    refreshToken:       admin.refreshToken,
+  };
+}
+
 const DRY_RUN = process.argv.includes('--dry');
 
 admin.initializeApp({ credential: admin.credential.applicationDefault() });
+
+const { getFirestore, FieldValue, Timestamp, FieldPath } = require('firebase-admin/firestore');
+if (typeof admin.firestore !== 'function') {
+  admin.firestore = Object.assign(() => getFirestore(), { FieldValue, Timestamp, FieldPath });
+}
+
 const db = admin.firestore();
 
 (async () => {

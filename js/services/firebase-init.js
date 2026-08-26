@@ -400,7 +400,11 @@
         // CLÁSICO: no puede hacer `import` y el ámbito de este módulo no
         // cuelga de window (la trampa de v383).
         sendPasswordResetEmail, updatePassword,
-        reauthenticateWithCredential, EmailAuthProvider
+        reauthenticateWithCredential, EmailAuthProvider,
+        // 🎟️ v633 · Lo necesita invite-prefill.js para marcar la invitación
+        // como usada en cuanto aparece la sesión. Mismo motivo que arriba: es
+        // un script CLÁSICO y no puede importar el SDK por su cuenta.
+        onAuthStateChanged
     };
 
     // SECURITY FIX (SEC-001): Removed sessionStorage-based session restoration.

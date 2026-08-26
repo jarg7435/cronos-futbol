@@ -799,6 +799,54 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // ══════════════════════════════════════════════════════════════════
+    //  🎟️ SEC-INV (auditoria 2026-08-26) · INVITACIONES CON TOKEN OPACO
+    //
+    //  Hasta hoy el enlace de invitacion era:
+    //    ?register=true&email=juan%40x.es&role=club_admin&clubName=CD+DORAMAS
+    //  O sea DATOS PERSONALES EN CLARO dentro de una URL — que queda en el
+    //  historial del navegador, en los registros del servidor de correo y en
+    //  la cabecera `Referer` de cualquier recurso externo. Y no caducaba ni se
+    //  consumia: servia para siempre y para cualquiera que la reenviara.
+    //
+    //  Ahora el enlace es `?invite=<token>` y los datos viven aqui.
+    //
+    //  🔑 EL TOKEN **ES** EL SECRETO, y por eso `get` no pide autenticacion:
+    //  quien abre la invitacion todavia NO tiene cuenta — ese es justo el
+    //  momento del alta. Lo que lo hace seguro es que el id sea largo y
+    //  aleatorio.
+    //
+    //  ⚠️⚠️ Y POR ESO `list` VA APARTE Y CERRADO. En Firestore `read` = `get` +
+    //  `list`: un `allow read: if true` habria dejado que cualquiera se
+    //  descargase la coleccion ENTERA con `getDocs(collection('invites'))` y
+    //  con ella todos los correos invitados. Separarlos es toda la diferencia
+    //  entre "hay que conocer el token" y "no hace falta conocer nada".
+    //
+    //  ⚠️ CADUCIDAD Y UN SOLO USO, EN LA REGLA y no solo en el cliente. Las dos
+    //  fallan hacia el NO: si `expiresAt` falta, la comparacion se evalua
+    //  contra `request.time` y da falso; si `usedAt` ya tiene valor, no se lee.
+    //
+    //  ⚠️ El `update` solo deja marcar el consumo (`usedAt`/`usedBy`), y con el
+    //  uid de quien lo consume: no se puede reescribir el correo ni el rol de
+    //  una invitacion ajena para colarse en otro club.
+    // ══════════════════════════════════════════════════════════════════
+    match /invites/{token} {
+      allow get: if resource.data.get('usedAt', null) == null
+                 && request.time < resource.data.get('expiresAt', request.time);
+      allow list: if isSuperAdmin();
+      allow create: if isAuth()
+                    && (isSuperAdmin() || isRegisteredUser())
+                    && request.resource.data.get('createdBy', null) == request.auth.uid
+                    && request.resource.data.get('usedAt', null) == null;
+      allow update: if isAuth()
+                    && resource.data.get('usedAt', null) == null
+                    && request.resource.data.diff(resource.data).affectedKeys()
+                         .hasOnly(['usedAt', 'usedBy'])
+                    && request.resource.data.get('usedBy', null) == request.auth.uid;
+      allow delete: if isSuperAdmin()
+                    || (isAuth() && resource.data.get('createdBy', null) == request.auth.uid);
+    }
+
     // ============================================================
     // COLECCIÓN: individuals
     // FIX: antes era "if isAuth()" — cualquier usuario autenticado

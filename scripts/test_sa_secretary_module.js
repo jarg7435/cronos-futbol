@@ -97,6 +97,18 @@ function buildSandbox({ elements = {}, secMethod = 'email', hasFunctions = true,
     };
     sandbox.window.open = (url) => { openCalls.push(url); };
     sandbox.window.saFS = sandbox.saFS;
+    // ⚠️ v633 · EL ENLACE YA NO SE FABRICA CON UNA FUNCIÓN PURA. Desde el token
+    // opaco, acuñarlo es una ESCRITURA en `invites/{token}`, así que aquí va un
+    // doble: devuelve un enlace con la forma real —`?invite=<token>`— y apunta
+    // los datos con los que se pidió, que es lo que las partes 12, 13 y 15
+    // necesitan mirar. Sin él, `_secEnlaceReal` caería al enlace clásico y el
+    // guard estaría midiendo el camino de respaldo creyendo medir el bueno.
+    const invitaciones = [];
+    sandbox.window.cronosCrearInvitacion = async (d) => {
+        invitaciones.push(d);
+        const token = 'tok' + String(invitaciones.length).padStart(29, '0');
+        return { token, url: 'https://cronos-futbol-app.web.app/?invite=' + token };
+    };
     vm.createContext(sandbox);
 
     const src = fs.readFileSync(SOURCE, 'utf8');
@@ -117,7 +129,7 @@ function buildSandbox({ elements = {}, secMethod = 'email', hasFunctions = true,
     sandbox.__toasts = toasts;
     vm.runInContext(stubs + block, sandbox);
 
-    return { sandbox, els, toasts, spinners, openCalls, httpsCallableCalls };
+    return { sandbox, els, toasts, spinners, openCalls, httpsCallableCalls, invitaciones };
 }
 
 (async () => {
@@ -129,7 +141,9 @@ function buildSandbox({ elements = {}, secMethod = 'email', hasFunctions = true,
     ok('1d · saResetInviteTemplate existe', /window\.saResetInviteTemplate\s*=\s*function/.test(rawSrc));
     ok('1e · saSendInvite existe', /window\.saSendInvite\s*=\s*async function/.test(rawSrc));
     ok('1f · saSendInviteEmail existe', /window\.saSendInviteEmail\s*=\s*async function/.test(rawSrc));
-    ok('1g · saSendInviteWhatsApp existe', /window\.saSendInviteWhatsApp\s*=\s*function/.test(rawSrc));
+    // ⚠️ v633 · pasó a `async`: ahora acuña el token de la invitación antes de
+    // componer el mensaje. En WhatsApp el enlace es el ÚNICO camino.
+    ok('1g · saSendInviteWhatsApp existe', /window\.saSendInviteWhatsApp\s*=\s*async function/.test(rawSrc));
     ok('1h · _limpiarFormularioSecretaria existe (helper interno)', /function _limpiarFormularioSecretaria\s*\(/.test(rawSrc));
 
     console.log('\n── PARTE 2 · saSecretary (render) ──');
@@ -303,19 +317,19 @@ function buildSandbox({ elements = {}, secMethod = 'email', hasFunctions = true,
     console.log('\n── PARTE 12 · saSendInviteWhatsApp ──');
     {
         const { sandbox, openCalls, toasts } = buildSandbox({ elements: { 'sec-phone': { value: '' } } });
-        sandbox.window.saSendInviteWhatsApp();
+        await sandbox.window.saSendInviteWhatsApp();
         ok('12a · sin teléfono -> ningún window.open', openCalls.length === 0);
         ok('12b · sin teléfono -> toast de aviso', toasts.some(t => /teléfono.*obligatorio/i.test(t)));
     }
     {
         const { sandbox, openCalls, toasts } = buildSandbox({ elements: { 'sec-phone': { value: '12345' } } });
-        sandbox.window.saSendInviteWhatsApp();
+        await sandbox.window.saSendInviteWhatsApp();
         ok('12c · teléfono demasiado corto -> ningún window.open', openCalls.length === 0);
         ok('12d · teléfono demasiado corto -> toast de aviso', toasts.some(t => /no parece ser válido/i.test(t)));
     }
     {
         const { sandbox, openCalls, toasts, els } = buildSandbox({ elements: { 'sec-phone': { value: '+34 600 11 22 33' }, 'sec-name': { value: 'Ana' }, 'sec-body': { value: 'hola' } } });
-        sandbox.window.saSendInviteWhatsApp();
+        await sandbox.window.saSendInviteWhatsApp();
         ok('12e · limpia caracteres no numéricos del teléfono y abre wa.me', openCalls.some(u => u === 'https://wa.me/34600112233?text=hola'));
         ok('12f · toast de confirmación', toasts.some(t => /Abriendo WhatsApp/i.test(t)));
         ok('12g · limpia los campos del formulario', els['sec-phone'].value === '' && els['sec-name'].value === '');
@@ -332,16 +346,32 @@ function buildSandbox({ elements = {}, secMethod = 'email', hasFunctions = true,
     //  funcionaba) se le mandaba el enlace flojo, y sin ningún error visible:
     //  la app abría y simplemente no hacía lo que debía.
     {
-        const { sandbox, els } = buildSandbox({
+        const { sandbox, els, invitaciones } = buildSandbox({
             elements: { 'sec-email': { value: 'ana@x.com' }, 'sec-role': { value: 'coordinator' }, 'sec-club': { value: 'CD Prueba' } },
         });
         sandbox.window.saUpdateInviteTemplate();
+        // ⚠️ v633 · AL PINTAR YA NO HAY ENLACE, Y ES LO CORRECTO. Acuñarlo es
+        // una escritura, y esta función corre en cada pulsación de tecla: si
+        // se creara aquí, un solo envío dejaría cientos de invitaciones vivas.
+        ok('13a-pre · 🔑 antes de pedirlo, el campo avisa en vez de enseñar una URL',
+           els['sec-link'].value === sandbox.window.SEC_ENLACE_PENDIENTE,
+           els['sec-link'].value);
+        ok('13a-pre2 · ⚠️ y NO se ha acuñado nada al teclear', invitaciones.length === 0,
+           invitaciones.length + ' invitaciones');
+
+        // Se acuña como lo haría el botón «Copiar» o el envío.
+        await sandbox.window._secEnlaceReal();
+        sandbox.window.saUpdateInvitePreview();
         const url = els['sec-link'].value;
         ok('13a · el enlace se pinta en pantalla', !!url, url);
-        ok('13b · 🔑 lleva register=true (lo que deja al invitado EN el alta), no invite=true',
-           /register=true/.test(url) && !/invite=true/.test(url), url);
-        ok('13c · lleva el correo, el rol y el club dentro',
-           /email=ana%40x\.com/.test(url) && /role=coordinator/.test(url) && /clubName=CD\+Prueba|clubName=CD%20Prueba/.test(url), url);
+        ok('13b · 🔑🔑 v633 · es un token opaco, NO lleva los datos dentro',
+           /\?invite=[A-Za-z0-9_-]{8,}$/.test(url) &&
+           !/email=/.test(url) && !/role=/.test(url) && !/clubName=/.test(url),
+           'el correo en la URL acaba en el historial, en los logs del correo y en el Referer · ' + url);
+        ok('13c · 🔑 …pero los datos SÍ viajan, en el documento de la invitación',
+           invitaciones.length === 1 && invitaciones[0].email === 'ana@x.com' &&
+           invitaciones[0].role === 'coordinator' && invitaciones[0].clubName === 'CD Prueba',
+           JSON.stringify(invitaciones));
         // ⚠️ ACTUALIZADA EN LA v630, y por PETICIÓN EXPRESA del autor
         // (implementar.txt 2026-08-25, punto 1): «elimina la línea de texto con
         // el enlace suelto del primer párrafo [...] de esta forma evitamos
@@ -364,22 +394,43 @@ function buildSandbox({ elements = {}, secMethod = 'email', hasFunctions = true,
             elements: { 'sec-email': { value: 'ana@x.com' }, 'sec-role': { value: 'coordinator' }, 'sec-club': { value: 'CD Prueba' } },
         });
         sandbox.window.saUpdateInviteTemplate();
+        // ⚠️ v633 · Se acuña ANTES de mirar. Sin esto, campo y vista previa
+        // enseñarían los dos el aviso de «pendiente» y el `includes` daría
+        // verdadero sin comprobar nada: el guard pasaría midiendo la nada.
+        await sandbox.window._secEnlaceReal();
+        sandbox.window.saUpdateInvitePreview();
         const url = els['sec-link'].value;
         ok('13d-wa · 🔑 en WhatsApp el enlace del MENSAJE sigue siendo el de pantalla',
-           !!url && els['sec-preview'].textContent.includes(url),
+           !!url && /\?invite=/.test(url) && els['sec-preview'].textContent.includes(url),
            'ahí es el ÚNICO camino: no hay botón ni frase de respaldo · ' + url);
     }
     {
         // Cambiar un dato del formulario tiene que mover el enlace: enseñar
         // uno viejo sería peor que no enseñar ninguno, porque se copia y se
         // manda sin mirar.
-        const { sandbox, els } = buildSandbox({ elements: { 'sec-email': { value: 'uno@x.com' } } });
+        //
+        // 🔑 v633 · Y AHORA ES MÁS GRAVE QUE ANTES. Con la URL vieja, un enlace
+        // desfasado llevaba el correo equivocado dentro y se veía. Con el token
+        // opaco no se ve nada: reutilizarlo metería a la persona nueva EN LA
+        // INVITACIÓN DE LA ANTERIOR, con su rol y su club.
+        const { sandbox, els, invitaciones } = buildSandbox({ elements: { 'sec-email': { value: 'uno@x.com' } } });
         sandbox.window.saUpdateInviteTemplate();
+        await sandbox.window._secEnlaceReal();
+        sandbox.window.saUpdateInvitePreview();
         const antes = els['sec-link'].value;
+
         els['sec-email'].value = 'dos@x.com';
         sandbox.window.saUpdateInvitePreview();
-        ok('13e · se actualiza al cambiar el destinatario',
-           antes !== els['sec-link'].value && /dos%40x\.com/.test(els['sec-link'].value));
+        ok('13e-pre · al cambiar el destinatario, el enlace viejo DESAPARECE de pantalla',
+           els['sec-link'].value === sandbox.window.SEC_ENLACE_PENDIENTE,
+           els['sec-link'].value);
+
+        await sandbox.window._secEnlaceReal();
+        sandbox.window.saUpdateInvitePreview();
+        ok('13e · se acuña una invitación NUEVA para el nuevo destinatario',
+           antes !== els['sec-link'].value &&
+           invitaciones.length === 2 && invitaciones[1].email === 'dos@x.com',
+           JSON.stringify(invitaciones));
     }
 
     // ═══════════════════════════════════════════════════════════════════
@@ -459,14 +510,22 @@ function buildSandbox({ elements = {}, secMethod = 'email', hasFunctions = true,
         const enviado = (httpsCallableCalls[0] || {}).payload || {};
         ok('15a · 🔑 el cuerpo enviado va ya sustituido, sin marcas',
            !/\{nombre\}/.test(enviado.body || '') && /Hola Ana/.test(enviado.body || ''), enviado.body);
-        ok('15b · y con el enlace real dentro', /register=true/.test(enviado.body || ''));
+        ok('15b · v633 · y con el enlace real —ya opaco— dentro',
+           /\?invite=[A-Za-z0-9_-]{8,}/.test(enviado.body || ''), enviado.body);
+        // 🔑🔑 v633 · AL SERVIDOR VA EL TOKEN, NUNCA UNA URL. El correo lo
+        // compone él, con su logo y su firma: si aceptara una dirección del
+        // cliente, quien pueda invitar podría colar un enlace a otro sitio
+        // dentro de un correo con la marca de la plataforma.
+        ok('15b2 · 🔑🔑 la llamada lleva `inviteToken`, y NO una URL',
+           /^[A-Za-z0-9_-]{8,64}$/.test(enviado.inviteToken || '') &&
+           !('inviteUrl' in enviado), JSON.stringify(Object.keys(enviado)));
     }
     {
         const { sandbox, openCalls } = buildSandbox({
             secMethod: 'whatsapp',
             elements: { 'sec-phone': { value: '34600112233' }, 'sec-name': { value: 'Luis' }, 'sec-body': { value: 'Hola {nombre}' } },
         });
-        sandbox.window.saSendInviteWhatsApp();
+        await sandbox.window.saSendInviteWhatsApp();
         ok('15c · WhatsApp también manda el texto sustituido',
            openCalls.some(u => u.includes('Hola%20Luis') || u.includes('Hola+Luis')), openCalls[0]);
     }

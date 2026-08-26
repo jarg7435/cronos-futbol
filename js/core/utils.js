@@ -1242,6 +1242,124 @@ if (typeof window.cronosInviteUrl !== 'function') {
     };
 }
 
+// ════════════════════════════════════════════════════════════════════
+//  🎟️ SEC-INV (2026-08-26) · LA INVITACIÓN, CON TOKEN OPACO
+//
+//  `cronosInviteUrl` (arriba) mete el correo, el rol y el club EN CLARO en la
+//  URL. Eso queda en el historial del navegador, en los registros del servidor
+//  de correo y en la cabecera `Referer`. Y el enlace no caducaba ni se
+//  consumía: valía para siempre y para quien lo reenviara.
+//
+//  Aquí los datos se guardan en `invites/{token}` y el enlace pasa a ser
+//  `?invite=<token>`. El token es un id largo y aleatorio: **él es el
+//  secreto**, y por eso su regla permite `get` sin autenticación (quien abre
+//  la invitación aún no tiene cuenta) pero prohíbe `list`.
+//
+//  ⚠️ `cronosInviteUrl` SE QUEDA, y no es descuido: los enlaces ya enviados
+//  con la forma antigua tienen que seguir funcionando. El resolutor de
+//  invite-prefill.js acepta las dos.
+//
+//  ⚠️ NO SE LLAMA AL TECLEAR. Crear un documento por pulsación sería
+//  inaceptable: la Secretaría lo invoca al ENVIAR o al COPIAR, y cachea el
+//  resultado mientras no cambien correo, rol ni club.
+// ════════════════════════════════════════════════════════════════════
+if (typeof window.cronosCrearInvitacion !== 'function') {
+    // Días que vive una invitación. Ni tan corto que caduque antes de que la
+    // lean, ni tan largo que un enlace olvidado siga abriendo puertas.
+    window.CRONOS_INVITE_DIAS = 14;
+
+    window.cronosCrearInvitacion = async function (datos) {
+        const d = datos || {};
+        const fa = window._cronos_auth;
+        if (!fa || !fa.db) throw new Error('Firebase no está listo.');
+        const yo = (fa.auth && fa.auth.currentUser) || null;
+        if (!yo) throw new Error('Hay que haber iniciado sesión para invitar.');
+
+        const m = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
+
+        // 🔑 EL TOKEN SALE DE `crypto.getRandomValues`, no de Math.random ni de
+        //    la fecha: es lo único que protege la invitación, así que tiene que
+        //    ser imposible de adivinar o de enumerar por fuerza bruta.
+        //    32 caracteres hexadecimales = 128 bits.
+        let token;
+        if (window.crypto && window.crypto.getRandomValues) {
+            const b = new Uint8Array(16);
+            window.crypto.getRandomValues(b);
+            token = Array.from(b, x => x.toString(16).padStart(2, '0')).join('');
+        } else {
+            // Respaldo para un navegador sin WebCrypto. Es peor, y por eso se
+            // deja constancia: no se cambia el mecanismo en silencio.
+            console.warn('[invitación] sin crypto.getRandomValues: token más débil');
+            token = (Date.now().toString(36) + Math.random().toString(36).slice(2) +
+                     Math.random().toString(36).slice(2)).slice(0, 32);
+        }
+
+        const ahora = Date.now();
+        await m.setDoc(m.doc(fa.db, 'invites', token), {
+            v: 1,
+            email:     (d.email == null ? '' : String(d.email)).trim(),
+            role:      (d.role == null ? '' : String(d.role)).trim(),
+            clubName:  (d.clubName == null ? '' : String(d.clubName)).trim(),
+            clubId:    (d.clubId == null ? '' : String(d.clubId)).trim(),
+            createdBy: yo.uid,
+            createdAt: new Date(ahora).toISOString(),
+            // ⚠️ Timestamp de verdad, no una cadena: la regla lo compara con
+            //    `request.time` y una cadena haría fallar la comparación.
+            expiresAt: m.Timestamp.fromMillis(ahora + window.CRONOS_INVITE_DIAS * 86400000),
+            usedAt: null,
+            usedBy: null,
+        });
+
+        return { token: token, url: window.CRONOS_APP_URL + '/?invite=' + token };
+    };
+}
+
+// Lee una invitación por su token. Devuelve {email, role, clubName, clubId} o
+// null. NUNCA lanza: si el token no existe, caducó o ya se usó, la regla
+// deniega la lectura y aquí se devuelve null — el alta sigue, sólo que a mano.
+if (typeof window.cronosLeerInvitacion !== 'function') {
+    window.cronosLeerInvitacion = async function (token) {
+        try {
+            const t = String(token || '').trim();
+            if (!t || !/^[a-z0-9_-]{8,64}$/i.test(t)) return null;
+            const fa = window._cronos_auth;
+            if (!fa || !fa.db) return null;
+            const m = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
+            const snap = await m.getDoc(m.doc(fa.db, 'invites', t));
+            if (!snap.exists()) return null;
+            const d = snap.data() || {};
+            return { token: t, email: d.email || '', role: d.role || '',
+                     clubName: d.clubName || '', clubId: d.clubId || '' };
+        } catch (e) {
+            if (window._CRONOS_DEBUG) console.warn('[invitación] no se pudo leer:', e && e.message);
+            return null;
+        }
+    };
+}
+
+// Marca la invitación como consumida. Se llama DESPUÉS del alta, cuando ya hay
+// sesión — antes no se puede, porque la regla exige que `usedBy` sea el uid de
+// quien escribe. Un fallo aquí no puede tumbar un alta ya hecha.
+if (typeof window.cronosConsumirInvitacion !== 'function') {
+    window.cronosConsumirInvitacion = async function (token) {
+        try {
+            const t = String(token || '').trim();
+            if (!t) return false;
+            const fa = window._cronos_auth;
+            const yo = fa && fa.auth && fa.auth.currentUser;
+            if (!fa || !fa.db || !yo) return false;
+            const m = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
+            await m.updateDoc(m.doc(fa.db, 'invites', t), {
+                usedAt: new Date().toISOString(), usedBy: yo.uid,
+            });
+            return true;
+        } catch (e) {
+            if (window._CRONOS_DEBUG) console.warn('[invitación] no se pudo consumir:', e && e.message);
+            return false;
+        }
+    };
+}
+
 // ── Resolutor de grupo de categoría para Semáforo e Informes ───
 // Grupos: 'f7', 'infantil_a', 'infantil_b', 'infantil_c', 'cadete_a', 'cadete_b', 'cadete_c', 'juvenil', 'regional'
 if (typeof window.getCategoryGroupKey !== 'function') {
