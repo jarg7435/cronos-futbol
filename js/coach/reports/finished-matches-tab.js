@@ -51,11 +51,10 @@
 //   · `users` → por club, y sólo si hay clubId.
 //  Las dos eran además fugas: se descargaba el censo y los partidos de todos
 //  los clubes para quedarse con los propios.
-//  ⚠️ QUEDA `cronos_player_reports` (más abajo), que sigue sin where. Su regla
-//  ES dependiente del documento, así que esa consulta probablemente ya se
-//  deniega hoy y muere en su `catch` — conviene comprobar si los informes
-//  colectivos están llegando de verdad. No se toca aquí: es un defecto
-//  preexistente y merece su propia medición.
+//  ✅ Y `cronos_player_reports` desde v635. Aquella nota decía «probablemente
+//  ya se deniega y muere en su catch». Se midió contra producción y era
+//  CIERTO: la colección entera daba 403 y los informes colectivos llevaban
+//  tiempo sin cargarse, sin ningún error a la vista.
 //
 //  ⚠️ RAREZAS PREEXISTENTES, DELIBERADAMENTE NO CORREGIDAS:
 //   · El objeto que se guarda en finishedMap para los informes colectivos
@@ -136,14 +135,60 @@ async function _renderFinishedMatchesTab() {
             console.warn('[FinishedMatches] Error leyendo live_matches:', e1);
         }
 
-        // 2. Cargar desde cronos_player_reports (informes colectivos del staff)
+        // ══════════════════════════════════════════════════════════════
+        //  🔴 LOS INFORMES COLECTIVOS NO ESTABAN CARGANDO (v635)
+        //
+        //  Aqui habia `getDocs(collection(db,'cronos_player_reports'))` — la
+        //  coleccion ENTERA— y el filtro se aplicaba despues, en el navegador.
+        //
+        //  🔑 PERO LA REGLA DE LECTURA DE ESA COLECCION ES ENTERA DEPENDIENTE
+        //  DEL DOCUMENTO: siete ramas, todas sobre `resource.data`. Firestore
+        //  deniega cualquier consulta que no pueda demostrar segura de
+        //  antemano, asi que esa lectura moria ENTERA con un 403.
+        //
+        //  🚨 Y NO SE VEIA: el `catch` de abajo solo hace `console.warn`. La
+        //  pestaña se pintaba «bien», sin informes y sin error.
+        //
+        //  Medido lanzando la consulta DE VERDAD contra produccion con un
+        //  entrenador real: coleccion entera -> 403; acotada por `clubId` -> 200
+        //  y SI ve el colectivo; por `coachUid` -> 200 tambien. El `:test` de
+        //  la Rules API no habria servido: evalua documentos sueltos, no la
+        //  legalidad de una CONSULTA.
+        //  Guard del codigo: scripts/test_finished_matches_module.js (2g2-2g6).
+        //
+        //  Mismo patron que `live_matches` aqui arriba: las MISMAS dos
+        //  condiciones que evaluaba el filtro local —el club propio y lo que
+        //  uno mismo firmo como coach—, en dos consultas fusionadas por id,
+        //  porque Firestore no tiene OR entre campos distintos.
+        //
+        //  ⚠️ `!clubId` YA NO SIGNIFICA «traelo todo». Antes esa rama abria la
+        //  coleccion entera; hoy es justo lo que la regla rechaza. Sin clubId
+        //  se pregunta solo por `coachUid`.
+        // ══════════════════════════════════════════════════════════════
         try {
-            const snapReports = await getDocs(collection(db, 'cronos_player_reports'));
-            snapReports.forEach(d => {
+            const condRep = [];
+            if (clubId)  condRep.push(where('clubId', '==', clubId));
+            if (me?.uid) condRep.push(where('coachUid', '==', me.uid));
+
+            const vistos = new Set();
+            const docsInformes = [];
+            for (const cond of condRep) {
+                // ⚠️ Una consulta que falle no puede tumbar a la otra.
+                try {
+                    const snap = await getDocs(query(collection(db, 'cronos_player_reports'), cond));
+                    snap.forEach(d => { if (!vistos.has(d.id)) { vistos.add(d.id); docsInformes.push(d); } });
+                } catch (eC) {
+                    console.warn('[FinishedMatches] cronos_player_reports (una condición):', eC && eC.message);
+                }
+            }
+
+            docsInformes.forEach(d => {
                 const data = d.data() || {};
-                const isMyClub = !clubId || data.clubId === clubId || data.coachUid === me?.uid;
+                // El club ya lo garantiza la consulta; queda el filtro que NO
+                // se puede expresar como query: «es colectivo» son tres campos
+                // alternativos, y un OR entre campos distintos no existe.
                 const isCollective = data.staffReport === true || data.type === 'collective_match_report' || data.reportType === 'collective';
-                if (isMyClub && isCollective) {
+                if (isCollective) {
                     const idKey = data.liveMatchId || d.id;
                     if (!finishedMap.has(idKey)) {
                         finishedMap.set(idKey, {

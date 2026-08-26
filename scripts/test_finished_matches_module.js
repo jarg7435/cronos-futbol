@@ -116,6 +116,7 @@ function buildSandbox({
     const store = { live_matches: live, cronos_player_reports: reports, users };
     const written = [];
     const readCols = [];
+    const consultas = [];
     const container = { id: 'staff-dashboard-content', innerHTML: '' };
     const els = { 'staff-dashboard-content': container };
 
@@ -135,7 +136,14 @@ function buildSandbox({
             if (ref.__col === 'live_matches' && failLive) throw new Error('live falló');
             if (ref.__col === 'cronos_player_reports' && failReports) throw new Error('reports falló');
             if (ref.__col === 'users' && failUsers) throw new Error('users falló');
+            // 🔑 v635 · Se apunta la consulta CON SUS CONDICIONES, no sólo la
+            //    colección. Sin esto no hay forma de distinguir «pregunta por
+            //    su club» de «se descarga la colección entera», que es
+            //    exactamente el defecto que tuvo escondidos los informes
+            //    colectivos: la regla denegaba la consulta sin filtro y el
+            //    `catch` sólo hacía console.warn.
             readCols.push(ref.__col);
+            consultas.push({ col: ref.__col, conds: (ref.__conds || []).map(w => w.campo).sort() });
             const st = store[ref.__col] || {};
             let rows = Object.keys(st).map(id => [id, st[id]]);
             if (ref.__conds && ref.__conds.length) {
@@ -162,7 +170,7 @@ function buildSandbox({
     vm.runInContext(fs.readFileSync(path.join(ROOT, 'js/match/immutability.js'), 'utf8'), sandbox);
     vm.runInContext(BLOCK, sandbox);
 
-    return { g: sandbox, w: sandbox.window, store, written, readCols, container };
+    return { g: sandbox, w: sandbox.window, store, written, readCols, consultas, container };
 }
 
 const idxOf = (s, sub) => s.indexOf(sub);
@@ -318,6 +326,69 @@ function walk(dir, out) {
         ok('2g · acepta colectivos por staffReport, type o reportType',
             h.includes('PorStaffReport') && h.includes('PorType') && h.includes('PorReportType'));
         ok('2h · descarta los informes individuales', !h.includes('Individual'));
+    }
+    // ═══════════════════════════════════════════════════════════════════
+    //  🔴 v635 · LOS INFORMES COLECTIVOS NO CARGABAN, Y NADIE LO VEÍA
+    //
+    //  El módulo pedía `getDocs(collection('cronos_player_reports'))` sin
+    //  `where`. La regla de lectura de esa colección es ENTERA dependiente del
+    //  documento (7 ramas sobre `resource.data`), así que Firestore denegaba la
+    //  consulta COMPLETA con un 403 — y el `catch` sólo hacía `console.warn`.
+    //  La pestaña se pintaba «bien», sin informes y sin error.
+    //
+    //  Medido contra producción con un entrenador real
+    //  (prueba_informes_colectivos.js): colección entera → 403; acotada por
+    //  `clubId` → 200 y sí ve el colectivo.
+    // ═══════════════════════════════════════════════════════════════════
+    {
+        const { g, consultas } = buildSandbox({
+            reports: { R1: collective({ homeName: 'X', createdAt: 1 }) },
+        });
+        await g._renderFinishedMatchesTab();
+        const deInformes = consultas.filter(c => c.col === 'cronos_player_reports');
+        const sinFiltro = deInformes.filter(c => c.conds.length === 0);
+
+        ok('2g2 · 🔑🔑 NUNCA se pide `cronos_player_reports` sin condiciones',
+            deInformes.length > 0 && sinFiltro.length === 0,
+            { consultas: deInformes });
+
+        ok('2g3 · se pregunta por clubId y por coachUid (las dos vías de la regla)',
+            deInformes.some(c => c.conds.includes('clubId')) &&
+            deInformes.some(c => c.conds.includes('coachUid')),
+            { consultas: deInformes });
+    }
+    {
+        // Un informe que uno mismo firmó, aunque lleve OTRO clubId, tiene que
+        // seguir apareciendo: es la segunda condición del filtro original.
+        const { g, container } = buildSandbox({
+            reports: {
+                R1: { staffReport: true, clubId: 'club1',  homeName: 'DeMiClub',    createdAt: 3 },
+                R2: { staffReport: true, clubId: 'otro',   coachUid: 'u1', homeName: 'MioPorCoach', createdAt: 2 },
+                R3: { staffReport: true, clubId: 'ajeno',  coachUid: 'zz', homeName: 'DeOtro',      createdAt: 1 },
+            },
+        });
+        await g._renderFinishedMatchesTab();
+        const h = container.innerHTML;
+        ok('2g4 · llegan los del club propio y los firmados por uno mismo',
+            h.includes('DeMiClub') && h.includes('MioPorCoach'));
+        ok('2g5 · ⚠️ y NO los de otro club', !h.includes('DeOtro'));
+    }
+    {
+        // ⚠️ CAMBIO DE COMPORTAMIENTO DELIBERADO, igual que en live_matches:
+        //    sin clubId, `!clubId` significaba «tráelo todo» — la fuga que la
+        //    regla ya no admite. Quedan sólo los que uno firmó.
+        const { g, container, consultas } = buildSandbox({
+            me: { uid: 'u1', role: 'director', _activeRole: 'director' },   // sin clubId
+            reports: {
+                R1: { staffReport: true, clubId: 'cualquiera', homeName: 'DeOtroClub',  createdAt: 1 },
+                R2: { staffReport: true, clubId: 'cualquiera', coachUid: 'u1', homeName: 'MioPorCoach', createdAt: 2 },
+            },
+        });
+        await g._renderFinishedMatchesTab();
+        const h = container.innerHTML;
+        ok('2g6 · sin clubId sólo quedan los propios, y NO se abre la colección',
+            h.includes('MioPorCoach') && !h.includes('DeOtroClub') &&
+            consultas.filter(c => c.col === 'cronos_player_reports' && c.conds.length === 0).length === 0);
     }
     {
         // mismo partido en las dos colecciones: live_matches gana
