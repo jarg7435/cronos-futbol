@@ -353,8 +353,15 @@ console.log('\n7) ♻️ Consumir: un solo sitio, y que no pueda tumbar el alta'
        /fa\.onAuthStateChanged\(fa\.auth, function/.test(PREF),
        'auth.js escribe el doc de usuario en 5 ramas y varias salen con return');
 
+    // ⚠️ Antes esto era /onAuthStateChanged\n    \};/ — atado al formato exacto.
+    //    Un cambio de finales de línea (CRLF) lo puso ROJO diciendo «no está
+    //    expuesto», que es mentira y además apunta al sitio equivocado: el
+    //    mismo defecto que el `indexOf` sin comprobar de v634. Ahora se mira si
+    //    el nombre está DENTRO del objeto que se publica, sin depender del
+    //    formato.
+    const _exp = (FINIT.match(/window\._cronos_auth = \{[\s\S]*?\n\s*\};/) || [''])[0];
     ok('7b · 🔴 y `onAuthStateChanged` está EXPUESTO en _cronos_auth',
-       /onAuthStateChanged\n    \};/.test(FINIT),
+       _exp.length > 20 && /\bonAuthStateChanged\b/.test(_exp),
        'sin esto el vigilante reintenta 60 veces y se rinde EN SILENCIO');
 
     ok('7c · se consume una sola vez', /_yaConsumida = true/.test(PREF));

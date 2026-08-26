@@ -5,15 +5,15 @@
 //  entraba en throttle de 24 h). Se reactiva, pero con una condicion que es
 //  TODO el contenido de este guard:
 //
-//  🔴 LA CLAVE DE reCAPTCHA SOLO TIENE REGISTRADO EL DOMINIO DE PRODUCCION.
-//  Medido contra Google: `cronos-futbol-test.web.app` devuelve exactamente la
-//  misma respuesta que un dominio inventado — 1506 bytes de pagina de error,
-//  frente a los ~39 KB del anchor real. reCAPTCHA no lo conoce.
+//  🔑 SOLO SE ARRANCA EN DOMINIOS REGISTRADOS EN LA CLAVE DE reCAPTCHA.
+//  Se comprueba sondeando su `anchor` con ese origen: un dominio desconocido
+//  devuelve ~1,5 KB de pagina de error; uno registrado, ~39 KB. Asi se
+//  verifico `cronos-futbol-test.web.app` el 26-08 ANTES de meterlo en la lista.
 //
-//  🔑 POR ESO NO SE ARRANCA EN TODAS PARTES. En un dominio no registrado el
-//  intercambio falla y VUELVE A DISPARAR EL THROTTLE DE 24 H, que es el
-//  agujero exacto de la v227. Y el autor prueba testeo y produccion en el
-//  MISMO navegador: un throttle provocado en testeo le estropearia produccion.
+//  🔴 EL ORDEN IMPORTA Y AL REVES NO AVISA NADIE: en un dominio no registrado
+//  el intercambio falla y DISPARA UN THROTTLE DE 24 H, el agujero exacto de la
+//  v227. Y testeo y produccion se prueban en el MISMO navegador, asi que un
+//  throttle provocado en testeo estropea la sesion de produccion.
 //
 //  ⚠️ ACTIVAR EL SDK NO BASTA: App Check solo defiende cuando la
 //  OBLIGATORIEDAD esta encendida por servicio en Firebase Console. Este guard
@@ -76,12 +76,33 @@ console.log('\n2) 🔴 Sólo donde reCAPTCHA nos conoce');
     ok('2b · producción está dentro',
        /APPCHECK_HOSTS = \[[^\]]*cronos-futbol-app\.web\.app/.test(INIT));
 
-    // 🚨 ESTA ES LA ASERCIÓN QUE IMPORTA. Meter testeo aquí SIN registrarlo
-    //    antes en reCAPTCHA reintroduce el throttle de 24 h de la v227.
-    ok('2c · 🚨 TESTEO **NO** está: su dominio no está registrado en la clave',
-       !/APPCHECK_HOSTS = \[[^\]]*cronos-futbol-test/.test(INIT),
-       'si alguien lo añade sin darlo de alta en www.google.com/recaptcha/admin, ' +
-       'vuelve el throttle de 24 h — y machaca la sesión de producción del mismo navegador');
+    // ⚠️ Hasta el 26-08 aquí se afirmaba lo contrario: que testeo **NO** podía
+    //    estar, porque su dominio no estaba dado de alta en la clave. Se
+    //    registró y se verificó sondeando el `anchor` de reCAPTCHA (un dominio
+    //    desconocido devuelve ~1,5 KB; uno registrado, ~39 KB), así que esa
+    //    aserción se SUSTITUYE — no se borra ni se afloja.
+    ok('2c · testeo ya está en la lista (dominio registrado el 26-08)',
+       /APPCHECK_HOSTS = \[[\s\S]{0,200}cronos-futbol-test\.web\.app/.test(INIT));
+
+    // 🚨 Y ESTE ES EL RIESGO QUE SUSTITUYE AL ANTERIOR: que las dos listas se
+    //    separen. Son DOS ficheros a propósito (el visor es autónomo), así que
+    //    es fácil tocar una y olvidar la otra — y el síntoma sería el visor
+    //    quedándose fuera en pleno partido, que es justo lo que se vino a
+    //    evitar. Se comparan los hosts, no el texto.
+    const _hosts = (src, re) => {
+        const m = src.match(re);
+        return m ? (m[1].match(/'[^']+'/g) || []).map(s => s.slice(1, -1)).sort() : null;
+    };
+    const hInit = _hosts(INIT, /APPCHECK_HOSTS = \[([\s\S]*?)\]/);
+    const hLive = _hosts(LIVE, /const HOSTS = \[([\s\S]*?)\]/);
+    ok('2c2 · 🔑🔑 la lista de la app y la del VISOR son IDÉNTICAS',
+       !!hInit && !!hLive && JSON.stringify(hInit) === JSON.stringify(hLive),
+       'app: ' + JSON.stringify(hInit) + ' · visor: ' + JSON.stringify(hLive));
+
+    ok('2c3 · ⚠️ y ningún host se cuela sin estar registrado en reCAPTCHA',
+       !!hInit && hInit.every(h => /^cronos-futbol-(app|test)\.(web\.app|firebaseapp\.com)$/.test(h)),
+       'añadir uno sin darlo de alta en www.google.com/recaptcha/admin devuelve ' +
+       'el throttle de 24 h — y machaca la sesión de producción del mismo navegador');
 
     ok('2d · en un dominio no registrado ni se intenta, y se explica por qué',
        /App Check inactivo en[\s\S]{0,120}no está registrado/.test(INIT),
@@ -91,8 +112,12 @@ console.log('\n2) 🔴 Sólo donde reCAPTCHA nos conoce');
        /if \(_local\) self\.FIREBASE_APPCHECK_DEBUG_TOKEN = true;/.test(INIT),
        'un debug token suelto en producción anula App Check por completo');
 
-    ok('2f · queda escrito cómo añadir testeo el día que se registre',
-       /PARA AÑADIR TESTEO/.test(INIT));
+    // Antes decía «cómo añadir TESTEO»; ya está añadido, así que la nota se
+    // generalizó a cualquier host. La intención es la misma: que el
+    // procedimiento —y sobre todo el ORDEN— estén escritos donde se toca.
+    ok('2f · queda escrito el procedimiento para añadir un host, y su ORDEN',
+       /ANTES DE AÑADIR UN HOST A LA LISTA/.test(INIT) &&
+       /recaptcha\/admin/.test(INIT));
 }
 
 // ════════════════════════════════════════════════════════════════════
@@ -107,9 +132,10 @@ console.log('\n3) 🔑 El VISOR EN VIVO también, que arranca su propia app');
     ok('3b · con la misma clave',
        /6Ld5cEQtAAAAAA0OCimDVsOORapoEKfsVmJmGI23/.test(LIVE));
 
-    ok('3c · y la MISMA restricción de dominios',
-       /const HOSTS = \[[^\]]*cronos-futbol-app\.web\.app/.test(LIVE) &&
-       !/const HOSTS = \[[^\]]*cronos-futbol-test/.test(LIVE));
+    // La igualdad de las dos listas se comprueba en 2c2; aquí sólo que el
+    // visor tenga la suya y no se quede con los dominios cableados a mano.
+    ok('3c · y su propia lista de dominios',
+       /const HOSTS = \[[\s\S]{0,200}cronos-futbol-app\.web\.app/.test(LIVE));
 
     ok('3d · ⚠️ tampoco puede tumbar el visor',
        /catch \(e\) \{[\s\S]{0,200}Visor: App Check no arrancó/.test(LIVE));

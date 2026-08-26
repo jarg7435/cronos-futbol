@@ -86,24 +86,23 @@
     //
     //  Estuvo apagado desde la v227: el intercambio de token daba 403 y
     //  entraba en throttle de 24 h. Aquella nota dejaba tres cosas por
-    //  comprobar; MEDIDAS hoy contra los servidores de Google:
+    //  comprobar; MEDIDAS contra los servidores de Google: el secreto esta
+    //  puesto en la consola, la API firebaseappcheck esta ENABLED y la clave
+    //  de sitio es valida y v3/invisible.
     //
-    //    · el secreto SÍ está puesto en la consola (siteSecretSet=true)
-    //    · la API firebaseappcheck está ENABLED
-    //    · la clave de sitio es válida y v3/invisible
-    //    · 🔴 …pero SOLO tiene registrado `cronos-futbol-app.web.app`.
-    //      `cronos-futbol-test.web.app` da la MISMA respuesta que un dominio
-    //      inventado: reCAPTCHA no lo conoce.
+    //  🔑🔑 SOLO SE ARRANCA EN DOMINIOS REGISTRADOS EN LA CLAVE DE reCAPTCHA.
+    //  En uno que no lo este, el intercambio falla y **dispara un throttle de
+    //  24 h** — el agujero exacto de la v227. Y testeo y produccion se prueban
+    //  en el MISMO navegador, asi que un throttle provocado en testeo
+    //  estropearia la sesion de produccion.
     //
-    //  🔑 POR ESO NO SE ARRANCA EN TODAS PARTES. En un dominio no registrado
-    //  el intercambio falla y **vuelve a disparar el throttle de 24 h** — el
-    //  mismo agujero de la v227. Y como él prueba en TESTEO y produccion en
-    //  el MISMO navegador, un throttle provocado en testeo le estropearia la
-    //  sesion de produccion. Se arranca solo donde reCAPTCHA nos conoce.
-    //
-    //  ➕ PARA AÑADIR TESTEO: registrar `cronos-futbol-test.web.app` en
-    //  https://www.google.com/recaptcha/admin (la clave de abajo) y meter el
-    //  host en APPCHECK_HOSTS. Es lo unico que hace falta.
+    //  ⚠️⚠️ POR ESO, ANTES DE AÑADIR UN HOST A LA LISTA: registrarlo en
+    //  https://www.google.com/recaptcha/admin (la clave de abajo). El orden
+    //  importa, y al reves no avisa nadie. Se comprueba de verdad sondeando
+    //  el `anchor` de reCAPTCHA con ese origen: un dominio desconocido
+    //  devuelve ~1,5 KB de pagina de error; uno registrado, ~39 KB.
+    //  (`cronos-futbol-test.web.app` se dio de alta el 2026-08-26 y se
+    //  verifico asi antes de meterlo aqui.)
     //
     //  ⚠️ ACTIVAR EL SDK NO BASTA. App Check solo defiende cuando la
     //  OBLIGATORIEDAD esta encendida por servicio en Firebase Console
@@ -111,7 +110,8 @@
     //  clientes fuera: consultar alli el estado antes de tocarlo.
     // ══════════════════════════════════════════════════════════════
     const _RECAPTCHA_SITE_KEY = '6Ld5cEQtAAAAAA0OCimDVsOORapoEKfsVmJmGI23';
-    const APPCHECK_HOSTS = ['cronos-futbol-app.web.app', 'cronos-futbol-app.firebaseapp.com'];
+    const APPCHECK_HOSTS = ['cronos-futbol-app.web.app', 'cronos-futbol-app.firebaseapp.com',
+                            'cronos-futbol-test.web.app'];
     const _host  = (typeof location !== 'undefined' && location.hostname) || '';
     const _local = _host === 'localhost' || _host === '127.0.0.1';
 
