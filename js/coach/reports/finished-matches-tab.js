@@ -41,11 +41,21 @@
 //  ⚠️ ESCRIBE EN FIRESTORE DURANTE EL RENDER: el "enriquecimiento retroactivo"
 //  hace updateDoc sobre live_matches o cronos_player_reports para rellenar
 //  category/subcategory ausentes, fire-and-forget y con el error silenciado.
-//  No es destructivo, pero no es un render de sólo lectura. Además lee TRES
-//  colecciones enteras sin where (live_matches, cronos_player_reports y, sólo
-//  si hay partidos sin categoría, users) y filtra en cliente: el alcance real
-//  lo impone firestore.rules. No convertirlo a queries con where sin revisar
-//  que la semántica del filtrado cliente se mantiene.
+//  No es destructivo, pero no es un render de sólo lectura.
+//
+//  🟠 ACTUALIZADO (SEC-A1/A2, 2026-08-26). Esta nota decía que se leían TRES
+//  colecciones enteras sin where y advertía de no convertirlas a queries sin
+//  revisar la semántica. Dos ya están convertidas, y revisadas:
+//   · `live_matches` → por club y por creador (las mismas dos condiciones que
+//     evaluaba el filtro local; lo fija test_finished_matches_module 2e).
+//   · `users` → por club, y sólo si hay clubId.
+//  Las dos eran además fugas: se descargaba el censo y los partidos de todos
+//  los clubes para quedarse con los propios.
+//  ⚠️ QUEDA `cronos_player_reports` (más abajo), que sigue sin where. Su regla
+//  ES dependiente del documento, así que esa consulta probablemente ya se
+//  deniega hoy y muere en su `catch` — conviene comprobar si los informes
+//  colectivos están llegando de verdad. No se toca aquí: es un defecto
+//  preexistente y merece su propia medición.
 //
 //  ⚠️ RAREZAS PREEXISTENTES, DELIBERADAMENTE NO CORREGIDAS:
 //   · El objeto que se guarda en finishedMap para los informes colectivos
@@ -69,7 +79,11 @@ async function _renderFinishedMatchesTab() {
     const clubId = me?.clubId;
 
     try {
-        const { db, collection, getDocs } = await _sdFS();
+        // ⚠️ `query`/`where` se traen AQUI, con los demas. Estuvieron un rato
+        //    pedidos dentro del bloque de live_matches, y el bloque de `users`
+        //    —que tambien los necesita desde SEC-A1— los veia `undefined`:
+        //    reventaba y el catch se lo comia en silencio.
+        const { db, collection, getDocs, query, where } = await _sdFS();
         if (!db) {
             container.innerHTML = '<p style="color:#7d8590;padding:2rem;">Error de conexión.</p>';
             return;
@@ -95,7 +109,6 @@ async function _renderFinishedMatchesTab() {
         //  paso y la lista se completa con los informes de mas abajo.
         // ══════════════════════════════════════════════════════════════
         try {
-            const { query, where } = await _sdFS();
             // Las MISMAS dos condiciones que evaluaba el filtro local: el club
             // propio y los partidos que creó uno mismo (que pueden llevar otro
             // clubId). Firestore no tiene OR entre campos distintos, así que
@@ -197,7 +210,16 @@ async function _renderFinishedMatchesTab() {
             // Cargar perfiles de usuarios del club si hay partidos sin categoría
             const unassignedMatches = finishedMatches.filter(m => !m.category);
             if (unassignedMatches.length > 0) {
-                const usersSnap = await getDocs(collection(db, 'users')).catch(() => null);
+                // 🟠 SEC-A1 (2026-08-26) · ACOTADO AL CLUB. Antes se
+                // descargaba la coleccion `users` ENTERA —el censo de la
+                // plataforma— solo para resolver la categoria de unos cuantos
+                // entrenadores. Con `users` ya no publico, esa consulta se
+                // deniega; y aunque no lo estuviera, sobraba. Sin clubId no
+                // hay a quien preguntar y se salta el paso.
+                const usersSnap = clubId ? await getDocs(query(
+                    collection(db, 'users'),
+                    where('clubId', '==', clubId)
+                )).catch(() => null) : null;
                 if (usersSnap) {
                     usersSnap.forEach(ud => {
                         const uData = ud.data() || {};

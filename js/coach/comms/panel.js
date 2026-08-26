@@ -1530,15 +1530,29 @@ async function _loadUnifiedContactList(tabId) {
                         // 🔑 El documento del club puede traer SÓLO adminEmail.
                         // Sin resolverlo a un uid no hay con quién abrir hilo, y
                         // la pestaña se quedaba vacía teniendo el dato delante.
-                        // Consulta de un solo campo: siempre indexada.
+                        //
+                        // 🟠 SEC-A1 (2026-08-26) · SE AÑADE EL `clubId`. Desde
+                        // que `users` deja de ser de lectura pública, una
+                        // consulta que sólo filtra por correo NO es demostrable
+                        // para Firestore y se deniega ENTERA — la pestaña se
+                        // quedaría vacía otra vez, y esta vez sin dato que
+                        // enseñar. Con el club delante, la regla la reconoce.
+                        // Semánticamente es lo mismo: el administrador de ESTE
+                        // club, no cualquiera que use ese correo.
+                        // ⚠️ Consulta de DOS campos: necesita índice compuesto
+                        // (firestore.indexes.json). Sin él, Firestore responde
+                        // "The query requires an index" y el catch se la come.
                         if (!adminUid && !ficha && adminEmail) {
                             try {
                                 const byEmail = await getDocs(query(
                                     collection(db, 'users'),
+                                    where('clubId', '==', clubId),
                                     where('email', '==', adminEmail)
                                 ));
                                 byEmail.forEach(d => { if (!ficha) ficha = { id: d.id, ...d.data() }; });
-                            } catch (_) {}
+                            } catch (e) {
+                                console.warn('[comms] admin del club por correo:', e && e.message);
+                            }
                         }
                         const uid = adminUid || (ficha && (ficha.uid || ficha.id)) || '';
                         // Vía _addAdmin para que el filtro de SuperAdmin se

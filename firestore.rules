@@ -438,7 +438,63 @@ service cloud.firestore {
     // SEC-011: Prevent self-role escalation
     // ============================================================
     match /users/{userId} {
-      allow read: if isAuth();
+      // ══════════════════════════════════════════════════════════════════
+      //  🟠 SEC-A1 (auditoria 2026-08-26) · EL CENSO DEJA DE SER PUBLICO
+      //
+      //  Antes: `allow read: if isAuth()`. CUALQUIER usuario con una cuenta
+      //  leia el documento de CUALQUIER persona de CUALQUIER club: correo,
+      //  nombre, rol, club y el `allRoles` entero. Contradice de frente lo que
+      //  promete privacy.html — "cada usuario solo accede a los datos de su
+      //  club"— y era lo que convertia una cuenta huerfana en un lector de
+      //  todo el censo.
+      //
+      //  🔑 LAS CINCO RAMAS SON LAS CINCO CONSULTAS REALES DE LA APP, medidas
+      //  una por una antes de escribir esto. En Firestore una consulta se
+      //  DENIEGA ENTERA si la regla no puede demostrar que todo lo que
+      //  devolveria es legible, asi que cada rama tiene que casar con un
+      //  `where` de verdad o la pantalla se queda muda:
+      //
+      //   1. UNO MISMO — `getDoc(users/{miUid})`, en media aplicacion.
+      //   2. EL SUPERADMIN — sus paneles consultan por `status`, `email` y
+      //      `uid` sin filtro de club; isSuperAdmin() no depende del documento,
+      //      asi que la consulta es demostrable.
+      //   3. TUS PROPIOS DOCUMENTOS POR CORREO — el caso multi-rol: la misma
+      //      persona con el mismo correo y clubId distinto (comms/panel.js:1178
+      //      y reports-tab.js:182). Solo puedes leer los que llevan TU correo.
+      //   4. LA GENTE DE TU ENTIDAD — las consultas `where('clubId','==',cid)`.
+      //   5. EL SUPERADMIN COMO CONTACTO — `where('role','==','superadmin')`
+      //      (comms/panel.js:1772). Un administrador de club necesita abrir
+      //      canal con el soporte de la plataforma, y ese es inherentemente
+      //      cross-club: ninguna rama por club puede cubrirlo. Expone su
+      //      correo, que privacy.html ya declara como el contacto habilitado.
+      //
+      //  ⚠️ NO SE PUEDE PROBAR CON EL `:test` DE LA RULES API: ese metodo
+      //  evalua operaciones sobre UN documento, no la legalidad de una
+      //  CONSULTA. Esto se verifico lanzando las consultas de verdad contra
+      //  produccion con el token de un usuario normal.
+      // ══════════════════════════════════════════════════════════════════
+      allow read: if isAuth() && (
+        request.auth.uid == userId ||
+        isSuperAdmin() ||
+        (('email' in request.auth.token) &&
+         resource.data.get('email', null) == request.auth.token.email) ||
+        sameClub(resource.data.get('clubId', null)) ||
+        sameClubAsDoc(resource.data.get('clubId', null)) ||
+        userDocClubId(resource.data.get('clubId', null)) ||
+        // 🔑 EL ENTE INDIVIDUAL CONSULTA POR OTRO CAMPO. Su panel busca a su
+        //    gente con `where('individualEntityId','==',ente)` y
+        //    `where('individualOwnerId','==',ente)`, no por `clubId`
+        //    (admin/individual/panel.js:339-377). Sin estas dos ramas la
+        //    consulta no es demostrable y el panel del ente se queda VACIO —
+        //    lo detecto un segundo barrido, no el primero.
+        sameClub(resource.data.get('individualEntityId', null)) ||
+        sameClubAsDoc(resource.data.get('individualEntityId', null)) ||
+        userDocClubId(resource.data.get('individualEntityId', null)) ||
+        sameClub(resource.data.get('individualOwnerId', null)) ||
+        sameClubAsDoc(resource.data.get('individualOwnerId', null)) ||
+        userDocClubId(resource.data.get('individualOwnerId', null)) ||
+        resource.data.get('role', '') == 'superadmin'
+      );
       // ⚠️ SEC-C1 (create) — CERRADO 2026-07-29. Antes esta regla NO restringia
       // NINGUN campo, asi que un usuario recien registrado podia crear SU PROPIO
       // documento con `isAuthorized: true` y `status: 'active'` y, con eso,

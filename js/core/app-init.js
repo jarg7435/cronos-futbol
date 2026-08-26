@@ -1051,7 +1051,16 @@ async function showFinishedMatches() {
             }
             const unassignedMatches = matches.filter(m => !m.category);
             if (unassignedMatches.length > 0) {
-                const usersSnap = await getDocs(collection(_db, 'users')).catch(() => null);
+                // 🟠 SEC-A1 (2026-08-26) · ACOTADO AL CLUB. Antes se
+                // descargaba la coleccion `users` ENTERA —el censo de la
+                // plataforma— solo para resolver la categoria de unos cuantos
+                // entrenadores. Con `users` ya no publico, esa consulta se
+                // deniega; y aunque no lo estuviera, sobraba. Sin clubId no
+                // hay a quien preguntar y se salta el paso.
+                const usersSnap = clubId ? await getDocs(query(
+                    collection(_db, 'users'),
+                    where('clubId', '==', clubId)
+                )).catch(() => null) : null;
                 if (usersSnap) {
                     usersSnap.forEach(ud => {
                         const uData = ud.data() || {};

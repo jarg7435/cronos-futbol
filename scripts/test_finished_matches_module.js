@@ -197,8 +197,8 @@ function walk(dir, out) {
     // ahora `query`/`where` —el servidor filtra, no el navegador— y eso anade
     // una tercera llamada. Lo que 1b protege es que NO se multipliquen las
     // aperturas de Firestore, asi que se fija el numero nuevo.
-    ok('1b · usa _sdFS() tres veces (la tercera trae query/where de SEC-A2)',
-        (BLOCK.match(/await _sdFS\(\)/g) || []).length === 3,
+    ok('1b · usa _sdFS() dos veces',
+        (BLOCK.match(/await _sdFS\(\)/g) || []).length === 2,
         (BLOCK.match(/await _sdFS\(\)/g) || []).length);
     {
         // A diferencia de los pasos 1 y 2, aquí el fan-in externo NO es cero:
@@ -383,7 +383,7 @@ function walk(dir, out) {
     {
         const { g, written, readCols } = buildSandbox({
             live: { L1: finished({ createdBy: 'coach9', homeName: 'SinCat', createdAt: 1 }) },
-            users: { coach9: { category: 'Cadete', subcategory: 'B', email: 'c9@x.com' } },
+            users: { coach9: { clubId: 'club1', category: 'Cadete', subcategory: 'B', email: 'c9@x.com' } },
         });
         await g._renderFinishedMatchesTab();
         ok('3b · con partidos sin categoría, lee users', readCols.includes('users'), readCols);
@@ -401,7 +401,7 @@ function walk(dir, out) {
     {
         const { g, written } = buildSandbox({
             reports: { R1: collective({ coachUid: 'coach9', homeName: 'SinCat', createdAt: 1 }) },
-            users: { coach9: { category: 'Juvenil', subcategory: 'A' } },
+            users: { coach9: { clubId: 'club1', category: 'Juvenil', subcategory: 'A' } },
         });
         await g._renderFinishedMatchesTab();
         ok('3d · para informes escribe en cronos_player_reports usando docId',
@@ -411,7 +411,7 @@ function walk(dir, out) {
     {
         const { g, written, container } = buildSandbox({
             live: { L1: finished({ coachEmail: 'c9@x.com', homeName: 'SinCat', createdAt: 1 }) },
-            users: { zz: { category: 'Alevín', email: 'c9@x.com' } },
+            users: { zz: { clubId: 'club1', category: 'Alevín', email: 'c9@x.com' } },
         });
         await g._renderFinishedMatchesTab();
         // v434 · La resolución por email se sigue probando, pero mirando el
