@@ -251,10 +251,16 @@ function walk(dir, out) {
         const inOrigin = (origin.match(CALL) || []).length;
         ok('1e · esta sección contiene UNO de los dos call-sites de _cResolveClubId',
             here === 1 && inOrigin === (IS_EXTRACTED ? 1 : 2), { here, inOrigin, IS_EXTRACTED });
-        // La regresión v269 viaja con este bloque: las dos ocurrencias están aquí.
-        ok('1f · ⚠️ las dos ocurrencias de me.currentRole están en este bloque',
-            (BLOCK.match(/me\.currentRole/g) || []).length === 2,
-            (BLOCK.match(/me\.currentRole/g) || []).length);
+        // ⚠️ v637 · ANTES exigía EXACTAMENTE 2 apariciones de `me.currentRole`
+        //    («la regresión v269 viaja con este bloque»). Corregida la
+        //    regresión, esa cuenta sólo cuadraba porque el comentario que la
+        //    explica la menciona dos veces: pasaba POR COINCIDENCIA, y
+        //    reescribir el comentario la habría puesto en rojo.
+        //    Ahora se mide lo que importa y no depende de la redacción: que no
+        //    quede uso EJECUTABLE de una propiedad que nadie escribe.
+        ok('1f · 🔑 no queda uso ejecutable de me.currentRole en este bloque',
+            !/me\.currentRole/.test(BLOCK.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1')),
+            'esa propiedad no la escribe nadie: sería siempre undefined');
     }
     if (IS_EXTRACTED) {
         const idxHtml = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
@@ -409,16 +415,44 @@ function walk(dir, out) {
             container.innerHTML.includes('DelCoordi'));
     }
     {
-        // ⚠️ REGRESIÓN v269: currentRole no existe como campo, así que la clave
-        // cae a me.role. Dos roles con el mismo uid comparten clave.
-        const meDir = { uid: 'u9', clubId: 'club1', role: 'director', currentRole: undefined };
+        // ══════════════════════════════════════════════════════════════
+        //  🔴 v637 · ESTA ASERCIÓN FIJABA EL DEFECTO, NO LA INTENCIÓN
+        //
+        //  Decía «⚠️ REGRESIÓN v269: la clave cae a me.role» y exigía en el
+        //  fuente el patrón `me.currentRole || me.role || 'staff'`. O sea:
+        //  clavaba el bug y lo daba por bueno, de modo que arreglarlo ponía
+        //  el guard en ROJO.
+        //
+        //  `me.currentRole` NO LA ESCRIBE NADIE en todo el proyecto: era
+        //  siempre `undefined`, la clave caía a `me.role` —el rol de la
+        //  RAÍZ— y dos roles con el mismo uid la compartían. Lo destapó
+        //  test_v269_fixes.js, que llevaba un mes en xfail como «test
+        //  muerto».
+        // ══════════════════════════════════════════════════════════════
+        ok('5d · 🔑 la clave del descarte sale del ROL ACTIVO, no de la raíz',
+            /me\._activeRole \|\| me\.role \|\| 'staff'/.test(BLOCK)
+            && !/me\.currentRole/.test(BLOCK.replace(/\/\/.*$/gm, '')),
+            'con me.currentRole (que no existe) las cuentas multi-rol comparten dismissKey');
+
+        // Sin rol activo se cae a `me.role`: las cuentas de un solo rol no cambian.
+        const meDir = { uid: 'u9', clubId: 'club1', role: 'director' };
         const { g, container } = buildSandbox({
             me: meDir, reports: { x: staffRep({ rival: 'X', dismissedBy: ['u9_director'] }) },
         });
         await g._sdLoadReports();
-        ok('5d · ⚠️ la clave se deriva de me.role (currentRole no existe) — regresión v269',
-            container.innerHTML.includes('Sin informes de partido aún')
-            && /me\.currentRole \|\| me\.role \|\| 'staff'/.test(BLOCK));
+        ok('5d2 · sin rol activo, respaldo a me.role (cuentas de un solo rol, igual que antes)',
+            container.innerHTML.includes('Sin informes de partido aún'));
+
+        // 🔑 EL CASO QUE EL DEFECTO ROMPÍA: mismo uid, actuando de coordinador.
+        //    El descarte del DIRECTOR no puede ocultárselo.
+        const meCoord = { uid: 'u9', clubId: 'club1', role: 'director', _activeRole: 'coordinator' };
+        const r2 = buildSandbox({
+            me: meCoord, reports: { x: staffRep({ rival: 'VisibleParaCoordi', dismissedBy: ['u9_director'] }) },
+        });
+        await r2.g._sdLoadReports();
+        ok('5d3 · 🔑🔑 multi-rol: lo que ocultó el Director SIGUE visible como Coordinador',
+            r2.container.innerHTML.includes('VisibleParaCoordi'),
+            'es exactamente lo que el comentario del producto dice estar evitando');
     }
     {
         const { g, container } = buildSandbox({ reports: {} });

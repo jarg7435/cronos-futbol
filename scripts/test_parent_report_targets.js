@@ -193,49 +193,85 @@ assert('extractDorsal "ABC" -> null', extractDorsal('ABC') === null);
     out.length === 1 && out[0].parentUid === 'uid_padre10');
 }
 
-// ── CASO 1: Director/Coordinador SIEMPRE reciben (Regla 1 de _cGetStaff) ──
-// Extraemos la función real _cGetStaff y la ejecutamos con Firestore stub
-// (sin resultados), de modo que solo se ejerza la ruta de emailConfig.contacts.
+// ── CASO 1: a quién devuelve _cGetStaff (Regla 1) ────────────────────────
+//
+// ══════════════════════════════════════════════════════════════════════
+//  ⚠️ 2026-08-27 · ESTE BLOQUE LLAMABA A UNA PUERTA TAPIADA
+//
+//  Ejecutaba _cGetStaff con los stubs de Firestore DEVOLVIENDO VACÍO y
+//  esperaba que el staff saliera de `emailConfig.contacts` filtrado por el
+//  tag 'rpt'. Ninguna de las dos cosas sigue siendo cierta:
+//
+//   · _cGetStaff no mira `emailConfig` en absoluto. Esa fusión se mudó a
+//     openCollectiveReport (js/coach/comms/collective-report.js), donde
+//     _cGetStaff es la fuente PRIMARIA y emailConfig sólo la complementa.
+//   · Y allí el tag 'rpt' dejó de ser requisito A PROPÓSITO ("El tag 'rpt'
+//     ya no es requisito", collective-report.js:257): si el entrenador no
+//     tenía al director en sus contactos con la palomilla INF, el informe
+//     colectivo no le llegaba nunca.
+//
+//  🚨 Y la cuarta aserción, la que estaba VERDE ('staff sin rpt NO incluido'),
+//     pasaba sólo porque la lista salía VACÍA: habría pasado igual con el
+//     producto roto del todo. La fusión de hoy sí la cubren
+//     test_collective_report_module.js (2g/2h) y test_informe_colectivo_entrenador.js.
+//
+//  🔑 Lo que NADIE cubría es _cGetStaff con datos DE VERDAD: a quién devuelve
+//     y a quién no. Es lo que se prueba ahora.
+// ══════════════════════════════════════════════════════════════════════
 async function testStaffAlwaysIncluded() {
-  const staffSandbox = {
-    window: {},
-    console,
-    JSON,
-    Array,
-    Map,
-    // Firestore stubs: devuelven snapshots vacíos.
-    cloudGet: async () => null,
-  };
-  // emailConfig con: director SIN tag rpt, coordinador SIN rpt, otro staff SIN rpt,
-  // y un staff CON rpt. Reglas: director+coordinador SIEMPRE; staff solo con rpt.
-  staffSandbox.emailConfig = {
-    contacts: [
-      { id: 's1', type: 'staff', uid: 'uid_dir',   role: 'director',     name: 'Dir',   tags: [] },
-      { id: 's2', type: 'staff', uid: 'uid_coord', role: 'coordinator',  name: 'Coord', tags: [] },
-      { id: 's3', type: 'staff', uid: 'uid_seg',   role: 'segundo',      name: 'Seg',   tags: [] },      // sin rpt -> NO
-      { id: 's4', type: 'staff', uid: 'uid_seg2',  role: 'segundo',      name: 'Seg2',  tags: ['rpt'] },  // con rpt -> SI
-      { id: 'p1', type: 'parent', uid: 'uid_padre10', name: 'Padre', tags: ['rpt'] },                     // padre -> nunca staff
-    ],
-  };
+  const staffSandbox = { window: {}, console: { log(){}, warn(){} }, JSON, Array, Map };
   vm.createContext(staffSandbox);
   vm.runInContext(extractFn('_cGetStaff'), staffSandbox);
 
-  // fns con stubs que producen snapshots vacíos (forEach no itera).
-  const emptySnap = { forEach() {}, size: 0 };
-  const fns = {
-    collection: () => ({}),
-    getDocs: async () => emptySnap,
-    query: () => ({}),
-    where: () => ({}),
+  // Tabla de usuarios falsa. Los stubs imitan a Firestore de verdad: `where`
+  // guarda el filtro y `getDocs` lo APLICA, así que un where() que sobre o que
+  // falte se nota en el resultado.
+  const USERS = {
+    uid_dir:   { clubId: 'club1', role: 'director',    displayName: 'Dir' },
+    uid_coord: { clubId: 'club1', role: 'coordinator', displayName: 'Coord' },
+    uid_coach: { clubId: 'club1', role: 'user',        displayName: 'Entrenador' },
+    uid_padre: { clubId: 'club1', role: 'parent',      displayName: 'Padre' },
+    // Cuenta multi-rol: MISMO uid con DOS plazas (el caso real del proyecto).
+    uid_multi: { clubId: 'club1', role: 'director', displayName: 'Dos plazas',
+                 allRoles: [{ role: 'director' }, { role: 'coordinator' }] },
+    // Plaza retirada: está en allRoles pero no cuenta.
+    uid_fuera: { clubId: 'club1', role: 'user', displayName: 'Ex-coordinador',
+                 allRoles: [{ role: 'coordinator', status: 'removed' }] },
+    // Otro club: no puede aparecer jamás (aislamiento por entidad).
+    uid_ajeno: { clubId: 'club2', role: 'director', displayName: 'De otro club' },
   };
-  const staff = await staffSandbox._cGetStaff(/*db*/{}, 'club1', fns, ['director', 'coordinator']);
-  const uids = staff.map(s => s.uid).sort();
 
-  assert('CASO 1: director incluido (sin rpt)',     uids.includes('uid_dir'));
-  assert('CASO 1: coordinador incluido (sin rpt)',  uids.includes('uid_coord'));
-  assert('CASO 1: staff con rpt incluido',          uids.includes('uid_seg2'));
-  assert('CASO 1: staff sin rpt NO incluido',       !uids.includes('uid_seg'));
-  assert('CASO 1: padre nunca como staff',          !uids.includes('uid_padre10'));
+  const fns = {
+    collection: (_db, name) => ({ __col: name }),
+    where: (field, _op, value) => ({ field, value }),
+    query: (col, ...cs) => ({ col, cs }),
+    getDocs: async (q) => {
+      const docs = Object.entries(USERS)
+        .filter(([, u]) => q.cs.every(c => u[c.field] === c.value))
+        .map(([id, u]) => ({ id, data: () => u }));
+      return { forEach: (cb) => docs.forEach(cb), size: docs.length };
+    },
+  };
+
+  const staff  = await staffSandbox._cGetStaff({}, 'club1', fns, ['director', 'coordinator']);
+  const uids   = staff.map(s => s.uid);
+  const plazas = staff.map(s => s.uid + '|' + s.role).sort();
+
+  assert('CASO 1: el director del club sale',             uids.includes('uid_dir'));
+  assert('CASO 1: el coordinador del club sale',          uids.includes('uid_coord'));
+  assert('CASO 1: un rol NO pedido (entrenador) no sale', !uids.includes('uid_coach'));
+  assert('CASO 1: un padre nunca sale como staff',        !uids.includes('uid_padre'));
+  assert('CASO 1: el staff de OTRO club no sale',         !uids.includes('uid_ajeno'));
+  assert('CASO 1: una plaza retirada (status removed) no sale',
+    !plazas.includes('uid_fuera|coordinator'));
+  // 🔑 v637 · LA UNIDAD ES LA PLAZA: la cuenta con dos plazas sale DOS VECES,
+  //    una por rol. Antes se indexaba por uid a secas y ganaba el primer rol
+  //    que llegara, así que el despacho sólo alcanzaba a una de las dos.
+  assert('CASO 1: 🔑 la cuenta multi-rol sale UNA VEZ POR PLAZA (uid+rol)',
+    plazas.includes('uid_multi|director') && plazas.includes('uid_multi|coordinator'));
+  // …pero sin repetir: la MISMA pareja uid+rol llega por las dos consultas.
+  assert('CASO 1: y sin repetir la MISMA plaza (llega por dos consultas)',
+    plazas.length === new Set(plazas).size);
 }
 
 // ── Bug 1: _cResolveClubId lee clubId de users/{uid} cuando me.clubId es null ──

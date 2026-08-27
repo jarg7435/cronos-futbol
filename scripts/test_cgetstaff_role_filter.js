@@ -43,8 +43,23 @@ const fnStart = src.indexOf('async function _cGetStaff');
 const fnEnd = src.indexOf('\nasync function ', fnStart + 10);
 const fnBody = src.slice(fnStart, fnEnd);
 
-ok('1a · [FIX] REGLA 1 exige roles.includes(c.role)',
-   /\(c\.role === 'director' \|\| c\.role === 'coordinator'\) &&\s*\n\s*roles\.includes\(c\.role\)/.test(fnBody));
+// ⚠️ v637 · ANTES esto buscaba una FORMULACIÓN EXACTA:
+//    `(c.role === 'director' || c.role === 'coordinator') && roles.includes(c.role)`
+//    — con la variable llamada `c` y la lista de roles a mano. El código dejó
+//    de tener esa forma (la variable es `r` y ya no hay lista cableada, que es
+//    MEJOR: respeta cualquier rol solicitado), y el test se fue a xfail sin que
+//    el comportamiento hubiera cambiado.
+//
+// 🔑 Lo que de verdad importa: TODA alta que salga de recorrer `allRoles` tiene
+//    que estar filtrada por el rol pedido. Se comparan las cuentas: si alguien
+//    añade un `upsert` desde allRoles sin su guarda, dejan de cuadrar.
+{
+    const altasDesdeAllRoles = (fnBody.match(/upsert\(d\.id,\s*r\.role/g) || []).length;
+    const guardas            = (fnBody.match(/roles\.includes\(r\.role\)/g) || []).length;
+    ok('1a · REGLA 1: cada alta desde allRoles va filtrada por el rol pedido',
+       altasDesdeAllRoles > 0 && altasDesdeAllRoles === guardas,
+       { altasDesdeAllRoles, guardas });
+}
 
 // ═══════════════════ PARTE 2 · ejecución REAL en sandbox ═══════════════════
 console.log('\n── PARTE 2 · ejecución del código real (escenario exacto del usuario) ──');
@@ -129,6 +144,50 @@ async function run() {
     ok('2e · uso por defecto (informes colectivos, ambos roles): sigue trayendo AMBAS entradas',
        bothList.some(s => s.uid === MULTI_ROLE_UID && s.role === 'director') &&
        bothList.some(s => s.uid === MULTI_ROLE_UID && s.role === 'coordinator'));
+
+    // ══════════════════════════════════════════════════════════════════
+    //  2f · 🚨 EL DOCUMENTO TRAE SU PROPIO `role`, Y PISABA AL DE LA PLAZA
+    //
+    //  Los documentos falsos de arriba NO tienen campo raíz `role`, así que
+    //  2a-2e pasaban POR CASUALIDAD: el spread `{ uid, role, ...data }` no
+    //  tenía con qué pisar. En Firestore de verdad ese campo SÍ está —es el
+    //  rol de la RAÍZ— y `...data` iba DETRÁS, de modo que la plaza de
+    //  COORDINADOR de una cuenta multi-rol salía etiquetada `director`.
+    //
+    //  🔑 Y no es cosmético: _cronosResolveStaffForMatch (utils.js) deja pasar
+    //     SIEMPRE al director y sólo filtra por modalidad a los coordinadores,
+    //     así que ese coordinador disfrazado se saltaba el filtro de F7/F11 y
+    //     recibía informes de categorías que no le tocan.
+    // ══════════════════════════════════════════════════════════════════
+    {
+        const CON_RAIZ = {
+            collection: (_db, name) => ({ __col: name }),
+            query: (col, ...clauses) => ({ __col: col.__col, __whereRole: clauses.some(c => c && c.__isRoleClause) }),
+            where: (field, op, val) => (field === 'role' ? { __isRoleClause: true, field, op, val } : { field, op, val }),
+            doc: () => ({}),
+            getDoc: async () => ({ exists: () => false }),
+            getDocs: async (q) => {
+                if (q.__col !== 'users' || q.__whereRole) return { forEach: () => {} };
+                const docs = [{
+                    id: MULTI_ROLE_UID,
+                    data: () => ({
+                        clubId: 'clubX',
+                        role: 'director',            // ← el rol de la RAÍZ, el que pisaba
+                        allRoles: [
+                            { role: 'director', isAuthorized: true, status: 'active' },
+                            { role: 'coordinator', isAuthorized: true, status: 'active' },
+                        ],
+                    }),
+                }];
+                return { forEach: (cb) => docs.forEach(cb) };
+            },
+        };
+        const conRaiz = await sandbox._cGetStaff({}, 'clubX', CON_RAIZ, ['director', 'coordinator']);
+        const plazas = conRaiz.filter(s => s.uid === MULTI_ROLE_UID).map(s => s.role).sort();
+        ok('2f · 🔑 con `role` en la raíz del documento, la plaza de coordinador NO sale como director',
+           JSON.stringify(plazas) === JSON.stringify(['coordinator', 'director']),
+           JSON.stringify(conRaiz.map(s => s.uid + '|' + s.role)));
+    }
 }
 
 run().then(() => {

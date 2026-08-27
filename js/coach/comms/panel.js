@@ -362,10 +362,44 @@ function _cMatchSubcatFor(me, cat) {
 
 async function _cGetStaff(db, clubId, fns, roles) {
     roles = roles || ['director', 'coordinator', 'club_admin', 'admin'];
+
+    // ══════════════════════════════════════════════════════════════════
+    //  🔑 v637 · LA UNIDAD ES LA PLAZA (uid + ROL), NO LA PERSONA
+    //
+    //  Esto indexaba por `uid` a secas: una cuenta con dos plazas —el caso
+    //  real de este proyecto, Director + Coordinador con el MISMO uid—
+    //  aparecía UNA sola vez y ganaba el primer rol que llegara. En el
+    //  despacho de informes colectivos eso significa que sólo recibía uno de
+    //  los dos, y cuál dependía del orden de las consultas.
+    //
+    //  Decisión del autor (2026-08-27): **una vez por rol**. Es coherente con
+    //  el resto del modelo, donde la plaza manda sobre la persona: hilos por
+    //  rol, `dismissedByStaff` por rol, `dismissKey` = uid+rol.
+    //
+    //  ⚠️ SIGUE HABIENDO DEDUPLICACIÓN, sólo que de la PLAZA: la misma pareja
+    //  uid+rol puede llegar dos veces (por la consulta directa de `role` y por
+    //  la de `allRoles`), y ahí la segunda tiene que descartarse.
+    //
+    //  ⚠️ Las listas de la interfaz NO se ven dobles: las seis que consumen
+    //  esta función deduplican por uid después (`byUid` o `.some(s => s.uid
+    //  === ...)`). Comprobado antes de tocar esto. Lo que cambia es el
+    //  DESPACHO, que es lo que se quería cambiar.
+    // ══════════════════════════════════════════════════════════════════
     const byUid = new Map();
 
     const upsert = (uid, role, data) => {
-        if (!byUid.has(uid)) byUid.set(uid, { uid, role, ...data });
+        const clave = uid + '|' + role;
+        // 🚨 EL ORDEN DEL SPREAD NO ES COSMÉTICO. Antes era `{ uid, role,
+        //    ...data }`, y `data` es el documento del usuario, que TRAE SU
+        //    PROPIO `role` (el de la RAÍZ): el spread pisaba el rol de la
+        //    plaza. Con una sola entrada por uid no se notaba —coincidían—,
+        //    pero en cuanto la clave pasó a ser uid+rol, la plaza de
+        //    COORDINADOR de una cuenta multi-rol salía marcada `director`.
+        //    Y eso no es cosmético: _cronosResolveStaffForMatch filtra a los
+        //    coordinadores por modalidad y deja pasar SIEMPRE al director, así
+        //    que ese coordinador disfrazado se saltaba el filtro de F7/F11.
+        //    `uid` y `role` van DETRÁS: mandan los de la plaza.
+        if (!byUid.has(clave)) byUid.set(clave, { ...data, uid, role });
     };
 
     const { collection, getDocs, query, where } = fns;

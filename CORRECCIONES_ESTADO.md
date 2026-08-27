@@ -1,6 +1,6 @@
 # Cronos Fútbol — Estado de correcciones
 
-_Última actualización: 2026-07-22 — unificados los chats entrenador/director/coordinador (ver más abajo). Próxima sesión: empezar por E6._
+_Última actualización: 2026-08-27 — la lista `XFAIL` de `scripts/run-tests.js` queda VACÍA tras auditar los once tests que arrastraba (ver el último apartado). Dos defectos de producto salieron de ahí._
 
 ## COMPLETADO
 
@@ -948,3 +948,89 @@ _Última actualización: 2026-07-22 — unificados los chats entrenador/director
   `autoDispatchMatchReports` (que el fix original `e2189fb` no cubría, pero el
   test sí lo exige). `test_p11d_collective_write.js` pasa 9/9 y se retiró de
   `XFAIL` en `scripts/run-tests.js`.
+
+---
+
+## COMPLETADO (v637 — 2026-08-27): la lista XFAIL queda VACÍA
+
+Contexto: `scripts/run-tests.js` arrastraba **once** tests en `XFAIL` desde el
+2026-07-24, todos con la misma etiqueta: «referencian la arquitectura de
+mensajería por pestañas anterior; las funciones que ejercitan ya no existen».
+Con la lista en amarillo, `npm test` salía verde y el gate de CI no servía para
+detectar regresiones nuevas.
+
+**La etiqueta era falsa.** Se comprobó uno por uno. De los once, **uno** estaba
+muerto de verdad. Desglose:
+
+- 🔴 **Un defecto VIVO escondido detrás de la etiqueta** — `test_v269_fixes`:
+  `js/coach/reports/reports-tab.js` usaba `me.currentRole`, una propiedad que
+  **nadie escribe** en todo el proyecto. Siempre `undefined`, así que la clave
+  caía a `me.role` (el rol de la RAÍZ) y dos plazas con el mismo uid compartían
+  `dismissKey`: **ocultar un informe como Director lo ocultaba como
+  Coordinador**, justo lo que el comentario de al lado decía estar evitando.
+  Corregido a `me._activeRole`.
+
+- 🟠 **El arnés quedándose atrás** (el producto estaba bien; el test miraba a un
+  sitio del que la lógica se había mudado): `test_timer_color_dom` y
+  `test_timer_color_semaforo` (no era «incompatibilidad con Node 24»: faltaba
+  extraer `_sinSemaforoLive`, que añadió v559, y un `window` en el sandbox — 50
+  aserciones del semáforo del cronómetro recuperadas), `test_contact_manager_crash`
+  (el alta del staff pasó a `_cGetStaff` + `_cFS`, que el sandbox no ofrecía: la
+  llamada moría en su `catch` y el fallo **parecía del producto**) y
+  `test_parent_report_targets` (su CASO 1 esperaba que `_cGetStaff` leyera
+  `emailConfig.contacts` filtrando por el tag `rpt`; esa fusión se mudó a
+  `openCollectiveReport` y allí el tag dejó de ser requisito **a propósito**).
+
+- 🟡 **La forma murió, el invariante no** — reapuntados al código vivo:
+  `test_delete_all_messages_audit` → `_clearUnifiedThread` (antes eran DOS
+  copias, `coachDeleteAllMessages` y `ppDeleteAllMessages`; hoy una sola función
+  para todos los roles), `test_sdsendreplytocoach_creates_thread` →
+  `_sendUnifiedMessage` (el primer mensaje de una conversación sigue sin poder
+  perderse), `test_stale_chat_pane_reset` (hoy el hueco se cierra por
+  CONSTRUCCIÓN: el threadId ya no viaja en el marcado, se recalcula al enviar),
+  `test_staff_chat_unification` (las ramas `staffUid` de `firestore.rules` siguen
+  ahí; v436/v437 las reescribió a `.get(campo, default)` y el test buscaba la
+  redacción antigua) y `test_cgetstaff_role_filter`.
+
+- 🗑️ **Muerto de verdad, retirado**: `scripts/test_selfmessage_autoopen.js`.
+  Vigilaba el «auto-open del primer hilo» del Panel de Dirección, que no existe
+  en la arquitectura unificada, y sus otras dos aserciones evaluaban una
+  reimplementación escrita **dentro del propio test** (el defecto de v620), así
+  que pasaban dijera lo que dijera el producto.
+
+### Dos defectos de producto salieron de esta limpieza
+
+1. **`dismissKey` compartido entre plazas** (`reports-tab.js`) — el descrito
+   arriba. Lo señalaba `test_v269_fixes` desde hacía un mes.
+
+2. **`_cGetStaff` devolvía la plaza de coordinador etiquetada `director`**
+   (`js/coach/comms/panel.js`). Al pasar la clave de `uid` a `uid+rol` (para que
+   una cuenta multi-rol reciba el despacho por sus DOS plazas), el `upsert`
+   seguía construyendo la entrada como `{ uid, role, ...data }` — y `data` es el
+   documento del usuario, que **trae su propio `role`**, el de la raíz. El spread
+   pisaba el rol de la plaza. No es cosmético: `_cronosResolveStaffForMatch` deja
+   pasar **siempre** al director y sólo filtra por modalidad a los coordinadores,
+   así que ese coordinador disfrazado se saltaba el filtro F7/F11 y recibía
+   informes de categorías que no le tocan. Corregido a `{ ...data, uid, role }`.
+
+   ⚠️ El test dedicado (`test_cgetstaff_role_filter`) no lo vio porque sus
+   documentos falsos **no tenían campo raíz `role`**: el spread no tenía nada con
+   que pisar y las etiquetas salían bien por casualidad. Añadida la aserción `2f`
+   con el campo presente.
+
+### Pendiente, no olvidado
+
+La forma que vigilaba `test_selfmessage_autoopen` sobrevive en
+`js/coach/comms/panel.js`, en el constructor de la lista de administradores:
+`const otro = (t.participants || []).find(p => p && p !== me.uid);` — **sin** el
+`|| me.uid` que aquel arreglo introdujo. Con una cuenta multi-rol (mismo uid) un
+hilo consigo mismo daría `undefined` y ese contacto no se surfacearía. Es una
+decisión de producto, no un arreglo mecánico, así que no se tocó.
+
+Y en `js/core/utils.js` siguen definidos `_cronosStaffChatThreadId` /
+`_cronosPeerChatThreadId`, que **no los llama nadie**: son inofensivos mientras
+sigan así, y `test_staff_chat_unification` (2e) es ahora el pestillo que avisa si
+alguien los reconecta — porque eso devolvería las DOS fórmulas para el mismo hilo.
+
+**Resultado**: `node scripts/run-tests.js` → **218/218 activos OK, `XFAIL` vacía,
+sin XPASS**.

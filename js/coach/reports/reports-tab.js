@@ -322,7 +322,16 @@ async function _sdLoadReports() {
         // IMPORTANTE: NO filtrar por me.uid a secas porque si dos roles
         // comparten el mismo uid (o versiones antiguas lo guardaron sin rol)
         // se borraría para ambos.
-        const currentRole = me.currentRole || me.role || 'staff';
+        // 🔴 v637 · ERA `me.currentRole`, QUE NO EXISTE. Esa propiedad no la
+        //    escribe NADIE en todo el proyecto: siempre era `undefined`, así
+        //    que esto caía a `me.role` — el rol de la RAÍZ. En una cuenta
+        //    multi-rol con el mismo uid (Director + Coordinador) la clave
+        //    salía IDÉNTICA para los dos, y ocultar un informe como Director
+        //    lo ocultaba también como Coordinador: exactamente lo que el
+        //    comentario de aquí arriba dice estar evitando.
+        //    Lo señalaba test_v269_fixes.js, que llevaba un mes en xfail
+        //    apuntado como «test muerto». No lo estaba.
+        const currentRole = me._activeRole || me.role || 'staff';
         const dismissKey = `${me.uid}_${currentRole}`;
 
         const snap = { empty: true, forEach: (fn) => {
@@ -915,7 +924,11 @@ async function _sdLoadReports() {
         window.sdDeleteReport = async (key64) => {
             if (!confirm('¿Deseas ocultar este informe de tu panel? Solo se eliminará para ti; los demás roles seguirán viéndolo.')) return;
             
-            const currentRole = me.currentRole || me.role || 'staff';
+            // 🔴 v637 · GEMELA DE LA CLAVE DE _sdLoadReports: si estas dos no
+            //    calculan el rol IGUAL, se oculta con una clave y se lee con
+            //    otra, y el informe reaparece. La explicación de por qué NO es
+            //    `me.currentRole` está allí arriba, en el punto de lectura.
+            const currentRole = me._activeRole || me.role || 'staff';
             const dismissKey = `${me.uid}_${currentRole}`;
 
             const match = window._sdMatchData[key64];

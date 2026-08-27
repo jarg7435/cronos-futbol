@@ -31,10 +31,18 @@ function extractFn(src, name) {
 
 // Dependencias reales que usan renderField/renderBench: las extraemos del
 // propio archivo en vez de reimplementarlas, para que el test rompa si cambian.
+//
+// ⚠️ ESTA LISTA HAY QUE MANTENERLA. Si `_timerColorFor` empieza a llamar a una
+//    función nueva de live.html y no se añade aquí, el test revienta con un
+//    `ReferenceError: <nombre> is not defined` — y eso no es un fallo del
+//    producto, es que el arnés se quedó atrás. Le pasó con `_sinSemaforoLive`
+//    (v559, el celeste de Juvenil/Regional) y estuvo en xfail desde entonces,
+//    apuntado como «incompatibilidad con Node 24», que no era.
 const SOURCES = [
     'formatTime',
     'escapeHtml',
     'safeColor',
+    '_sinSemaforoLive',   // v559 · decide el celeste de Juvenil/Regional/Sénior
     '_timerColorFor',
     'renderField',
     'renderBench',
@@ -50,7 +58,12 @@ function makeDocument() {
     return { getElementById: get, _els: els };
 }
 
-const sandbox = { document: makeDocument(), Math, console };
+// ⚠️ `window` HACE FALTA. `_timerColorFor` consulta
+//    `typeof window.getCategoryGroupKey === 'function'` y
+//    `window._liveClubExtras`: con `window` ausente eso es un ReferenceError,
+//    no un `undefined`. Se deja VACÍO a propósito — así la función cae en su
+//    respaldo local de umbrales, que es lo que este test quiere ejercitar.
+const sandbox = { document: makeDocument(), Math, console, String, Number, Date, isNaN, JSON, window: {} };
 vm.createContext(sandbox);
 vm.runInContext(SOURCES, sandbox);
 

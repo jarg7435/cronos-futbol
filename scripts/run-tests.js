@@ -10,27 +10,10 @@
  * corregir en el producto. Se ejecutan y se reportan (para que la regresión siga
  * VISIBLE), pero su fallo NO tumba CI. Si un XFAIL empieza a pasar, el runner lo
  * marca como "XPASS" y FALLA, para obligar a sacarlo de la lista.
- *   · (vacía) — P11-D (guard de staff vacío en el informe colectivo/auto-despacho)
- *     se corrigió el 2026-07-22; test_p11d_collective_write.js retirado de aquí
- *     tras confirmar que pasa. Ver CORRECCIONES_ESTADO.md.
- *   · 2026-07-24 (auditoría, hallazgo CI #15): se añaden 11 tests que ya
- *     fallaban antes de cualquier cambio de esta ronda — `npm test` estaba en
- *     rojo permanente sin que ninguno de ellos estuviera documentado aquí, lo
- *     que dejaba el gate de CI inútil para detectar regresiones NUEVAS.
- *     9 de ellos (test_cgetstaff_role_filter, test_contact_manager_crash,
- *     test_delete_all_messages_audit, test_parent_report_targets,
- *     test_sdsendreplytocoach_creates_thread, test_selfmessage_autoopen,
- *     test_staff_chat_unification, test_stale_chat_pane_reset,
- *     test_v269_fixes) referencian la arquitectura de mensajería POR PESTAÑAS
- *     anterior (`_msgGetSelected`, `_cStaffThreadId` con staffRole,
- *     `sdSendBulkMsg`, `sdSendReplyToCoach`, `coachDeleteAllMessages`,
- *     `ppDeleteAllMessages`, `_resetChatThreadPane`...) que ya NO existe en
- *     el código: fue sustituida por el sistema unificado `_umState`
- *     (js/coach/comms/panel.js). Ver CORRECCIONES_ESTADO.md. 2 de ellos
- *     (test_timer_color_dom, test_timer_color_semaforo) fallan por
- *     incompatibilidad del arnés de test con Node 24 (`ReferenceError:
- *     window is not defined` dentro de vm.runInContext), no por un bug de
- *     producto.
+ *   · 2026-08-27: LA LISTA ESTÁ VACÍA. Los once que arrastraba desde el
+ *     2026-07-24 se auditaron uno por uno y se cerraron todos (ver la nota
+ *     larga junto a XFAIL, más abajo). El gate de CI vuelve a servir para lo
+ *     que se hizo: detectar regresiones NUEVAS.
  *
  * Se ejecuta desde la raíz del repo (varios tests leen ficheros con rutas
  * relativas a la raíz). No requiere emulador ni red: son tests puros de Node.
@@ -46,29 +29,72 @@ const path = require('path');
 const SCRIPTS_DIR = __dirname;
 const ROOT = path.join(__dirname, '..');
 
-// Regresiones reales conocidas (documentadas en CORRECCIONES_ESTADO.md). No
-// bloquean CI, pero deben corregirse y retirarse de aquí.
-const XFAIL = new Set([
-    // Arquitectura de mensajería por pestañas anterior, sustituida por el
-    // sistema unificado _umState (js/coach/comms/panel.js). Las funciones que
-    // estos tests ejercitan ya no existen en el código.
-    'test_cgetstaff_role_filter.js',
-    'test_contact_manager_crash.js',
-    'test_delete_all_messages_audit.js',
-    'test_parent_report_targets.js',
-    'test_sdsendreplytocoach_creates_thread.js',
-    'test_selfmessage_autoopen.js',
-    'test_staff_chat_unification.js',
-    'test_stale_chat_pane_reset.js',
-    // Aserción desactualizada sobre el patrón EXACTO de código fuente de la
-    // pestaña "config" en club-reports.js; el comportamiento real que prueba
-    // (Director la ve, Coordinador no) sigue en verde.
-    'test_v269_fixes.js',
-    // Incompatibilidad del arnés de test con Node 24 (vm.runInContext no
-    // expone `window`), no un bug de producto.
-    'test_timer_color_dom.js',
-    'test_timer_color_semaforo.js',
-]);
+// Regresiones reales conocidas. No bloquean CI, pero deben corregirse y
+// retirarse de aquí.
+//
+// ══════════════════════════════════════════════════════════════════════
+//  🚨 2026-08-27 · LA LISTA ESTÁ VACÍA, Y LA NOTA QUE HABÍA AQUÍ ERA FALSA
+//
+//  Decía que estos once eran «tests muertos» que ejercitaban funciones que
+//  «ya no existen». Se comprobó uno por uno y NO era cierto: eran tests
+//  MAYORMENTE VIVOS con unas pocas aserciones desfasadas. Los once están
+//  cerrados; el desglose, justo debajo.
+// ══════════════════════════════════════════════════════════════════════
+//
+// EL DESGLOSE. Se midió cada uno y resultaron ser CUATRO cosas distintas,
+// no una:
+//
+//  🔴 UN DEFECTO VIVO, escondido detrás de la etiqueta «test muerto»:
+//     · test_v269_fixes — `reports-tab.js` usaba `me.currentRole`, que NADIE
+//       escribe: siempre `undefined`, caía a `me.role` y las cuentas multi-rol
+//       compartían `dismissKey`. Ocultar un informe como Director lo ocultaba
+//       como Coordinador. Corregido (v637).
+//
+//  🟠 EL ARNÉS QUEDÁNDOSE ATRÁS (el producto estaba bien; el test miraba a un
+//     sitio del que la lógica se había mudado):
+//     · test_timer_color_dom / test_timer_color_semaforo — faltaba extraer
+//       `_sinSemaforoLive` (v559) y un `window` en el sandbox. NO era
+//       «incompatibilidad con Node 24», como decía la nota.
+//     · test_contact_manager_crash — el alta del staff pasó a `_cGetStaff` +
+//       `_cFS`, que el sandbox no ofrecía: la llamada moría en su `catch` y la
+//       lista salía sin staff. El fallo PARECÍA del producto.
+//     · test_parent_report_targets — su CASO 1 esperaba que `_cGetStaff`
+//       leyera `emailConfig.contacts` filtrando por el tag 'rpt'. Esa fusión se
+//       mudó a `openCollectiveReport`, y allí el tag dejó de ser requisito A
+//       PROPÓSITO. Reapuntado a `_cGetStaff` con datos de verdad.
+//
+//  🟡 LA FORMA MURIÓ, EL INVARIANTE NO. Se reapuntan al código vivo:
+//     · test_delete_all_messages_audit → `_clearUnifiedThread`
+//       (coachDeleteAllMessages / ppDeleteAllMessages eran DOS copias; hoy es
+//       una sola función para todos los roles).
+//     · test_sdsendreplytocoach_creates_thread → `_sendUnifiedMessage`: el
+//       primer mensaje de una conversación sigue sin poder perderse.
+//     · test_stale_chat_pane_reset → hoy el hueco se cierra por CONSTRUCCIÓN
+//       (el threadId ya no viaja en el marcado) en vez de por limpieza.
+//     · test_staff_chat_unification → las ramas `staffUid` de firestore.rules
+//       siguen ahí; v436/v437 las reescribió a `.get(campo, default)` y el
+//       test buscaba la redacción antigua.
+//     · test_cgetstaff_role_filter — buscaba una formulación literal del
+//       filtro. Se mide la estructura, no la redacción.
+//
+//  🗑️ MUERTO DE VERDAD, retirado: test_selfmessage_autoopen.js. Vigilaba el
+//     «auto-open del primer hilo» del Panel de Dirección, que no existe en la
+//     arquitectura unificada; y sus otras dos aserciones evaluaban una
+//     reimplementación escrita dentro del propio test (el defecto de v620), así
+//     que pasaban dijera lo que dijera el producto.
+//
+//     ⚠️ PENDIENTE, NO OLVIDADO: la forma sobrevive en js/coach/comms/panel.js,
+//     en el constructor de la lista de administradores —
+//     `const otro = (t.participants || []).find(p => p && p !== me.uid);`—
+//     SIN el `|| me.uid` que aquel arreglo introdujo. Con una cuenta multi-rol
+//     (mismo uid) un hilo consigo mismo daría `undefined` y ese contacto no se
+//     surfacearía. Es una decisión de producto, no un arreglo mecánico.
+//
+// ⚠️⚠️ MORALEJA, y es la cara: una etiqueta de «test muerto» sin verificar es
+//    peor que un test rojo. De los once, UNO estaba muerto. Los otros diez
+//    tenían algo que decir, y uno de ellos llevaba un mes señalando un bug de
+//    producto que nadie leyó porque el runner lo pintaba de amarillo.
+const XFAIL = new Set([]);
 
 const testFiles = fs
     .readdirSync(SCRIPTS_DIR)

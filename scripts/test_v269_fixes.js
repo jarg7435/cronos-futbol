@@ -35,12 +35,21 @@ ok('#1 live/sync.js: se conserva _hourSlug en el fallback',
    /\$\{_hourSlug\}`;/.test(liveMatchBlock));
 
 // ── FIX #2: dismissKey usa _activeRole (no me.currentRole) ────────────
-// La única aparición admisible de "me.currentRole" es dentro del comentario
-// explicativo del fix ("(no me.currentRole)"); nunca en código ejecutable.
-const totalCurrentRole = (cr.match(/me\.currentRole/g) || []).length;
-const commentCurrentRole = (cr.match(/\(no me\.currentRole\)/g) || []).length;
-ok('#2 club-reports.js: me.currentRole solo aparece en comentarios del fix',
-   totalCurrentRole === commentCurrentRole);
+//
+// ⚠️ ANTES esto contaba una FRASE CONCRETA del comentario ("(no
+//    me.currentRole)") y exigia que coincidiera con el total. Cualquiera que
+//    reescribiera el comentario con otras palabras ponia el test en rojo sin
+//    haber tocado el comportamiento — y eso es lo que lo mando a xfail.
+//
+// 🔑 Lo que de verdad importa es que NO QUEDE USO EJECUTABLE. Se quitan
+//    comentarios y se mira lo que queda: mide la estructura, no la redaccion.
+const _sinComentarios = cr
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/(^|[^:])\/\/.*$/gm, '$1');
+ok('#2 club-reports.js: me.currentRole no aparece en CODIGO EJECUTABLE',
+   !/me\.currentRole/.test(_sinComentarios),
+   'esa propiedad NO la escribe nadie en el proyecto: siempre es undefined, ' +
+   'asi que cae a me.role (el rol de la RAIZ) y las cuentas multi-rol comparten dismissKey');
 const activeRoleDismiss = (cr.match(/const currentRole = me\._activeRole \|\| me\.role \|\| 'staff'/g) || []).length;
 ok('#2 club-reports.js: 2 dismissKey derivan de me._activeRole', activeRoleDismiss === 2);
 
@@ -60,14 +69,29 @@ ok('#2 fallback a me.role si no hay _activeRole',
    dismissKeyFor({ uid, role: 'director' }) === 'u123_director');
 
 // ── FIX #3: pestaña Config. solo para el Director ─────────────────────
-// Extrae la expresión de la plantilla y la evalúa con ambos roles.
-ok('#3 club-reports.js: la pestaña config está condicionada a activeRole===director',
-   cr.includes("${activeRole === 'director' ? `<button onclick=\"switchStaffTab('config')\""));
-function renderConfigTab(activeRole) {
-  return `${activeRole === 'director' ? `<button id="tab-config">Config.</button>` : ''}`;
-}
-ok('#3 Director VE la pestaña config',      renderConfigTab('director').includes('tab-config'));
-ok('#3 Coordinador NO ve la pestaña config', renderConfigTab('coordinator') === '');
+//
+// ⚠️ AQUI HABIA TRES ASERCIONES Y SE RETIRAN, con motivo:
+//
+//  · Una buscaba una CADENA EXACTA del fuente
+//    (`${activeRole === 'director' ? \`<button onclick="switchStaffTab('config')"`).
+//    Esa plantilla ya no existe: la pestaña paso a ser un TABLERO construido
+//    desde un array de opciones, y el permiso lo decide un PREDICADO UNICO
+//    (`_sdCanSeeConfigTab`) que gobierna las DOS puertas —el boton y la ruta—
+//    a proposito, para que no puedan divergir. La regla de producto sigue
+//    viva; lo que murio fue la forma del codigo.
+//
+//  · Las otras dos evaluaban una REIMPLEMENTACION escrita aqui mismo
+//    (`function renderConfigTab(activeRole) { ... }`). Eso no prueba nada del
+//    producto: es el defecto que ya se pago en v620 —«mi test probaba una
+//    copia de la logica escrita en el propio test»— y pasaba en verde
+//    dijera lo que dijera club-reports.js.
+//
+// 🔑 LA COBERTURA NO SE PIERDE, MEJORA: `test_config_tab_director_only.js`
+//    ejercita el predicado REAL con 34 aserciones (40/40 en verde), incluida
+//    la ruta —no solo el boton—, que es justo lo que estas tres no miraban.
+ok('#3 el permiso de "Config." lo decide un predicado UNICO, no la plantilla',
+   /function _sdCanSeeConfigTab\(/.test(cr) && /window\._sdCanSeeConfigTab = _sdCanSeeConfigTab/.test(cr),
+   'si esto cae, el boton y la ruta podrian calcular el permiso por separado y divergir');
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

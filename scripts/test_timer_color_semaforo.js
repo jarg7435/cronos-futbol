@@ -26,9 +26,21 @@ function extractFn(src, name) {
     return src.slice(start, i);
 }
 
-const fnTimerColor = extractFn(html, '_timerColorFor');
+// ⚠️ `_sinSemaforoLive` HAY QUE EXTRAERLA TAMBIÉN: `_timerColorFor` la llama
+//    desde v559 para decidir el celeste de Juvenil/Regional/Sénior. Sin ella el
+//    test revienta con `ReferenceError: _sinSemaforoLive is not defined`, que
+//    NO es un fallo del producto sino que el arnés se quedó atrás. Estuvo en
+//    xfail desde entonces, apuntado como «incompatibilidad con Node 24».
+const fnTimerColor = [
+    extractFn(html, '_sinSemaforoLive'),
+    extractFn(html, '_timerColorFor'),
+].join('\n\n');
 
-const sandbox = { Math, console };
+// `window` vacío a propósito: `_timerColorFor` consulta
+// `typeof window.getCategoryGroupKey === 'function'` —con `window` ausente eso
+// es un ReferenceError, no `undefined`— y así cae en su respaldo local de
+// umbrales, que es justo lo que este test ejercita.
+const sandbox = { Math, console, String, Number, Date, isNaN, JSON, window: {} };
 vm.createContext(sandbox);
 vm.runInContext(fnTimerColor, sandbox);
 function colorFor(timeSec, data) {
