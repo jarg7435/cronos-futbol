@@ -899,6 +899,35 @@ window._executeReportsSend = async function(method) {
                     _forCoach: true,
                 });
             }
+
+            // 🪶 v639 · ÍNDICE LIGERO DEL PARTIDO — UNA vez por partido, no una
+            //    por jugador. Ver js/match/live/finished-index.js. Este es el
+            //    TERCERO de los tres flujos de despacho; los tres tienen que
+            //    indexar o la lista se quedaría coja según por dónde se enviara.
+            if (typeof window._cronosIndexarPartidoTerminado === 'function') {
+                const _catIdx = (typeof currentCategory !== 'undefined' ? currentCategory : '') ||
+                                (typeof window.currentCategory !== 'undefined' ? window.currentCategory : '');
+                window._cronosIndexarPartidoTerminado({
+                    matchId,
+                    clubId:      me.clubId || null,
+                    createdBy:   me.uid,
+                    coachUid:    me.uid,
+                    coachEmail:  me.email,
+                    homeName:    (typeof TEAM_NAMES !== 'undefined' && TEAM_NAMES.home) || 'LOCAL',
+                    awayName:    rivalName,
+                    scoreHome, scoreAway,
+                    category:    _catIdx,
+                    subcategory: _cMatchSubcatFor(me, _catIdx),
+                    mode:        (typeof currentMode !== 'undefined' ? currentMode : 'f7'),
+                    matchDate:   new Date().toISOString().split('T')[0],
+                    createdAt:   new Date().toISOString(),
+                    // Mejor esfuerzo: ver la nota en collective-report.js.
+                    eventsCount: Array.isArray(window.matchEvents) ? window.matchEvents.length : 0,
+                    source:      'cronos_player_reports',
+                    docId:       matchId,
+                });
+            }
+
             const coachNotifId = `coach_self_rpt_${me.uid}_${Date.now().toString(36)}`;
             await setDoc(doc(db, 'cronos_notifications', coachNotifId), {
                 type: 'informe_colectivo', clubId: me.clubId || null,

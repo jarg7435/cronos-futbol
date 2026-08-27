@@ -541,6 +541,33 @@ async function autoDispatchMatchReports() {
                 }
             }
 
+            // 🪶 v639 · ÍNDICE LIGERO DEL PARTIDO — UNA vez por partido, no una
+            //    por jugador. Ver js/match/live/finished-index.js. Va DESPUÉS
+            //    de los informes y no bloquea: si falla, el despacho ya está
+            //    hecho y el lector cae solo al camino anterior.
+            if (typeof window._cronosIndexarPartidoTerminado === 'function') {
+                const _catIdx = window._currentMatchCategory || '';
+                window._cronosIndexarPartidoTerminado({
+                    matchId,
+                    clubId:      me.clubId || null,
+                    createdBy:   me.uid,
+                    coachUid:    me.uid,
+                    coachEmail:  me.email,
+                    homeName:    (typeof TEAM_NAMES !== 'undefined' && TEAM_NAMES.home) || 'LOCAL',
+                    awayName:    rivalName,
+                    scoreHome, scoreAway,
+                    category:    _catIdx,
+                    subcategory: _cMatchSubcatFor(me, _catIdx),
+                    mode:        (typeof currentMode !== 'undefined' ? currentMode : 'f7'),
+                    matchDate:   new Date().toISOString().split('T')[0],
+                    createdAt:   new Date().toISOString(),
+                    // Mejor esfuerzo: ver la nota en collective-report.js.
+                    eventsCount: Array.isArray(window.matchEvents) ? window.matchEvents.length : 0,
+                    source:      'cronos_player_reports',
+                    docId:       matchId,
+                });
+            }
+
             // Notificación in-app para el propio entrenador (formato estándar)
             const coachNotifId = `coach_self_rpt_${me.uid}_${Date.now().toString(36)}`;
             await setDoc(doc(db, 'cronos_notifications', coachNotifId), {

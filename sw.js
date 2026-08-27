@@ -2684,6 +2684,7 @@ const ASSETS = [
     './js/match/events/movement-log.js',
     './js/match/persistence/team-persistence.js',
     './js/match/live/sync.js',
+    './js/match/live/finished-index.js',
     './js/roster/formations.js',
     './js/roster/legacy-formations.js',
     './js/roster/team-rosters.js',

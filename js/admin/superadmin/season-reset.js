@@ -173,7 +173,15 @@ window.saResetClubSeason = async function(clubId, clubName) {
         //  que se pudiera desmarcar por separado sólo permite un estado
         //  incoherente: partidos borrados con sus tarjetas todavía en la lista.
         //  Se arrastra con su titular, en silencio.
-        const ACOMPANANTES = { live_matches: ['live_index'] };
+        //  🪶 v639 · Y `finished_index` es el espejo ligero de
+        //  `cronos_player_reports`, por el mismo motivo y con la misma regla:
+        //  vaciar los informes dejando su índice vivo pondría en la lista de
+        //  Partidos Terminados tarjetas de partidos que ya no existen — con la
+        //  PII dentro. Se arrastra con su titular, también en silencio.
+        const ACOMPANANTES = {
+            live_matches:           ['live_index'],
+            cronos_player_reports:  ['finished_index'],
+        };
         cols.forEach(c => {
             (ACOMPANANTES[c] || []).forEach(extra => {
                 if (cols.indexOf(extra) === -1) cols.push(extra);

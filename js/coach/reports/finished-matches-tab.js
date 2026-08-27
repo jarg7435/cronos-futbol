@@ -209,8 +209,77 @@ async function _renderFinishedMatchesTab() {
         //  Con el tope de abajo la pestaña va sobrada hoy (176 partidos), pero
         //  crecerá.
         // ══════════════════════════════════════════════════════════════
-        const _TOPE_INFORMES = 1500;   // ~48 partidos recientes a 31 informes/partido
+        // ══════════════════════════════════════════════════════════════
+        //  🪶 v639 · PRIMERO EL ÍNDICE LIGERO (`finished_index`)
+        //
+        //  UN documento por PARTIDO en vez de ~31. Ver la cabecera de
+        //  js/match/live/finished-index.js para el porqué y las medidas.
+        //
+        //  🔑 EL ÍNDICE ACELERA, NO MANDA. Si no devuelve nada —porque aún no
+        //  se ha hecho el backfill, porque su escritura falló, o porque las
+        //  reglas todavía no están desplegadas— se sigue por el camino de v638
+        //  exactamente como antes. Eso es lo que permite desplegar esto sin
+        //  ventana de "la pestaña está vacía" y sin backfill previo.
+        //
+        //  ⚠️ LA CONDICIÓN ES «no devolvió NADA», no «falló». Un club que de
+        //  verdad no tiene partidos indexados todavía tiene que poder ver su
+        //  histórico; y uno que sí los tiene no debe pagar los 10,5 MB.
+        // ══════════════════════════════════════════════════════════════
+        const _TOPE_INDICE = 300;      // 300 PARTIDOS, no 300 informes
+        let _indiceSirvio = false;
         try {
+            const condIdx = [];
+            if (clubId)  condIdx.push(where('clubId', '==', clubId));
+            if (me?.uid) condIdx.push(where('coachUid', '==', me.uid));
+
+            const vistosIdx = new Set();
+            for (const cond of condIdx) {
+                try {
+                    const partes = [cond];
+                    if (typeof orderBy === 'function') partes.push(orderBy('createdAt', 'desc'));
+                    if (typeof limit === 'function')   partes.push(limit(_TOPE_INDICE));
+                    const snapIdx = await getDocs(query(collection(db, 'finished_index'), ...partes));
+                    snapIdx.forEach(d => {
+                        if (vistosIdx.has(d.id)) return;
+                        vistosIdx.add(d.id);
+                        const x = d.data() || {};
+                        if (finishedMap.has(d.id)) return;   // ya vino de live_matches
+                        finishedMap.set(d.id, {
+                            id: d.id,
+                            docId:  x.docId || d.id,
+                            source: x.source || 'cronos_player_reports',
+                            homeTeam: { name: x.homeName || 'LOCAL',    score: x.homeScore || 0,
+                                        color: x.homeColor, shorts: x.homeShorts, textColor: x.homeText },
+                            awayTeam: { name: x.awayName || 'VISITANTE', score: x.awayScore || 0,
+                                        color: x.awayColor, shorts: x.awayShorts, textColor: x.awayText },
+                            scoreHome: x.homeScore || 0,
+                            scoreAway: x.awayScore || 0,
+                            category:    x.category || '',
+                            subcategory: x.subcategory || '',
+                            mode:        x.mode || 'f7',
+                            matchDate:   x.matchDate || '',
+                            createdAt:   x.createdAt || 0,
+                            createdBy:   x.createdBy || null,
+                            coachUid:    x.coachUid || null,
+                            coachEmail:  x.coachEmail || null,
+                            // 🔑 El array de sucesos NO viaja: la tarjeta sólo
+                            //    escribía su longitud. Se le da un array del
+                            //    tamaño justo para que `m.events.length` siga
+                            //    diciendo la verdad sin arrastrar el contenido.
+                            events: new Array(Number(x.eventsCount) || 0),
+                        });
+                    });
+                } catch (eIdx) {
+                    console.warn('[FinishedMatches] finished_index (una condición):', eIdx && eIdx.message);
+                }
+            }
+            _indiceSirvio = vistosIdx.size > 0;
+        } catch (eIdx0) {
+            console.warn('[FinishedMatches] Índice ligero no disponible, se usa el camino largo:', eIdx0 && eIdx0.message);
+        }
+
+        const _TOPE_INFORMES = 1500;   // ~48 partidos recientes a 31 informes/partido
+        if (!_indiceSirvio) try {
             const condRep = [];
             if (clubId)  condRep.push(where('clubId', '==', clubId));
             if (me?.uid) condRep.push(where('coachUid', '==', me.uid));

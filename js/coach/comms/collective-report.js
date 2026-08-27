@@ -471,6 +471,41 @@ window._sendCollectiveReportNow = async function() {
         }
         console.log(`[StaffReport] TOTAL informes colectivos escritos en cronos_player_reports: ${homePlayers.length} (matchId=${matchId}, staff=${staff.length}, staffUids=${_collStaffUids.length})`);
 
+        // 🪶 v639 · ÍNDICE LIGERO DEL PARTIDO — UNA vez por partido, no una por
+        //    jugador. Ver js/match/live/finished-index.js: la lista de Partidos
+        //    Terminados lee de ahí en vez de barrer los ~31 informes de cada
+        //    partido. Va DESPUÉS de los informes y sin `await` bloqueante: si
+        //    falla, el despacho ya está hecho y el lector cae solo al camino
+        //    anterior.
+        if (typeof window._cronosIndexarPartidoTerminado === 'function') {
+            const _catIdx = (typeof currentCategory !== 'undefined' ? currentCategory : '') ||
+                            (typeof window.currentCategory !== 'undefined' ? window.currentCategory : '');
+            window._cronosIndexarPartidoTerminado({
+                matchId,
+                clubId:      me.clubId || null,
+                createdBy:   me.uid,
+                coachUid:    me.uid,
+                coachEmail:  me.email,
+                homeName:    (typeof TEAM_NAMES !== 'undefined' && TEAM_NAMES.home) || 'LOCAL',
+                awayName:    rival,
+                scoreHome, scoreAway,
+                category:    _catIdx,
+                subcategory: _cMatchSubcatFor(me, _catIdx),
+                mode:        (typeof currentMode !== 'undefined' ? currentMode : 'f7'),
+                matchDate:   matchDateISO,
+                createdAt,
+                // ⚠️ EL RECUENTO DE SUCESOS ES DE MEJOR ESFUERZO. Aquí no hay un
+                //    array de eventos garantizado —`window.matchEvents` sólo
+                //    existe si el partido se restauró—, y NO se va a inventar:
+                //    la tarjeta ya omite el "📍 N eventos" cuando es 0, que es
+                //    exactamente lo que hacía antes con un partido sin sucesos.
+                //    El backfill sí lo calcula bien para el histórico.
+                eventsCount: Array.isArray(window.matchEvents) ? window.matchEvents.length : 0,
+                source:      'cronos_player_reports',
+                docId:       matchId,
+            });
+        }
+
         // ── 2. Enviar mensaje de hilo a cada miembro del staff ───────────
         for (const s of staff) {
             // Solo envío in-app si tiene uid real

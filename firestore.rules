@@ -1229,6 +1229,56 @@ service cloud.firestore {
     }
 
     // ============================================================
+    // COLECCION: finished_index  (v639)
+    // Indice ligero de PARTIDOS TERMINADOS: un documento por partido, espejo
+    // de cronos_player_reports (que guarda uno por JUGADOR y partido, ~31).
+    // ============================================================
+    //  ⚠️ LLEVA PII —nombres de equipo, categoria de menores—, asi que se lee
+    //  con el MISMO criterio que su titular y NO por ser pequeno se abre mas.
+    //  Misma advertencia que en live_index.
+    //
+    //  🔑 LAS RAMAS SON LAS DOS CONSULTAS REALES del lector
+    //  (finished-matches-tab.js): `where('clubId','==',...)` y
+    //  `where('coachUid','==',...)`, fusionadas por id. En Firestore una
+    //  consulta se DENIEGA ENTERA si la regla no puede demostrar de antemano
+    //  que todo lo que devolveria es legible, asi que quitar una deja la
+    //  pestana muda. Se anaden ademas createdBy y coachEmail, que son las otras
+    //  dos identidades con que se sella un partido (mismas que live_index).
+    //
+    //  ⚠️ TODO CON .get(campo, default): leer una clave AUSENTE de un mapa
+    //  LANZA, y un error equivale a DENY para la condicion ENTERA (v437).
+    //  Lo fija scripts/test_rules_no_direct_access.js.
+    //
+    //  ⚠️ ESCRITURA: la hace el propio entrenador al despachar sus informes, y
+    //  el SuperAdmin en el backfill. No se permite escribir un indice de OTRO
+    //  club: seria plantar tarjetas ajenas en la lista de cualquiera.
+    match /finished_index/{matchId} {
+      allow read: if isRegisteredUser() && (
+        isSuperAdmin() ||
+        sameClub(resource.data.get('clubId', null)) ||
+        sameClubAsDoc(resource.data.get('clubId', null)) ||
+        userDocClubId(resource.data.get('clubId', null)) ||
+        resource.data.get('createdBy', null) == request.auth.uid ||
+        resource.data.get('coachUid', null) == request.auth.uid ||
+        (('email' in request.auth.token) && resource.data.get('coachEmail', null) == request.auth.token.email)
+      );
+      allow create, update: if isAuth() && (
+        isSuperAdmin() ||
+        request.auth.uid == request.resource.data.get('coachUid', null) ||
+        request.auth.uid == request.resource.data.get('createdBy', null) ||
+        sameClub(request.resource.data.get('clubId', null)) ||
+        userDocClubId(request.resource.data.get('clubId', null))
+      );
+      allow delete: if isAuth() && (
+        isSuperAdmin() ||
+        request.auth.uid == resource.data.get('coachUid', null) ||
+        request.auth.uid == resource.data.get('createdBy', null) ||
+        sameClubAsDoc(resource.data.get('clubId', null)) ||
+        userDocClubId(resource.data.get('clubId', null))
+      );
+    }
+
+    // ============================================================
     // COLECCIÓN: cronos_player_reports
     // SEC-013: Validate club on create
     // ============================================================

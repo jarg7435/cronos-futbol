@@ -121,6 +121,12 @@
             // valor devuelto lo decide el borrado del partido, no el del índice.
             try { await mod.deleteDoc(mod.doc(db, 'live_index', mid)); }
             catch (eIdx) { console.warn('[Purga] índice no borrado:', eIdx && eIdx.code ? eIdx.code : eIdx); }
+            // 🪶 v639 · Y el índice de TERMINADOS, por el mismo motivo: sin
+            // esto el partido desaparece de los informes y su tarjeta sigue en
+            // la lista de Partidos Terminados, que consulta `finished_index`.
+            // También idempotente.
+            try { await mod.deleteDoc(mod.doc(db, 'finished_index', mid)); }
+            catch (eFin) { console.warn('[Purga] índice de terminados no borrado:', eFin && eFin.code ? eFin.code : eFin); }
             return true;
         } catch (e) {
             console.warn('[Purga] el partido en vivo no se pudo borrar:',

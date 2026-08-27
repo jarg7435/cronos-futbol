@@ -133,6 +133,11 @@ window.saDeleteClubComplete = async function(clubId, clubName) {
             _borrarPorClub('cronos_player_links'),
         ]);
         await _borrarPorClub('live_index');
+        // 🪶 v639 · Y `finished_index`, el espejo ligero de los INFORMES. Mismo
+        // razonamiento que el de arriba y mismo `clubId`: sin esto, un club
+        // borrado dejaría su histórico de Partidos Terminados en pie, con los
+        // nombres de equipo y las categorías de sus menores dentro.
+        await _borrarPorClub('finished_index');
 
         // 4. Borrar el club
         await deleteDoc(doc(db,'clubs',clubId));

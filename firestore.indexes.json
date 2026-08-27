@@ -324,6 +324,34 @@
       ]
     },
     {
+      "collectionGroup": "finished_index",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "clubId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "createdAt",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "finished_index",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "coachUid",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "createdAt",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
       "collectionGroup": "cronos_player_reports",
       "queryScope": "COLLECTION",
       "fields": [

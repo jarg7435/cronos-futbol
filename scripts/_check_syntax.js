@@ -48,6 +48,7 @@ const COBERTURA_DECLARADA = [
   'js/coach/reports/club-reports.js',
   'js/coach/reports/director-config.js',
   'js/coach/reports/events-tab.js',
+  'js/match/live/finished-index.js',
   'js/coach/reports/finished-matches-tab.js',
   'js/coach/reports/reports-tab.js',
   'js/coach/reports/reports-export.js',
