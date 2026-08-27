@@ -895,7 +895,42 @@ service cloud.firestore {
                        request.auth.uid == resource.data.get('userUid', null) ||
                        (('clubId' in request.auth.token) && request.auth.token.clubId == resource.data.get('individualOwnerId', null))
                      ));
-      allow create: if isAuth();
+      // ══════════════════════════════════════════════════════════════
+      //  🔐 v636 · LA SOLICITUD TIENE QUE SER TUYA (o de los tuyos)
+      //
+      //  Aqui ponia `allow create: if isAuth()`. O sea: cualquier usuario con
+      //  sesion podia fabricar una solicitud CON EL CONTENIDO QUE QUISIERA —
+      //  a nombre de otra persona, para un club ajeno, con el rol que le
+      //  apeteciese— e inyectarla en la cola de aprobacion de un admin.
+      //
+      //  No concede nada por si sola: quien aprueba decide. Pero pone delante
+      //  del SuperAdmin una peticion que parece legitima y no lo es, y ademas
+      //  deja ensuciar las colas de cualquier club.
+      //
+      //  🔑 INVENTARIO ANTES DE ESCRIBIR LA REGLA. Se auditaron los QUINCE
+      //  sitios que crean solicitudes: catorce son el propio interesado
+      //  (`userUid` o `requestedBy` = quien escribe) y UNO es el REENVIO del
+      //  administrador de club (js/admin/club/panel.js), que escribe la
+      //  solicitud de OTRA persona con el `userUid` ajeno.
+      //
+      //  ⚠️⚠️ ESE REENVIO ES LA RAZON DE QUE NO BASTE CON `userUid == uid`.
+      //  Se le da paso por el club: quien reenvia tiene que ser admin del
+      //  club (o de la entidad individual) del documento. Y casi se queda
+      //  fuera: usa el alias `fSetDoc`, asi que un inventario que buscara
+      //  `setDoc` NO LO VE — la primera pasada lo perdio.
+      //
+      //  ⚠️ Lo que esto NO pretende impedir: que alguien pida para SI MISMO un
+      //  rol alto. Eso es el alta normal, y el control es la aprobacion.
+      // ══════════════════════════════════════════════════════════════
+      allow create: if isAuth() && (
+        isSuperAdmin() ||
+        // El propio interesado (los 14 sitios de alta)
+        request.resource.data.get('userUid', null) == request.auth.uid ||
+        request.resource.data.get('requestedBy', null) == request.auth.uid ||
+        // El admin del club reenvia la de uno de los suyos
+        isAdminOfClub(request.resource.data.get('clubId', null)) ||
+        isIndividualAdmin(request.resource.data.get('individualOwnerId', null))
+      );
       allow update: if isSuperAdmin() ||
                        (isAuth() && sameClubAsDoc(resource.data.get('clubId', null)));
       // v474 · El administrador del club (o de la entidad individual) RETIRA
