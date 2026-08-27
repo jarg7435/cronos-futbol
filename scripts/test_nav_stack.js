@@ -633,11 +633,23 @@ console.log('\n── PARTE 12 · panel de Direccion ──');
            hayVuelta('admin_individual', true) === true);
         ok('12l-e · ⚠️ pero NUNCA embebido, que ahi lo posee el anfitrion',
            hayVuelta('admin_individual', false) === false);
+        // ⚠️ v638, y por PETICION EXPRESA del autor (implementar.txt
+        // 2026-08-27, punto 1): «en la seccion de mensajes del administrador
+        // de clubs, necesitamos anadir un boton de Volver atras. Actualmente
+        // solo da la opcion de salir totalmente del rol». Es el MISMO caso que
+        // el Administrador Individual en v626, y entra por la MISMA puerta:
+        // preguntando a la pila, no a ojo.
+        ok('12l-g · 🔑 y el Administrador de CLUB tambien, en modal (v638)',
+           hayVuelta('club_admin', true) === true);
+        ok('12l-h · ⚠️ pero NUNCA embebido, que ahi lo posee el anfitrion',
+           hayVuelta('club_admin', false) === false);
         const sinPila = _cargarUmHayVuelta(comms, false);    // pila vacia: no hay atras
         ok('12l-f · ⚠️⚠️ sin pantalla anterior en la pila NO se ofrece "Volver"',
            sinPila('admin_individual', true) === false,
            'navBack() con la pila en un solo nivel cae en navExit(), que solo OCULTA el modal: ' +
            'un "Volver" que deja la pantalla en negro es peor que no tenerlo');
+        ok('12l-i · ⚠️⚠️ y tampoco al Administrador de Club sin pila',
+           sinPila('club_admin', true) === false);
     }
 }
 

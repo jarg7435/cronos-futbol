@@ -92,12 +92,87 @@ window.SA_CSS = `<style>
 })();
 
 // ═══════════════════════════════════════════════════════════════════
+//  ⏱️ v638 · EL PANEL SALÍA A LEER ANTES DE TENER EL TOKEN
+//
+//  Síntoma medido (capturas 9668/9669, testeo v637): al entrar, el panel
+//  mostraba "Missing or insufficient permissions" y la consola escupía
+//  `_ensureSuperAdminConfig`, `[saClubs]`, `[saIndividuals]`,
+//  `deletion_requests` y DOS `Uncaught Error in snapshot listener`, todos
+//  permission-denied. Dos minutos después, el mismo panel cargaba bien.
+//
+//  🔑 NO ERA UN PERMISO. Se midieron las reglas VIVAS con el método :test de
+//  la Rules REST API, simulando al SuperAdmin CON claim y SÓLO CON CORREO:
+//  las diez consultas del panel salen ALLOW en los dos casos. Y
+//  `cronos_config/superadmins` existe en producción con su correo dentro
+//  (leído por REST). O sea: la autorización nunca estuvo en duda.
+//
+//  La única forma de que esas reglas denieguen es que `request.auth` llegue
+//  NULO: la lectura sale ANTES de que el cliente de Firestore tenga instalado
+//  el token. Es EXACTAMENTE la carrera de v568 —el login denegado que no era
+//  un permiso— en un sitio que aquel arreglo no tocó: v568 blindó
+//  `checkAuthorization`, pero el panel del SuperAdmin abre en cuanto el login
+//  resuelve y dispara su primera oleada de consultas por su cuenta.
+//
+//  ⚠️ POR QUÉ SE VE AHORA Y NO ANTES: `saClubs` LISTA `users` entera, y hasta
+//  v632 esa colección era `allow read: if isAuth()`. SEC-A1 la cerró, así que
+//  ahora la consulta depende de `isSuperAdmin()` — que sin `request.auth` es
+//  falso. El agujero de la carrera llevaba ahí desde siempre; lo que cambió es
+//  que dejó de ser inofensivo.
+//
+//  🔑 SE ARREGLA EN saFS(), QUE ES EL EMBUDO: los quince módulos del panel
+//  piden sus manejadores de Firestore por aquí. Esperar el token en este único
+//  punto los cubre a todos, sin repetir la espera en cada llamada.
+// ═══════════════════════════════════════════════════════════════════
+
+// Espera a que Auth tenga un token válido instalado. Con TOPE: si el SDK no
+// contesta, NO se cuelga el panel — se sigue y que decida la lectura, que para
+// eso lleva su propio reintento.
+window._saEsperarToken = async function _saEsperarToken(forzarRefresco) {
+    try {
+        const fa = window._cronos_auth;
+        const user = (fa && fa.auth && fa.auth.currentUser) || null;
+        if (!user || typeof user.getIdToken !== 'function') return;
+        await Promise.race([
+            user.getIdToken(!!forzarRefresco),
+            new Promise((_, rej) => setTimeout(() => rej(new Error('token lento')), forzarRefresco ? 5000 : 3000)),
+        ]);
+    } catch (e) {
+        console.warn('[saFS] No se pudo preparar el token antes de leer:', e && e.message);
+    }
+};
+
+// Envuelve una lectura del panel: si la deniegan, REFRESCA EL TOKEN A LA FUERZA
+// y reintenta. Sin el refresco, reintentar repite la misma consulta con el mismo
+// cliente sin token y vuelve a fallar igual — es lo que ya se pagó en v568.
+window._saConReintento = async function _saConReintento(fn, etiqueta) {
+    const ESPERAS = [800, 1600, 3200];
+    for (let intento = 0; ; intento++) {
+        try {
+            return await fn();
+        } catch (e) {
+            const esPermisos = e && (e.code === 'permission-denied' ||
+                                     (e.message || '').includes('permission'));
+            if (!esPermisos || intento >= ESPERAS.length) throw e;
+            const espera = ESPERAS[intento];
+            console.warn('[' + (etiqueta || 'saFS') + '] Denegado (token aún sin instalar). ' +
+                         'Refrescando token y reintentando en ' + espera + ' ms… (' +
+                         (intento + 1) + '/' + ESPERAS.length + ')');
+            await new Promise(r => setTimeout(r, espera));
+            await window._saEsperarToken(true);
+        }
+    }
+};
+
+// ═══════════════════════════════════════════════════════════════════
 // saFS() — helper de Firebase (compartido con 17_club_admin.js)
 // ═══════════════════════════════════════════════════════════════════
 
 window.saFS = async function saFS() {
     const fa = window._cronos_auth;
     if (!fa || !fa.db) throw new Error('Firebase no inicializado. Recarga la página.');
+    // ⏱️ v638 · el token, ANTES de entregar los manejadores. Ver la nota de
+    //    arriba: sin esto la primera oleada de consultas sale sin `request.auth`.
+    await window._saEsperarToken(false);
     const [fs, fnMod, appMod] = await Promise.all([
         import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js'),
         import('https://www.gstatic.com/firebasejs/10.12.2/firebase-functions.js'),

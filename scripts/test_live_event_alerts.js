@@ -38,7 +38,7 @@ const sandbox = {
   AudioContext: function(){ return { state:'running', currentTime:0, resume(){}, createOscillator(){return {frequency:{},connect(){},start(){},stop(){}};}, createGain(){return {gain:{setValueAtTime(){},exponentialRampToValueAtTime(){}},connect(){}};}, destination:{} }; },
   // Firebase stubs (no se usan en el test de detección):
   initializeApp(){return {};}, getAuth(){return {};}, getFirestore(){return {};},
-  signInWithEmailAndPassword(){}, signOut(){}, onAuthStateChanged(){}, browserLocalPersistence:{}, setPersistence(){return {catch(){}};},
+  signInWithEmailAndPassword(){}, signOut(){}, onAuthStateChanged(){}, browserSessionPersistence:{}, setPersistence(){return {catch(){}};},
   doc(){return {};}, getDoc(){}, collection(){return {};}, onSnapshot(){return ()=>{};}, getDocs(){return Promise.resolve({forEach(){}});},
 };
 sandbox.window = sandbox; // window === global-ish

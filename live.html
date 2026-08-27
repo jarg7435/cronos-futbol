@@ -1695,7 +1695,7 @@
 <script type="module">
 import { initializeApp }
     from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
-import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged, browserLocalPersistence, setPersistence }
+import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged, browserSessionPersistence, setPersistence }
     from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
 import { getFirestore, initializeFirestore, persistentLocalCache,
          persistentMultipleTabManager, doc, getDoc, collection,
@@ -1776,7 +1776,18 @@ try {
 }
 
 // Ensure session shared with main app
-setPersistence(auth, browserLocalPersistence).catch(() => {});
+// ⚠️ v638 · TIENE QUE DECIR LO MISMO QUE js/services/firebase-init.js. Ese
+//    comentario —"session shared with main app"— sólo es cierto si las DOS
+//    páginas usan la MISMA persistencia: cada una tiene su propia instancia de
+//    Auth, y `session` guarda en sessionStorage mientras `local` guarda en
+//    IndexedDB. Dejar una en cada sitio habría dejado al visor sin ver la
+//    sesión de la app (y al revés), sin ningún error a la vista.
+//
+//    🔑 El visor se abre con `window.open('./live.html')` desde la app, y una
+//    pestaña abierta así HEREDA una copia del sessionStorage de quien la abre:
+//    la sesión viaja. Quien llegue por el enlace compartido no la trae — pero
+//    para eso esta página tiene su propio formulario (`doLiveAuth`).
+setPersistence(auth, browserSessionPersistence).catch(() => {});
 
 // ── State ─────────────────────────────────────────────────────────
 let currentMatchId   = null;

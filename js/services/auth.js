@@ -599,8 +599,51 @@ async function _ensureSuperAdminConfig(email) {
     try {
         const fa = window._cronos_auth;
         if (!fa || !fa.db) return;
+
+        // ⏱️ v638 · ESTA LECTURA SALÍA SIN TOKEN. En las capturas 9668/9669
+        //    (testeo v637) la consola mostraba DOS veces
+        //    `_ensureSuperAdminConfig error: Missing or insufficient
+        //    permissions` nada más entrar el SuperAdmin.
+        //
+        //    🔑 No era un permiso. Se midió con el método :test de la Rules
+        //    REST API: el SuperAdmin lee y escribe `cronos_config/superadmins`
+        //    con claim Y sólo con su correo — las dos ramas salen ALLOW. Y el
+        //    documento existe en producción con su correo dentro. La única
+        //    forma de que la regla deniegue es `request.auth` NULO: la llamada
+        //    sale ANTES de que el cliente de Firestore tenga el token puesto.
+        //    Es la misma carrera de v568 que se arregló ahí abajo para
+        //    `checkAuthorization`, y esta función se llama SIN await (fuego y
+        //    olvido) justo en ese mismo instante.
+        //
+        //    ⚠️ Se espera el token, y si aun así deniegan se refresca A LA
+        //    FUERZA y se reintenta una vez. Sin el refresco, reintentar repite
+        //    la misma llamada con el mismo cliente sin token.
+        const _user = (fa.auth && fa.auth.currentUser) || null;
+        const _token = async (forzar) => {
+            if (!_user || typeof _user.getIdToken !== 'function') return;
+            try {
+                await Promise.race([
+                    _user.getIdToken(!!forzar),
+                    new Promise((_, rej) => setTimeout(() => rej(new Error('token lento')), forzar ? 5000 : 3000)),
+                ]);
+            } catch (_) { /* que decida la lectura */ }
+        };
+        await _token(false);
+
         const configRef = fa.doc(fa.db, 'cronos_config', 'superadmins');
-        const configSnap = await fa.getDoc(configRef);
+        let configSnap;
+        try {
+            configSnap = await fa.getDoc(configRef);
+        } catch (e1) {
+            const esPermisos = e1 && (e1.code === 'permission-denied' ||
+                                      (e1.message || '').includes('permission'));
+            if (!esPermisos) throw e1;
+            console.warn('[Chronos] cronos_config/superadmins denegado (token aún sin instalar). ' +
+                         'Refrescando token y reintentando…');
+            await new Promise(r => setTimeout(r, 800));
+            await _token(true);
+            configSnap = await fa.getDoc(configRef);
+        }
 
         if (configSnap.exists()) {
             const data = configSnap.data();

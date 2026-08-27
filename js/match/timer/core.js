@@ -4,11 +4,84 @@
 // Extraído de app.js (líneas 4509-4674)
 // ══════════════════════════════════════════════════════════════════
 
-// ── SOLUCIÓN #1: Timer Sync Point (corregir drift)
-// Variables para sincronización con servidor cada 5 segundos
+// ══════════════════════════════════════════════════════════════════
+//  ⏱️⏱️ v638 · EL RELOJ NO SE SINCRONIZABA ENTRE DISPOSITIVOS
+//
+//  Reportado tras las pruebas de campo (implementar.txt 2026-08-27, punto 2),
+//  con el mismo partido abierto en el PC y en dos tablets:
+//    · F7 Alevín C  — "pausar y reanudar no responde en la tablet".
+//    · F11 Juvenil  — "tras pausar, ~1 minuto de desfase entre PC y tablet".
+//
+//  Son DOS síntomas de TRES defectos, y los tres estaban aquí:
+//
+//  🔴 1 · LAS UNIDADES. `_maxDriftAllowed` valía 1500 y el comentario decía
+//     "si la diferencia es > 1.5s": está escrito en MILISEGUNDOS. Pero
+//     `masterTimeH1` y `serverData.timeH1` van en SEGUNDOS —`masterTimeH1 +=
+//     clampedDeltaSec` aquí, y `timeH1: masterTimeH1` en live/sync.js:890—,
+//     así que la resta también. O sea que la corrección sólo saltaba a partir
+//     de 1500 SEGUNDOS = 25 MINUTOS. En un partido de fútbol eso no ocurre
+//     jamás: **la corrección de desfase no ha funcionado nunca**. El minuto
+//     que él midió cae muy por debajo del umbral.
+//
+//  🔴 2 · SÓLO SINCRONIZABA MIENTRAS CORRÍA. La llamada vivía DENTRO de
+//     `tick()`, y `tick` sólo se ejecuta con el `setInterval` que arranca al
+//     dar a PAUSAR/REANUDAR. Con el reloj parado no se sincronizaba nada —
+//     y él dice, literalmente, "TRAS PAUSAR el cronómetro se generó el
+//     desfase". Justo el momento en que el mecanismo se apagaba.
+//
+//  🔴 3 · NO SE MIRABA `isRunning`. El snapshot lo lleva desde siempre
+//     (live/sync.js:889) pero aquí no lo leía nadie: cada aparato decidía por
+//     su cuenta si el reloj corre. Con el PC en marcha y la tablet parada, dar
+//     a PAUSAR en la tablet sólo cambiaba SU bandera —y como estaba al revés,
+//     arrancaba en vez de parar—: "el botón no responde".
+//
+//  🔑 QUIÉN MANDA: el documento de `live_matches`. No hay un aparato dueño ni
+//  hace falta: todos escriben ahí y todos adoptan de ahí, así que convergen.
+//  Dos pulsaciones a la vez las resuelve el último que escribe, que es lo
+//  mismo que ya pasaba con el marcador.
+// ══════════════════════════════════════════════════════════════════
+
 let _lastServerSync = 0;
 const _SERVER_SYNC_INTERVAL_MS = 5000;  // Sincronizar cada 5 segundos
-let _maxDriftAllowed = 1500; // Si la diferencia es > 1.5s, corregir
+// ⚠️ EN SEGUNDOS, como los dos valores que compara. Ver el punto 1 de arriba:
+//    escrito en milisegundos, el umbral eran 25 minutos y no corregía nunca.
+//    Dos segundos es el margen: por debajo, la diferencia es el propio latido.
+let _maxDriftAllowed = 2;
+// Vigía del reloj: corre SIEMPRE que haya partido en vivo, en marcha o en
+// pausa. Es la mitad que faltaba del punto 2.
+let _vigiaReloj = null;
+
+function _arrancarVigiaReloj() {
+    if (_vigiaReloj) return;
+    _vigiaReloj = setInterval(() => {
+        if (typeof liveIsActive === 'undefined' || !liveIsActive || !liveMatchId) {
+            clearInterval(_vigiaReloj);
+            _vigiaReloj = null;
+            return;
+        }
+        syncTimerWithServer();
+    }, _SERVER_SYNC_INTERVAL_MS);
+}
+
+// Adopta el estado del servidor SIN volver a escribirlo: `toggleGame()` haría
+// un push y dos aparatos podrían quedarse rebotándose la pausa el uno al otro.
+function _adoptarMarchaDelServidor(servidorCorre) {
+    if (typeof servidorCorre !== 'boolean' || servidorCorre === isRunning) return;
+    isRunning = servidorCorre;
+    const btn = document.getElementById('btn-play-pause');
+    if (isRunning) {
+        if (btn) { btn.textContent = 'PAUSAR'; btn.classList.add('danger'); }
+        lastTickTime = Date.now();          // sin esto, el primer tick sumaría el hueco
+        clearInterval(timerInterval);
+        timerInterval = setInterval(tick, 1000);
+    } else {
+        if (btn) { btn.textContent = 'REANUDAR'; btn.classList.remove('danger'); }
+        clearInterval(timerInterval);
+    }
+    if (window._CRONOS_DEBUG) {
+        console.warn('[Chronos] Reloj adoptado del servidor: ' + (isRunning ? 'EN MARCHA' : 'EN PAUSA'));
+    }
+}
 
 function toggleGame() {
     isRunning = !isRunning;
@@ -25,6 +98,10 @@ function toggleGame() {
     }
     // Push inmediato → live.html recibe pausa/reanuda en <1s
     if (liveIsActive) pushLiveSnapshot('active').catch(() => {});
+    // ⏱️ v638 · y el vigía queda en pie tanto al pausar como al reanudar: es lo
+    //    que permite que un aparato en PAUSA siga enterándose de lo que hacen
+    //    los demás.
+    if (liveIsActive) _arrancarVigiaReloj();
 }
 
 function tick() {
@@ -80,10 +157,14 @@ function tick() {
             }
         });
 
-        // ── SOLUCIÓN #1: Sincronizar con servidor cada 5 segundos para corregir drift
+        // Sincronización con el servidor. ⚠️ v638 · ESTO YA NO ES LA ÚNICA VÍA:
+        // el vigía de arriba la mantiene viva también EN PAUSA, que es cuando
+        // se producía el desfase. Se conserva aquí porque el tick es más
+        // frecuente y acorta la ventana mientras el reloj corre.
         if (now - _lastServerSync > _SERVER_SYNC_INTERVAL_MS) {
             _lastServerSync = now;
             syncTimerWithServer();  // Llamada asíncrona (no esperar)
+            if (liveIsActive) _arrancarVigiaReloj();
         }
 
         if (shouldAutoEnd1) {
@@ -106,10 +187,19 @@ async function syncTimerWithServer() {
         if (!snap.exists()) return;
 
         const serverData = snap.data();
-        
-        // Calcular la diferencia entre cliente y servidor
-        const diffH1 = Math.abs(serverData.timeH1 - masterTimeH1);
-        const diffH2 = Math.abs(serverData.timeH2 - masterTimeH2);
+
+        // ⏱️ v638 · LA MARCHA, ANTES QUE EL TIEMPO. Si el servidor dice que el
+        //    reloj está parado y aquí sigue corriendo (o al revés), corregir
+        //    sólo los segundos no arregla nada: al segundo siguiente vuelven a
+        //    separarse. Y es lo que hacía que PAUSAR "no respondiera" en la
+        //    tablet, que iba con la bandera al revés que el PC.
+        _adoptarMarchaDelServidor(serverData.isRunning);
+
+        // ⚠️ La diferencia va en SEGUNDOS, igual que los dos operandos. Ver la
+        //    nota de la cabecera: comparar esto contra 1500 era exigir 25
+        //    minutos de desfase para mover un dedo.
+        const diffH1 = Math.abs((serverData.timeH1 || 0) - masterTimeH1);
+        const diffH2 = Math.abs((serverData.timeH2 || 0) - masterTimeH2);
         
         // Si la diferencia es significativa (> 1.5s), corregir
         if (diffH1 > _maxDriftAllowed && matchPhase === '1st_half') {

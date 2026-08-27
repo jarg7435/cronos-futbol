@@ -176,6 +176,14 @@ function buildSandbox({
         saFS: async () => fns,
     };
     sandbox.window.saFS = sandbox.saFS;
+    // ⏱️ v638 · `_saEsperarToken` / `_saConReintento` los define
+    //    superadmin.panel.js, que en la app SIEMPRE carga antes que las
+    //    pestañas (es quien publica `saFS`). Aquí se replica su contrato:
+    //    ejecutar y, si deniegan por permisos, refrescar el token y reintentar.
+    //    En el arnés no hay denegaciones, así que basta con ejecutar — pero
+    //    tienen que EXISTIR, o la lectura revienta con "no es una función".
+    sandbox.window._saEsperarToken = async () => {};
+    sandbox.window._saConReintento = async (fn) => fn();
     vm.createContext(sandbox);
 
     const stubs = `

@@ -342,7 +342,11 @@
                 //  pequeño de que las bajas no se han podido leer.
                 // ════════════════════════════════════════════════════════
                 try {
-                    const dDocs = await getDocs(collection(db, 'deletion_requests'));
+                    // ⏱️ v638 · con reintento: también salía denegada al entrar
+                    //    (captura 9668). El `catch` de abajo se queda: degradar
+                    //    sigue siendo lo correcto si el reintento no basta.
+                    const dDocs = await window._saConReintento(
+                        () => getDocs(collection(db, 'deletion_requests')), 'SA-bajas');
                     dDocs.forEach(d => snapD_all.push(Object.assign({_id: d.id}, d.data())));
                 } catch (e) {
                     console.warn('[SA-DEBUG] No se pudieron leer las bajas (deletion_requests):', e);

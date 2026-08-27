@@ -131,7 +131,18 @@ function buildSandbox({
         //  Un arnes que siguiera devolviendo la coleccion entera ante un
         //  `where` probaria un comportamiento que ya no existe.
         where: (campo, op, valor) => ({ __w: { campo: campo, valor: valor } }),
-        query: (ref, ...conds) => ({ __col: ref.__col, __conds: conds.map(c => c.__w) }),
+        // 🔑 v638 · EL ARNES TIENE QUE OFRECER orderBy Y limit. Sin ellos el
+        //  modulo cae en su respaldo (consulta sin acotar) y el guard estaria
+        //  midiendo el camino que NO se usa en produccion — verde sin probar
+        //  nada, que es el defecto que ya se pago en la limpieza de xfail.
+        orderBy: (campo, dir) => ({ __ord: { campo: campo, dir: dir } }),
+        limit: (n) => ({ __lim: n }),
+        query: (ref, ...partes) => ({
+            __col: ref.__col,
+            __conds: partes.filter(p => p && p.__w).map(p => p.__w),
+            __ord:   (partes.find(p => p && p.__ord) || {}).__ord || null,
+            __lim:   (partes.find(p => p && p.__lim) || {}).__lim || null,
+        }),
         getDocs: async (ref) => {
             if (ref.__col === 'live_matches' && failLive) throw new Error('live falló');
             if (ref.__col === 'cronos_player_reports' && failReports) throw new Error('reports falló');
@@ -143,7 +154,12 @@ function buildSandbox({
             //    colectivos: la regla denegaba la consulta sin filtro y el
             //    `catch` sólo hacía console.warn.
             readCols.push(ref.__col);
-            consultas.push({ col: ref.__col, conds: (ref.__conds || []).map(w => w.campo).sort() });
+            consultas.push({
+                col: ref.__col,
+                conds: (ref.__conds || []).map(w => w.campo).sort(),
+                ord: ref.__ord || null,
+                lim: ref.__lim || null,
+            });
             const st = store[ref.__col] || {};
             let rows = Object.keys(st).map(id => [id, st[id]]);
             if (ref.__conds && ref.__conds.length) {
@@ -356,6 +372,61 @@ function walk(dir, out) {
             deInformes.some(c => c.conds.includes('clubId')) &&
             deInformes.some(c => c.conds.includes('coachUid')),
             { consultas: deInformes });
+
+        // ═══════════════════════════════════════════════════════════════
+        //  🔴🔴 v638 · LA CONSULTA VA ACOTADA, Y ORDENADA ANTES DE ACOTAR
+        //
+        //  Medido en producción: el club real tenía 5.436 informes / 10,5 MB
+        //  en esta colección para 176 partidos. La pestaña se los bajaba
+        //  ENTEROS y se quedaba colgada en «Cargando…».
+        //
+        //  ⚠️⚠️ EL `orderBy` NO ES DECORACIÓN: `limit` SIN `orderBy` abre la
+        //  ventana sobre lo MÁS VIEJO, porque el id de estos documentos
+        //  empieza por la fecha. Es exactamente la trampa de v508, y aquí
+        //  estaba a un paso de repetirse. Por eso se exigen LAS DOS.
+        // ═══════════════════════════════════════════════════════════════
+        ok('2h1 · 🔑 la consulta de informes va ACOTADA con limit',
+            deInformes.length > 0 && deInformes.every(c => typeof c.lim === 'number' && c.lim > 0),
+            { consultas: deInformes });
+        ok('2h2 · ⚠️⚠️ y ORDENADA por createdAt DESC — `limit` sin `orderBy` es la ventana en lo más viejo (v508)',
+            deInformes.every(c => c.ord && c.ord.campo === 'createdAt' && c.ord.dir === 'desc'),
+            { consultas: deInformes });
+    }
+    {
+        // ═══════════════════════════════════════════════════════════════
+        //  🔴🔴 v638 · UN PARTIDO ES UNA FICHA, NO UNA POR JUGADOR
+        //
+        //  El mapa se indexaba por `data.liveMatchId || d.id`, y `liveMatchId`
+        //  NO EXISTE en ninguno de los 5.436 documentos del club real (cero,
+        //  medido por REST). Así que caía siempre al id del documento y CADA
+        //  informe —uno por jugador y partido— se pintaba como un partido
+        //  aparte: 176 partidos salían como 5.377 fichas. De ahí el cuelgue.
+        //
+        //  🔑 El campo que sí llevan los 5.436 es `matchId`.
+        // ═══════════════════════════════════════════════════════════════
+        const delMismoPartido = {};
+        for (let i = 1; i <= 12; i++) {
+            delMismoPartido['R' + i] = collective({
+                matchId: 'match_2026-08-17_rival',
+                homeName: 'UnicoPartido', playerNumber: i, createdAt: 100 - i,
+            });
+        }
+        // …y uno de OTRO partido, para que no valga con «pinta siempre una».
+        delMismoPartido.OTRO = collective({
+            matchId: 'match_2026-08-18_otro', homeName: 'SegundoPartido', createdAt: 50,
+        });
+
+        const { g, container } = buildSandbox({ reports: delMismoPartido });
+        await g._renderFinishedMatchesTab();
+        const h = container.innerHTML;
+        const veces = (h.match(/UnicoPartido/g) || []).length;
+
+        ok('2h3 · 🔑🔑 doce informes del MISMO partido son UNA ficha, no doce',
+            veces === 1,
+            'apariciones de "UnicoPartido": ' + veces +
+            ' — si son 12, se ha vuelto a agrupar por el id del documento');
+        ok('2h4 · y un partido distinto sigue siendo su propia ficha',
+            h.includes('SegundoPartido'));
     }
     {
         // Un informe que uno mismo firmó, aunque lleve OTRO clubId, tiene que

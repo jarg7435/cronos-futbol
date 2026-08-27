@@ -818,7 +818,23 @@ function _umHayVuelta(role, isModalMode) {
     // toca. Añadir aquí la comprobación de la pila habría cambiado, sin que
     // nadie lo pidiera, una pantalla que hoy funciona.
     if (role === 'coach') return true;
-    if (role !== 'admin_individual') return false;
+    // ══════════════════════════════════════════════════════════════════
+    //  🔙 v638 · EL ADMINISTRADOR DE CLUB TAMPOCO TENÍA VUELTA
+    //
+    //  Reportado con captura (9664): al entrar en Mensajes desde su tablero,
+    //  lo único que le quedaba era el ✕, que llama a `navExitToRoles()` — o
+    //  sea, SALIR DEL ROL y volver a pasar por el selector. No había forma de
+    //  regresar a las opciones internas de su panel.
+    //
+    //  Es el MISMO caso que se arregló para el Administrador Individual en
+    //  v625, y se resuelve igual: entra en la lista, pero **preguntando a la
+    //  pila**, no a ojo. Su Mensajes se abre desde una tarjeta del tablero
+    //  (`openClubAdminMessaging('director')`, admin/club/panel.js:1448), en
+    //  modo modal y con pantalla anterior, así que `navCanGoBack()` dice que
+    //  sí — pero si algún día se abriera como raíz, un "Volver" que cae en
+    //  `navExit()` dejaría la pantalla en negro, que es peor que no tenerlo.
+    // ══════════════════════════════════════════════════════════════════
+    if (role !== 'admin_individual' && role !== 'club_admin') return false;
     return (typeof window.navCanGoBack === 'function') ? !!window.navCanGoBack() : true;
 }
 

@@ -29,7 +29,10 @@ window.saIndividuals = async function saIndividuals() {
         const { db, collection, query, where, getDocs } = await saFS();
 
         // Cargar entes individuales (clubs con type=individual)
-        const clubsSnap = await getDocs(collection(db,'clubs'));
+        // ⏱️ v638 · reintento con refresco de token: esta lectura salía denegada
+        //    al entrar (captura 9668). Ver la nota en superadmin.panel.js.
+        const clubsSnap = await window._saConReintento(
+            () => getDocs(collection(db,'clubs')), 'saIndividuals');
         const individualEntities = [];
         clubsSnap.forEach(d => {
             const c = { id:d.id, ...d.data() };
@@ -44,7 +47,8 @@ window.saIndividuals = async function saIndividuals() {
         //   - Users with isIndividual flag
         //   - Users whose clubId matches an individual entity ID (clubId is set to entityId for SA panel compat)
         const _indivEntityIds = new Set(individualEntities.map(e => e.id));
-        const usersSnap = await getDocs(collection(db,'users'));
+        const usersSnap = await window._saConReintento(
+            () => getDocs(collection(db,'users')), 'saIndividuals');
         const individualUsers = [];
 
         // ═══ SINCRONIZACIÓN RETROACTIVA DE hasAdmin ═══

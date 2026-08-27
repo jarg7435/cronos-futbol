@@ -46,7 +46,7 @@
         await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js');
     const { getAuth, createUserWithEmailAndPassword,
             signInWithEmailAndPassword, onAuthStateChanged, signOut,
-            setPersistence, browserLocalPersistence,
+            setPersistence, browserSessionPersistence,
             // v451 · recuperación y cambio de contraseña. `updatePassword`
             // exige sesión reciente, así que reautenticamos SIEMPRE antes con
             // la contraseña actual: de paso se comprueba que quien la cambia
@@ -450,8 +450,44 @@
     // to sessionStorage and impersonate any user including superadmin.
     // Session must always be verified via Firebase Auth onAuthStateChanged.
 
-    // ── Sesión persistente ────────────────────────────────────────
-    setPersistence(auth, browserLocalPersistence).catch(() => {});
+    // ══════════════════════════════════════════════════════════════
+    //  🔐 v638 · LA SESIÓN VIVE MIENTRAS LA APP ESTÉ ABIERTA, NO EN DISCO
+    //
+    //  Reportado como «la aplicación accede automáticamente nada más
+    //  rellenarse el campo del correo, aprovechando las credenciales
+    //  memorizadas por el navegador, sin pulsar ENTRAR»
+    //  (implementar.txt 2026-08-27, punto 3).
+    //
+    //  🔑 EL AUTOCOMPLETADO NO TENÍA NADA QUE VER. Nadie llama a `doAuth()`
+    //  desde un `input`: el formulario sólo entra por su `submit`. Lo que
+    //  pasaba es que `browserLocalPersistence` guarda la sesión en IndexedDB
+    //  POR ORIGEN y sobrevive al cierre del navegador, así que el observador
+    //  de aquí abajo la restauraba y llamaba a `checkAuthorization` él solo.
+    //  Como esa restauración tarda un momento (lleva una ida al servidor a
+    //  validar el token), daba tiempo a ver el login y a que el navegador
+    //  rellenara el correo ANTES de que la app entrara. De ahí la impresión
+    //  de que lo disparaba el campo. Coincidencia de tiempos, no causa.
+    //
+    //  ⚠️ Y EL CÓDIGO CONTRADECÍA LO QUE LA PROPIA APP PROMETE: el onboarding
+    //  dice, literalmente, «La sesión solo dura mientras tienes la app
+    //  abierta, por seguridad se cierra al salir» (index.html). Eso era falso
+    //  desde siempre.
+    //
+    //  `browserSessionPersistence` lo alinea: la sesión aguanta recargas y la
+    //  jornada entera con la pestaña abierta, y muere al CERRAR el navegador.
+    //  Entonces sí hay que pulsar ENTRAR.
+    //
+    //  🔑 EFECTO COLATERAL BUENO: esta persistencia va en `sessionStorage`,
+    //  que es POR PESTAÑA. Hasta ahora todas las ventanas del mismo navegador
+    //  compartían UNA sesión —entrar con una 5ª cuenta expulsaba a las otras
+    //  cuatro, la limitación que documentó v570 al no poder simular varios
+    //  entrenadores a la vez—. Con esto, dos pestañas pueden llevar cuentas
+    //  distintas.
+    //
+    //  ⚠️ SI SE REVIERTE, revertir también la promesa del onboarding: lo que
+    //  no puede volver a pasar es que digan cosas distintas.
+    // ══════════════════════════════════════════════════════════════
+    setPersistence(auth, browserSessionPersistence).catch(() => {});
 
     // ── Observador de sesión ──────────────────────────────────────
     onAuthStateChanged(auth, async (user) => {

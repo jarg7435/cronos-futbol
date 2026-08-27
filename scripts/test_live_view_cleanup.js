@@ -248,7 +248,7 @@ console.log('\n── PARTE 3 · 🔑 UN GOL, UNA LÍNEA (ejecutado de verdad) �
             destination:{} }; },
         initializeApp(){ return {}; }, getAuth(){ return {}; }, getFirestore(){ return {}; },
         signInWithEmailAndPassword(){}, signOut(){}, onAuthStateChanged(){},
-        browserLocalPersistence:{}, setPersistence(){ return { catch(){} }; },
+        browserSessionPersistence:{}, setPersistence(){ return { catch(){} }; },
         doc(){ return {}; }, getDoc(){}, collection(){ return {}; },
         onSnapshot(){ return () => {}; }, getDocs(){ return Promise.resolve({ forEach(){} }); },
     };

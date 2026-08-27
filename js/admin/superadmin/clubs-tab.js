@@ -60,10 +60,14 @@ window.saClubs = async function saClubs() {
         body.innerHTML = '';
         body.appendChild(actionBar);
         const { db, collection, getDocs } = await saFS();
-        const [clubsSnap, usersSnap] = await Promise.all([
+        // ⏱️ v638 · Estas DOS son las que se veían denegadas al entrar (captura
+        //    9668). `saFS()` ya espera el token; el reintento con refresco
+        //    forzado es la segunda red, para cuando el token llega tarde de
+        //    verdad. Ver la nota larga en superadmin.panel.js.
+        const [clubsSnap, usersSnap] = await window._saConReintento(() => Promise.all([
             getDocs(collection(db,'clubs')),
             getDocs(collection(db,'users')),
-        ]);
+        ]), 'saClubs');
         const clubs = {};
         const _indivClubIds = new Set();
         clubsSnap.forEach(d => {
@@ -458,6 +462,29 @@ window.saQuickApprove = async function(uid, email, clubId) {
 window.setupClubsSyncListener = async function setupClubsSyncListener() {
     try {
         const { db, collection, onSnapshot, query, where } = await saFS();
+
+        // ⏱️ v638 · LOS DOS OYENTES IBAN SIN MANEJADOR DE ERROR. Por eso una
+        //    denegación salía como `Uncaught Error in snapshot listener` en la
+        //    consola (captura 9668, dos veces) y el oyente se quedaba MUERTO:
+        //    un `onSnapshot` que falla no se rearma solo, así que a partir de
+        //    ahí el panel dejaba de enterarse de los cambios sin decir nada.
+        //    Ahora, si la denegación es por el token, se refresca y se rearma
+        //    UNA vez — con tope, para no entrar en bucle si de verdad no hay
+        //    permiso.
+        let _rearmado = false;
+        const alFallar = (etiqueta, rearmar) => (err) => {
+            const esPermisos = err && (err.code === 'permission-denied' ||
+                                       (err.message || '').includes('permission'));
+            if (esPermisos && !_rearmado) {
+                _rearmado = true;
+                console.warn('[' + etiqueta + '] Oyente denegado (token aún sin instalar). ' +
+                             'Refrescando token y rearmando…');
+                window._saEsperarToken(true).then(() => setupClubsSyncListener());
+                return;
+            }
+            console.warn('[' + etiqueta + '] Oyente detenido:', (err && err.message) || err);
+        };
+
         if (window._clubsSyncUnsubscribe) window._clubsSyncUnsubscribe();
         window._clubsSyncUnsubscribe = onSnapshot(collection(db,'users'), snap => {
             const panel = document.getElementById('sa-panel');
@@ -471,7 +498,7 @@ window.setupClubsSyncListener = async function setupClubsSyncListener() {
                     if (_isIndTab) saIndividuals(); else saClubs();
                 }, 700);
             }
-        });
+        }, alFallar('clubsSync'));
 
         // ── Listener de solicitudes nuevas (notificación en tiempo real al SA) ──
         if (window._requestsSyncUnsubscribe) window._requestsSyncUnsubscribe();
@@ -522,7 +549,8 @@ window.setupClubsSyncListener = async function setupClubsSyncListener() {
                         window._saReqRefreshTimeout = setTimeout(() => saRequests(), 500);
                     }
                 }
-            }
+            },
+            alFallar('requestsSync')
         );
     } catch (e) { console.error('[setupClubsSyncListener]', e); }
 };

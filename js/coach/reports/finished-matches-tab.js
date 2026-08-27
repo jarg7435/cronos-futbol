@@ -82,7 +82,12 @@ async function _renderFinishedMatchesTab() {
         //    pedidos dentro del bloque de live_matches, y el bloque de `users`
         //    —que tambien los necesita desde SEC-A1— los veia `undefined`:
         //    reventaba y el catch se lo comia en silencio.
-        const { db, collection, getDocs, query, where } = await _sdFS();
+        // ⚠️ `orderBy`/`limit` se traen AQUI TAMBIEN, con los demas (v638). La
+        //    nota de abajo ya avisaba de esto para `query`/`where`: pedirlos
+        //    dentro de un bloque los deja `undefined` para el resto y revienta
+        //    donde no toca. Y `test_finished_matches_module.js` (1b) vigila que
+        //    no se multipliquen las aperturas de Firestore: son DOS, no tres.
+        const { db, collection, getDocs, query, where, orderBy, limit } = await _sdFS();
         if (!db) {
             container.innerHTML = '<p style="color:#7d8590;padding:2rem;">Error de conexión.</p>';
             return;
@@ -165,6 +170,46 @@ async function _renderFinishedMatchesTab() {
         //  coleccion entera; hoy es justo lo que la regla rechaza. Sin clubId
         //  se pregunta solo por `coachUid`.
         // ══════════════════════════════════════════════════════════════
+        // ══════════════════════════════════════════════════════════════
+        //  🔴🔴 v638 · 176 PARTIDOS PINTADOS COMO 5.377 FICHAS
+        //
+        //  Reportado como «la carga es extremadamente lenta, al punto de
+        //  quedarse colgado» (implementar.txt 2026-08-27, punto 4) y con
+        //  captura: la pestaña atascada en «Cargando…» SIN un solo error en
+        //  consola. Medido contra producción antes de tocar nada, con el club
+        //  real (CD DÍA):
+        //
+        //     documentos que descargaba .......... 5.436   (10,5 MB)
+        //     fichas de partido que construía ..... 5.377
+        //     🔑 PARTIDOS DE VERDAD ................. 176
+        //
+        //  🔑 LA CAUSA NO ERA EL VOLUMEN, ERA LA CLAVE DE AGRUPACIÓN. El mapa
+        //  se indexaba por `data.liveMatchId || d.id`, y `liveMatchId` NO
+        //  EXISTE EN NINGUNO de los 5.436 documentos (cero, medido). Así que
+        //  siempre caía al id del documento y CADA INFORME —uno por jugador y
+        //  partido— se convertía en su propia ficha. El campo que sí llevan
+        //  los 5.436 es `matchId`, y es el que agrupa: 5.377 → 176.
+        //
+        //  ⚠️ Y EL VOLUMEN TAMBIÉN ESTABA MAL, aunque no fuera la causa: para
+        //  una lista de 176 filas se bajaban 10,5 MB. Se acota con
+        //  orderBy(createdAt desc) + limit. `createdAt` es una cadena ISO en
+        //  los 5.436 (medido), y una ISO ordena lexicográficamente igual que
+        //  cronológicamente, así que el orden es fiable. El índice
+        //  `clubId + createdAt DESC` ya existía en firestore.indexes.json.
+        //
+        //  ⚠️⚠️ `limit` SIN `orderBy` habría sido peor que no ponerlo: abre una
+        //  ventana sobre lo MÁS VIEJO, porque el id empieza por la fecha. Es
+        //  la lección de v508 y aquí estaba a un paso de repetirse.
+        //
+        //  ⏳ LO QUE ESTO NO ARREGLA, y conviene decidir aparte: esta
+        //  colección NO TIENE un documento por partido. Son ~31 informes por
+        //  partido (uno por jugador), así que cualquier lista de partidos
+        //  construida desde aquí siempre bajará de más. La solución duradera
+        //  es un índice ligero por partido, como el `live_index` de v572/v573.
+        //  Con el tope de abajo la pestaña va sobrada hoy (176 partidos), pero
+        //  crecerá.
+        // ══════════════════════════════════════════════════════════════
+        const _TOPE_INFORMES = 1500;   // ~48 partidos recientes a 31 informes/partido
         try {
             const condRep = [];
             if (clubId)  condRep.push(where('clubId', '==', clubId));
@@ -175,7 +220,13 @@ async function _renderFinishedMatchesTab() {
             for (const cond of condRep) {
                 // ⚠️ Una consulta que falle no puede tumbar a la otra.
                 try {
-                    const snap = await getDocs(query(collection(db, 'cronos_player_reports'), cond));
+                    // Si el arnés/SDK no trajera orderBy o limit, se consulta
+                    // como antes: acotar es una mejora, no un requisito para
+                    // que la pestaña funcione.
+                    const partes = [cond];
+                    if (typeof orderBy === 'function') partes.push(orderBy('createdAt', 'desc'));
+                    if (typeof limit === 'function')   partes.push(limit(_TOPE_INFORMES));
+                    const snap = await getDocs(query(collection(db, 'cronos_player_reports'), ...partes));
                     snap.forEach(d => { if (!vistos.has(d.id)) { vistos.add(d.id); docsInformes.push(d); } });
                 } catch (eC) {
                     console.warn('[FinishedMatches] cronos_player_reports (una condición):', eC && eC.message);
@@ -189,7 +240,12 @@ async function _renderFinishedMatchesTab() {
                 // alternativos, y un OR entre campos distintos no existe.
                 const isCollective = data.staffReport === true || data.type === 'collective_match_report' || data.reportType === 'collective';
                 if (isCollective) {
-                    const idKey = data.liveMatchId || d.id;
+                    // 🔑 v638 · `matchId` PRIMERO. Es el único de los tres que
+                    //    existe de verdad en estos documentos (medido: 5.436 de
+                    //    5.436 lo llevan; `liveMatchId`, CERO). Sin él, cada
+                    //    informe de cada jugador se pintaba como un partido
+                    //    aparte. Ver la nota larga de arriba.
+                    const idKey = data.matchId || data.liveMatchId || d.id;
                     if (!finishedMap.has(idKey)) {
                         finishedMap.set(idKey, {
                             id: idKey,
