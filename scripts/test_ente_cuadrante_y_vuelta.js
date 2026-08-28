@@ -142,6 +142,44 @@ console.log('\nA) 🧩 El cuadrante deja de estar cableado a un contenedor');
 
     ok('A7 · ⚠️ el oyente en vivo se da de baja si su contenedor ya no está',
        /if \(!_cqCont\(\)\) \{ _cqDesconectar\(\); return; \}/.test(CQ));
+
+    // ════════════════════════════════════════════════════════════════
+    //  🔴🔴 v643 · LA MISMA TRAMPA, VIVA EN LA FUNCIÓN DE AL LADO
+    //
+    //  A6 (arriba) cerró este defecto en `_sdRecargarCuadrante` en la v626…
+    //  y `cqSemana` —las flechas ◀ ▶ de cambiar de semana— se quedó con él.
+    //  Reportado por el autor el 2026-08-28: en el panel del Ente Individual
+    //  las flechas no respondían y NO había error en consola. `_sdLoadCuadrante()`
+    //  sin argumento resetea el contenedor a 'staff-dashboard-content' (el
+    //  panel de Dirección), que en el panel del ente no existe → `_cqCont()`
+    //  null → `return` en la tercera línea. El offset avanzaba; no se pintaba
+    //  nada.
+    //
+    //  🔑 POR ESO ESTA ASERCIÓN NO MIRA `cqSemana`: MIRA LA FORMA. Cualquier
+    //  llamada futura a _sdLoadCuadrante sin contenedor la pone en rojo, se
+    //  llame la función como se llame. Vigilar el sitio concreto es lo que
+    //  dejó pasar éste.
+    // ════════════════════════════════════════════════════════════════
+    {
+        // ⚠️ SOBRE EL CÓDIGO, NO SOBRE LOS COMENTARIOS: las cabeceras de este
+        // mismo fichero escriben `_sdLoadCuadrante()` sin argumento para
+        // EXPLICAR el defecto, y contarlas pondría el guard rojo por la prosa.
+        const sinCom = (t) => t.replace(/\/\*[\s\S]*?\*\//g, '')
+            .split(/\r?\n/).map((l) => l.replace(/^\s*\/\/.*$/, '')).join('\n');
+        const CQ_COD = sinCom(CQ);
+        // Todas las invocaciones del fichero, menos su propia declaración.
+        const llamadas = (CQ_COD.match(/_sdLoadCuadrante\([^)]*\)/g) || [])
+            .filter((t) => !/^_sdLoadCuadrante\(contenedorId\)$/.test(t));
+        const sinContenedor = llamadas.filter((t) => /_sdLoadCuadrante\(\s*\)/.test(t));
+        ok('A8 · 🔴🔴 v643 · NINGUNA llamada a _sdLoadCuadrante va sin contenedor',
+           sinContenedor.length === 0 && llamadas.length > 0,
+           'sin argumento vuelve al panel de Direccion y el ente deja de repintar EN SILENCIO · ' +
+           JSON.stringify(llamadas));
+
+        ok('A9 · y las flechas de semana repintan en SU sitio',
+           /window\.cqSemana = function \(delta\)[\s\S]{0,700}?_sdLoadCuadrante\(_cqContId\(\)\);/.test(CQ),
+           'es la funcion que reporto el autor: las flechas no cambiaban las fechas');
+    }
 }
 
 // ════════════════════════════════════════════════════════════════════

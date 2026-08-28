@@ -54,9 +54,27 @@
 //  dice en pantalla, para no inventar una colección nueva por un solo caso.
 // ════════════════════════════════════════════════════════════════════
 
+// ════════════════════════════════════════════════════════════════════
+//  ⚽ v643 · EL ENTE, UNA SOLA ENTRADA: «Entrenador - Administrador Individual»
+//
+//  Encargo del autor (implementar.txt, 2026-08-28): unificar aquí la
+//  nomenclatura del ente, que en el resto de la aplicación ya está unificada
+//  desde la v598-v601 pero en este desplegable seguía partida en dos.
+//
+//  🔴 Y NO ERA COSMÉTICO. `individual_admin` NO EXISTE como opción en el
+//  desplegable del alta (index.html sólo ofrece `value="individual"`, y la
+//  nota de la v598 explica por qué: el valor que viaja a Firestore sigue
+//  siendo ése). Así que invite-prefill.js hacía `sel.value = 'individual_admin'`,
+//  el navegador dejaba el select VACÍO y la invitación llegaba **sin rol**:
+//  el invitado tenía que adivinarlo. El mismo fallo que la v593 tuvo que
+//  parchear con `coordinator`.
+//
+//  🔑 SE QUEDA LA CLAVE `individual`, que es la canónica. Cambiar la cadena
+//  habría obligado a tocar reglas, recuentos de plazas y documentos ya
+//  escritos — exactamente lo que la v598 decidió no hacer.
+// ════════════════════════════════════════════════════════════════════
 window.CRONOS_SECRETARIA_ROLES = {
-    individual:       '👤 Entrenador Individual',
-    individual_admin: '🛡️ Administrador Individual',
+    individual:       '⚽ Entrenador - Administrador Individual',
     club_admin:       '🏟️ Administrador de Club',
     user:             '⚽ Entrenador',
     parent:           '👨‍👩‍👧 Padre/Madre/Tutor',
@@ -87,8 +105,7 @@ window.saSecretary = async function saSecretary(opciones) {
     //    guard —es la misma clase de fallo que un orden de <script> distinto—,
     //    así que el respaldo se queda.
     const _CAT = (typeof window !== 'undefined' && window.CRONOS_SECRETARIA_ROLES) || {
-        individual:       '👤 Entrenador Individual',
-        individual_admin: '🛡️ Administrador Individual',
+        individual:       '⚽ Entrenador - Administrador Individual',
         club_admin:       '🏟️ Administrador de Club',
         user:             '⚽ Entrenador',
         parent:           '👨‍👩‍👧 Padre/Madre/Tutor',
@@ -370,8 +387,12 @@ window._secEnlaceReal = _secEnlaceReal;
 function _secDatosActuales() {
     const roleVal = document.getElementById('sec-role')?.value || 'individual';
     const roleLabels = {
-        individual: 'Entrenador Individual',
-        individual_admin: 'Administrador Individual',
+        individual: 'Entrenador - Administrador Individual',
+        // ⚠️ v643 · `individual_admin` YA NO SE OFRECE (ver la nota del
+        //    catálogo), pero su etiqueta se queda: hay invitaciones ya
+        //    enviadas con ese rol, y su correo tiene que seguir sabiendo
+        //    sustituir {rol} por algo legible en vez de por la clave cruda.
+        individual_admin: 'Entrenador - Administrador Individual',
         club_admin: 'Administrador de Club',
         user: 'Entrenador',
         parent: 'Padre/Madre/Tutor',

@@ -128,7 +128,6 @@ const F5 = {
     auth:   'js/services/auth.js',
     club:   'js/admin/club/panel.js',
     reqs:   'js/admin/superadmin/requests-tab.js',
-    trash:  'js/admin/superadmin/trash.js',
     sapanel:'js/admin/superadmin/superadmin.panel.js',
     delclub:'js/admin/superadmin/delete-club.js',
     indiv:  'js/admin/individual/panel.js',

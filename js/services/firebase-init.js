@@ -615,6 +615,14 @@ window.saFS = async function saFS() {
         where: fs.where, getDocs: fs.getDocs,
         orderBy: fs.orderBy, onSnapshot: fs.onSnapshot,
         serverTimestamp: fs.serverTimestamp,
+        // 🔴 v641 · `deleteField` FALTABA EN ESTA COPIA, y ÉSTA es la que gana:
+        //  firebase-init.js es `type="module"`, así que se ejecuta DESPUÉS del
+        //  script clásico superadmin.panel.js y sobrescribe su `window.saFS`.
+        //  Sin este alias, la migración de la v631 —que retira `saBajasLog` de
+        //  la raíz del documento del SuperAdmin, donde lo leía cualquier
+        //  usuario autenticado— se saltaba su guarda `typeof` y no se ejecutaba
+        //  NUNCA: la fuga seguía abierta y nadie se enteraba.
+        deleteField: fs.deleteField,
         httpsCallable: fnMod.httpsCallable,
     };
 };

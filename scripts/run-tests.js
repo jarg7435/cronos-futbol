@@ -104,6 +104,43 @@ const testFiles = fs
 console.log(`CHRONOS test suite — ${testFiles.length} test(s)` + (XFAIL.size ? `  (${XFAIL.size} xfail conocido)` : ''));
 console.log('-'.repeat(60));
 
+// ════════════════════════════════════════════════════════════════════
+//  🔴🔴 v641 · LO PRIMERO: ¿COMPILA EL PROYECTO?
+//
+//  `scripts/_check_syntax.js` recorre js/ entero con `node --check` y existe
+//  desde antes de la v596… pero EMPIEZA POR GUION BAJO, y el selector de esta
+//  batería es /^test_.*\.js$/. O sea que estaba escrito, mantenido y
+//  documentado — y NO LO EJECUTABA NADIE. Había que acordarse de lanzarlo a
+//  mano.
+//
+//  Lo que costó: la v641 metió un acento grave dentro de un comentario CSS que
+//  vive en un template literal de superadmin.panel.js. El backtick cerró la
+//  plantilla en seco, el fichero dejó de compilar y el panel del SuperAdmin se
+//  quedó EN NEGRO. La batería dio 219/219 en verde, porque ninguna aserción
+//  parsea el fichero entero: el guard del panel ejecutaba un TROZO extraído
+//  con slice(), y un trozo sí compilaba. Lo encontró el autor abriendo la app.
+//
+//  🔑 UN FICHERO QUE NO COMPILA NO PUEDE PASAR NINGÚN TEST DE VERDAD, así que
+//  esto va ANTES que todo y CORTA. Es la trampa que club-reports.js lleva
+//  advirtiendo desde la v590 y que setup-modal.js ya pagó en la v596: escrita
+//  en tres cabeceras y aun así reincidente, porque avisar no es comprobar.
+// ════════════════════════════════════════════════════════════════════
+{
+    const chk = spawnSync(process.execPath, [path.join('scripts', '_check_syntax.js')],
+                          { cwd: ROOT, encoding: 'utf8' });
+    if (chk.status !== 0) {
+        console.log('  FAIL   _check_syntax.js  — HAY FICHEROS QUE NO COMPILAN');
+        ((chk.stdout || '') + (chk.stderr || ''))
+            .split('\n').filter((l) => l.startsWith('ERR'))
+            .forEach((l) => console.log('         ' + l));
+        console.log('-'.repeat(60));
+        console.log('Resultado: ABORTADO — se para aquí porque un fichero roto');
+        console.log('           hace que los demás tests midan otra cosa.');
+        process.exit(1);
+    }
+    console.log('  PASS   _check_syntax.js  (js/ entero compila)');
+}
+
 let passed = 0;
 const failed = []; // fallos que SÍ bloquean
 const xfailed = []; // xfail que falló como se esperaba (informativo)

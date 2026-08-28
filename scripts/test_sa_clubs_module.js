@@ -551,7 +551,7 @@ const makeSnap = (changes, size) => ({
     console.log('\n── PARTE 9 · setupClubsSyncListener() — listener de usuarios ──');
     {
         const { sandbox, listeners, unsubCalls } = buildSandbox({
-            elements: { 'sa-panel': {}, 'sa-tab-requests': {} },
+            elements: { 'sa-panel': {} },
         });
         await sandbox.window.setupClubsSyncListener();
         ok('9a · registra listener sobre users y sobre platform_requests',
@@ -565,9 +565,13 @@ const makeSnap = (changes, size) => ({
             unsubCalls.filter(c => c === 'users').length === 1 && unsubCalls.filter(c => c === 'platform_requests').length === 1);
     }
     {
+        // v641 · La barra de pestanas se retiro: la seccion activa vive en
+        // `window._saSeccionActual`. Leerla del DOM daba siempre `null` en
+        // silencio y el refresco se iba SIEMPRE a Clubes.
         const { sandbox, listeners, timers, flushTimers } = buildSandbox({
-            elements: { 'sa-panel': {}, 'sa-tab-individuals': { style: { borderBottomColor: 'transparent' } }, 'sa-tab-requests': {} },
+            elements: { 'sa-panel': {} },
         });
+        sandbox.window._saSeccionActual = 'clubs';
         await sandbox.window.setupClubsSyncListener();
         let clubsCalls = 0, indivCalls = 0;
         sandbox.window.saClubs = async () => { clubsCalls++; };
@@ -580,7 +584,7 @@ const makeSnap = (changes, size) => ({
         usersCb(makeSnap([{ type: 'modified' }]));
         ok('9f · cambio "modified" -> programa refresco con debounce de 700ms', timers.length === 1 && timers[0].ms === 700);
         await flushTimers();
-        ok('9g · pestaña Clubes activa -> refresca saClubs()', clubsCalls === 1 && indivCalls === 0);
+        ok('9g · seccion Clubes activa -> refresca saClubs()', clubsCalls === 1 && indivCalls === 0);
 
         usersCb(makeSnap([{ type: 'removed' }]));
         usersCb(makeSnap([{ type: 'removed' }]));
@@ -591,26 +595,45 @@ const makeSnap = (changes, size) => ({
     }
     {
         const { sandbox, listeners, timers, flushTimers } = buildSandbox({
-            elements: { 'sa-panel': {}, 'sa-tab-individuals': { style: { borderBottomColor: 'rgb(88, 166, 255)' } }, 'sa-tab-requests': {} },
+            elements: { 'sa-panel': {} },
         });
+        sandbox.window._saSeccionActual = 'individuals';
         await sandbox.window.setupClubsSyncListener();
         let clubsCalls = 0, indivCalls = 0;
         sandbox.window.saClubs = async () => { clubsCalls++; };
         sandbox.window.saIndividuals = async () => { indivCalls++; };
         listeners.find(l => l.col === 'users').cb(makeSnap([{ type: 'modified' }]));
         await flushTimers();
-        ok('9j · pestaña Individuales activa -> refresca saIndividuals(), no saClubs()', indivCalls === 1 && clubsCalls === 0);
+        ok('9j · seccion Individuales activa -> refresca saIndividuals(), no saClubs()', indivCalls === 1 && clubsCalls === 0);
+    }
+    {
+        // v641 · ⚠️ EN EL TABLERO NO SE REPINTA CONTENIDO. Repintar Clubes
+        // encima del menu sacaria al SuperAdmin de donde esta sin que el haya
+        // tocado nada. Antes era imposible estar "en el tablero" y este caso
+        // no existia.
+        const { sandbox, listeners, flushTimers } = buildSandbox({
+            elements: { 'sa-panel': {} },
+        });
+        sandbox.window._saSeccionActual = 'menu';
+        await sandbox.window.setupClubsSyncListener();
+        let clubsCalls = 0, indivCalls = 0;
+        sandbox.window.saClubs = async () => { clubsCalls++; };
+        sandbox.window.saIndividuals = async () => { indivCalls++; };
+        listeners.find(l => l.col === 'users').cb(makeSnap([{ type: 'modified' }]));
+        await flushTimers();
+        ok('9j2 · v641 · en el TABLERO no se repinta ninguna seccion encima',
+            clubsCalls === 0 && indivCalls === 0);
     }
     {
         const { sandbox, listeners, timers } = buildSandbox({
-            elements: { 'sa-panel': { style: { display: 'none' } }, 'sa-tab-requests': {} },
+            elements: { 'sa-panel': { style: { display: 'none' } } },
         });
         await sandbox.window.setupClubsSyncListener();
         listeners.find(l => l.col === 'users').cb(makeSnap([{ type: 'modified' }]));
         ok('9k · panel oculto -> no programa ningún refresco', timers.length === 0);
     }
     {
-        const { sandbox, listeners } = buildSandbox({ elements: { 'sa-tab-requests': {} } });
+        const { sandbox, listeners } = buildSandbox({ elements: {} });
         await sandbox.window.setupClubsSyncListener();
         let threw = false;
         try { listeners.find(l => l.col === 'users').cb(makeSnap([{ type: 'modified' }])); } catch (_) { threw = true; }
@@ -626,51 +649,67 @@ const makeSnap = (changes, size) => ({
         ok('9m · fallo al inicializar -> capturado, no propaga', !threw);
     }
 
-    console.log('\n── PARTE 10 · setupClubsSyncListener() — badge y avisos de solicitudes ──');
+    console.log('\n── PARTE 10 · setupClubsSyncListener() — aviso de solicitudes y avisos ──');
+    // ⚠️ v641 · EL AVISO CAMBIÓ DE SITIO, NO DE SENTIDO. Con la barra de
+    // pestañas retirada, el número de pendientes ya no se inyecta como <span>
+    // dentro de un botón: se guarda en `window._saPendingCount` y lo pinta la
+    // TARJETA del tablero (`cronosTableroHtml`, que ignora 0/''/null). Lo que
+    // estas aserciones vigilan sigue siendo lo mismo: que el número sea el
+    // conteo COMPLETO y no el tamaño del snapshot.
     {
-        const { sandbox, listeners, els } = buildSandbox({
-            elements: { 'sa-panel': {}, 'sa-tab-requests': {} }, pendingCount: 3,
+        const { sandbox, listeners } = buildSandbox({
+            elements: { 'sa-panel': {} }, pendingCount: 3,
         });
         await sandbox.window.setupClubsSyncListener();
         const reqCb = listeners.find(l => l.col === 'platform_requests').cb;
         await reqCb(makeSnap([{ type: 'added' }], 1));
-        const badge = els['sa-tab-requests'].querySelector('span');
-        ok('10a · badge con el conteo COMPLETO de saCountPendingRequests (3), no el tamaño del snapshot (1)',
-            badge && String(badge.textContent) === '3');
+        ok('10a · el conteo COMPLETO de saCountPendingRequests (3), no el tamaño del snapshot (1)',
+            String(sandbox.window._saPendingCount) === '3');
     }
     {
-        const { sandbox, listeners, els } = buildSandbox({
-            elements: { 'sa-panel': {}, 'sa-tab-requests': {} }, countThrows: true,
+        const { sandbox, listeners } = buildSandbox({
+            elements: { 'sa-panel': {} }, countThrows: true,
         });
         await sandbox.window.setupClubsSyncListener();
         await listeners.find(l => l.col === 'platform_requests').cb(makeSnap([{ type: 'added' }], 7));
-        const badge = els['sa-tab-requests'].querySelector('span');
-        ok('10b · si saCountPendingRequests falla -> fallback a snap.size (7)', badge && String(badge.textContent) === '7');
+        ok('10b · si saCountPendingRequests falla -> fallback a snap.size (7)',
+            String(sandbox.window._saPendingCount) === '7');
     }
     {
-        const { sandbox, listeners, els } = buildSandbox({
-            elements: { 'sa-panel': {}, 'sa-tab-requests': {} }, pendingCount: 0,
+        const { sandbox, listeners } = buildSandbox({
+            elements: { 'sa-panel': {} }, pendingCount: 0,
         });
+        sandbox.window._saSeccionActual = 'menu';
+        let repintados = 0;
+        sandbox.window.saMenu = () => { repintados++; };
         await sandbox.window.setupClubsSyncListener();
         const reqCb = listeners.find(l => l.col === 'platform_requests').cb;
         await reqCb(makeSnap([], 0));
-        ok('10c · conteo 0 -> no pinta badge', els['sa-tab-requests'].querySelector('span') === null);
+        ok('10c · conteo 0 -> el dato queda a 0 (la tarjeta no pinta píldora)',
+            Number(sandbox.window._saPendingCount) === 0);
         await reqCb(makeSnap([], 0));
-        ok('10d · llamadas repetidas -> no acumula badges duplicados', els['sa-tab-requests'].children.length === 0);
+        ok('10d · en el TABLERO, cada aviso repinta el tablero (la píldora se actualiza sola)',
+            repintados === 2);
     }
     {
-        const { sandbox, listeners, els } = buildSandbox({
-            elements: { 'sa-panel': {}, 'sa-tab-requests': {} }, pendingCount: 2,
+        // ⚠️ Y DENTRO DE UNA SECCIÓN NO SE REPINTA: repintar el tablero encima
+        // de Clubes echaría al SuperAdmin de donde está trabajando.
+        const { sandbox, listeners } = buildSandbox({
+            elements: { 'sa-panel': {} }, pendingCount: 2,
         });
+        sandbox.window._saSeccionActual = 'clubs';
+        let repintados = 0;
+        sandbox.window.saMenu = () => { repintados++; };
         await sandbox.window.setupClubsSyncListener();
         const reqCb = listeners.find(l => l.col === 'platform_requests').cb;
         await reqCb(makeSnap([], 2));
         await reqCb(makeSnap([], 2));
-        ok('10e · badge se reemplaza, nunca se duplica', els['sa-tab-requests'].children.length === 1);
+        ok('10e · dentro de una sección NO se repinta el tablero encima',
+            repintados === 0 && Number(sandbox.window._saPendingCount) === 2);
     }
     {
         const { sandbox, listeners, toasts, vibrations } = buildSandbox({
-            elements: { 'sa-panel': {}, 'sa-tab-requests': {} }, pendingCount: 1,
+            elements: { 'sa-panel': {} }, pendingCount: 1,
         });
         await sandbox.window.setupClubsSyncListener();
         const reqCb = listeners.find(l => l.col === 'platform_requests').cb;
@@ -683,7 +722,7 @@ const makeSnap = (changes, size) => ({
     }
     {
         const { sandbox, listeners, toasts } = buildSandbox({
-            elements: { 'sa-panel': {}, 'sa-tab-requests': {} }, pendingCount: 1,
+            elements: { 'sa-panel': {} }, pendingCount: 1,
         });
         await sandbox.window.setupClubsSyncListener();
         const reqCb = listeners.find(l => l.col === 'platform_requests').cb;
@@ -693,9 +732,10 @@ const makeSnap = (changes, size) => ({
     }
     {
         const { sandbox, listeners, timers, flushTimers } = buildSandbox({
-            elements: { 'sa-panel': {}, 'sa-tab-requests': { style: { borderBottomColor: 'rgb(88, 166, 255)' } } },
+            elements: { 'sa-panel': {} },
             pendingCount: 1,
         });
+        sandbox.window._saSeccionActual = 'requests';
         await sandbox.window.setupClubsSyncListener();
         let reqRefresh = 0;
         sandbox.window.saRequests = async () => { reqRefresh++; };
@@ -703,20 +743,21 @@ const makeSnap = (changes, size) => ({
         await reqCb(makeSnap([], 0));
         await reqCb(makeSnap([{ type: 'added', doc: { data: () => ({ requestedEmail: 'x@x.com' }) } }], 1));
         const t = timers.find(x => x.ms === 500);
-        ok('10j · con la pestaña Solicitudes activa -> programa auto-refresco a 500ms', !!t);
+        ok('10j · con la sección Solicitudes activa -> programa auto-refresco a 500ms', !!t);
         await flushTimers();
         ok('10k · el auto-refresco llama a saRequests()', reqRefresh === 1);
     }
     {
         const { sandbox, listeners, timers } = buildSandbox({
-            elements: { 'sa-panel': {}, 'sa-tab-requests': { style: { borderBottomColor: 'transparent' } } },
+            elements: { 'sa-panel': {} },
             pendingCount: 1,
         });
+        sandbox.window._saSeccionActual = 'clubs';
         await sandbox.window.setupClubsSyncListener();
         const reqCb = listeners.find(l => l.col === 'platform_requests').cb;
         await reqCb(makeSnap([], 0));
         await reqCb(makeSnap([{ type: 'added', doc: { data: () => ({ userEmail: 'x@x.com' }) } }], 1));
-        ok('10l · con la pestaña Solicitudes inactiva -> NO auto-refresca', !timers.some(x => x.ms === 500));
+        ok('10l · con la sección Solicitudes inactiva -> NO auto-refresca', !timers.some(x => x.ms === 500));
     }
 
     console.log(`\n${pass} PASS / ${fail} FAIL`);

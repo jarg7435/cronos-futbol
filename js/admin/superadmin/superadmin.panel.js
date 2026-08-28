@@ -265,12 +265,12 @@ window.openSuperAdminPanel = async function openSuperAdminPanel() {
     if (setupModal) setupModal.style.display = 'none';
 
     // Contar pendientes para badge (mismas fuentes que el panel Solicitudes)
+    // v641 · Se guarda en `window._saPendingCount` porque ahora el aviso lo
+    // pinta la TARJETA del tablero, que se repinta cada vez que se vuelve al
+    // menú y en cuanto el oyente de solicitudes trae un número nuevo.
     let pendingCount = 0;
     try { pendingCount = await window.saCountPendingRequests(); } catch (_) {}
-
-    const badge = pendingCount > 0
-        ? ` <span style="background:#ff5858;color:white;border-radius:10px;padding:1px 7px;font-size:0.65rem;font-weight:700;">${pendingCount}</span>`
-        : '';
+    window._saPendingCount = pendingCount;
 
     const old = document.getElementById('sa-panel');
     if (old) old.remove();
@@ -278,39 +278,157 @@ window.openSuperAdminPanel = async function openSuperAdminPanel() {
     const panel = document.createElement('div');
     panel.id = 'sa-panel';
     panel.style.cssText = 'position:fixed;inset:0;background:#0d1117;z-index:9500;display:flex;flex-direction:column;overflow:hidden;font-family:Inter,sans-serif;';
+    // ════════════════════════════════════════════════════════════════
+    //  🎛️ v641 · EL PANEL DEL SUPERADMIN, CON EL MISMO MARCO QUE LOS DEMÁS
+    //
+    //  Encargo del autor (implementar.txt, 2026-08-28): «rediseña la vista del
+    //  SuperAdmin para que coincida con el estilo visual, botones, tarjetas,
+    //  modales y jerarquía tipográfica de los paneles de Director Deportivo,
+    //  Coordinador y Entrenador».
+    //
+    //  🔑 NO SE INVENTA UN ESTILO NUEVO: se adopta el que ya existe. La
+    //  cabecera es la del panel de Dirección (club-reports.js) hasta el
+    //  gradiente y los tamaños; la barra de vuelta es la MISMA pieza de texto
+    //  que usan Dirección (v591) y Admin de Club (v597); y el tablero de
+    //  entrada es `cronosTableroHtml` (utils.js), la pieza compartida de v590.
+    //  Copiar el aspecto a mano habría creado una cuarta variante que se iría
+    //  separando al primer retoque — la historia de este proyecto.
+    //
+    //  🔴 FUERA LA BARRA DE PESTAÑAS. Eran diez botones subrayados sin decir
+    //  qué hacía ninguno, y el estado activo vivía en un `borderBottomColor`
+    //  que TRES sitios leían del DOM para saber en qué pestaña estabas. Ahora
+    //  la sección activa es un dato (`window._saSeccionActual`) y el aspecto
+    //  no la codifica.
+    //
+    //  ⚠️ EL OVERLAY SE QUEDA A PANTALLA COMPLETA (`position:fixed;inset:0`,
+    //  z-index 9500): no es estética, es lo que el modo diagnóstico quita del
+    //  DOM al entrar (v629) y lo que deja sitio a las tablas anchas de clubes.
+    //  Lo que se homogeneiza es lo de DENTRO.
+    // ════════════════════════════════════════════════════════════════
     panel.innerHTML = `
-<div style="background:rgba(255,255,255,0.04);border-bottom:1px solid rgba(255,255,255,0.1);padding:0.85rem 1.2rem;display:flex;justify-content:space-between;align-items:center;flex-shrink:0;flex-wrap:wrap;gap:0.4rem;">
-    <div style="display:flex;align-items:center;gap:0.7rem;">
-        <span style="font-size:1.4rem;">👑</span>
-        <div>
-            <div style="font-family:'Outfit',sans-serif;font-size:1rem;color:white;font-weight:700;">SuperAdmin</div>
-            <div style="font-size:0.68rem;color:#8b949e;">Chronos Fútbol · Control Total</div>
-        </div>
+<style>
+  /* La misma jerarquía tipográfica del panel de Dirección y del de Club. */
+  #sa-panel .sap-head { display:flex;justify-content:space-between;align-items:center;
+      padding:1.2rem 1.5rem;background:linear-gradient(to right,#161b22,#0d1117);
+      border-bottom:1px solid rgba(255,255,255,0.1);flex-shrink:0;flex-wrap:wrap;gap:0.6rem; }
+  #sa-panel .sap-title { margin:0;font-size:1.15rem;font-weight:700;color:white;
+      display:flex;align-items:center;gap:0.7rem;font-family:'Outfit',Inter,sans-serif; }
+  #sa-panel .sap-sub { font-size:0.72rem;color:#8b949e;margin-top:0.2rem; }
+  #sa-panel .sap-btn { border-radius:6px;padding:0.35rem 0.8rem;font-size:0.74rem;
+      font-weight:700;cursor:pointer;white-space:nowrap; }
+  /* La barra de vuelta, gemela de #staff-navbar (v591) y #ca-navbar (v597):
+     sólo se ve cuando NO estás en el tablero. */
+  #sa-navbar { display:none;gap:0.6rem;align-items:center;padding:0.55rem 1.5rem;
+      background:#161b22;border-bottom:1px solid rgba(255,255,255,0.1);
+      flex-shrink:0;flex-wrap:wrap; }
+  /* 🔑 EL ANCHO ÚTIL, EL MISMO QUE EL DE LOS DEMÁS PANELES (.sa-modal son
+     1060px). Éste es el único de los cuatro que vive en un overlay a pantalla
+     completa, así que sin esto sus listas se estiraban a 1900px en un monitor
+     y no se parecían a nada — se ve en las capturas 9705-9707. El padding
+     lateral se calcula, en vez de envolver el contenido en un div, porque cada
+     sección escribe DIRECTAMENTE el innerHTML de #sa-body: un envoltorio lo
+     borraría la primera que pintase (la misma trampa que la barra de v591).
+     La funcion max() de CSS deja 1.5rem de margen en movil, donde no sobra
+     ancho.
+     ⚠️ SIN ACENTOS GRAVES AQUI DENTRO: esto vive en una plantilla literal y
+     uno solo la cierra en seco. Lo pago la v641 al primer intento — el panel
+     entero se quedo en negro con "Unexpected identifier 'max'", y es
+     exactamente el aviso que club-reports.js lleva escrito desde la v590. */
+  #sa-panel .sap-head,
+  #sa-panel #sa-navbar { padding-left:max(1.5rem, calc(50% - 530px));
+      padding-right:max(1.5rem, calc(50% - 530px)); }
+  #sa-panel #sa-body { padding:1.5rem max(1.5rem, calc(50% - 530px)); }
+</style>
+<div class="sap-head">
+    <div>
+        <h2 class="sap-title">👑 SuperAdmin</h2>
+        <div class="sap-sub">Chronos Fútbol · Control Total</div>
     </div>
-    <div style="display:flex;gap:0.4rem;flex-wrap:wrap;">
-        
+    <div style="display:flex;gap:0.4rem;align-items:center;flex-wrap:wrap;">
+        <button onclick="if(typeof saTab==='function')saTab(window._saSeccionActual||'menu');"
+            class="sap-btn" title="Recargar la sección actual"
+            style="background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);color:#8b949e;font-weight:600;">🔄 Recargar</button>
         <button onclick="if(typeof cerrarSesion==='function')cerrarSesion();else if(typeof logoutUser==='function')logoutUser();"
-            style="background:rgba(255,88,88,0.1);border:1px solid rgba(255,88,88,0.3);color:#ff5858;padding:0.32rem 0.7rem;border-radius:6px;cursor:pointer;font-size:0.76rem;font-weight:700;">⏻ Salir</button>
+            class="sap-btn"
+            style="background:rgba(255,88,88,0.1);border:1px solid rgba(255,88,88,0.3);color:#ff5858;">⏻ Salir</button>
     </div>
 </div>
-<div style="display:flex;border-bottom:1px solid rgba(255,255,255,0.1);flex-shrink:0;overflow-x:auto;-webkit-overflow-scrolling:touch;">
-    <button id="sa-tab-clubs"       onclick="saTab('clubs')"       style="padding:0.72rem 1.1rem;background:none;border:none;border-bottom:2px solid #58a6ff;color:#58a6ff;font-weight:700;cursor:pointer;font-size:0.81rem;white-space:nowrap;flex-shrink:0;">🏟️ Clubes</button>
-    <button id="sa-tab-individuals" onclick="saTab('individuals')" style="padding:0.72rem 1.1rem;background:none;border:none;border-bottom:2px solid transparent;color:#8b949e;font-weight:700;cursor:pointer;font-size:0.81rem;white-space:nowrap;flex-shrink:0;">👤 Individuales</button>
-    <button id="sa-tab-requests"    onclick="saTab('requests')"    style="padding:0.72rem 1.1rem;background:none;border:none;border-bottom:2px solid transparent;color:#8b949e;font-weight:700;cursor:pointer;font-size:0.81rem;white-space:nowrap;flex-shrink:0;">📋 Solicitudes${badge}</button>
-    <button id="sa-tab-secretary"   onclick="saTab('secretary')"   style="padding:0.72rem 1.1rem;background:none;border:none;border-bottom:2px solid transparent;color:#8b949e;font-weight:700;cursor:pointer;font-size:0.81rem;white-space:nowrap;flex-shrink:0;">✉️ Secretaría</button>
-    <button id="sa-tab-trash"       onclick="saTab('trash')"       style="padding:0.72rem 1.1rem;background:none;border:none;border-bottom:2px solid transparent;color:#8b949e;font-weight:700;cursor:pointer;font-size:0.81rem;white-space:nowrap;flex-shrink:0;">🗑️ Rastros</button>
-    <button id="sa-tab-billing"     onclick="saTab('billing')"     style="padding:0.72rem 1.1rem;background:none;border:none;border-bottom:2px solid transparent;color:#8b949e;font-weight:700;cursor:pointer;font-size:0.81rem;white-space:nowrap;flex-shrink:0;">💳 Facturación</button>
-    <button id="sa-tab-extras"      onclick="saTab('extras')"      style="padding:0.72rem 1.1rem;background:none;border:none;border-bottom:2px solid transparent;color:#8b949e;font-weight:700;cursor:pointer;font-size:0.81rem;white-space:nowrap;flex-shrink:0;">⚙️ Extras</button>
-    <button id="sa-tab-messages"    onclick="saTab('messages')"    style="padding:0.72rem 1.1rem;background:none;border:none;border-bottom:2px solid transparent;color:#8b949e;font-weight:700;cursor:pointer;font-size:0.81rem;white-space:nowrap;flex-shrink:0;">✉️ Mensajes</button>
-    <!-- 🩺 v628 · Entrar en el panel de cualquier usuario para diagnosticar.
-         Va la ÚLTIMA a propósito: es la más delicada del panel y no debe
-         quedar pegada a "Clubes", que es donde se trabaja todos los días. -->
-    <button id="sa-tab-diagnostico" onclick="saTab('diagnostico')" style="padding:0.72rem 1.1rem;background:none;border:none;border-bottom:2px solid transparent;color:#8b949e;font-weight:700;cursor:pointer;font-size:0.81rem;white-space:nowrap;flex-shrink:0;">🩺 Diagnóstico</button>
-</div>
-<div id="sa-body" style="flex:1;overflow-y:auto;padding:1.1rem;-webkit-overflow-scrolling:touch;"></div>`;
+<div id="sa-navbar"></div>
+<div id="sa-body" style="flex:1;overflow-y:auto;padding:1.5rem;-webkit-overflow-scrolling:touch;"></div>`;
     document.body.appendChild(panel);
-    saTab('clubs');
+    saTab('menu');
     setupClubsSyncListener();
+};
+
+// ═══════════════════════════════════════════════════════════════════
+//  🎛️ v641 · EL TABLERO DE ENTRADA DEL SUPERADMIN
+//
+//  Las mismas ocho puertas que había en la barra de pestañas, pero cada una
+//  DICE para qué sirve. El aspecto lo pone `cronosTableroHtml` (utils.js),
+//  compartido con Dirección, Coordinación, Club, Ente y Familias.
+//
+//  ⚠️ RESPALDO SIN EL HELPER: si utils.js no cargó, el panel NO se queda en
+//  blanco — se cae a la vista de Clubes, que es la de trabajo diario. Un menú
+//  que no pinta dejaría al SuperAdmin sin panel, y éste es el único sitio
+//  desde el que se aprueban altas.
+// ═══════════════════════════════════════════════════════════════════
+window.SA_SECCIONES = {
+    clubs:       '🏟️ Clubes',
+    individuals: '👤 Entes Individuales',
+    requests:    '📋 Solicitudes',
+    secretary:   '✉️ Secretaría',
+    billing:     '💳 Facturación',
+    extras:      '⚙️ Extras',
+    messages:    '💬 Mensajes',
+    diagnostico: '🩺 Diagnóstico',
+};
+
+window.saMenu = function saMenu() {
+    const body = document.getElementById('sa-body');
+    if (!body) return;
+    const _pend = Number(window._saPendingCount || 0);
+    const opciones = [
+        { icono: '🏟️', titulo: 'Clubes', color: '#58a6ff',
+          desc: 'Altas y bajas de clubes, plazas por rol, planes y todo su personal.',
+          onclick: "saTab('clubs')" },
+        { icono: '👤', titulo: 'Entes Individuales', color: '#3fb950',
+          desc: 'Entrenadores y familias que trabajan fuera de un club.',
+          onclick: "saTab('individuals')" },
+        // 🔴 El aviso es una PÍLDORA, no un número pegado al título (v598): así
+        //    se ve desde el tablero sin tener que entrar a mirar.
+        { icono: '📋', titulo: 'Solicitudes', color: '#f0883e',
+          badge: _pend,
+          desc: _pend
+              ? 'Tienes ' + _pend + ' solicitud(es) esperando tu aprobación.'
+              : 'Altas de usuarios y clubes pendientes de aprobar.',
+          onclick: "saTab('requests')" },
+        { icono: '✉️', titulo: 'Secretaría', color: '#31d0aa',
+          desc: 'Invita por correo a clubes, entrenadores, coordinadores o familias.',
+          onclick: "saTab('secretary')" },
+        { icono: '💳', titulo: 'Facturación', color: '#ffd700',
+          desc: 'Planes contratados, cobros y estado de pago de cada club.',
+          onclick: "saTab('billing')" },
+        { icono: '⚙️', titulo: 'Extras', color: '#d2a8ff',
+          desc: 'Activa o desactiva funciones por club, y herramientas de limpieza.',
+          onclick: "saTab('extras')" },
+        { icono: '💬', titulo: 'Mensajes', color: '#b478c8',
+          desc: 'Canales internos con los administradores de clubes y entes.',
+          onclick: "saTab('messages')" },
+        // 🩺 Va la ÚLTIMA a propósito, como iba la pestaña: es la puerta más
+        //    delicada del panel y no debe quedar pegada a la de uso diario.
+        { icono: '🩺', titulo: 'Diagnóstico', color: '#8b949e',
+          desc: 'Entra en el panel de cualquier usuario, en modo sólo lectura.',
+          onclick: "saTab('diagnostico')" },
+    ];
+    body.innerHTML = (typeof window.cronosTableroHtml === 'function')
+        ? window.cronosTableroHtml({
+            titulo: '👑 Panel del SuperAdmin',
+            subtitulo: 'Elige qué quieres gestionar:',
+            opciones: opciones,
+          })
+        : '';
+    if (!body.innerHTML) { saTab('clubs'); return; }
+    body.scrollTop = 0;
 };
 
 // ═══════════════════════════════════════════════════════════════════
@@ -329,17 +447,54 @@ window.saTab = function saTab(tab) {
     // no recorre hacia atrás ocho clics de pestaña.
     if (typeof navScreen === 'function') navScreen('saTab', tab);
 
-    ['clubs','individuals','requests','secretary','trash','billing','extras','messages','diagnostico'].forEach(t => {
-        const b = document.getElementById('sa-tab-'+t);
-        if (!b) return;
-        b.style.borderBottomColor = (t===tab)?'#58a6ff':'transparent';
-        b.style.color             = (t===tab)?'#58a6ff':'#8b949e';
-    });
-    if      (tab==='clubs')       saClubs();
+    // ══════════════════════════════════════════════════════════════════
+    //  🔴 v641 · LA SECCIÓN ACTIVA ES UN DATO, NO UN COLOR DE BORDE
+    //
+    //  Hasta aquí, "¿en qué pestaña está el SuperAdmin?" se respondía buscando
+    //  el botón de esa pestaña por id y comparando su `borderBottomColor` con
+    //  'rgb(88, 166, 255)', desde TRES sitios distintos (clubs-tab.js dos
+    //  veces, esta misma función una). Con la barra de pestañas retirada eso se
+    //  quedaría sin respuesta para siempre y en silencio: `getElementById`
+    //  devuelve null, la comparación da false y el refresco automático se iría
+    //  siempre a Clubes sin que nada avisara.
+    //
+    //  ⚠️ El guard 4o de test_tablero_paneles_e_invitaciones.js prohíbe por
+    //  FORMA que vuelva a aparecer un id de pestaña en estos dos ficheros.
+    //
+    //  🔑 Se guarda ANTES de pintar, para que cualquier repintado disparado
+    //  desde dentro de la sección lea ya el valor nuevo.
+    // ══════════════════════════════════════════════════════════════════
+    // 🗑️ v641 · 'trash' (la pestaña "Rastros") se retiró por encargo del autor.
+    //    Una llamada superviviente cae al tablero en vez de dejar el cuerpo en
+    //    blanco — que es como se vería un `else if` que no casa con nada.
+    if (!tab || tab === 'trash' || (tab !== 'menu' && !window.SA_SECCIONES[tab])) tab = 'menu';
+    window._saSeccionActual = tab;
+
+    // La barra de vuelta: gemela de la de Dirección (v591) y la de Club (v597).
+    const _nav = document.getElementById('sa-navbar');
+    if (_nav) {
+        if (tab === 'menu') {
+            _nav.style.display = 'none';
+            _nav.innerHTML = '';
+        } else {
+            _nav.style.display = 'flex';
+            _nav.innerHTML =
+                '<button onclick="saTab(\'menu\')" ' +
+                'style="display:inline-flex;align-items:center;gap:0.4rem;' +
+                       'padding:0.42rem 0.9rem;border-radius:8px;cursor:pointer;' +
+                       'background:rgba(88,166,255,0.12);border:1px solid rgba(88,166,255,0.4);' +
+                       'color:#58a6ff;font-size:0.8rem;font-weight:800;">' +
+                '← Volver al Menú</button>' +
+                '<span style="font-size:0.9rem;font-weight:800;color:white;">' +
+                (window.SA_SECCIONES[tab] || '') + '</span>';
+        }
+    }
+
+    if      (tab==='menu')        saMenu();
+    else if (tab==='clubs')       saClubs();
     else if (tab==='individuals') saIndividuals();
     else if (tab==='requests')    saRequests();
     else if (tab==='secretary')   saSecretary();
-    else if (tab==='trash')       saTrash();
     else if (tab==='billing')     saBilling();
     else if (tab==='extras')      saExtras();
     else if (tab==='messages')    saMessages();
@@ -418,11 +573,21 @@ window.saSetClubUserStatus = async function saSetClubUserStatus(uid, email, newS
     }
     _saShowSpinner('Procesando\u2026');
     // Detect active tab for correct refresh after operation
-    var _activeTab = 'clubs';
-    var _indTabBtn = document.getElementById('sa-tab-individuals');
-    if (_indTabBtn && _indTabBtn.style.borderBottomColor === 'rgb(88, 166, 255)') _activeTab = 'individuals';
+    // v641 · Se lee el DATO (`window._saSeccionActual`), no el color del borde
+    // de un botón que ya no existe. Ver la nota larga en saTab().
+    var _activeTab = (window._saSeccionActual === 'individuals') ? 'individuals' : 'clubs';
     try {
-        const { db, fa, doc, getDoc, updateDoc, deleteDoc, collection, getDocs, query, where, setDoc, httpsCallable } = await saFS();
+        // 🔴 v641 · EL OBJETO DE FIRESTORE SE GUARDA ENTERO, NO SÓLO LOS ALIAS
+        //  QUE USA ESTA FUNCIÓN. El registro del motivo (más abajo) se lo pasa
+        //  a `_saRegistrarMotivo`, y aquél escribe en `sa_privado` con `setDoc`
+        //  y limpia la raíz con `deleteField`. Reconstruir a mano un objeto con
+        //  cuatro alias —lo que hacía la v628— dejaba fuera justo esos dos, y
+        //  la baja moría con «fsh.setDoc is not a function» ANTES de borrar
+        //  nada (capturas 9705-9709 del 2026-08-28). Es el mismo defecto que la
+        //  v636 pagó con `fSetDoc`: un inventario copiado a mano se queda corto
+        //  en cuanto el destinatario necesita un alias más.
+        const _FSSA = await saFS();
+        const { db, fa, doc, getDoc, updateDoc, deleteDoc, collection, getDocs, query, where, setDoc, httpsCallable } = _FSSA;
         const uSnap = await getDoc(doc(db,'users',uid));
         const uData = uSnap.exists() ? uSnap.data() : {};
         const realUid = uData.uid || uid;
@@ -438,7 +603,7 @@ window.saSetClubUserStatus = async function saSetClubUserStatus(uid, email, newS
         if (_motivo) {
             try {
                 await window._saRegistrarMotivo(
-                    { db: db, doc: doc, getDoc: getDoc, updateDoc: updateDoc },
+                    _FSSA,
                     uid, realEmail, newStatus, clubId, _motivo, uData);
             } catch (regErr) {
                 _saHideSpinner();
@@ -734,8 +899,13 @@ window.saSetClubUserStatus = async function saSetClubUserStatus(uid, email, newS
 };
 
 // ═══════════════════════════════════════════════════════════════════
-// saTrash() / saReactivateAsIndividual() / saPurgeUser()
-// Extraídas a js/admin/superadmin/trash.js (auditoría 2026-07-22, 2026-07-24).
+// 🗑️ v641 · LA PESTAÑA "RASTROS" YA NO EXISTE.
+// saTrash() / saReactivateAsIndividual() / saPurgeUser() vivían en
+// js/admin/superadmin/trash.js, retirado por encargo del autor
+// (implementar.txt, 2026-08-28) junto con su script en index.html, su entrada
+// en el precache del service worker y su test dedicado. No quedan llamadores:
+// la reactivación de un usuario bloqueado sigue estando en Clubes
+// (saSetClubUserStatus con 'active') y la limpieza de remanentes, en Extras.
 // ═══════════════════════════════════════════════════════════════════
 
 // ═══════════════════════════════════════════════════════════════════

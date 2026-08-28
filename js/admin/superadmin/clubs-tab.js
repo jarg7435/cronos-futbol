@@ -493,9 +493,14 @@ window.setupClubsSyncListener = async function setupClubsSyncListener() {
                 clearTimeout(window._saRefreshTimeout);
                 // Refresh the currently active tab, not always Clubs
                 window._saRefreshTimeout = setTimeout(()=>{
-                    const _indBtn = document.getElementById('sa-tab-individuals');
-                    const _isIndTab = _indBtn && _indBtn.style.borderBottomColor === 'rgb(88, 166, 255)';
-                    if (_isIndTab) saIndividuals(); else saClubs();
+                    // v641 · La sección activa es un DATO desde que se retiró la
+                    // barra de pestañas (ver saTab en superadmin.panel.js).
+                    // ⚠️ Y si el SuperAdmin está en el TABLERO, no se repinta
+                    // nada de contenido: repintar Clubes encima del menú lo
+                    // sacaría de donde está sin que él haya tocado nada.
+                    const _sec = window._saSeccionActual;
+                    if      (_sec === 'individuals') saIndividuals();
+                    else if (_sec === 'clubs')       saClubs();
                 }, 700);
             }
         }, alFallar('clubsSync'));
@@ -514,17 +519,14 @@ window.setupClubsSyncListener = async function setupClubsSyncListener() {
                 try { count = await window.saCountPendingRequests(); }
                 catch (_) { count = snap.size || 0; }
 
-                // Actualizar badge del tab Solicitudes
-                const reqTab = document.getElementById('sa-tab-requests');
-                if (reqTab) {
-                    const oldBadge = reqTab.querySelector('span');
-                    if (oldBadge) oldBadge.remove();
-                    if (count > 0) {
-                        const badge = document.createElement('span');
-                        badge.style.cssText = 'background:#ff5858;color:white;border-radius:10px;padding:1px 7px;font-size:0.65rem;font-weight:700;margin-left:4px;';
-                        badge.textContent = count;
-                        reqTab.appendChild(badge);
-                    }
+                // 🔔 v641 · EL AVISO VIVE EN LA TARJETA DEL TABLERO, no en una
+                //  pestaña. Se guarda el número y, SÓLO si el SuperAdmin está
+                //  mirando el tablero, se repinta para que la píldora roja
+                //  cambie sola. Repintarlo estando dentro de una sección lo
+                //  echaría de ella (la trampa que ya costó v598).
+                window._saPendingCount = count;
+                if (window._saSeccionActual === 'menu' && typeof window.saMenu === 'function') {
+                    window.saMenu();
                 }
 
                 // Toast solo para solicitudes NUEVAS (no en la carga inicial)
@@ -542,9 +544,9 @@ window.setupClubsSyncListener = async function setupClubsSyncListener() {
                     // Vibrar si es posible (dispositivos móviles)
                     if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
 
-                    // Si está en la pestaña Solicitudes, refrescar automáticamente
-                    const reqTabBtn = document.getElementById('sa-tab-requests');
-                    if (reqTabBtn && reqTabBtn.style.borderBottomColor === 'rgb(88, 166, 255)') {
+                    // Si está en la sección Solicitudes, refrescar automáticamente
+                    // (v641 · el dato, no el borde de un botón retirado)
+                    if (window._saSeccionActual === 'requests') {
                         clearTimeout(window._saReqRefreshTimeout);
                         window._saReqRefreshTimeout = setTimeout(() => saRequests(), 500);
                     }

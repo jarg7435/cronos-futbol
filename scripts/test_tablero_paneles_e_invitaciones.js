@@ -52,6 +52,8 @@ const UTILS  = leer('js/core/utils.js');
 const STAFF  = leer('js/coach/reports/club-reports.js');
 const PARENT = leer('js/parent/panel.js');
 const SECR   = leer('js/admin/superadmin/secretary.js');
+const SAP    = leer('js/admin/superadmin/superadmin.panel.js');
+const CLUBST = leer('js/admin/superadmin/clubs-tab.js');
 
 // ── El helper REAL, ejecutado ──────────────────────────────────────────
 const sb = { console: { log() {}, warn() {} }, String, Array, Number, parseInt, isNaN };
@@ -166,6 +168,129 @@ console.log('\n── 3 · Secretaría para el Director ──');
        /typeof window\.saSecretary !== 'function'/.test(STAFF));
     ok('3i · ⚠️ el catálogo de roles tiene respaldo propio (el guard lo ejecuta aislado)',
        /const _CAT = \(typeof window !== 'undefined' && window\.CRONOS_SECRETARIA_ROLES\) \|\| \{/.test(SECR));
+}
+
+// ════════════════════════════════════════════════════════════════════════
+//  🎛️ v641 · EL CUARTO PANEL: EL DEL SUPERADMIN
+//
+//  Encargo del autor (implementar.txt, 2026-08-28): «rediseña la vista del
+//  SuperAdmin para que coincida con el estilo visual, botones, tarjetas,
+//  modales y jerarquía tipográfica de los paneles de Director Deportivo,
+//  Coordinador y Entrenador», manteniendo intacta toda su funcionalidad.
+//
+//  🔑 SE COMPRUEBA EJECUTANDO, no leyendo. `saTab` cambió de contrato: ahora
+//  fija `window._saSeccionActual`, enseña u oculta la barra de vuelta y manda
+//  al tablero lo que no reconoce. Una regex sobre el fuente daría verde con
+//  cualquiera de esas tres cosas rota — es justo la trampa que dejó viva la
+//  baja del SuperAdmin durante trece versiones (ver test_sa_diagnostico).
+//
+//  ⚠️ Y SE VIGILA QUE NO QUEDE NADA DE LA BARRA DE PESTAÑAS: mientras exista
+//  un solo `sa-tab-*`, hay dos navegaciones conviviendo y un sitio más desde
+//  el que preguntarle al DOM en qué sección estamos.
+console.log('\n── 4 · v641 · el panel del SuperAdmin, con el mismo marco ──');
+{
+    // ── El módulo REAL, ejecutado: SA_SECCIONES + saMenu + saTab ──────
+    const sbSA = {
+        console: { log() {}, warn() {}, error() {} },
+        String, Array, Number, Object, JSON, Boolean, parseInt, isNaN, Math, Date,
+    };
+    sbSA.window = sbSA;
+    sbSA.escapeHtml = (x) => String(x == null ? '' : x);
+    const cuerpos = {
+        'sa-body':   { id: 'sa-body',   innerHTML: '', style: {}, scrollTop: 0 },
+        'sa-navbar': { id: 'sa-navbar', innerHTML: '', style: { display: 'none' } },
+    };
+    sbSA.document = { getElementById: (id) => cuerpos[id] || null };
+    sbSA.cronosTableroHtml = tablero;
+    sbSA.window.cronosTableroHtml = tablero;
+    const pintadas = [];
+    ['saClubs', 'saIndividuals', 'saRequests', 'saSecretary',
+     'saBilling', 'saExtras', 'saMessages', 'saDiagnostico'].forEach((f) => {
+        sbSA[f] = () => { pintadas.push(f); };
+        sbSA.window[f] = sbSA[f];
+    });
+    vm.createContext(sbSA);
+    {
+        const i = SAP.indexOf('window.SA_SECCIONES = {');
+        const j = SAP.indexOf('// saClubs() — Pestaña de clubes');
+        ok('4a · el bloque del panel se localiza para ejecutarlo', i > 0 && j > i);
+        vm.runInContext(SAP.slice(i, j), sbSA);
+    }
+    const saTab = sbSA.window.saTab;
+
+    // ── El tablero de entrada ─────────────────────────────────────────
+    saTab('menu');
+    const menuHtml = cuerpos['sa-body'].innerHTML;
+    ok('4b · 🔑 el SuperAdmin entra por un TABLERO, con la pieza compartida',
+       /Panel del SuperAdmin/.test(menuHtml) && /grid-template-columns:repeat\(auto-fill/.test(menuHtml),
+       'la misma cronosTableroHtml que Dirección, Coordinación, Club, Ente y Familias');
+
+    ok('4c · 🔑🔑 y NO se ha perdido ninguna puerta: las ocho secciones siguen ahí',
+       ['clubs', 'individuals', 'requests', 'secretary',
+        'billing', 'extras', 'messages', 'diagnostico']
+         .every((t) => menuHtml.indexOf("saTab('" + t + "')") >= 0),
+       'el encargo era homogeneizar el aspecto, no recortar funcionalidad');
+
+    ok('4d · cada tarjeta DICE para qué sirve (era lo que no hacía la pestaña)',
+       /Altas y bajas de clubes/.test(menuHtml) && /modo sólo lectura/.test(menuHtml));
+
+    ok('4e · ⚠️ en el tablero, la barra de vuelta está oculta',
+       cuerpos['sa-navbar'].style.display === 'none' && cuerpos['sa-navbar'].innerHTML === '');
+
+    // ── Entrar en una sección ─────────────────────────────────────────
+    saTab('clubs');
+    ok('4f · 🔑 la sección activa es un DATO, no el color de un borde',
+       sbSA.window._saSeccionActual === 'clubs' && pintadas.indexOf('saClubs') >= 0);
+    ok('4g · 🔑🔑 y desde cualquier sección se puede VOLVER',
+       cuerpos['sa-navbar'].style.display === 'flex' &&
+       /Volver al Men/.test(cuerpos['sa-navbar'].innerHTML) &&
+       /saTab\('menu'\)/.test(cuerpos['sa-navbar'].innerHTML),
+       'sin vuelta, quitar las pestañas dejaría al SuperAdmin atrapado');
+    ok('4h · y la sección se nombra, para saber dónde se está',
+       /Clubes/.test(cuerpos['sa-navbar'].innerHTML));
+
+    saTab('diagnostico');
+    ok('4i · Diagnóstico sigue siendo alcanzable y se pinta',
+       sbSA.window._saSeccionActual === 'diagnostico' && pintadas.indexOf('saDiagnostico') >= 0);
+
+    // ── 🗑️ Rastros: retirado por encargo ──────────────────────────────
+    const antes = pintadas.length;
+    saTab('trash');
+    ok('4j · 🗑️ "Rastros" ya no existe: una llamada superviviente cae al TABLERO',
+       sbSA.window._saSeccionActual === 'menu' && pintadas.length === antes &&
+       /Panel del SuperAdmin/.test(cuerpos['sa-body'].innerHTML),
+       'un else-if que no casa con nada dejaría el cuerpo en blanco sin decir por qué');
+
+    saTab('loquesea');
+    ok('4k · ⚠️ y cualquier sección desconocida también (nunca cuerpo en blanco)',
+       sbSA.window._saSeccionActual === 'menu');
+
+    // ── El aviso de solicitudes, ahora en la tarjeta ──────────────────
+    sbSA.window._saPendingCount = 4;
+    saTab('menu');
+    ok('4l · 🔴 el aviso de Solicitudes es una PÍLDORA en su tarjeta',
+       /border-radius:999px/.test(cuerpos['sa-body'].innerHTML) &&
+       />4</.test(cuerpos['sa-body'].innerHTML),
+       'un número pegado al título se pinta igual que el título: desde el tablero no se ve');
+    sbSA.window._saPendingCount = 0;
+    saTab('menu');
+    ok('4m · ⚠️ y con 0 pendientes no se pinta nada (un 0 llama igual que un 5)',
+       !/border-radius:999px/.test(cuerpos['sa-body'].innerHTML));
+
+    // ── Nada de la barra de pestañas puede sobrevivir ─────────────────
+    ok('4n · 🔄 en el SuperAdmin ya NO hay barra de pestañas',
+       !/id="sa-tab-/.test(SAP),
+       'quedaría la navegación vieja conviviendo con el tablero');
+    ok('4o · 🔑🔑 y NADIE pregunta ya al DOM en qué sección está',
+       !/sa-tab-/.test(SAP) && !/sa-tab-/.test(CLUBST),
+       'getElementById de un botón retirado devuelve null y falla EN SILENCIO: ' +
+       'el refresco automático se iría siempre a Clubes sin que nada avisara');
+    ok('4p · el marco toma la jerarquía tipográfica de los otros paneles',
+       /linear-gradient\(to right,#161b22,#0d1117\)/.test(SAP) &&
+       /class="sap-title"/.test(SAP) && /id="sa-navbar"/.test(SAP));
+    ok('4q · ⚠️ si utils.js no cargó, el panel NO se queda en blanco',
+       /if \(!body\.innerHTML\) \{ saTab\('clubs'\); return; \}/.test(SAP),
+       'un menú que no pinta dejaría al SuperAdmin sin el único sitio donde se aprueban altas');
 }
 
 console.log('\n' + '─'.repeat(70));

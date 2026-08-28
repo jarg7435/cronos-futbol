@@ -147,7 +147,38 @@
     var DIAG_DOCS = { bajas: 'bajas', diagnostico: 'diagnostico' };
     var DIAG_CAMPO_VIEJO = { bajas: 'saBajasLog', diagnostico: 'saDiagnosticoLog' };
 
+    // 🔴 v641 · SE COMPLETAN LOS ALIAS QUE FALTEN, EN VEZ DE MORIR POR ELLOS.
+    //
+    //  El defecto de las capturas 9705-9709: `saSetClubUserStatus` le pasaba a
+    //  esta cadena un objeto fabricado a mano con SÓLO cuatro alias
+    //  (`db/doc/getDoc/updateDoc`), y aquí abajo hace falta `setDoc` — y
+    //  `deleteField` para cerrar la fuga de la v631. Resultado: «fsh.setDoc is
+    //  not a function» y la baja cancelada.
+    //
+    //  🔑 EL ARREGLO DE VERDAD ESTÁ EN QUIEN LLAMA (ya pasa el objeto entero).
+    //  Esto es el cinturón: cualquier llamador futuro que se quede corto de
+    //  alias se repara solo en vez de tumbar una baja, que es irreversible y
+    //  no admite un segundo intento a ciegas. `_dFS()` devuelve el inventario
+    //  completo y respeta el candado del modo diagnóstico igual que el resto.
+    async function _saFshCompleto(fsh) {
+        var f = fsh || {};
+        if (f.db && typeof f.doc === 'function' && typeof f.getDoc === 'function' &&
+            typeof f.setDoc === 'function' && typeof f.updateDoc === 'function') return f;
+        var lleno = await _dFS();
+        return Object.assign({}, lleno, f, {
+            // Los que faltan se toman del inventario completo; los que el
+            // llamador sí trajo se respetan (puede venir de un modo especial).
+            db:          f.db          || lleno.db,
+            doc:         (typeof f.doc         === 'function') ? f.doc         : lleno.doc,
+            getDoc:      (typeof f.getDoc      === 'function') ? f.getDoc      : lleno.getDoc,
+            setDoc:      (typeof f.setDoc      === 'function') ? f.setDoc      : lleno.setDoc,
+            updateDoc:   (typeof f.updateDoc   === 'function') ? f.updateDoc   : lleno.updateDoc,
+            deleteField: (typeof f.deleteField === 'function') ? f.deleteField : lleno.deleteField,
+        });
+    }
+
     async function _saRegistroAnadir(fsh, uid, tipo, entrada) {
+        fsh = await _saFshCompleto(fsh);
         var docId  = DIAG_DOCS[tipo];
         var campoV = DIAG_CAMPO_VIEJO[tipo];
         var ref    = fsh.doc(fsh.db, 'users', uid, 'sa_privado', docId);
@@ -290,6 +321,9 @@
     // registro es precisamente lo que se ha venido a evitar, y la baja es
     // irreversible. Mejor no ejecutarla que ejecutarla a ciegas.
     window._saRegistrarMotivo = async function _saRegistrarMotivo(fsh, uid, email, newStatus, clubId, motivo, uData) {
+        // v641 · Ver `_saFshCompleto`: los alias que falten se rellenan aquí,
+        // no revientan a mitad de camino con la baja ya empezada.
+        fsh = await _saFshCompleto(fsh);
         var me = window._cronosCurrentUser || {};
         var ahora = new Date().toISOString();
         var entrada = {
@@ -563,6 +597,30 @@
         cont.innerHTML = '<div style="text-align:center;padding:3rem;color:#8b949e;">⏳ Leyendo usuarios…</div>';
         try {
             var fsh = await _dFS();
+            // 🏟️ v643 · LAS ENTIDADES, PARA PODER AGRUPAR POR ELLAS.
+            //  Clubes y entes individuales viven en la MISMA colección
+            //  `clubs`; lo que los separa es `type === 'individual'` (mismo
+            //  criterio que saIndividuals). Se leen aquí para tener el nombre
+            //  CANÓNICO de cada uno: fiarse del `clubName` copiado en cada
+            //  usuario daría dos grupos para el mismo club en cuanto uno
+            //  tuviera el nombre viejo.
+            var entidades = {};
+            try {
+                var csnap = await fsh.getDocs(fsh.collection(fsh.db, 'clubs'));
+                csnap.forEach(function (d) {
+                    var c = d.data() || {};
+                    entidades[d.id] = { id: d.id, name: c.name || d.id,
+                                        esEnte: c.type === 'individual' };
+                });
+            } catch (eC) {
+                // ⚠️ SE SIGUE SIN ELLAS. El diagnóstico es la herramienta para
+                // cuando algo va mal: dejarlo caído porque no se pudo leer el
+                // catálogo de clubes sería quitarse la linterna justo en el
+                // apagón. Sin catálogo se agrupa por el nombre que traiga cada
+                // usuario, que es lo que se hacía hasta la v642.
+                console.warn('[diag] catálogo de entidades no disponible:', eC && eC.message);
+            }
+            window._saDiagEntidades = entidades;
             var snap = await fsh.getDocs(fsh.collection(fsh.db, 'users'));
             var lista = [];
             snap.forEach(function (d) {
@@ -610,10 +668,132 @@
         return out;
     }
 
+    // ════════════════════════════════════════════════════════════════
+    //  🏟️ v643 · LA LISTA, AGRUPADA POR ENTIDAD
+    //
+    //  Encargo del autor (implementar.txt, 2026-08-28): «la lista actual
+    //  muestra a todos los usuarios mezclados en una sola vista. Agrupar
+    //  creando acordeones por cada Club registrado (y una pestaña separada
+    //  para Entidades Individuales o usuarios sin club)».
+    //
+    //  🔑🔑 UNA PERSONA PUEDE SALIR EN VARIOS GRUPOS, Y ES LO CORRECTO. No se
+    //  reparte por el `clubId` de la RAÍZ: se reparte POR PLAZA. Repartir por
+    //  la raíz es literalmente el defecto de la v563 —«el SA veía vacío lo
+    //  lleno»—, y aquí sería peor: un entrenador con plaza en dos clubes
+    //  aparecería sólo en uno y en el otro no habría por dónde diagnosticarlo.
+    //  Dentro de cada club se enseñan SÓLO las plazas de ese club, que es lo
+    //  que se va a diagnosticar.
+    //
+    //  🔑 EL CUERPO DE UN GRUPO CERRADO NO SE PINTA. Con la lista plana se
+    //  generaban 120 fichas siempre; así un SuperAdmin con veinte clubes paga
+    //  sólo las cabeceras hasta que abre una. Por eso el estado de apertura
+    //  vive en `_saDiagAbiertos` y no en una clase CSS: hay que repintar.
+    //
+    //  ⚠️ AL BUSCAR SE ABRE SOLO lo que tiene coincidencias. Un acordeón
+    //  cerrado sobre el resultado de una búsqueda es un resultado escondido, y
+    //  parecería que el buscador no encuentra nada.
+    // ════════════════════════════════════════════════════════════════
+    var DIAG_SIN_CLUB = '__sin_club__';
+    window._saDiagAbiertos = window._saDiagAbiertos || {};
+
+    window._saDiagToggle = function (gid) {
+        var a = window._saDiagAbiertos || (window._saDiagAbiertos = {});
+        a[gid] = !a[gid];
+        _pintarListaDiag(window._saDiagFiltroActual || '');
+    };
+
+    // Reparte los usuarios visibles en grupos {id, titulo, icono, esEnte,
+    // usuarios:[{x, plazas}]}. El orden: clubes, entes, y sin club al final.
+    function _agruparDiag(vis) {
+        var ents = window._saDiagEntidades || {};
+        var mapa = {};
+        function grupo(id, titulo, icono, esEnte) {
+            if (!mapa[id]) mapa[id] = { id: id, titulo: titulo, icono: icono,
+                                        esEnte: !!esEnte, usuarios: [] };
+            return mapa[id];
+        }
+        vis.forEach(function (x) {
+            var u = x.u;
+            var plazas = _plazasDe(u);
+            var porGrupo = {};
+            plazas.forEach(function (r) {
+                var ancla = r.clubId || r.individualEntityId || r.individualOwnerId || '';
+                var gid = ancla || DIAG_SIN_CLUB;
+                (porGrupo[gid] || (porGrupo[gid] = [])).push(r);
+            });
+            // Sin ninguna plaza con panel: sigue habiendo que verlo en algún
+            // sitio, o desaparecería de la herramienta de diagnóstico.
+            if (!plazas.length) porGrupo[u.clubId || DIAG_SIN_CLUB] = [];
+            Object.keys(porGrupo).forEach(function (gid) {
+                var e = ents[gid];
+                var g;
+                if (gid === DIAG_SIN_CLUB) {
+                    g = grupo(DIAG_SIN_CLUB, 'Sin club asignado', '⚠️', false);
+                } else if (e) {
+                    g = grupo(gid, e.name, e.esEnte ? '👤' : '🏟️', e.esEnte);
+                } else {
+                    // Entidad que no está en el catálogo (o no se pudo leer):
+                    // se usa el nombre que traiga el usuario, y se DICE que es
+                    // un remanente en vez de esconderlo.
+                    g = grupo(gid, u.clubName || gid, '❓', false);
+                }
+                g.usuarios.push({ x: x, plazas: porGrupo[gid] });
+            });
+        });
+        var arr = Object.keys(mapa).map(function (k) { return mapa[k]; });
+        arr.sort(function (a, b) {
+            // Clubes primero, entes después, "sin club" el último.
+            var ra = (a.id === DIAG_SIN_CLUB) ? 2 : (a.esEnte ? 1 : 0);
+            var rb = (b.id === DIAG_SIN_CLUB) ? 2 : (b.esEnte ? 1 : 0);
+            if (ra !== rb) return ra - rb;
+            return String(a.titulo).localeCompare(String(b.titulo));
+        });
+        return arr;
+    }
+
+    // La ficha de una persona DENTRO de un grupo, con sólo sus plazas de ahí.
+    function _fichaDiag(x, plazas) {
+        var u = x.u;
+        var nombre = (typeof window.cronosNombreUsuario === 'function')
+            ? window.cronosNombreUsuario(u) : (u.displayName || u.email || x.id);
+        var bloqueado = (u.status === 'blocked');
+        return '<div style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.09);' +
+                    'border-radius:10px;padding:0.7rem 0.85rem;margin-bottom:0.5rem;">' +
+            '<div style="display:flex;justify-content:space-between;align-items:center;gap:0.6rem;flex-wrap:wrap;">' +
+              '<div style="min-width:0;">' +
+                '<div style="font-weight:700;color:white;font-size:0.85rem;">' + _dE(nombre) +
+                  (bloqueado ? ' <span style="font-size:0.66rem;color:#f0883e;">🔒 BLOQUEADO</span>' : '') + '</div>' +
+                '<div style="font-size:0.71rem;color:#8b949e;">' + _dE(u.email || x.id) + '</div>' +
+              '</div>' +
+            '</div>' +
+            (u.statusReason
+                ? '<div style="margin-top:0.45rem;font-size:0.71rem;color:#f0883e;background:rgba(240,136,62,0.07);' +
+                       'border-radius:6px;padding:0.35rem 0.55rem;">📝 ' + _dE(u.statusReason) + '</div>'
+                : '') +
+            '<div style="margin-top:0.5rem;display:flex;gap:0.35rem;flex-wrap:wrap;">' +
+              (plazas.length
+                ? plazas.map(function (r) {
+                    var meta = DIAG_PANELES[r.role];
+                    var etiqueta = meta.label + (r.category
+                        ? ' · ' + _dE((typeof window.cronosNombreCategoria === 'function')
+                            ? window.cronosNombreCategoria(r.category, r.subcategory) : r.category)
+                        : '');
+                    return '<button onclick="_saEntrarDiagnostico(\'' + _dA(x.id) + '\',\'' + _dA(r.role) +
+                           '\',\'' + _dA(r.clubId || r.individualEntityId || '') + '\')" ' +
+                        'style="padding:0.32rem 0.7rem;border-radius:7px;cursor:pointer;font-size:0.72rem;' +
+                        'font-weight:700;background:rgba(88,166,255,0.12);border:1px solid rgba(88,166,255,0.4);' +
+                        'color:#58a6ff;">🩺 ' + etiqueta + '</button>';
+                  }).join('')
+                : '<span style="font-size:0.72rem;color:#8b949e;">Sin ningún rol con panel al que entrar.</span>') +
+            '</div>' +
+          '</div>';
+    }
+
     function _pintarListaDiag(filtro) {
         var cont = document.getElementById('sa-body');
         if (!cont) return;
         var f = String(filtro || '').trim().toLowerCase();
+        window._saDiagFiltroActual = filtro || '';
         var todos = window._saDiagUsuarios || [];
         var vis = !f ? todos : todos.filter(function (x) {
             var u = x.u;
@@ -635,55 +815,48 @@
                 ' placeholder="🔎 Buscar por correo, nombre o club…"' +
                 ' style="width:100%;padding:0.6rem 0.8rem;background:rgba(255,255,255,0.06);' +
                 'border:1px solid rgba(255,255,255,0.12);border-radius:9px;color:white;font-size:0.85rem;' +
-                'box-sizing:border-box;margin-bottom:0.8rem;font-family:inherit;">' +
-            '<div style="font-size:0.72rem;color:#8b949e;margin-bottom:0.5rem;">' +
-                vis.length + ' de ' + todos.length + ' usuario(s)</div>';
+                'box-sizing:border-box;margin-bottom:0.8rem;font-family:inherit;">';
+
+        var grupos = _agruparDiag(vis);
+        html += '<div style="font-size:0.72rem;color:#8b949e;margin-bottom:0.5rem;">' +
+                    vis.length + ' de ' + todos.length + ' usuario(s) · ' +
+                    grupos.length + ' entidad(es)' +
+                    (f ? '' : ' · pulsa una para desplegarla') + '</div>';
 
         if (!vis.length) {
             html += '<div style="text-align:center;padding:2.5rem;color:#8b949e;font-size:0.85rem;">Ningún usuario coincide.</div>';
         } else {
-            html += vis.slice(0, 120).map(function (x) {
-                var u = x.u;
-                var nombre = (typeof window.cronosNombreUsuario === 'function')
-                    ? window.cronosNombreUsuario(u) : (u.displayName || u.email || x.id);
-                var plazas = _plazasDe(u);
-                var bloqueado = (u.status === 'blocked');
-                return '<div style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.09);' +
-                            'border-radius:10px;padding:0.7rem 0.85rem;margin-bottom:0.5rem;">' +
-                    '<div style="display:flex;justify-content:space-between;align-items:center;gap:0.6rem;flex-wrap:wrap;">' +
-                      '<div style="min-width:0;">' +
-                        '<div style="font-weight:700;color:white;font-size:0.85rem;">' + _dE(nombre) +
-                          (bloqueado ? ' <span style="font-size:0.66rem;color:#f0883e;">🔒 BLOQUEADO</span>' : '') + '</div>' +
-                        '<div style="font-size:0.71rem;color:#8b949e;">' + _dE(u.email || x.id) +
-                          (u.clubName ? ' · ' + _dE(u.clubName) : '') + '</div>' +
+            var abiertos = window._saDiagAbiertos || {};
+            html += grupos.map(function (g) {
+                // Buscando, se abre solo: un resultado escondido detrás de un
+                // acordeón cerrado se lee como "no encuentra nada".
+                var abierto = f ? true : !!abiertos[g.id];
+                var color = (g.id === DIAG_SIN_CLUB) ? '#f0883e' : (g.esEnte ? '#3fb950' : '#58a6ff');
+                var rgb   = (typeof window._cronosHexRgb === 'function')
+                    ? window._cronosHexRgb(color) : '88,166,255';
+                return '<div style="border:1px solid rgba(' + rgb + ',0.30);border-radius:11px;' +
+                            'margin-bottom:0.6rem;overflow:hidden;background:rgba(' + rgb + ',0.04);">' +
+                    '<div onclick="_saDiagToggle(\'' + _dA(g.id) + '\')" ' +
+                         'style="display:flex;justify-content:space-between;align-items:center;gap:0.6rem;' +
+                                'padding:0.7rem 0.9rem;cursor:pointer;user-select:none;">' +
+                      '<div style="font-weight:800;font-size:0.88rem;color:' + color + ';">' +
+                          g.icono + ' ' + _dE(g.titulo) +
+                          (g.esEnte ? ' <span style="font-size:0.66rem;font-weight:700;opacity:0.75;">ENTE INDIVIDUAL</span>' : '') +
+                      '</div>' +
+                      '<div style="display:flex;align-items:center;gap:0.55rem;flex-shrink:0;">' +
+                        '<span style="font-size:0.72rem;color:#8b949e;">' + g.usuarios.length + ' usuario(s)</span>' +
+                        '<span style="font-size:0.72rem;color:#8b949e;">' + (abierto ? '▲' : '▼') + '</span>' +
                       '</div>' +
                     '</div>' +
-                    (u.statusReason
-                        ? '<div style="margin-top:0.45rem;font-size:0.71rem;color:#f0883e;background:rgba(240,136,62,0.07);' +
-                               'border-radius:6px;padding:0.35rem 0.55rem;">📝 ' + _dE(u.statusReason) + '</div>'
+                    (abierto
+                        ? '<div style="padding:0 0.7rem 0.7rem;">' +
+                            (g.usuarios.length
+                                ? g.usuarios.map(function (it) { return _fichaDiag(it.x, it.plazas); }).join('')
+                                : '<div style="padding:0.6rem;color:#8b949e;font-size:0.76rem;">Sin usuarios.</div>') +
+                          '</div>'
                         : '') +
-                    '<div style="margin-top:0.5rem;display:flex;gap:0.35rem;flex-wrap:wrap;">' +
-                      (plazas.length
-                        ? plazas.map(function (r) {
-                            var meta = DIAG_PANELES[r.role];
-                            var etiqueta = meta.label + (r.category
-                                ? ' · ' + _dE((typeof window.cronosNombreCategoria === 'function')
-                                    ? window.cronosNombreCategoria(r.category, r.subcategory) : r.category)
-                                : '');
-                            return '<button onclick="_saEntrarDiagnostico(\'' + _dA(x.id) + '\',\'' + _dA(r.role) +
-                                   '\',\'' + _dA(r.clubId || r.individualEntityId || '') + '\')" ' +
-                                'style="padding:0.32rem 0.7rem;border-radius:7px;cursor:pointer;font-size:0.72rem;' +
-                                'font-weight:700;background:rgba(88,166,255,0.12);border:1px solid rgba(88,166,255,0.4);' +
-                                'color:#58a6ff;">🩺 ' + etiqueta + '</button>';
-                          }).join('')
-                        : '<span style="font-size:0.72rem;color:#8b949e;">Sin ningún rol con panel al que entrar.</span>') +
-                    '</div>' +
                   '</div>';
             }).join('');
-            if (vis.length > 120) {
-                html += '<div style="text-align:center;padding:0.8rem;color:#8b949e;font-size:0.75rem;">' +
-                        'Se muestran los 120 primeros. Afina la búsqueda.</div>';
-            }
         }
         cont.innerHTML = html;
         var inp = document.getElementById('sa-diag-buscar');

@@ -2047,12 +2047,33 @@ function _cqHtmlEspacios(lunes) {
 // ════════════════════════════════════════════════════════════════════
 //  ACCIONES
 // ════════════════════════════════════════════════════════════════════
+// 🔴🔴 v643 · LAS FLECHAS ◀ ▶ NO HACÍAN NADA EN EL PANEL DEL ENTE
+//
+//  Reportado por el autor (implementar.txt, 2026-08-28): en «Cuadrante semanal
+//  de tu entidad» los botones de semana anterior/siguiente no respondían ni
+//  cambiaban las fechas. **Y no había ni un error en consola.**
+//
+//  🔑 EL DEFECTO NO ESTABA EN EL LISTENER NI EN EL CÁLCULO DE FECHAS —los dos
+//  funcionaban—, sino en el ARGUMENTO QUE FALTABA: `_sdLoadCuadrante()` sin
+//  contenedor hace `window._cqContenedorId = CQ_CONT_DEFECTO`, o sea
+//  'staff-dashboard-content', que es el cuerpo del panel de DIRECCIÓN. En el
+//  panel del ente ese div no existe, así que `_cqCont()` devolvía null y
+//  `_sdLoadCuadrante` hacía `return` en su tercera línea. El offset SÍ se
+//  incrementaba; simplemente no se repintaba nada. Un fallo silencioso.
+//
+//  ⚠️ ES EXACTAMENTE LA TRAMPA QUE LA v626 YA CERRÓ en `_sdRecargarCuadrante`,
+//  con su aserción A6 en test_ente_cuadrante_y_vuelta.js. Se arregló allí y
+//  quedó viva aquí: el mismo defecto, con la misma forma, en la función de al
+//  lado. Por eso el guard nuevo no mira esta línea, sino la FORMA: ninguna
+//  llamada a _sdLoadCuadrante puede ir sin contenedor.
 window.cqSemana = function (delta) {
     const st = window._cqState;
     if (st.sucio && !confirm('Hay cambios sin guardar en esta semana. ¿Cambiar de semana y perderlos?')) return;
     st.offset = (delta === 0) ? 0 : (st.offset + delta);
     st.doc = null; st.sucio = false;
-    _sdLoadCuadrante();
+    // Se repinta EN SU SITIO: el contenedor desde el que se abrió esta
+    // pantalla, sea el panel de Dirección o el del Ente Individual.
+    _sdLoadCuadrante(_cqContId());
 };
 
 // ════════════════════════════════════════════════════════════════════

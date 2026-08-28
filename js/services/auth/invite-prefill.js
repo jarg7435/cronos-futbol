@@ -192,6 +192,13 @@
                     // desplegable en la PRIMERA opción sin decir nada, que es
                     // peor que no rellenarlo. Se cae a la mixta.
                     if (sel.value !== rol && rol === 'coordinator') sel.value = 'coordinator_f711';
+                    // ⚽ v643 · Y lo mismo con el ente: la Secretaría ofrecía
+                    // 'individual_admin', que NUNCA fue una opción de este
+                    // desplegable (index.html sólo tiene 'individual', ver la
+                    // nota de la v598). Esas invitaciones llegaban SIN ROL, en
+                    // silencio. Ya no se ofrece, pero las enviadas siguen
+                    // vivas: se caen al rol canónico, que es el mismo puesto.
+                    if (sel.value !== rol && rol === 'individual_admin') sel.value = 'individual';
                     // Si el valor no casó con ninguna opción, el navegador deja
                     // el select vacío: NO se fija, y el usuario elige.
                     if (sel.value) {

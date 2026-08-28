@@ -326,12 +326,19 @@ console.log('\n5) 🩺 El acceso a paneles: credencial, registro y límites');
 // ════════════════════════════════════════════════════════════════════
 console.log('\n6) 🔌 Enganchado al panel, y sin tocar reglas');
 {
-    ok('6a · la pestaña existe y llama a saDiagnostico()',
-       /id="sa-tab-diagnostico"[\s\S]{0,200}?saTab\('diagnostico'\)/.test(SAP) &&
+    // ⚠️ ACTUALIZADO EN LA v641: la barra de pestañas se retiró (encargo del
+    // autor, implementar.txt 2026-08-28) y el panel entra por un TABLERO de
+    // tarjetas, la misma pieza `cronosTableroHtml` que usan Dirección,
+    // Coordinación, Club, Ente y Familias. Lo que estas dos aserciones
+    // protegen no cambia: que Diagnóstico tenga PUERTA en el panel y que esa
+    // puerta esté DECLARADA como sección (si no, saTab la mandaría al tablero).
+    ok('6a · la puerta existe en el tablero y llama a saDiagnostico()',
+       /titulo: 'Diagnóstico'[\s\S]{0,260}?saTab\('diagnostico'\)/.test(SAP) &&
        /else if \(tab==='diagnostico'\)/.test(SAP));
 
-    ok('6b · y entra en el subrayado de pestañas (si no, quedaría siempre apagada)',
-       /'extras','messages','diagnostico'\]\.forEach/.test(SAP));
+    ok('6b · y está declarada en SA_SECCIONES (si no, saTab la echaría al menú)',
+       /SA_SECCIONES = \{[\s\S]{0,600}?diagnostico:\s*'🩺 Diagnóstico'/.test(SAP) &&
+       /!window\.SA_SECCIONES\[tab\]\)\) tab = 'menu';/.test(SAP));
 
     ok('6c · ⚠️ si el fichero no cargó, se dice POR QUÉ (nada de pestaña muda)',
        /El modulo de Diagnostico no esta disponible/.test(SAP));
@@ -446,6 +453,246 @@ console.log('\n7) 🔴 v629 · Tras la credencial, el panel del SA se va de la p
     ok('7l · los seis roles siguen teniendo su panel declarado',
        ['user', 'coach', 'director', 'coordinator', 'club_admin', 'individual', 'parent']
          .every(r => new RegExp('\\b' + r + ':\\s*\\{\\s*label:').test(DIAG)));
+}
+
+// ════════════════════════════════════════════════════════════════════
+//  🔴🔴 v641 · LA BAJA SE **EJECUTA**. NO SE LEE.
+//
+//  Reportado por el autor el 2026-08-28 (capturas 9705-9709): al dar de baja a
+//  un usuario de "Sin club asignado" y escribir el motivo, la app contestaba
+//  «⛔ No se ha podido guardar el motivo, así que la operación se cancela.
+//   fsh.setDoc is not a function» y no borraba nada.
+//
+//  🚨🚨 Y LAS DIECISÉIS ASERCIONES DE LA PARTE 3 ESTABAN EN VERDE. Todas miran
+//  el FUENTE con expresiones regulares: que el motivo se pida, que se escriba
+//  antes de borrar, que vaya a `sa_privado`, que tenga tope… Ninguna llamaba a
+//  la función. El defecto no estaba en ninguna de esas frases: estaba en el
+//  ARGUMENTO — `saSetClubUserStatus` fabricaba a mano un objeto con cuatro
+//  alias (`db/doc/getDoc/updateDoc`) y la cadena necesitaba `setDoc`. Un
+//  inventario copiado a mano; exactamente el defecto que la v636 ya pagó con
+//  `fSetDoc`.
+//
+//  🔑 POR ESO ESTA PARTE EJECUTA `_saRegistrarMotivo` DE VERDAD, con el objeto
+//  PARCIAL de la v628, y exige que la escritura llegue a su sitio. Una regex
+//  no habría podido distinguir el antes del después.
+// ════════════════════════════════════════════════════════════════════
+console.log('\n8) 🔴 v641 · El motivo se guarda de VERDAD (ejecutado, no leído)');
+{
+    // Un inventario de Firestore de mentira que anota cada escritura.
+    function montarFirestore() {
+        const escrituras = [];
+        const docs = {};
+        const api = {
+            db: { __db: true },
+            doc: (db, ...seg) => ({ __ruta: seg.join('/') }),
+            getDoc: async (ref) => {
+                const d = docs[ref.__ruta];
+                return { exists: () => d !== undefined, data: () => d };
+            },
+            setDoc: async (ref, data, opts) => {
+                escrituras.push({ op: 'setDoc', ruta: ref.__ruta, data, opts });
+                docs[ref.__ruta] = data;
+            },
+            updateDoc: async (ref, data) => {
+                escrituras.push({ op: 'updateDoc', ruta: ref.__ruta, data });
+                docs[ref.__ruta] = Object.assign({}, docs[ref.__ruta], data);
+            },
+            deleteField: () => ({ __borrar: true }),
+        };
+        return { api, escrituras, docs };
+    }
+
+    // ── El caso EXACTO de las capturas: el llamador se queda corto ──────
+    {
+        const sb8 = montar();
+        const { api, escrituras } = montarFirestore();
+        sb8.window.saFS = async () => api;
+        sb8.window._cronosCurrentUser = { uid: 'sa1', email: 'sa@cronos.app' };
+
+        // El objeto que fabricaba la v628: SIN setDoc y SIN deleteField.
+        const fshParcial = { db: api.db, doc: api.doc, getDoc: api.getDoc, updateDoc: api.updateDoc };
+
+        let error = null;
+        try {
+            await sb8.window._saRegistrarMotivo(
+                fshParcial, 'u9', 'a1_ente@ejemplo.invalid', 'removed', '',
+                { code: 'impago', texto: 'tres recibos sin pagar' }, {});
+        } catch (e) { error = e; }
+
+        ok('8a · 🔴🔴 con el objeto PARCIAL de la v628 ya NO revienta',
+           error === null,
+           'antes: ' + (error && error.message));
+
+        ok('8b · 🔑 y el motivo llega al registro privado del SuperAdmin',
+           escrituras.some(e => e.op === 'setDoc' && e.ruta === 'users/sa1/sa_privado/bajas'),
+           'es el único sitio que sobrevive a la baja, que BORRA el documento del usuario');
+
+        ok('8c · con el motivo escrito dentro, no un documento vacío',
+           escrituras.some(e => e.op === 'setDoc' &&
+               (e.data.entradas || []).some(x => x.motivo === 'tres recibos sin pagar' &&
+                                                 x.status === 'removed' && x.uid === 'u9')));
+
+        ok('8d · y el documento del propio usuario queda sellado con la causa',
+           escrituras.some(e => e.op === 'updateDoc' && e.ruta === 'users/u9' &&
+               e.data.statusReason === 'tres recibos sin pagar' &&
+               e.data.statusReasonCode === 'impago'));
+    }
+
+    // ── Con el inventario COMPLETO, que es lo que pasa ahora ────────────
+    {
+        const sb8 = montar();
+        const { api, escrituras, docs } = montarFirestore();
+        docs['users/sa1'] = { saBajasLog: [{ motivo: 'de la v628', at: '2026-08-25' }] };
+        sb8.window.saFS = async () => api;
+        sb8.window._cronosCurrentUser = { uid: 'sa1', email: 'sa@cronos.app' };
+
+        let error = null;
+        try {
+            await sb8.window._saRegistrarMotivo(
+                api, 'u9', 'x@y.z', 'blocked', 'c1',
+                { code: 'mal_uso', texto: 'uso indebido reiterado' }, {});
+        } catch (e) { error = e; }
+        ok('8e · con el inventario completo tampoco falla', error === null,
+           error && error.message);
+
+        ok('8f · ⚠️ y AHORA SÍ se ejecuta la migración de la v631: lo viejo se arrastra…',
+           escrituras.some(e => e.op === 'setDoc' && e.ruta === 'users/sa1/sa_privado/bajas' &&
+               (e.data.entradas || []).some(x => x.motivo === 'de la v628')),
+           'sin `deleteField` en el inventario, esta rama se saltaba en silencio');
+
+        ok('8g · …y el campo de la RAÍZ, que lee cualquier usuario, se BORRA',
+           escrituras.some(e => e.op === 'updateDoc' && e.ruta === 'users/sa1' &&
+               e.data.saBajasLog && e.data.saBajasLog.__borrar === true),
+           'ahí es donde estaba la fuga que cerró la v631');
+    }
+
+    // ── Y la guarda de forma, para que no vuelva a fabricarse a mano ────
+    ok('8h · 🔑 el panel le pasa el inventario ENTERO, no cuatro alias copiados',
+       /await window\._saRegistrarMotivo\(\s*\n?\s*_FSSA,/.test(SAP) &&
+       !/_saRegistrarMotivo\(\s*\n?\s*\{ db: db, doc: doc/.test(SAP),
+       'reconstruirlo a mano es lo que dejó fuera setDoc y tumbó la baja');
+
+    ok('8i · ⚠️ y `deleteField` está en el saFS que REALMENTE gana',
+       /deleteField: fs\.deleteField,/.test(leer('js/services/firebase-init.js')),
+       'firebase-init.js es type="module": se ejecuta DESPUÉS del script clásico y lo sobrescribe');
+}
+
+// ════════════════════════════════════════════════════════════════════
+//  🏟️ v643 · LA LISTA DEL DIAGNÓSTICO, AGRUPADA POR ENTIDAD
+//
+//  Encargo del autor (implementar.txt, 2026-08-28): la lista mezclaba a todos
+//  los usuarios; quiere un acordeón por cada club registrado, y separado lo
+//  individual y lo que no tiene club.
+//
+//  🔑 SE EJECUTA EL AGRUPAMIENTO, con un reparto preparado para que falle si
+//  se repartiera por la RAÍZ. Ese es el defecto de la v563 —«el SA veía vacío
+//  lo lleno»—: un entrenador con plaza en DOS clubes tiene que salir en los
+//  dos, y en cada uno con SÓLO las plazas de ese club. Una regex sobre el
+//  fuente no distingue un reparto por plaza de uno por raíz.
+// ════════════════════════════════════════════════════════════════════
+console.log('\n9) 🏟️ v643 · El diagnóstico, agrupado por club / ente / sin club');
+{
+    const sb9 = montar();
+    const cuerpo = sb9._elem('sa-body');
+    sb9.window._cronosCurrentUser = { role: 'superadmin', uid: 'sa1' };
+    sb9.window._saDiagEntidades = {
+        c1:  { id: 'c1',  name: 'CD DÍA',        esEnte: false },
+        c2:  { id: 'c2',  name: 'ESTRELLA CF',   esEnte: false },
+        ent: { id: 'ent', name: 'JOSÉ A. ROMERO', esEnte: true  },
+    };
+    sb9.window._saDiagUsuarios = [
+        // 🔑 El caso que rompe un reparto por raíz: su documento dice clubId
+        //    'c1', pero tiene plaza TAMBIÉN en 'c2'.
+        { id: 'u_dos', u: { email: 'dos@x.com', displayName: 'Dos Clubes', clubId: 'c1',
+            allRoles: [
+                { role: 'user',     clubId: 'c1', isAuthorized: true, category: 'alevin' },
+                { role: 'director', clubId: 'c2', isAuthorized: true },
+            ] } },
+        { id: 'u_ente', u: { email: 'ente@x.com', displayName: 'Del Ente',
+            allRoles: [{ role: 'individual', individualEntityId: 'ent', isAuthorized: true }] } },
+        { id: 'u_solo', u: { email: 'solo@x.com', displayName: 'Sin Nada', allRoles: [] } },
+    ];
+    sb9.window._saDiagAbiertos = {};
+
+    // ── Todo cerrado: cabeceras sí, fichas no ─────────────────────────
+    sb9.window._saDiagFiltrar('');
+    const cerrado = cuerpo.innerHTML;
+
+    ok('9a · 🔑 hay un acordeón por cada entidad, con su nombre',
+       /CD DÍA/.test(cerrado) && /ESTRELLA CF/.test(cerrado) &&
+       /JOSÉ A\. ROMERO/.test(cerrado) && /Sin club asignado/.test(cerrado));
+
+    ok('9b · 🔑🔑 el cuerpo de un grupo CERRADO no se pinta',
+       cerrado.indexOf('_saEntrarDiagnostico') < 0 && cerrado.indexOf('dos@x.com') < 0,
+       'con veinte clubes, pintarlo todo siempre es lo que hacía la lista plana');
+
+    ok('9c · cada cabecera dice cuántos usuarios tiene',
+       /1 usuario\(s\)/.test(cerrado));
+
+    ok('9d · el ente se marca como tal, no se confunde con un club',
+       /ENTE INDIVIDUAL/.test(cerrado));
+
+    ok('9e · ⚠️ y "Sin club asignado" va el ÚLTIMO',
+       cerrado.lastIndexOf('Sin club asignado') > cerrado.lastIndexOf('JOSÉ A. ROMERO') &&
+       cerrado.lastIndexOf('JOSÉ A. ROMERO') > cerrado.lastIndexOf('ESTRELLA CF'),
+       'clubes primero, entes después, lo huérfano al final');
+
+    // ── Abrir un club concreto ────────────────────────────────────────
+    sb9.window._saDiagToggle('c1');
+    const abierto = cuerpo.innerHTML;
+
+    ok('9f · al pulsar un club se despliegan SUS usuarios',
+       abierto.indexOf('dos@x.com') >= 0 && abierto.indexOf('_saEntrarDiagnostico') >= 0);
+
+    ok('9g · 🔑🔑 y SÓLO la plaza de ese club, no todas las de la persona',
+       /_saEntrarDiagnostico\('u_dos','user','c1'\)/.test(abierto) &&
+       !/_saEntrarDiagnostico\('u_dos','director','c2'\)/.test(abierto),
+       'dentro de CD DÍA no se diagnostica su puesto en ESTRELLA CF');
+
+    ok('9h · ⚠️ abrir uno NO abre los demás',
+       abierto.indexOf('ente@x.com') < 0);
+
+    // ── La misma persona, en su OTRO club ─────────────────────────────
+    sb9.window._saDiagToggle('c2');
+    const dos = cuerpo.innerHTML;
+    ok('9i · 🔴🔴 la persona con dos plazas sale TAMBIÉN en su segundo club',
+       /_saEntrarDiagnostico\('u_dos','director','c2'\)/.test(dos),
+       'repartir por el clubId de la RAÍZ la habría dejado fuera de ESTRELLA CF — el defecto de v563');
+
+    // ── Sin ninguna plaza: sigue estando ──────────────────────────────
+    sb9.window._saDiagToggle('__sin_club__');
+    const huerf = cuerpo.innerHTML;
+    ok('9j · ⚠️ quien no tiene ninguna plaza NO desaparece de la herramienta',
+       huerf.indexOf('solo@x.com') >= 0 && /Sin ningún rol con panel/.test(huerf),
+       'es justo a quien hay que poder mirar cuando algo va mal');
+
+    // ── Buscar abre solo ──────────────────────────────────────────────
+    sb9.window._saDiagAbiertos = {};
+    sb9.window._saDiagFiltrar('ente@x.com');
+    const busq = cuerpo.innerHTML;
+    ok('9k · 🔑 buscando, el resultado se ve SIN tener que abrir el acordeón',
+       busq.indexOf('ente@x.com') >= 0,
+       'un resultado escondido detrás de un acordeón cerrado se lee como "no encuentra nada"');
+    ok('9l · y el filtro descarta lo que no coincide',
+       busq.indexOf('dos@x.com') < 0 && /1 de 3 usuario\(s\)/.test(busq));
+
+    // ── Sin catálogo de entidades: se degrada, no se cae ──────────────
+    {
+        const sb10 = montar();
+        const c10 = sb10._elem('sa-body');
+        sb10.window._cronosCurrentUser = { role: 'superadmin', uid: 'sa1' };
+        sb10.window._saDiagEntidades = {};          // la lectura de clubs falló
+        sb10.window._saDiagUsuarios = [
+            { id: 'u1', u: { email: 'a@x.com', clubId: 'cX', clubName: 'CLUB DEL USUARIO',
+                allRoles: [{ role: 'user', clubId: 'cX', isAuthorized: true }] } },
+        ];
+        sb10.window._saDiagAbiertos = {};
+        let reventó = false;
+        try { sb10.window._saDiagFiltrar(''); } catch (e) { reventó = true; }
+        ok('9m · ⚠️ si el catálogo de clubes no se pudo leer, se agrupa igual',
+           !reventó && c10.innerHTML.indexOf('CLUB DEL USUARIO') >= 0,
+           'el diagnóstico es la linterna: no puede apagarse porque falle una lectura auxiliar');
+    }
 }
 
 console.log('\n──────────────────────────────────────────────────────────');
