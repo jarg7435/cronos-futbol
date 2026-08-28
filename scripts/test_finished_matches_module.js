@@ -94,6 +94,23 @@ function readBlock() {
 }
 const BLOCK = readBlock();
 
+// ══════════════════════════════════════════════════════════════════════
+//  ⏳ v640 · LOS DATOS DE PRUEBA TIENEN QUE CAER DENTRO DE LA VENTANA
+//
+//  Estas fichas usaban `createdAt: 1`, `createdAt: 5`… — enteros pequeños que
+//  aquí sólo servían para fijar el ORDEN. Desde v640 la pestaña aplica la
+//  ventana de retención de 10 h (regla de negocio: la sección es un registro
+//  TEMPORAL), y esos valores son milisegundos desde 1970: TODO quedaba fuera
+//  de plazo y once aserciones se pusieron rojas de golpe.
+//
+//  🔑 Se conserva el orden relativo —n mayor = más reciente— y se lleva todo a
+//  los últimos ~17 minutos. Así estas aserciones siguen midiendo lo suyo
+//  (agrupación, filtros de club, fuentes) y no la caducidad, que tiene su
+//  propia parte más abajo.
+// ══════════════════════════════════════════════════════════════════════
+const RECIENTE = (n) => Date.now() - (1000 - Number(n)) * 1000;
+const HORAS = (h) => Date.now() - h * 60 * 60 * 1000;
+
 // Réplica EXACTA de app-init.js:22 (escapa también "/").
 const escHtml = (str) => {
     if (str === null || str === undefined) return '';
@@ -273,7 +290,7 @@ function walk(dir, out) {
     }
     {
         const { g, readCols } = buildSandbox({
-            live: { L1: finished({ createdAt: 2 }) }, reports: {},
+            live: { L1: finished({ createdAt: RECIENTE(2) }) }, reports: {},
         });
         await g._renderFinishedMatchesTab();
         ok('2b · lee live_matches y cronos_player_reports',
@@ -282,10 +299,10 @@ function walk(dir, out) {
     {
         const { g, container } = buildSandbox({
             live: {
-                A: finished({ homeName: 'ConStatus', createdAt: 5 }),
-                B: { phase: 'finished', clubId: 'club1', homeName: 'ConPhase', createdAt: 4 },
-                C: { matchPhase: 'finished', clubId: 'club1', homeName: 'ConMatchPhase', createdAt: 3 },
-                D: { status: 'live', clubId: 'club1', homeName: 'EnCurso', createdAt: 2 },
+                A: finished({ homeName: 'ConStatus', createdAt: RECIENTE(5) }),
+                B: { phase: 'finished', clubId: 'club1', homeName: 'ConPhase', createdAt: RECIENTE(4) },
+                C: { matchPhase: 'finished', clubId: 'club1', homeName: 'ConMatchPhase', createdAt: RECIENTE(3) },
+                D: { status: 'live', clubId: 'club1', homeName: 'EnCurso', createdAt: RECIENTE(2) },
             },
         });
         await g._renderFinishedMatchesTab();
@@ -297,9 +314,9 @@ function walk(dir, out) {
     {
         const { g, container } = buildSandbox({
             live: {
-                A: { status: 'finished', clubId: 'club1', homeName: 'MiClub', createdAt: 3 },
-                B: { status: 'finished', clubId: 'otro', createdBy: 'u1', homeName: 'MioPorCreador', createdAt: 2 },
-                C: { status: 'finished', clubId: 'otro', createdBy: 'zz', homeName: 'Ajeno', createdAt: 1 },
+                A: { status: 'finished', clubId: 'club1', homeName: 'MiClub', createdAt: RECIENTE(3) },
+                B: { status: 'finished', clubId: 'otro', createdBy: 'u1', homeName: 'MioPorCreador', createdAt: RECIENTE(2) },
+                C: { status: 'finished', clubId: 'otro', createdBy: 'zz', homeName: 'Ajeno', createdAt: RECIENTE(1) },
             },
         });
         await g._renderFinishedMatchesTab();
@@ -317,8 +334,8 @@ function walk(dir, out) {
         const { g, container } = buildSandbox({
             me: { uid: 'u1', role: 'director', _activeRole: 'director' },   // sin clubId
             live: {
-                A: { status: 'finished', clubId: 'cualquiera', homeName: 'DeOtroClub', createdAt: 1 },
-                B: { status: 'finished', clubId: 'cualquiera', createdBy: 'u1', homeName: 'MioPorCreador', createdAt: 2 },
+                A: { status: 'finished', clubId: 'cualquiera', homeName: 'DeOtroClub', createdAt: RECIENTE(1) },
+                B: { status: 'finished', clubId: 'cualquiera', createdBy: 'u1', homeName: 'MioPorCreador', createdAt: RECIENTE(2) },
             },
         });
         await g._renderFinishedMatchesTab();
@@ -331,10 +348,10 @@ function walk(dir, out) {
     {
         const { g, container } = buildSandbox({
             reports: {
-                R1: collective({ homeName: 'PorStaffReport', createdAt: 5 }),
-                R2: { type: 'collective_match_report', clubId: 'club1', homeName: 'PorType', createdAt: 4 },
-                R3: { reportType: 'collective', clubId: 'club1', homeName: 'PorReportType', createdAt: 3 },
-                R4: { clubId: 'club1', homeName: 'Individual', createdAt: 2 },
+                R1: collective({ homeName: 'PorStaffReport', createdAt: RECIENTE(5) }),
+                R2: { type: 'collective_match_report', clubId: 'club1', homeName: 'PorType', createdAt: RECIENTE(4) },
+                R3: { reportType: 'collective', clubId: 'club1', homeName: 'PorReportType', createdAt: RECIENTE(3) },
+                R4: { clubId: 'club1', homeName: 'Individual', createdAt: RECIENTE(2) },
             },
         });
         await g._renderFinishedMatchesTab();
@@ -358,7 +375,7 @@ function walk(dir, out) {
     // ═══════════════════════════════════════════════════════════════════
     {
         const { g, consultas } = buildSandbox({
-            reports: { R1: collective({ homeName: 'X', createdAt: 1 }) },
+            reports: { R1: collective({ homeName: 'X', createdAt: RECIENTE(1) }) },
         });
         await g._renderFinishedMatchesTab();
         const deInformes = consultas.filter(c => c.col === 'cronos_player_reports');
@@ -408,12 +425,12 @@ function walk(dir, out) {
         for (let i = 1; i <= 12; i++) {
             delMismoPartido['R' + i] = collective({
                 matchId: 'match_2026-08-17_rival',
-                homeName: 'UnicoPartido', playerNumber: i, createdAt: 100 - i,
+                homeName: 'UnicoPartido', playerNumber: i, createdAt: RECIENTE(100) - i,
             });
         }
         // …y uno de OTRO partido, para que no valga con «pinta siempre una».
         delMismoPartido.OTRO = collective({
-            matchId: 'match_2026-08-18_otro', homeName: 'SegundoPartido', createdAt: 50,
+            matchId: 'match_2026-08-18_otro', homeName: 'SegundoPartido', createdAt: RECIENTE(50),
         });
 
         const { g, container } = buildSandbox({ reports: delMismoPartido });
@@ -433,9 +450,9 @@ function walk(dir, out) {
         // seguir apareciendo: es la segunda condición del filtro original.
         const { g, container } = buildSandbox({
             reports: {
-                R1: { staffReport: true, clubId: 'club1',  homeName: 'DeMiClub',    createdAt: 3 },
-                R2: { staffReport: true, clubId: 'otro',   coachUid: 'u1', homeName: 'MioPorCoach', createdAt: 2 },
-                R3: { staffReport: true, clubId: 'ajeno',  coachUid: 'zz', homeName: 'DeOtro',      createdAt: 1 },
+                R1: { staffReport: true, clubId: 'club1',  homeName: 'DeMiClub',    createdAt: RECIENTE(3) },
+                R2: { staffReport: true, clubId: 'otro',   coachUid: 'u1', homeName: 'MioPorCoach', createdAt: RECIENTE(2) },
+                R3: { staffReport: true, clubId: 'ajeno',  coachUid: 'zz', homeName: 'DeOtro',      createdAt: RECIENTE(1) },
             },
         });
         await g._renderFinishedMatchesTab();
@@ -451,8 +468,8 @@ function walk(dir, out) {
         const { g, container, consultas } = buildSandbox({
             me: { uid: 'u1', role: 'director', _activeRole: 'director' },   // sin clubId
             reports: {
-                R1: { staffReport: true, clubId: 'cualquiera', homeName: 'DeOtroClub',  createdAt: 1 },
-                R2: { staffReport: true, clubId: 'cualquiera', coachUid: 'u1', homeName: 'MioPorCoach', createdAt: 2 },
+                R1: { staffReport: true, clubId: 'cualquiera', homeName: 'DeOtroClub',  createdAt: RECIENTE(1) },
+                R2: { staffReport: true, clubId: 'cualquiera', coachUid: 'u1', homeName: 'MioPorCoach', createdAt: RECIENTE(2) },
             },
         });
         await g._renderFinishedMatchesTab();
@@ -464,8 +481,8 @@ function walk(dir, out) {
     {
         // mismo partido en las dos colecciones: live_matches gana
         const { g, container } = buildSandbox({
-            live: { M1: finished({ homeName: 'DesdeLive', createdAt: 5 }) },
-            reports: { R9: collective({ liveMatchId: 'M1', homeName: 'DesdeReports', createdAt: 5 }) },
+            live: { M1: finished({ homeName: 'DesdeLive', createdAt: RECIENTE(5) }) },
+            reports: { R9: collective({ liveMatchId: 'M1', homeName: 'DesdeReports', createdAt: RECIENTE(5) }) },
         });
         await g._renderFinishedMatchesTab();
         const h = container.innerHTML;
@@ -474,7 +491,7 @@ function walk(dir, out) {
     }
     {
         const { g, container } = buildSandbox({
-            reports: { R1: collective({ liveMatchId: 'LM7', homeName: 'ConLiveId', createdAt: 1 }) },
+            reports: { R1: collective({ liveMatchId: 'LM7', homeName: 'ConLiveId', createdAt: RECIENTE(1) }) },
         });
         await g._renderFinishedMatchesTab();
         ok('2j · la clave del informe es liveMatchId cuando existe',
@@ -483,14 +500,14 @@ function walk(dir, out) {
     }
     {
         const { g, container } = buildSandbox({ failLive: true,
-            reports: { R1: collective({ homeName: 'ReportsSobrevive', createdAt: 1 }) } });
+            reports: { R1: collective({ homeName: 'ReportsSobrevive', createdAt: RECIENTE(1) }) } });
         await g._renderFinishedMatchesTab();
         ok('2k · si falla live_matches, los informes siguen cargando',
             container.innerHTML.includes('ReportsSobrevive'));
     }
     {
         const { g, container } = buildSandbox({ failReports: true,
-            live: { L1: finished({ homeName: 'LiveSobrevive', createdAt: 1 }) } });
+            live: { L1: finished({ homeName: 'LiveSobrevive', createdAt: RECIENTE(1) }) } });
         await g._renderFinishedMatchesTab();
         ok('2l · si fallan los informes, live_matches sigue cargando',
             container.innerHTML.includes('LiveSobrevive'));
@@ -498,9 +515,9 @@ function walk(dir, out) {
     {
         const { g, container } = buildSandbox({
             live: {
-                A: finished({ homeName: 'Viejo', createdAt: 100 }),
-                B: finished({ homeName: 'Nuevo', createdAt: 900 }),
-                C: finished({ homeName: 'Medio', createdAt: 500 }),
+                A: finished({ homeName: 'Viejo', createdAt: RECIENTE(100) }),
+                B: finished({ homeName: 'Nuevo', createdAt: RECIENTE(900) }),
+                C: finished({ homeName: 'Medio', createdAt: RECIENTE(500) }),
             },
         });
         await g._renderFinishedMatchesTab();
@@ -516,7 +533,7 @@ function walk(dir, out) {
     console.log('\n── PARTE 3 · enriquecimiento retroactivo (escribe en render) ──');
     {
         const { g, written, readCols } = buildSandbox({
-            live: { L1: finished({ category: 'Infantil', homeName: 'ConCat', createdAt: 1 }) },
+            live: { L1: finished({ category: 'Infantil', homeName: 'ConCat', createdAt: RECIENTE(1) }) },
         });
         await g._renderFinishedMatchesTab();
         ok('3a · si todos tienen categoría, no lee users ni escribe',
@@ -524,7 +541,7 @@ function walk(dir, out) {
     }
     {
         const { g, written, readCols } = buildSandbox({
-            live: { L1: finished({ createdBy: 'coach9', homeName: 'SinCat', createdAt: 1 }) },
+            live: { L1: finished({ createdBy: 'coach9', homeName: 'SinCat', createdAt: RECIENTE(1) }) },
             users: { coach9: { clubId: 'club1', category: 'Cadete', subcategory: 'B', email: 'c9@x.com' } },
         });
         await g._renderFinishedMatchesTab();
@@ -542,7 +559,7 @@ function walk(dir, out) {
     }
     {
         const { g, written } = buildSandbox({
-            reports: { R1: collective({ coachUid: 'coach9', homeName: 'SinCat', createdAt: 1 }) },
+            reports: { R1: collective({ coachUid: 'coach9', homeName: 'SinCat', createdAt: RECIENTE(1) }) },
             users: { coach9: { clubId: 'club1', category: 'Juvenil', subcategory: 'A' } },
         });
         await g._renderFinishedMatchesTab();
@@ -552,7 +569,7 @@ function walk(dir, out) {
     }
     {
         const { g, written, container } = buildSandbox({
-            live: { L1: finished({ coachEmail: 'c9@x.com', homeName: 'SinCat', createdAt: 1 }) },
+            live: { L1: finished({ coachEmail: 'c9@x.com', homeName: 'SinCat', createdAt: RECIENTE(1) }) },
             users: { zz: { clubId: 'club1', category: 'Alevín', email: 'c9@x.com' } },
         });
         await g._renderFinishedMatchesTab();
@@ -565,7 +582,7 @@ function walk(dir, out) {
         const { g, written, container } = buildSandbox({
             me: { uid: 'u1', clubId: 'club1', role: 'director', _activeRole: 'director',
                   category: 'Infantil', subcategory: 'C' },
-            live: { L1: finished({ createdBy: 'u1', homeName: 'SinCat', createdAt: 1 }) },
+            live: { L1: finished({ createdBy: 'u1', homeName: 'SinCat', createdAt: RECIENTE(1) }) },
         });
         await g._renderFinishedMatchesTab();
         // v434 · Igual que 3e: se comprueba en el render, no en la escritura.
@@ -578,7 +595,7 @@ function walk(dir, out) {
     {
         const { g, container, written } = buildSandbox({
             failUsers: true,
-            live: { L1: finished({ createdBy: 'coach9', homeName: 'SinCat', createdAt: 1 }) },
+            live: { L1: finished({ createdBy: 'coach9', homeName: 'SinCat', createdAt: RECIENTE(1) }) },
         });
         await g._renderFinishedMatchesTab();
         ok('3h · si falla la lectura de users, no escribe y el render continúa',
@@ -595,8 +612,8 @@ function walk(dir, out) {
         const { g, container } = buildSandbox({
             me: coach({ category: 'Infantil' }),
             live: {
-                A: finished({ category: 'Infantil', homeName: 'MiCategoria', createdAt: 3 }),
-                B: finished({ category: 'Cadete', homeName: 'OtraCategoria', createdAt: 2 }),
+                A: finished({ category: 'Infantil', homeName: 'MiCategoria', createdAt: RECIENTE(3) }),
+                B: finished({ category: 'Cadete', homeName: 'OtraCategoria', createdAt: RECIENTE(2) }),
             },
         });
         await g._renderFinishedMatchesTab();
@@ -609,7 +626,7 @@ function walk(dir, out) {
     {
         const { g, container } = buildSandbox({
             me: coach({ _activeRole: 'coach', category: 'Infantil' }),
-            live: { A: finished({ category: 'Infantil', homeName: 'RolCoach', createdAt: 1 }) },
+            live: { A: finished({ category: 'Infantil', homeName: 'RolCoach', createdAt: RECIENTE(1) }) },
         });
         await g._renderFinishedMatchesTab();
         ok('4d · el rol "coach" también entra por la rama de entrenador',
@@ -618,7 +635,7 @@ function walk(dir, out) {
     {
         const { g, container } = buildSandbox({
             me: coach({ category: 'Cadete' }),
-            live: { A: finished({ category: 'Juvenil', createdBy: 'c1', homeName: 'MioAunqueOtraCat', createdAt: 1 }) },
+            live: { A: finished({ category: 'Juvenil', createdBy: 'c1', homeName: 'MioAunqueOtraCat', createdAt: RECIENTE(1) }) },
         });
         await g._renderFinishedMatchesTab();
         ok('4e · sus propios partidos pasan aunque sean de otra categoría',
@@ -628,9 +645,9 @@ function walk(dir, out) {
         const { g, container } = buildSandbox({
             me: coach({ category: 'infantil_b' }),
             live: {
-                A: finished({ category: 'Infantil', subcategory: 'B', homeName: 'SubB', createdAt: 3 }),
-                B: finished({ category: 'Infantil', subcategory: 'C', homeName: 'SubC', createdAt: 2 }),
-                C: finished({ category: 'Infantil', homeName: 'SinSub', createdAt: 1 }),
+                A: finished({ category: 'Infantil', subcategory: 'B', homeName: 'SubB', createdAt: RECIENTE(3) }),
+                B: finished({ category: 'Infantil', subcategory: 'C', homeName: 'SubC', createdAt: RECIENTE(2) }),
+                C: finished({ category: 'Infantil', homeName: 'SinSub', createdAt: RECIENTE(1) }),
             },
         });
         await g._renderFinishedMatchesTab();
@@ -642,7 +659,7 @@ function walk(dir, out) {
     {
         const { g, container } = buildSandbox({
             me: coach({ category: 'Cadete' }),
-            live: { A: finished({ category: 'Juvenil', homeName: 'Nada', createdAt: 1 }) },
+            live: { A: finished({ category: 'Juvenil', homeName: 'Nada', createdAt: RECIENTE(1) }) },
         });
         await g._renderFinishedMatchesTab();
         const h = container.innerHTML;
@@ -656,8 +673,8 @@ function walk(dir, out) {
     {
         const { g, container } = buildSandbox({
             live: {
-                A: finished({ category: 'Infantil', subcategory: 'B', homeName: 'InfB', createdAt: 3 }),
-                B: finished({ category: 'Cadete', subcategory: 'A', homeName: 'CadA', createdAt: 2 }),
+                A: finished({ category: 'Infantil', subcategory: 'B', homeName: 'InfB', createdAt: RECIENTE(3) }),
+                B: finished({ category: 'Cadete', subcategory: 'A', homeName: 'CadA', createdAt: RECIENTE(2) }),
             },
         });
         await g._renderFinishedMatchesTab();
@@ -685,8 +702,8 @@ function walk(dir, out) {
     {
         const { g, container } = buildSandbox({
             live: {
-                A: finished({ category: 'Infantil', subcategory: 'Z', homeName: 'SubRara', createdAt: 2 }),
-                B: finished({ category: 'Prebenjamín', homeName: 'SinSub', createdAt: 1 }),
+                A: finished({ category: 'Infantil', subcategory: 'Z', homeName: 'SubRara', createdAt: RECIENTE(2) }),
+                B: finished({ category: 'Prebenjamín', homeName: 'SinSub', createdAt: RECIENTE(1) }),
             },
         });
         await g._renderFinishedMatchesTab();
@@ -698,7 +715,7 @@ function walk(dir, out) {
     }
     {
         const { g, container } = buildSandbox({
-            live: { A: finished({ category: 'Veteranos', homeName: 'CatDesconocida', createdAt: 1 }) },
+            live: { A: finished({ category: 'Veteranos', homeName: 'CatDesconocida', createdAt: RECIENTE(1) }) },
         });
         await g._renderFinishedMatchesTab();
         const h = container.innerHTML;
@@ -724,7 +741,7 @@ function walk(dir, out) {
                     homeTeam: { name: 'CD <Local>', score: 3 },
                     awayTeam: { name: 'CD Visita', score: 1 },
                     category: 'Cadete', subcategory: 'A',
-                    events: [1, 2, 3], matchDate: '02/03/2026', createdAt: 1,
+                    events: [1, 2, 3], matchDate: '02/03/2026', createdAt: RECIENTE(1),
                 }),
             },
         });
@@ -752,7 +769,7 @@ function walk(dir, out) {
         // Es la comprobación que da valor a la regla: pasadas las 2 h la ficha
         // se puede revivir, pero ni se le añaden sucesos ni se borra.
         const { g, container } = buildSandbox({
-            live: { M9: congelado({ homeName: 'Viejo', awayName: 'Rival', createdAt: 1 }) },
+            live: { M9: congelado({ homeName: 'Viejo', awayName: 'Rival', createdAt: RECIENTE(1) }) },
         });
         await g._renderFinishedMatchesTab();
         const hc = container.innerHTML;
@@ -769,7 +786,7 @@ function walk(dir, out) {
     }
     {
         const { g, container } = buildSandbox({
-            live: { "id'raro": finished({ homeName: 'X', createdAt: 1 }) },
+            live: { "id'raro": finished({ homeName: 'X', createdAt: RECIENTE(1) }) },
         });
         await g._renderFinishedMatchesTab();
         ok('6g · ⚠️ el id se interpola SIN escapeAttr (inconsistencia preservada)',
@@ -778,7 +795,7 @@ function walk(dir, out) {
     }
     {
         const { g, container } = buildSandbox({
-            live: { M2: finished({ homeTeam: 'SoloTexto', scoreHome: 2, goalsAway: 5, createdAt: 1 }) },
+            live: { M2: finished({ homeTeam: 'SoloTexto', scoreHome: 2, goalsAway: 5, createdAt: RECIENTE(1) }) },
         });
         await g._renderFinishedMatchesTab();
         const h = container.innerHTML;
@@ -787,11 +804,99 @@ function walk(dir, out) {
     }
     {
         const { g, container } = buildSandbox({
+            // ⚠️ `createdAt: 0` ES INTENCIONAL: este caso prueba justo el
+            //    partido SIN fecha utilizable. El barrido de v640 que llevó las
+            //    fechas a la ventana de 10 h se lo llevó por delante y con él
+            //    perdía su sentido. Además, sirve de doble comprobación: la
+            //    ventana de retención NO puede esconder un partido sin ancla.
             live: { M3: finished({ homeName: 'X', createdAt: 0, events: [] }) },
         });
         await g._renderFinishedMatchesTab();
         ok('6i · sin eventos no pinta el contador', !container.innerHTML.includes('eventos'));
         ok('6j · sin fecha utilizable muestra el guion', container.innerHTML.includes('📅 —'));
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    //  ⏳ PARTE 8 · LA VENTANA DE 10 HORAS (v640)
+    //
+    //  Regla de negocio (implementar.txt 2026-08-28): esta sección es un
+    //  REGISTRO TEMPORAL de 10 h desde el final del encuentro — 2 h de margen
+    //  para corregir informes + 8 h para descargarlo. Pasadas las 10 h el
+    //  partido DESAPARECE DE AQUÍ.
+    //
+    //  ⚠️⚠️ DESAPARECE DE LA SECCIÓN, NO SE BORRA. Los informes colectivos e
+    //  individuales permanecen toda la temporada. Este filtro es de
+    //  PRESENTACIÓN, y la parte 8d lo comprueba: no se escribe ni un borrado.
+    // ═══════════════════════════════════════════════════════════════════
+    console.log('\n── PARTE 8 · la ventana de 10 h ──');
+    {
+        const { g, container, written } = buildSandbox({
+            live: {
+                DENTRO_1H:  finished({ homeName: 'HaceUnaHora',   finishedAt: HORAS(1) }),
+                DENTRO_9H:  finished({ homeName: 'HaceNueveHoras', finishedAt: HORAS(9) }),
+                FUERA_11H:  finished({ homeName: 'HaceOnceHoras',  finishedAt: HORAS(11) }),
+                FUERA_JUL:  finished({ homeName: 'DeJulio',        finishedAt: HORAS(24 * 50) }),
+            },
+        });
+        await g._renderFinishedMatchesTab();
+        const h = container.innerHTML;
+
+        ok('8a · dentro de plazo (1 h y 9 h) SE VEN',
+            h.includes('HaceUnaHora') && h.includes('HaceNueveHoras'));
+        ok('8b · 🔑🔑 pasadas las 10 h DESAPARECE de la sección',
+            !h.includes('HaceOnceHoras'),
+            'a las 11 h ya está fuera de la ventana de retención');
+        ok('8c · 🔑 y un partido de hace 50 días tampoco se pinta',
+            !h.includes('DeJulio'),
+            'era justo lo reportado: julio y junio acumulándose en la sección');
+        ok('8d · ⚠️⚠️ ocultar NO borra: no se escribe nada en Firestore',
+            written.length === 0,
+            'los informes permanentes de temporada no se tocan — JSON: ' + JSON.stringify(written));
+    }
+    {
+        // 🔑 El ancla es `finishedAt`, no `updatedAt`: corregir un informe
+        //    dentro de las 2 h de margen NO puede reiniciar el reloj de 10 h.
+        //    Es la lección que v434 ya pagó en la Cloud Function.
+        const { g, container } = buildSandbox({
+            live: {
+                VIEJO_TOCADO: finished({
+                    homeName: 'TerminoHace11hPeroSeTocoAhora',
+                    finishedAt: HORAS(11),
+                    updatedAt:  Date.now(),
+                }),
+            },
+        });
+        await g._renderFinishedMatchesTab();
+        ok('8e · 🔑 el reloj cuenta desde que TERMINÓ, no desde la última edición',
+            !container.innerHTML.includes('TerminoHace11hPeroSeTocoAhora'),
+            'con updatedAt como ancla, editar un informe lo resucitaría otras 10 h');
+    }
+    {
+        // ⚠️ Sin fecha utilizable NO se esconde: más vale una ficha de más que
+        //    esconderle a alguien su partido por un dato corrupto. Mismo
+        //    criterio que el paso B de cleanupLiveMatches, que tampoco borra.
+        const { g, container } = buildSandbox({
+            live: { SIN_FECHA: { status: 'finished', clubId: 'club1', homeName: 'SinAncla' } },
+        });
+        await g._renderFinishedMatchesTab();
+        ok('8f · ⚠️ un partido sin fecha utilizable NO se esconde',
+            container.innerHTML.includes('SinAncla'));
+    }
+    {
+        // Y el respaldo sobre `cronos_player_reports` tiene que filtrar IGUAL:
+        // si no, en cuanto el índice saliera vacío —que con esta regla es el
+        // estado NORMAL sin partidos recientes— julio volvería a aparecer.
+        const { g, container } = buildSandbox({
+            reports: {
+                R_VIEJO: collective({ homeName: 'InformeDeJunio', createdAt: HORAS(24 * 60) }),
+                R_NUEVO: collective({ homeName: 'InformeDeHoy',   createdAt: HORAS(2) }),
+            },
+        });
+        await g._renderFinishedMatchesTab();
+        const h = container.innerHTML;
+        ok('8g · 🔑🔑 el respaldo sobre los informes filtra la ventana IGUAL',
+            !h.includes('InformeDeJunio') && h.includes('InformeDeHoy'),
+            'filtrar sólo el índice habría dejado esta puerta abierta');
     }
     {
         const { g, container } = buildSandbox({

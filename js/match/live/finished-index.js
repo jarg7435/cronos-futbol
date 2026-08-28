@@ -108,6 +108,35 @@
             //    Guardar `events` aquí devolvería el problema que esto arregla.
             eventsCount:  num(d.eventsCount),
 
+            // ══════════════════════════════════════════════════════════
+            //  ⏳ v640 · LA VENTANA DE 10 HORAS DE LA SECCIÓN
+            //
+            //  Regla de negocio (implementar.txt 2026-08-28): la sección
+            //  «Partidos Terminados» es un REGISTRO TEMPORAL de 10 h desde el
+            //  final del encuentro — 2 h de margen para corregir informes
+            //  (la ventana de incidencias que ya gobierna CronosMatchLock) +
+            //  8 h para poder descargarlo. Pasadas las 10 h desaparece de la
+            //  SECCIÓN.
+            //
+            //  ⚠️⚠️ DESAPARECE DE LA SECCIÓN, NO SE BORRA EL INFORME. Los
+            //  informes colectivos e individuales PERMANECEN TODA LA
+            //  TEMPORADA: son los que alimentan «Mis Informes», el resumen de
+            //  temporada, la exportación CSV/PDF y el Gantt de minutos. Este
+            //  índice es una VISTA de esa sección, no el archivo.
+            //
+            //  🔑 EL ANCLA ES `finishedAt`, no `updatedAt`: si contara desde
+            //  la última escritura, corregir un informe dentro de las 2 h de
+            //  margen reiniciaría el reloj y el partido se quedaría otras 10 h.
+            //  Es la misma razón por la que v434 quitó ese filtro de la Cloud
+            //  Function.
+            // ══════════════════════════════════════════════════════════
+            finishedAt:   txt(d.finishedAt) || txt(d.createdAt) || new Date().toISOString(),
+            expireAt:     txt(d.expireAt) || new Date(
+                              (Date.parse(txt(d.finishedAt) || txt(d.createdAt)) || Date.now())
+                              + ((window.CronosMatchLock && window.CronosMatchLock.RETENTION_MS)
+                                 || 10 * 60 * 60 * 1000)
+                          ).toISOString(),
+
             // De dónde sacar el detalle cuando se abre la ficha.
             source:       txt(d.source) || 'cronos_player_reports',
             docId:        txt(d.docId) || txt(d.matchId),

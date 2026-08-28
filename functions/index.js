@@ -2064,6 +2064,47 @@ exports.cleanupLiveMatches = functions.pubsub
       console.error('[cleanupLiveMatches] paso B (borrar terminados):', e.message);
     }
 
-    console.log('[cleanupLiveMatches] cerrados=' + cerrados + ' borrados=' + borrados);
+    /* ---- PASO C · borrar los `finished_index` caducados (v640) ---- */
+    // ══════════════════════════════════════════════════════════════════
+    //  `finished_index` es la VISTA de la seccion «Partidos Terminados», que
+    //  por regla de negocio es un registro TEMPORAL de 10 h (2 h de margen
+    //  para corregir informes + 8 h para descargarlo). La pestana ya filtra
+    //  por esa ventana en el cliente, asi que un indice caducado es invisible
+    //  — pero sin recogerlo se acumularia PARA SIEMPRE, que es exactamente lo
+    //  que el paso B evita para `live_index`.
+    //
+    //  ⚠️⚠️ ESTO NO BORRA NINGUN INFORME. `cronos_player_reports` permanece
+    //  toda la temporada: es lo que alimenta «Mis Informes», el resumen de
+    //  temporada, la exportacion y el Gantt. Aqui solo se recoge la VISTA.
+    //
+    //  ⚠️ VA EN SU PROPIA CONSULTA Y SU PROPIO LOTE, no colgado del paso B.
+    //  Los ids no coinciden: `live_matches` usa el id del partido en vivo
+    //  (`local-27082026-...`) y `finished_index` usa el `matchId` del despacho
+    //  (`match_<uid>_<fecha>_...`). Colgarlo del paso B habria borrado
+    //  documentos que no existen —silencioso— y dejado los de verdad.
+    //
+    //  ⚠️ Y CON SU PROPIO TOPE. Un lote admite 500 operaciones y falla ENTERO
+    //  al pasarse. Aqui es UNA borrado por documento, asi que 300 va sobrado;
+    //  lo que quede lo recoge la pasada siguiente (esto corre cada hora).
+    let indicesBorrados = 0;
+    try {
+      const caducados = await db.collection('finished_index')
+        .where('expireAt', '<', new Date(ahora))
+        .limit(300)
+        .get();
+
+      if (!caducados.empty) {
+        const loteC = db.batch();
+        caducados.forEach(d => { loteC.delete(d.ref); indicesBorrados++; });
+        await loteC.commit();
+      }
+    } catch (e) {
+      // ⚠️ Un fallo aqui NO puede tumbar los pasos A y B, que son los que
+      // gobiernan los partidos de verdad. Mismo aislamiento que ellos.
+      console.error('[cleanupLiveMatches] paso C (indices de terminados):', e.message);
+    }
+
+    console.log('[cleanupLiveMatches] cerrados=' + cerrados + ' borrados=' + borrados +
+                ' indicesTerminados=' + indicesBorrados);
     return null;
   });

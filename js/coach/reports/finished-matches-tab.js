@@ -259,6 +259,11 @@ async function _renderFinishedMatchesTab() {
                             mode:        x.mode || 'f7',
                             matchDate:   x.matchDate || '',
                             createdAt:   x.createdAt || 0,
+                            // ⏳ v640 · el ancla de la ventana de 10 h. Sin
+                            //    traerla aquí, el filtro caería al `createdAt`
+                            //    del despacho, que es parecido pero no es el
+                            //    dato que manda.
+                            finishedAt:  x.finishedAt || x.createdAt || 0,
                             createdBy:   x.createdBy || null,
                             coachUid:    x.coachUid || null,
                             coachEmail:  x.coachEmail || null,
@@ -362,6 +367,71 @@ async function _renderFinishedMatchesTab() {
         }
 
         let finishedMatches = Array.from(finishedMap.values());
+
+        // ══════════════════════════════════════════════════════════════
+        //  ⏳⏳ v640 · LA VENTANA DE 10 HORAS — LA REGLA DE ESTA SECCIÓN
+        //
+        //  Regla de negocio (implementar.txt 2026-08-28): esta sección es un
+        //  REGISTRO TEMPORAL de 10 h desde el final del encuentro:
+        //      · las 2 primeras   → margen para corregir informes
+        //      · las 8 siguientes → para poder descargarlo y guardarlo
+        //  Pasadas las 10 h el partido DESAPARECE DE AQUÍ.
+        //
+        //  🔴 ESTO NO SE ESTABA APLICANDO. `CronosMatchLock.RETENTION_MS`
+        //  existe desde v434 y `live.html` sí lo respeta (su lista en vivo
+        //  descarta lo caducado), pero esta pestaña NUNCA lo leyó: se estaba
+        //  comportando como un archivo histórico. Medido en producción el
+        //  2026-08-28: 390 partidos desde abril, con julio y junio dentro.
+        //
+        //  ⚠️⚠️ DESAPARECE DE LA SECCIÓN, NO SE BORRA NADA. Los informes
+        //  colectivos e individuales PERMANECEN TODA LA TEMPORADA — son los
+        //  que alimentan «Mis Informes», el resumen de temporada, la
+        //  exportación CSV/PDF y el Gantt. Este filtro es de PRESENTACIÓN.
+        //
+        //  🔑 SE FILTRA AQUÍ, DESPUÉS DE FUSIONAR LAS TRES FUENTES
+        //  (`live_matches`, `finished_index` y el respaldo sobre
+        //  `cronos_player_reports`), y no en cada consulta. Filtrar sólo el
+        //  índice habría dejado la puerta abierta: el respaldo habría vuelto a
+        //  pintar julio en cuanto el índice saliera vacío — que con esta regla
+        //  es el estado NORMAL cuando no hay partidos recientes.
+        //
+        //  🔑 EL ANCLA ES `finishedAt`, con respaldo en `createdAt`/`updatedAt`
+        //  para el histórico anterior a v431 que nunca tuvo sello. Es la MISMA
+        //  que usan el candado, la Cloud Function y live.html. Anclar en
+        //  `updatedAt` a secas dejaría que corregir un informe dentro de las
+        //  2 h de margen reiniciara el reloj otras 10 h (la lección de v434).
+        //
+        //  ⚠️ SIN FECHA UTILIZABLE NO SE OCULTA: más vale una ficha de más que
+        //  esconderle a alguien un partido por un dato corrupto. Mismo criterio
+        //  que el paso B de `cleanupLiveMatches`, que tampoco borra sin ancla.
+        // ══════════════════════════════════════════════════════════════
+        const _LOCK = window.CronosMatchLock;
+        const _retencionMs = (_LOCK && _LOCK.RETENTION_MS) || (10 * 60 * 60 * 1000);
+        const _corteRetencion = Date.now() - _retencionMs;
+        const _finMs = (m) => {
+            if (_LOCK && typeof _LOCK.finishedAtMs === 'function') {
+                const v = _LOCK.finishedAtMs(m);
+                if (v) return v;
+            }
+            const bruto = m.finishedAt || m.createdAt || m.updatedAt;
+            if (!bruto) return 0;
+            if (typeof bruto === 'number') return bruto;
+            if (typeof bruto.toMillis === 'function') return bruto.toMillis();
+            const t = Date.parse(bruto);
+            return isNaN(t) ? 0 : t;
+        };
+
+        const _antesDeCaducar = finishedMatches.length;
+        finishedMatches = finishedMatches.filter(m => {
+            const fin = _finMs(m);
+            if (!fin) return true;                  // sin ancla: no se esconde
+            return fin > _corteRetencion;
+        });
+        if (_antesDeCaducar !== finishedMatches.length) {
+            console.log('[FinishedMatches] Ventana de ' + (_retencionMs / 3600000) + ' h: ' +
+                        (_antesDeCaducar - finishedMatches.length) + ' partido(s) fuera de plazo ocultados ' +
+                        '(sus informes NO se tocan).');
+        }
 
         // ── ENRIQUECIMIENTO RETROACTIVO DE CATEGORÍA Y SUBCATEGORÍA ─────────────
         // Si un partido no tiene categoría/subcategoría registrada, buscamos en los

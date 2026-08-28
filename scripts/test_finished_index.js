@@ -123,6 +123,28 @@ ok('2d · escribe con merge sobre un id determinista (el matchId) → idempotent
        norm({ matchId: 'm4', createdBy: 'u8' }).coachUid === 'u8');
     ok('2j · un eventsCount ausente es 0, no NaN',
        norm({ matchId: 'm5' }).eventsCount === 0);
+
+    // ══════════════════════════════════════════════════════════════
+    //  ⏳ v640 · LA VENTANA DE 10 h VIAJA EN EL PROPIO DOCUMENTO
+    //
+    //  Regla de negocio: la sección es un registro TEMPORAL de 10 h desde el
+    //  final (2 h de margen para corregir + 8 h para descargar). El índice es
+    //  la VISTA de esa sección, así que lleva su propia caducidad — es lo que
+    //  permite al paso C de cleanupLiveMatches recogerlo sin releer nada.
+    // ══════════════════════════════════════════════════════════════
+    ok('2k · 🔑 sella `expireAt` a 10 h del final',
+       Math.abs(Date.parse(r.expireAt) - (Date.parse(r.finishedAt) + 10 * 3600000)) < 2000,
+       { finishedAt: r.finishedAt, expireAt: r.expireAt });
+    ok('2l · 🔑 el ancla es `finishedAt`, no la hora de escritura',
+       r.finishedAt === '2026-08-17T18:00:00.000Z');
+    {
+        // Sin `finishedAt` explícito cae a `createdAt`, que es cuando se
+        // despacha el informe — o sea, el final del partido a efectos prácticos.
+        const s = norm({ matchId: 'm6', createdAt: '2026-08-20T10:00:00.000Z' });
+        ok('2m · sin finishedAt explícito, el ancla es createdAt',
+           s.finishedAt === '2026-08-20T10:00:00.000Z' &&
+           Math.abs(Date.parse(s.expireAt) - (Date.parse(s.finishedAt) + 10 * 3600000)) < 2000);
+    }
 }
 
 // ═══════════ PARTE 3 · el lector prefiere el índice y sabe caerse ═══════════
@@ -163,6 +185,32 @@ ok('4c · 🔑 purgar un partido borra su índice',
    /deleteDoc\(mod\.doc\(db, 'finished_index', mid\)\)/.test(sinCom(leer('js/coach/reports/match-purge.js'))));
 ok('4d · ⚠️ y ese borrado no puede tumbar la purga (va en su propio catch)',
    /finished_index', mid\)\); \}\s*\n\s*catch/.test(leer('js/coach/reports/match-purge.js')));
+
+// ══════════ PARTE 4bis · el barrido de los caducados (v640) ══════════
+{
+    const fn = sinCom(leer('functions/index.js'));
+    ok('4e · 🔑 cleanupLiveMatches recoge los índices CADUCADOS',
+       /collection\('finished_index'\)[\s\S]{0,120}where\('expireAt', '<'/.test(fn),
+       'sin esto la vista se acumularía para siempre, como avisaba v572 de live_index');
+    // ⚠️ ANCLADO EN CÓDIGO, NO EN EL COMENTARIO. La primera versión buscaba la
+    //    cadena "PASO C", que vive en un comentario `/* */` — y `sinCom` los
+    //    quita, así que salía roja con el código correcto. Segunda vez en esta
+    //    misma tanda; la lección de v568 se cobra sola si no se respeta.
+    ok('4f · ⚠️ va en su PROPIA consulta y su propio lote, no colgado del paso B',
+       /const loteC = db\.batch\(\)/.test(fn) && /loteC\.commit\(\)/.test(fn),
+       'los ids no coinciden: live_matches usa el id del partido y finished_index el matchId del despacho');
+    ok('4g · ⚠️ y en su propio try/catch: no puede tumbar los pasos A y B',
+       /paso C \(indices de terminados\)/.test(fn));
+    {
+        // El bloque del barrido, acotado por CÓDIGO: desde su consulta hasta su commit.
+        const ini = fn.indexOf("collection('finished_index')");
+        const fin2 = fn.indexOf('loteC.commit()');
+        const bloque = (ini >= 0 && fin2 > ini) ? fn.slice(ini, fin2) : '';
+        ok('4h · ⚠️⚠️ el barrido NO toca cronos_player_reports',
+           bloque.length > 0 && !/cronos_player_reports/.test(bloque),
+           'los informes permanecen toda la temporada: aquí sólo se recoge la vista');
+    }
+}
 
 // ═══════════ PARTE 5 · dado de alta en los tres sitios ═══════════
 console.log('\n── PARTE 5 · alta del módulo ──');
