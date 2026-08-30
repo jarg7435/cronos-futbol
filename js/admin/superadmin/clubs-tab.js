@@ -529,6 +529,16 @@ window.setupClubsSyncListener = async function setupClubsSyncListener() {
                     window.saMenu();
                 }
 
+                // 🔔 v644 · Y LA INSIGNIA DEL ICONO DE LA APP, con el MISMO
+                //  número. Se pone aquí, y no sólo al recibir un push, porque
+                //  éste es el único punto que también se entera cuando el
+                //  SuperAdmin DESPACHA: sin esto la insignia sólo sabría
+                //  subir, y un contador que no baja deja de mirarse a la
+                //  tercera vez. (js/services/push-superadmin.js)
+                if (typeof window.cronosPushInsignia === 'function') {
+                    window.cronosPushInsignia(count);
+                }
+
                 // Toast solo para solicitudes NUEVAS (no en la carga inicial)
                 if (_initialRequestLoad) {
                     _initialRequestLoad = false;

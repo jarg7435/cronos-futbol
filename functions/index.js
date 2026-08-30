@@ -34,11 +34,20 @@ admin.initializeApp();
    ══════════════════════════════════════════════════════════════════════ */
 const { getFirestore, FieldValue, Timestamp, FieldPath, GeoPoint } = require('firebase-admin/firestore');
 const { getAuth } = require('firebase-admin/auth');
+const { getMessaging } = require('firebase-admin/messaging');
 if (typeof admin.firestore !== 'function') {
   admin.firestore = Object.assign(() => getFirestore(), { FieldValue, Timestamp, FieldPath, GeoPoint });
 }
 if (typeof admin.auth !== 'function') {
   admin.auth = () => getAuth();
+}
+/* 🔔 v644 · MISMA PUERTA PARA MENSAJERIA. `admin.messaging()` tampoco existe
+   en la v14, y el aviso push del SuperAdmin la usa. Se anyade aqui, con los
+   otros dos, y NO en el punto de llamada: el dia que se escriba un segundo
+   uso, quien lo escriba encontrara la forma de siempre. El `if` es el de
+   4a del guard: si la API vuelve algun dia, esto no la pisa. */
+if (typeof admin.messaging !== 'function') {
+  admin.messaging = () => getMessaging();
 }
 
 /* ----------------------------------------------------------- */
@@ -189,10 +198,82 @@ function _callerHasClubPermission(callerDoc, targetClubId, esSA) {
   );
 }
 
+/* ══════════════════════════════════════════════════════════════════════
+   🛡️ v646 · APP CHECK TAMBIEN EN LAS CLOUD FUNCTIONS
+
+   La v634 encendio App Check en el CLIENTE (firebase-init.js y live.html,
+   reCAPTCHA v3) y puso en ENFORCED los dos servicios que se administran
+   desde la consola: `firestore` e `identitytoolkit`. Pero se quedo FUERA
+   la tercera puerta, que es esta.
+
+   🔑🔑 LAS CALLABLE NO SE PROTEGEN DESDE LA CONSOLA. Firestore e Identity
+   Toolkit tienen un interruptor de obligatoriedad en Firebase Console;
+   `cloudfunctions` NO. Para una funcion invocable la obligatoriedad se
+   escribe EN EL CODIGO — y como aqui no estaba escrita, las once callable
+   quedaban abiertas a cualquiera con la apiKey publica (que va en el HTML)
+   y una cuenta: `curl` contra
+   https://us-central1-cronos-futbol-app.cloudfunctions.net/<nombre>
+   entraba sin pasar por reCAPTCHA. El aislamiento por rol seguia en pie
+   —de eso se ocupan `_esSuperAdmin` y compania—, pero el cedazo antiabuso
+   que si defiende a Firestore no cubria ni un solo punto de este fichero.
+
+   ⚠️ EL TOKEN LLEGA SOLO: el SDK de Functions del navegador adjunta el de
+   App Check cuando la app de Firebase lo tiene inicializado. Los dos sitios
+   que crean el objeto `functions` lo hacen sobre ESA misma app
+   (`getFunctions(app)` en firebase-init.js:234 y `getFunctions(getApp())`
+   en el cargador perezoso de saFS), asi que no hay nada que anyadir en el
+   cliente. Si algun dia alguien crea una segunda app de Firebase y pide
+   ahi las funciones, sus llamadas se caeran por aqui.
+
+   🔑 POR QUE ESTE AYUDANTE Y NO `runWith({ enforceAppCheck: true })`
+   El interruptor de plataforma existe y hace lo mismo, pero obliga a tocar
+   las once firmas de exportacion —once ocasiones de equivocarse, la
+   leccion de v633— y no deja medir antes de cortar. Aqui hay UN sitio, con
+   un modo, que se puede leer de un vistazo y revertir en un caracter.
+
+   ⚠️⚠️ LA VUELTA ATRAS, QUE HACE FALTA TENER A MANO: si reCAPTCHA se cae o
+   el intercambio de token entra en throttle, el cliente se queda sin token
+   y TODAS las callable dirian que no — no se podria aprobar a nadie, ni
+   invitar, ni borrar. En el cliente un fallo de App Check no puede tumbar
+   el arranque (try/catch que no relanza, v634); aqui el equivalente es
+   poner `APPCHECK_MODO` en 'monitor' y volver a desplegar: sigue anotando
+   quien llega sin token, pero deja pasar.
+
+   ⚠️ 'monitor' es tambien el modo con el que se MIDE antes de cortar: deja
+   en el registro una linea `[AppCheck] SIN TOKEN` por llamada sin
+   atestiguar. Recordatorio de v640: `functions:log` devuelve ventanas
+   desfasadas — leerlo en la consola de Cloud Logging, no por la CLI.
+
+   Guard: scripts/test_app_check.js (seccion 5)
+   ══════════════════════════════════════════════════════════════════════ */
+const APPCHECK_MODO = 'enforce';   // 'enforce' | 'monitor' | 'off'
+
+function _exigirAppCheck(context, nombre) {
+  // `context.app` solo viene relleno cuando la peticion trajo un token de
+  // App Check VALIDO. Sin token, o con uno invalido, llega `undefined`.
+  if (context && context.app) return;
+
+  if (APPCHECK_MODO !== 'enforce') {
+    console.warn('[AppCheck] SIN TOKEN en ' + nombre + ' (modo ' + APPCHECK_MODO +
+                 ': se deja pasar). uid=' + ((context && context.auth && context.auth.uid) || '-'));
+    return;
+  }
+
+  console.warn('[AppCheck] DENEGADA ' + nombre + ': peticion sin token de App Check. uid=' +
+               ((context && context.auth && context.auth.uid) || '-'));
+  // `failed-precondition` y no `permission-denied` a proposito: no es que a
+  // esta persona le falte un permiso, es que la peticion no viene de la app.
+  throw new functions.https.HttpsError(
+    'failed-precondition',
+    'Peticion no verificada (App Check). Vuelve a abrir la aplicación desde su dirección habitual.'
+  );
+}
+
 /* ==================================================================== */
 /* 0️⃣ Cloud Function: setCustomClaims – Asignar Custom Claims (roles) a un usuario  */
 /* ==================================================================== */
 exports.setCustomClaims = functions.https.onCall(async (data, context) => {
+  _exigirAppCheck(context, 'setCustomClaims');
   if (!context.auth) {
     throw new functions.https.HttpsError(
       'unauthenticated',
@@ -273,6 +354,7 @@ exports.setCustomClaims = functions.https.onCall(async (data, context) => {
 /* 1️⃣ Cloud Function: getMatchForSpectator – Pseudonimización para espectadores */
 /* ==================================================================== */
 exports.getMatchForSpectator = functions.https.onCall(async (data, context) => {
+  _exigirAppCheck(context, 'getMatchForSpectator');
   if (!context.auth) {
     throw new functions.https.HttpsError('unauthenticated', 'Debes estar autenticado');
   }
@@ -418,6 +500,7 @@ exports.deleteUserData = functions.auth.user().onDelete(async (user) => {
 /* 4️⃣ Cloud Function: deleteAuthUser – Eliminar usuario de Firebase Auth  */
 /* ==================================================================== */
 exports.deleteAuthUser = functions.https.onCall(async (data, context) => {
+  _exigirAppCheck(context, 'deleteAuthUser');
   if (!context.auth) {
     throw new functions.https.HttpsError('unauthenticated', 'Usuario no autenticado');
   }
@@ -664,6 +747,7 @@ function _resuelveEquipo(target, data) {
 }
 
 exports.archiveAndDeleteCoach = functions.https.onCall(async (data, context) => {
+  _exigirAppCheck(context, 'archiveAndDeleteCoach');
   if (!context.auth) {
     throw new functions.https.HttpsError('unauthenticated', 'Usuario no autenticado');
   }
@@ -1238,6 +1322,7 @@ exports.auditUserStatusChange = functions.firestore
 exports.sendInviteEmail = functions
   .runWith({ secrets: ['EMAIL_USER', 'EMAIL_PASS'] })
   .https.onCall(async (data, context) => {
+  _exigirAppCheck(context, 'sendInviteEmail');
   if (!context.auth) {
     throw new functions.https.HttpsError('unauthenticated', 'Debes estar autenticado');
   }
@@ -1571,6 +1656,7 @@ console.log('Cloud Functions v8.4 cargadas (Fase 0 + originales + sendInviteEmai
 /* staffUids=[] → informes no llegan al director/coordinador.  */
 /* ----------------------------------------------------------- */
 exports.registerStaffUid = functions.https.onCall(async (data, context) => {
+  _exigirAppCheck(context, 'registerStaffUid');
   if (!context.auth) {
     throw new functions.https.HttpsError('unauthenticated', 'Debes estar autenticado');
   }
@@ -1658,6 +1744,7 @@ exports.registerStaffUid = functions.https.onCall(async (data, context) => {
 /* clubId bajo ningún caso.                                                */
 /* ==================================================================== */
 exports.syncRootClubId = functions.https.onCall(async (data, context) => {
+  _exigirAppCheck(context, 'syncRootClubId');
   if (!context.auth) {
     throw new functions.https.HttpsError('unauthenticated', 'Debes estar autenticado');
   }
@@ -1724,6 +1811,7 @@ exports.syncRootClubId = functions.https.onCall(async (data, context) => {
 /* Cloud Function: approveIndividualAdmin - Aprobar admin individual      */
 /* ==================================================================== */
 exports.approveIndividualAdmin = functions.https.onCall(async (data, context) => {
+  _exigirAppCheck(context, 'approveIndividualAdmin');
   if (!context.auth) {
     throw new functions.https.HttpsError('unauthenticated', 'Debes estar autenticado');
   }
@@ -1834,6 +1922,7 @@ exports.approveIndividualAdmin = functions.https.onCall(async (data, context) =>
 });
 
 exports.logAuditEntry = functions.https.onCall(async (data, context) => {
+  _exigirAppCheck(context, 'logAuditEntry');
   // 1) Requiere autenticación
   if (!context.auth) {
     throw new functions.https.HttpsError('unauthenticated', 'No autenticado');
@@ -2108,3 +2197,327 @@ exports.cleanupLiveMatches = functions.pubsub
                 ' indicesTerminados=' + indicesBorrados);
     return null;
   });
+
+/* ====================================================================== */
+/* 🔔 v644 · AVISO PUSH AL SUPERADMIN CUANDO ENTRA UNA SOLICITUD          */
+/*                                                                        */
+/* Encargo del autor: que una solicitud pendiente de su aprobacion final  */
+/* suene, se vea y actualice la insignia del icono AUNQUE la app este     */
+/* cerrada.                                                               */
+/*                                                                        */
+/* 🔑 SE ENVIA UN MENSAJE **SOLO DE DATOS** (`data`), NUNCA un bloque     */
+/* `notification`. No es un detalle: con `notification`, quien pinta el   */
+/* aviso es el navegador y el service worker NO puede tocarlo — ni poner  */
+/* la insignia, ni avisar a la pestana abierta, ni decidir el `tag`. Con  */
+/* solo datos, el `push` del service worker manda del todo. El precio es  */
+/* que el service worker esta OBLIGADO a mostrar una notificacion (si no, */
+/* el navegador pinta una generica y iOS puede retirar el permiso), y por */
+/* eso su handler no tiene ninguna rama que termine sin `showNotification`*/
+/*                                                                        */
+/* ⚠️ QUIEN ES SUPERADMIN SE DECIDE **AQUI**, NO EN EL DOCUMENTO. El      */
+/* documento de token lo escribe el propio cliente, asi que su campo      */
+/* `role` es un dato del usuario y NO una autorizacion: si mandaramos a   */
+/* todo el que se ponga `role:'superadmin'`, cualquiera se suscribiria al */
+/* flujo de solicitudes y sabria quien se da de alta en la plataforma.    */
+/* La lista buena es `cronos_config/superadmins`, la MISMA que consultan  */
+/* las reglas (isSuperAdminEmail) y que solo un SuperAdmin puede escribir.*/
+/*                                                                        */
+/* Guard: scripts/test_push_superadmin.js                                 */
+/* ====================================================================== */
+
+const PUSH_TOKENS_COL = 'push_tokens';
+
+/* ──────────────────────────────────────────────────────────────────────
+   LOS PREDICADOS DE "ESTA PENDIENTE DEL SUPERADMIN"
+
+   🔑 SON UNA COPIA DELIBERADA de las seis fuentes de `saPendingItems()`
+   (js/admin/superadmin/requests-tab.js). No se pueden compartir: aquel es
+   un script de navegador y esto corre en Node, en otro despliegue.
+
+   🚨 Y ESA DUPLICIDAD ES EXACTAMENTE LO QUE ROMPIO EL BADGE EN LA v532
+   (badge 7, lista 4: dos implementaciones de "pendiente" que divergieron).
+   Por eso el guard test_push_superadmin.js compara los dos ficheros y se
+   pone rojo si el cliente aprende un estado que aqui no esta.
+   ────────────────────────────────────────────────────────────────────── */
+
+/* platform_requests: reenviada al SA, o peticion de cuota sin leer. */
+function _esPRPendienteSA(d) {
+  if (!d) return false;
+  if (d.status === 'pending_sa') return true;
+  if (d.type === 'quota_increase' && d.status === 'unread') return true;
+  return false;
+}
+
+/* users: pendiente de aprobacion. `pending_individual` SOLO cuenta si de
+   verdad es de un ente individual — ese estado lo comparten flujos que no
+   son solicitudes, y sin este filtro el aviso sonaria por altas normales
+   de club (mismo matiz que lleva escrito el cliente). */
+function _esUsuarioPendienteSA(d) {
+  if (!d) return false;
+  if (d.status === 'pending' || d.status === 'pending_sa') return true;
+  if (d.status === 'pending_individual') {
+    return !!(d.individualEntityId || d.individualOwnerId || d.isIndividual ||
+              d.role === 'individual' || d.role === 'admin_individual');
+  }
+  return false;
+}
+
+/* succession_requests: sucesion de administrador esperando al SA. */
+function _esSucesionPendienteSA(d) {
+  return !!d && d.status === 'pending_sa';
+}
+
+/* ──────────────────────────────────────────────────────────────────────
+   EL NUMERO DE LA INSIGNIA
+
+   Rehace la MISMA lista que pinta el panel, con la MISMA deduplicacion
+   (una solicitud representa a su usuario; el documento de usuario solo
+   aporta el caso huerfano). Se leen los documentos en vez de usar count():
+   la dedup necesita el `userUid` de cada solicitud, y un count() por
+   consulta daria un numero MAYOR que el que el SuperAdmin va a ver — que
+   es justo el fallo de la v532 reproducido desde el servidor.
+
+   Son pocas decenas de documentos y solo se leen cuando algo entra en
+   pendiente, no en cada escritura.
+   ────────────────────────────────────────────────────────────────────── */
+async function _contarPendientesSA() {
+  const db = admin.firestore();
+  const vacio = { forEach: () => {} };
+  const [snapD, snapD2, snapD3, snapP, snapQ, snapSucc] = await Promise.all([
+    db.collection('users').where('status', '==', 'pending').get().catch(() => vacio),
+    db.collection('users').where('status', '==', 'pending_sa').get().catch(() => vacio),
+    db.collection('users').where('status', '==', 'pending_individual').get().catch(() => vacio),
+    db.collection('platform_requests').where('status', '==', 'pending_sa').get().catch(() => vacio),
+    db.collection('platform_requests').where('type', '==', 'quota_increase')
+      .where('status', '==', 'unread').get().catch(() => vacio),
+    db.collection('succession_requests').where('status', '==', 'pending_sa').get().catch(() => vacio),
+  ]);
+
+  let registros = 0;
+  const representados = new Set();
+
+  snapP.forEach(d => {
+    registros++;
+    const r = d.data() || {};
+    if (r.userUid) representados.add(r.userUid);
+  });
+
+  const _huerfano = (d) => {
+    if (representados.has(d.id)) return;
+    representados.add(d.id);
+    registros++;
+  };
+  snapD.forEach(_huerfano);
+  snapD2.forEach(_huerfano);
+  snapD3.forEach(d => { if (_esUsuarioPendienteSA(d.data())) _huerfano(d); });
+
+  let cuota = 0, sucesion = 0;
+  snapQ.forEach(() => cuota++);
+  snapSucc.forEach(() => sucesion++);
+
+  return registros + cuota + sucesion;
+}
+
+/* ──────────────────────────────────────────────────────────────────────
+   LOS DESTINATARIOS
+
+   Devuelve los tokens de `push_tokens` cuyo dueno esta en la lista de
+   SuperAdmins de verdad. FALLA HACIA EL "NADIE": si no se puede leer
+   `cronos_config/superadmins` no se envia a ciegas — mismo criterio que
+   `_esSuperAdmin`, donde un error de lectura tampoco concede nada.
+   ────────────────────────────────────────────────────────────────────── */
+async function _tokensDelSuperAdmin() {
+  const db = admin.firestore();
+
+  let correos = [];
+  try {
+    const cfg = await db.doc('cronos_config/superadmins').get();
+    const data = cfg.exists ? (cfg.data() || {}) : {};
+    correos = Array.isArray(data.emails) ? data.emails.map(e => String(e).toLowerCase()) : [];
+  } catch (e) {
+    console.warn('[pushSA] no se pudo leer cronos_config/superadmins:', e.message);
+    return [];
+  }
+  if (!correos.length) {
+    console.warn('[pushSA] cronos_config/superadmins no lista ningun correo: no se envia nada.');
+    return [];
+  }
+
+  const snap = await db.collection(PUSH_TOKENS_COL).where('role', '==', 'superadmin').get();
+  const salida = [];
+  snap.forEach(d => {
+    const t = d.data() || {};
+    const correo = String(t.email || '').toLowerCase();
+    // 🔑 LA COMPROBACION QUE CONVIERTE UN DATO DEL CLIENTE EN AUTORIZACION.
+    if (!t.token || !correos.includes(correo)) return;
+    salida.push({ id: d.id, token: t.token });
+  });
+  return salida;
+}
+
+/* ──────────────────────────────────────────────────────────────────────
+   EL ENVIO
+
+   ⚠️ NUNCA LANZA. Un aviso que no sale no puede tumbar el disparador que
+   lo invoca: la solicitud ya esta escrita y el panel la vera igual. El
+   push es un extra, no el camino por el que llega el dato.
+   ────────────────────────────────────────────────────────────────────── */
+async function _avisarSuperAdmin({ titulo, cuerpo, motivo }) {
+  try {
+    const destinos = await _tokensDelSuperAdmin();
+    if (!destinos.length) {
+      console.log('[pushSA] sin dispositivos dados de alta; no se envia (' + motivo + ')');
+      return;
+    }
+
+    let pendientes = 0;
+    try { pendientes = await _contarPendientesSA(); }
+    catch (e) { console.warn('[pushSA] no se pudo contar pendientes:', e.message); }
+
+    const mensaje = {
+      /* Solo datos. Ver la cabecera del bloque: con `notification` el
+         service worker perderia el control del aviso. Todos los valores
+         han de ser CADENAS — FCM rechaza el envio entero si cuela un
+         numero, y el rechazo se veria como "no llega ningun aviso". */
+      data: {
+        tipo:      'sa_pendiente',
+        titulo:    String(titulo || 'Chronos Fútbol'),
+        cuerpo:    String(cuerpo || 'Tienes una solicitud pendiente.'),
+        insignia:  String(pendientes),
+        motivo:    String(motivo || ''),
+        url:       '/index.html?sa=requests',
+        ts:        String(Date.now()),
+      },
+      webpush: {
+        headers: {
+          /* `high` pide entrega inmediata aunque el dispositivo este en
+             ahorro de energia — que es el caso "app cerrada" del encargo.
+             TTL de 24 h: una solicitud sigue siendo noticia al dia
+             siguiente, pero no a la semana. */
+          Urgency: 'high',
+          TTL: '86400',
+        },
+      },
+      tokens: destinos.map(d => d.token),
+    };
+
+    const res = await admin.messaging().sendEachForMulticast(mensaje);
+
+    /* ⚠️ LOS TOKENS MUERTOS SE BORRAN. Un token caduca cuando se
+       desinstala la app, se limpian los datos del navegador o pasa medio
+       ano sin usarse. Si no se recogen, la coleccion crece para siempre y
+       cada envio arrastra fallos que enmascaran los de verdad. */
+    const aBorrar = [];
+    res.responses.forEach((r, i) => {
+      if (r.success) return;
+      const cod = (r.error && r.error.code) || '';
+      if (cod === 'messaging/registration-token-not-registered' ||
+          cod === 'messaging/invalid-registration-token' ||
+          cod === 'messaging/invalid-argument') {
+        aBorrar.push(destinos[i].id);
+      } else {
+        console.warn('[pushSA] fallo de envio (' + cod + '):', r.error && r.error.message);
+      }
+    });
+    if (aBorrar.length) {
+      const db = admin.firestore();
+      const lote = db.batch();
+      aBorrar.forEach(id => lote.delete(db.collection(PUSH_TOKENS_COL).doc(id)));
+      await lote.commit().catch(e => console.warn('[pushSA] limpieza de tokens:', e.message));
+    }
+
+    console.log('[pushSA] ' + motivo + ' · enviados=' + res.successCount +
+                '/' + destinos.length + ' fallidos=' + res.failureCount +
+                ' retirados=' + aBorrar.length + ' insignia=' + pendientes);
+  } catch (e) {
+    console.error('[pushSA] el aviso no salio (' + motivo + '):', e.message);
+  }
+}
+
+/* Rotulo legible para el cuerpo del aviso. Se queda con el nombre y el rol
+   pedidos; sin correo, que es dato personal y va a un aviso que se ve en
+   la pantalla de bloqueo. */
+function _rotuloSolicitud(d) {
+  if (!d) return '';
+  const nombre = d.requestedName || d.displayName ||
+                 [d.firstName, d.lastName].filter(Boolean).join(' ') || '';
+  const rol = d.requestedRole || d.role || '';
+  const club = d.requestedClubName || d.clubName || '';
+  return [nombre, rol, club].filter(Boolean).join(' · ');
+}
+
+/* ──────────────────────────────────────────────────────────────────────
+   LOS TRES DISPARADORES
+
+   ⚠️ SE AVISA EN LA **TRANSICION** A PENDIENTE, no mientras este
+   pendiente. Un `onWrite` salta con cada escritura del documento, y sin
+   esta comprobacion aprobar, editar o tocar cualquier campo de una
+   solicitud ya pendiente volveria a hacer sonar el telefono. Es el mismo
+   criterio con el que la regla de v546 mira la transicion y no el estado.
+   ────────────────────────────────────────────────────────────────────── */
+
+exports.notifySuperAdminNewRequest = functions.firestore
+  .document('platform_requests/{reqId}')
+  .onWrite(async (change, context) => {
+    const antes = change.before.exists ? change.before.data() : null;
+    const ahora = change.after.exists ? change.after.data() : null;
+    if (!ahora) return null;
+    if (_esPRPendienteSA(antes) || !_esPRPendienteSA(ahora)) return null;
+
+    const esCuota = ahora.type === 'quota_increase';
+    await _avisarSuperAdmin({
+      titulo: esCuota ? '📈 Solicitud de plazas' : '📋 Nueva solicitud',
+      cuerpo: esCuota
+        ? ((ahora.clubName || 'Un club') + ' pide más plazas.')
+        : (_rotuloSolicitud(ahora) || 'Una solicitud espera tu aprobación.'),
+      motivo: 'platform_requests/' + context.params.reqId,
+    });
+    return null;
+  });
+
+exports.notifySuperAdminPendingUser = functions.firestore
+  .document('users/{userId}')
+  .onWrite(async (change, context) => {
+    const antes = change.before.exists ? change.before.data() : null;
+    const ahora = change.after.exists ? change.after.data() : null;
+    if (!ahora) return null;
+    if (_esUsuarioPendienteSA(antes) || !_esUsuarioPendienteSA(ahora)) return null;
+
+    await _avisarSuperAdmin({
+      titulo: '📋 Alta pendiente',
+      cuerpo: _rotuloSolicitud(ahora) || 'Un alta espera tu aprobación.',
+      motivo: 'users/' + context.params.userId,
+    });
+    return null;
+  });
+
+exports.notifySuperAdminSuccession = functions.firestore
+  .document('succession_requests/{reqId}')
+  .onWrite(async (change, context) => {
+    const antes = change.before.exists ? change.before.data() : null;
+    const ahora = change.after.exists ? change.after.data() : null;
+    if (!ahora) return null;
+    if (_esSucesionPendienteSA(antes) || !_esSucesionPendienteSA(ahora)) return null;
+
+    await _avisarSuperAdmin({
+      titulo: '🔑 Sucesión de administrador',
+      cuerpo: (ahora.clubName || 'Un club') + ' propone un nuevo administrador.',
+      motivo: 'succession_requests/' + context.params.reqId,
+    });
+    return null;
+  });
+
+/* ──────────────────────────────────────────────────────────────────────
+   Y LA PUERTA PARA PONER LA INSIGNIA AL DIA SIN QUE ENTRE NADA NUEVO
+
+   La llama el cliente al abrir el panel y al aprobar o rechazar: devuelve
+   el numero que el servidor considera pendiente. Asi la insignia baja
+   cuando el SuperAdmin despacha, y no solo sube cuando entra algo.
+   ────────────────────────────────────────────────────────────────────── */
+exports.saPendingCount = functions.https.onCall(async (data, context) => {
+  _exigirAppCheck(context, 'saPendingCount');
+  if (!(await _esSuperAdmin(context))) {
+    throw new functions.https.HttpsError('permission-denied', 'Solo el SuperAdmin.');
+  }
+  return { count: await _contarPendientesSA() };
+});

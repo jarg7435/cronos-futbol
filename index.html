@@ -6,7 +6,7 @@
     <meta name="viewport"
         content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>Chronos Fútbol - Coach Assistant</title>
-    <link rel="stylesheet" href="style.css?v=v643">
+    <link rel="stylesheet" href="style.css?v=v645">
     
     <link rel="manifest" href="manifest.json">
     <!-- v224: favicon SVG para evitar 404 de /favicon.ico que aparecía en consola. -->
@@ -59,39 +59,191 @@
         </div>
     </div>
     <script>
+    /* ══════════════════════════════════════════════════════════════════
+       🔄 v645 · LA APP SE ACTUALIZA SOLA AL ABRIRLA DESDE EL ICONO
+
+       Encargo del autor (2026-08-30): en móvil e iPad la gente se quedaba
+       clavada en una versión vieja y sólo salía de ahí BORRANDO el icono de
+       la pantalla de inicio y volviéndolo a crear.
+
+       🔑🔑 EL HUECO NO ERA LA CADENA DE ACTUALIZACIÓN — ESTABA ENTERA.
+       `sw.js` hace skipWaiting() al instalar y clients.claim() al activar, y
+       aquí se recargaba al cambiar de Service Worker. Lo que faltaba era el
+       DISPARADOR: `reg.update()` sólo se llamaba al CARGAR la página y en un
+       setInterval. Y una PWA de pantalla de inicio, cuando iOS la suspende,
+       ni navega al volver ni deja correr los temporizadores: tocar el icono
+       RESTAURA la instantánea. Nadie preguntaba nunca si había versión nueva.
+       Borrar y recrear el icono "funcionaba" porque forzaba una navegación
+       de verdad — o sea, el remedio manual describía la causa.
+       MEDIDO: nadie escuchaba visibilitychange, pageshow ni focus.
+
+       ⚠️⚠️ Y LA RECARGA VA CON DOS FRENOS, QUE NO SON OPCIONALES.
+       Esto ya se implementó en v541 y hubo que RETIRARLO en v544: la recarga
+       automática devolvía la app a modo LOGIN mientras el autor rellenaba el
+       formulario del RGPD, y la casilla "aparecía y desaparecía". No era un
+       `display`: era MI recarga. Aquí no puede repetirse porque:
+         · no se recarga si hay PARTIDO EN CURSO (cronosHayPartidoEnCurso,
+           utils.js) — esto es un cronómetro de partidos en vivo; y
+         · no se recarga si el usuario YA HA TOCADO ALGO. Al abrir desde el
+           icono no ha tocado nada y la recarga es imperceptible; en cuanto
+           toca, la pantalla es suya y la actualización se ofrece por el
+           banner, que es lo que ese banner viene haciendo desde siempre.
+
+       ⚠️ NO HAY REINTENTO CIEGO CADA 15 s. Lo hubo en v542 y se retiró: es
+       el mismo defecto, sólo que más tarde y más difícil de atribuir. Se
+       reintenta en los momentos que YA son seguros por definición —al volver
+       a primer plano— y en el latido de 60 s, que exige las dos condiciones.
+       ══════════════════════════════════════════════════════════════════ */
     (function() {
         if (!('serviceWorker' in navigator)) return;
-        var _newWorker = null;
-        navigator.serviceWorker.addEventListener('controllerchange', function() {
-            window.location.reload();
+
+        /* ── La marca de interacción ───────────────────────────────────
+           ⚠️ EN FASE DE CAPTURA Y DESDE LA PROPIA PÁGINA. Un módulo de js/
+           se carga después y se pierde la PRIMERA pulsación — que es justo
+           la que importa: pulsar "REGISTRARSE" es un pointerdown, y es el
+           caso exacto que rompió la v542. */
+        window._cronosHuboInteraccion = false;
+        ['pointerdown', 'keydown', 'touchstart'].forEach(function(ev) {
+            window.addEventListener(ev, function() {
+                window._cronosHuboInteraccion = true;
+            }, true);
         });
 
-        function checkExtraAndShowBanner(worker) {
-            _newWorker = worker;
+        var _newWorker = null;
+        var _pendiente = false;      // hay versión nueva esperando momento seguro
+        var _ultimaMirada = 0;
+        var _ocultoDesde = 0;
+
+        /* ⚠️🔑 AL REANUDAR, LA INTERACCIÓN ANTERIOR YA NO CUENTA — y sin
+           esto el arreglo entero no serviría para nada. Una PWA suspendida
+           conserva el MISMO contexto de JavaScript: al tocar el icono no hay
+           `load`, no hay página nueva y `_cronosHuboInteraccion` sigue en
+           `true` desde la sesión de ayer. O sea, el caso que hay que arreglar
+           —abrir desde el icono— sería precisamente el único que nunca
+           recargaría. La pregunta correcta no es "¿ha tocado algo alguna
+           vez?" sino "¿ha tocado algo DESDE QUE VOLVIÓ?".
+
+           ⚠️ Sólo tras una ausencia REAL (más de un minuto). Cambiar de
+           pestaña cinco segundos no es volver a abrir la app: ahí el usuario
+           sigue en mitad de lo suyo y la marca tiene que aguantar.
+
+           ⚠️ Esto NO desprotege el partido en curso: ése lo para
+           `cronosHayPartidoEnCurso()`, que no depende de esta marca. */
+        var _AUSENCIA_LARGA = 60000;
+
+        /* ¿Se puede recargar SIN interrumpir a nadie?
+           ⚠️ `cronosHayPartidoEnCurso` vive en utils.js, que se carga MUCHO
+           después que este bloque. Que no exista todavía significa que la app
+           ni siquiera ha arrancado: no hay partido posible, así que ahí es
+           seguro. Es el lado correcto del error. */
+        function _esSeguroRecargar() {
+            if (window._cronosHuboInteraccion) return false;
+            try {
+                if (typeof window.cronosHayPartidoEnCurso === 'function' &&
+                    window.cronosHayPartidoEnCurso()) return false;
+            } catch (_) { /* ante la duda no se bloquea para siempre */ }
+            return true;
+        }
+
+        function _muestraBanner(worker) {
+            if (worker) _newWorker = worker;
             var _me = window._cronosCurrentUser;
             var _extras = (_me && _me.extras) || {};
-            if (_extras.actualizaciones === false) return; // Si el SuperAdmin desactivó el extra para este usuario
-
+            if (_extras.actualizaciones === false) return; // el SuperAdmin lo desactivó para este usuario
             var banner = document.getElementById('update-banner');
             if (banner) banner.style.display = 'flex';
         }
 
+        /* Versión nueva ya al mando: o se recarga ahora, o se ofrece. */
+        function _aplicaOOfrece() {
+            _pendiente = true;
+            if (_esSeguroRecargar()) { window.location.reload(); return; }
+            _muestraBanner(null);
+        }
+
+        navigator.serviceWorker.addEventListener('controllerchange', function() {
+            _aplicaOOfrece();
+        });
+
+        /* ── LA COMPROBACIÓN, que es lo que faltaba ────────────────────
+           `update()` es lo que le dice al navegador que vaya A POR el Service
+           Worker nuevo. Comparar versiones no instala nada.
+           Si ya hay uno ESPERANDO, se le manda pasar al frente sin esperar a
+           que nadie pulse el banner: eso es lo que hace la actualización
+           automática en vez de sugerida. */
+        function _compruebaActualizacion() {
+            var ahora = Date.now();
+            if (ahora - _ultimaMirada < 20000) return;   // no martillear al cambiar de pestaña
+            _ultimaMirada = ahora;
+            navigator.serviceWorker.getRegistration().then(function(reg) {
+                if (!reg) return;
+                if (reg.waiting) {
+                    _newWorker = reg.waiting;
+                    reg.waiting.postMessage({ action: 'skipWaiting' });
+                    return;
+                }
+                reg.update().catch(function(){});
+            }).catch(function(){});
+        }
+
         navigator.serviceWorker.getRegistration().then(function(reg) {
             if (!reg) return;
+            /* ⚠️ SE SELLA LA HORA TAMBIÉN AQUÍ. Esta primera llamada iba por
+               fuera del estrangulador, así que el `pageshow` de esta misma
+               carga disparaba un SEGUNDO `update()` redundante a los pocos
+               milisegundos. Lo cazó la aserción 4a del guard. */
+            _ultimaMirada = Date.now();
             reg.update().catch(function(){});
             reg.addEventListener('updatefound', function() {
                 _newWorker = reg.installing;
                 if (!_newWorker) return;
                 _newWorker.addEventListener('statechange', function() {
                     if (_newWorker.state === 'installed' && navigator.serviceWorker.controller) {
-                        checkExtraAndShowBanner(_newWorker);
+                        /* Con skipWaiting() en el install de sw.js esto suele
+                           encadenar solo con controllerchange. El banner queda
+                           como salida cuando NO es momento de recargar. */
+                        if (!_esSeguroRecargar()) _muestraBanner(_newWorker);
                     }
                 });
             });
             if (reg.waiting) {
-                checkExtraAndShowBanner(reg.waiting);
+                _newWorker = reg.waiting;
+                reg.waiting.postMessage({ action: 'skipWaiting' });
             }
         });
+
+        /* ── 🔑 LOS TRES MOMENTOS EN QUE LA APP "SE ABRE" ──────────────
+           Son tres y no uno porque ningún navegador los da todos:
+             · visibilitychange → volver al primer plano (el caso del icono
+               en Android y en iOS cuando la app estaba suspendida);
+             · pageshow con `persisted` → restaurada de la caché de páginas,
+               donde NO hay evento `load` que valga;
+             · focus → el respaldo de Safari, que es tacaño con los otros dos.
+           Los tres pasan por el mismo estrangulador, así que solaparse no
+           cuesta nada. */
+        function _vuelveAlFrente() {
+            /* ⚠️ SIN AUSENCIA REGISTRADA, AUSENCIA CERO. Poner `Infinity`
+               aquí —que es lo primero que escribí— hacía que un simple
+               `focus` (volver a pulsar en la ventana tras escribir) borrase
+               la marca de interacción SIN que el usuario se hubiera ido a
+               ningún sitio: exactamente la desprotección que este bloque
+               existe para evitar. Sólo cuenta como "ha vuelto" quien antes
+               pasó por `hidden`. */
+            var fuera = _ocultoDesde ? (Date.now() - _ocultoDesde) : 0;
+            _ocultoDesde = 0;
+            if (fuera > _AUSENCIA_LARGA) window._cronosHuboInteraccion = false;
+            _compruebaActualizacion();
+            // Si ya había una versión esperando de antes, éste es el momento
+            // bueno para aplicarla: acaba de abrir y no ha tocado nada.
+            if (_pendiente && _esSeguroRecargar()) window.location.reload();
+        }
+
+        document.addEventListener('visibilitychange', function() {
+            if (document.visibilityState === 'hidden') { _ocultoDesde = Date.now(); return; }
+            _vuelveAlFrente();
+        });
+        window.addEventListener('pageshow', function() { _vuelveAlFrente(); });
+        window.addEventListener('focus', function() { _vuelveAlFrente(); });
 
         document.addEventListener('click', function(e) {
             if (e.target && e.target.id === 'update-now') {
@@ -106,16 +258,16 @@
                 if (banner) banner.style.display = 'none';
             }
         });
-    })();
 
-    // Verificar actualizaciones automáticamente cada 60 segundos
-    setInterval(function() {
-        if ('serviceWorker' in navigator) {
-            navigator.serviceWorker.getRegistration().then(function(reg) {
-                if (reg) reg.update().catch(function(){});
-            });
-        }
-    }, 60000);
+        /* Latido de 60 s: busca versión nueva y, si quedó una pendiente
+           porque no era momento, la aplica en cuanto vuelva a serlo (por
+           ejemplo, al terminar el partido). Exige las DOS condiciones, así
+           que no puede sorprender a nadie trabajando. */
+        setInterval(function() {
+            if (_pendiente && _esSeguroRecargar()) { window.location.reload(); return; }
+            _compruebaActualizacion();
+        }, 60000);
+    })();
     </script>
 
     <!-- ══ INDICADOR DE VERSIÓN ══════════════════════════════════════════
@@ -141,7 +293,7 @@
          ROBAR ESPACIO: o es una esquina, o se va solo. Aquí, las dos cosas.
          ⚠️ pointer-events:none es obligatorio en ambas: un elemento fijo se
          traga los toques de lo que tiene debajo (la trampa de v422). -->
-    <div id="cronos-version-badge" data-version="v643" style="position:fixed;bottom:calc(4px + env(safe-area-inset-bottom, 0px));right:6px;z-index:2147483000;pointer-events:none;background:rgba(0,0,0,0.55);color:#2ea043;font-family:monospace;font-size:0.6rem;font-weight:700;letter-spacing:0.5px;padding:2px 6px;border-radius:4px;">CHRONOS v643</div>
+    <div id="cronos-version-badge" data-version="v645" style="position:fixed;bottom:calc(4px + env(safe-area-inset-bottom, 0px));right:6px;z-index:2147483000;pointer-events:none;background:rgba(0,0,0,0.55);color:#2ea043;font-family:monospace;font-size:0.6rem;font-weight:700;letter-spacing:0.5px;padding:2px 6px;border-radius:4px;">CHRONOS v645</div>
     <script>
     (function () {
         var insignia = document.getElementById('cronos-version-badge');
@@ -290,7 +442,7 @@
                  enteras discutiendo sobre versiones distintas. Lo reescribe
                  cache-bust.js en cada despliegue. -->
             <p style="color:#7d8590; font-size:0.82rem; text-align:center; margin:0 0 1.5rem; letter-spacing:1px;">
-                Coach Assistant · <span id="build-version" data-version="v643">v643</span>
+                Coach Assistant · <span id="build-version" data-version="v645">v645</span>
             </p>
 
             <!-- Tabs -->
@@ -1473,182 +1625,184 @@
          de v464; app-init.js ya pregunta por el partido activo con la mudanza
          hecha. Cargarlo después dejaría a app-init.js leyendo un almacén a
          medio migrar. -->
-    <script src="js/core/match-slots.js?v=v643"></script>
+    <script src="js/core/match-slots.js?v=v645"></script>
 
     <!-- ══ CORE: app.js (lógica principal, carga primero) ══════════════════════ -->
-    <script src="js/core/app-init.js?v=v643"></script>
+    <script src="js/core/app-init.js?v=v645"></script>
 
     <!-- ══ CORE: pila de navegación (antes de cualquier pantalla que la use) ══ -->
-    <script src="js/core/nav-stack.js?v=v643"></script>
+    <script src="js/core/nav-stack.js?v=v645"></script>
 
     <!-- ══ CORE: configuración y parches ══════════════════════════════════════ -->
-    <script src="js/core/setup-modal.js?v=v643"></script>
-    <script src="js/core/patches.js?v=v643"></script>
+    <script src="js/core/setup-modal.js?v=v645"></script>
+    <script src="js/core/patches.js?v=v645"></script>
 
     <!-- ══ SERVICES: Firebase + Auth ══════════════════════════════════════════ -->
-    <script type="module" src="js/services/firebase-init.js?v=v643"></script>
-    <script type="module" src="js/services/auth.js?v=v643"></script>
-    <script src="js/services/auth-improvements.js?v=v643"></script>
+    <script type="module" src="js/services/firebase-init.js?v=v645"></script>
+    <script type="module" src="js/services/auth.js?v=v645"></script>
+    <script src="js/services/auth-improvements.js?v=v645"></script>
     <!-- v451 · Recuperación y cambio de contraseña. Script CLÁSICO (no módulo):
          necesita publicar en window para los onclick del HTML, y recibe las
          funciones de Firebase Auth por window._cronos_auth. Va DESPUÉS de
          auth-improvements.js porque reutiliza su validatePasswordStrength y su
          setupPasswordValidator. -->
-    <script src="js/services/auth/password.js?v=v643"></script>
+    <script src="js/services/auth/password.js?v=v645"></script>
     <!-- 📨 v630 · La invitación rellena el alta (correo, rol y club fijado).
          Script CLÁSICO: publica window.cronosAplicarInvitacion, que llama el
          bloque de arranque del <head> con reintento. No depende del orden —
          ese bloque espera a que la función exista— pero va aquí, junto al
          resto de piezas de autenticación, que es donde se busca. -->
-    <script src="js/services/auth/invite-prefill.js?v=v643"></script>
+    <script src="js/services/auth/invite-prefill.js?v=v645"></script>
 
     <!-- ══ CORE: seguridad, utilidades, seudonimizador ═══════════════════════ -->
-    <script src="js/core/security-and-state.js?v=v643"></script>
-    <script src="js/core/utils.js?v=v643"></script>
+    <script src="js/core/security-and-state.js?v=v645"></script>
+    <script src="js/core/utils.js?v=v645"></script>
     <!-- v545 · Garantiza que la casilla del RGPD se vea mientras se ve el
          registro, y avisa si ha quedado fuera de la pantalla al crecer el
          formulario. Va en fichero y NO en línea: el bloque de acceso no admite
          scripts inline (guard test_consentimiento_visible_en_registro.js). -->
-    <script src="js/core/rgpd-visible.js?v=v643"></script>
-    <script src="js/core/pseudonymizer.js?v=v643"></script>
+    <script src="js/core/rgpd-visible.js?v=v645"></script>
+    <script src="js/core/pseudonymizer.js?v=v645"></script>
     <!-- SPRINT 4: Accesibilidad WCAG 2.1 básica (debe cargar temprano) -->
-    <script src="js/core/accessibility-wcag.js?v=v643"></script>
+    <script src="js/core/accessibility-wcag.js?v=v645"></script>
 
     <!-- ══ SPRINT 3: Auditoría y Optimización de Renders ════════════════════ -->
-    <script src="js/services/audit-logger.js?v=v643"></script>
-    <script src="js/core/render-optimizer.js?v=v643"></script>
-    <script src="js/core/sprint3-init.js?v=v643"></script>
-    <script src="js/core/sprint3-tests.js?v=v643"></script>
+    <script src="js/services/audit-logger.js?v=v645"></script>
+    <script src="js/core/render-optimizer.js?v=v645"></script>
+    <script src="js/core/sprint3-init.js?v=v645"></script>
+    <script src="js/core/sprint3-tests.js?v=v645"></script>
 
     <!-- ══ MATCH: eventos del partido ═════════════════════════════════════════ -->
     <!-- v434 · Inmutabilidad del partido terminado. Va ANTES que todo lo que
          escribe en live_matches (player-actions, sync, retroactive-modal): esos
          módulos consultan window.CronosMatchLock antes de tocar Firestore. -->
-    <script src="js/match/immutability.js?v=v643"></script>
+    <script src="js/match/immutability.js?v=v645"></script>
     <!-- Límites federativos de sustitución (Cadete / Juvenil / Regional).
          ANTES de player-actions.js y de ui/render.js, que son las dos puertas
          que lo consultan; aun así las dos lo hacen con guarda typeof. -->
-    <script src="js/match/events/sub-rules.js?v=v643"></script>
-    <script src="js/match/events/player-actions.js?v=v643"></script>
-    <script src="js/match/demo-tutorial.js?v=v643"></script>
-    <script src="js/match/timer/core.js?v=v643"></script>
-    <script src="js/match/persistence/active-match.js?v=v643"></script>
-    <script src="js/match/events/movement-log.js?v=v643"></script>
-    <script src="js/match/persistence/team-persistence.js?v=v643"></script>
-    <script src="js/match/live/sync.js?v=v643"></script>
-    <script src="js/match/live/finished-index.js?v=v643"></script>
-    <script src="js/match/replay/replay-player.js?v=v643"></script>
-    <script src="js/match/events/retroactive-modal.js?v=v643"></script>
+    <script src="js/match/events/sub-rules.js?v=v645"></script>
+    <script src="js/match/events/player-actions.js?v=v645"></script>
+    <script src="js/match/demo-tutorial.js?v=v645"></script>
+    <script src="js/match/timer/core.js?v=v645"></script>
+    <script src="js/match/persistence/active-match.js?v=v645"></script>
+    <script src="js/match/events/movement-log.js?v=v645"></script>
+    <script src="js/match/persistence/team-persistence.js?v=v645"></script>
+    <script src="js/match/live/sync.js?v=v645"></script>
+    <script src="js/match/live/finished-index.js?v=v645"></script>
+    <script src="js/match/replay/replay-player.js?v=v645"></script>
+    <script src="js/match/events/retroactive-modal.js?v=v645"></script>
 
     <!-- ══ SERVICES: Firestore, cloud, offline ════════════════════════════════ -->
-    <script src="js/services/firestore-sync.js?v=v643"></script>
-    <script src="js/services/firestore-storage.js?v=v643"></script>
-    <script src="js/services/offline-manager.js?v=v643"></script>
+    <script src="js/services/firestore-sync.js?v=v645"></script>
+    <script src="js/services/firestore-storage.js?v=v645"></script>
+    <script src="js/services/offline-manager.js?v=v645"></script>
     <!-- SPRINT 4: Notificaciones y Training Plans sincronizados -->
-    <script src="js/services/notification-dismiss-sync.js?v=v643"></script>
-    <script src="js/services/user-management.js?v=v643"></script>
+    <script src="js/services/notification-dismiss-sync.js?v=v645"></script>
+    <script src="js/services/user-management.js?v=v645"></script>
+    <!-- v644: avisos push del SuperAdmin (par de firebase-messaging-sw.js) -->
+    <script src="js/services/push-superadmin.js?v=v645"></script>
 
     <!-- ══ STAFF & COMMS ══════════════════════════════════════════════════════ -->
-    <script src="js/core/staff-and-comms.js?v=v643"></script>
+    <script src="js/core/staff-and-comms.js?v=v645"></script>
 
     <!-- ══ AI: importación de jugadores ════════════════════════════════════════ -->
-    <script src="js/ai/import.js?v=v643"></script>
+    <script src="js/ai/import.js?v=v645"></script>
 
     <!-- ══ ROSTER: plantilla y formaciones ═════════════════════════════════════ -->
-    <script src="js/roster/formations.js?v=v643"></script>
-    <script src="js/roster/legacy-formations.js?v=v643"></script>
+    <script src="js/roster/formations.js?v=v645"></script>
+    <script src="js/roster/legacy-formations.js?v=v645"></script>
     <!-- Plazas de apoyo: fichas de equipo sin datos personales + selector -->
-    <script src="js/roster/team-rosters.js?v=v643"></script>
-    <script src="js/roster/guest-picker.js?v=v643"></script>
+    <script src="js/roster/team-rosters.js?v=v645"></script>
+    <script src="js/roster/guest-picker.js?v=v645"></script>
 
     <!-- ══ UI: render, drag-drop, scroll ══════════════════════════════════════ -->
-    <script src="js/ui/bench-scroll.js?v=v643"></script>
-    <script src="js/ui/render.js?v=v643"></script>
-    <script src="js/ui/drag-drop.js?v=v643"></script>
+    <script src="js/ui/bench-scroll.js?v=v645"></script>
+    <script src="js/ui/render.js?v=v645"></script>
+    <script src="js/ui/drag-drop.js?v=v645"></script>
 
     <!-- ══ SHARED: WhatsApp, email, admin constants ═══════════════════════════ -->
-    <script src="js/shared/whatsapp-email.js?v=v643"></script>
-        <script src="js/shared/admin-shared.js?v=v643"></script>
+    <script src="js/shared/whatsapp-email.js?v=v645"></script>
+        <script src="js/shared/admin-shared.js?v=v645"></script>
 
     <!-- ══ ADMIN: SuperAdmin, Club, Individual, Billing ═══════════════════════ -->
-    <script src="js/admin/shared/category-tree.js?v=v643"></script>
-    <script src="js/admin/superadmin/superadmin.panel.js?v=v643"></script>
+    <script src="js/admin/shared/category-tree.js?v=v645"></script>
+    <script src="js/admin/superadmin/superadmin.panel.js?v=v645"></script>
     <!-- 🩺 v628 · Bajas con motivo + modo diagnóstico. DESPUÉS de
          superadmin.panel.js, que es quien define saFS/_saToast y quien llama a
          _saPedirMotivo; ese fichero lo invoca con guarda `typeof`, así que un
          orden distinto no rompe nada, sólo dejaría el motivo sin pedir. -->
-    <script src="js/admin/superadmin/diagnostico.js?v=v643"></script>
-    <script src="js/admin/superadmin/club-slots.js?v=v643"></script>
-    <script src="js/admin/superadmin/extras-toggle.js?v=v643"></script>
-    <script src="js/admin/superadmin/delete-club.js?v=v643"></script>
+    <script src="js/admin/superadmin/diagnostico.js?v=v645"></script>
+    <script src="js/admin/superadmin/club-slots.js?v=v645"></script>
+    <script src="js/admin/superadmin/extras-toggle.js?v=v645"></script>
+    <script src="js/admin/superadmin/delete-club.js?v=v645"></script>
     <!-- v436 · Vaciado de temporada: conserva el club y sus usuarios. NO
          confundir con delete-club.js, que borra el club entero. -->
-    <script src="js/admin/superadmin/season-reset.js?v=v643"></script>
-    <script src="js/admin/superadmin/create-direct.js?v=v643"></script>
-    <script src="js/admin/superadmin/individual-entity.js?v=v643"></script>
-    <script src="js/admin/superadmin/secretary.js?v=v643"></script>
-    <script src="js/admin/superadmin/individuals-tab.js?v=v643"></script>
-    <script src="js/admin/superadmin/clubs-tab.js?v=v643"></script>
-    <script src="js/admin/superadmin/requests-tab.js?v=v643"></script>
-    <script src="js/admin/superadmin/messaging.js?v=v643"></script>
-    <script src="js/admin/superadmin/extras.js?v=v643"></script>
-    <script src="js/admin/superadmin/billing.js?v=v643"></script>
-    <script src="js/admin/club/panel.js?v=v643"></script>
-    <script src="js/admin/individual/panel.js?v=v643"></script>
-    <script src="js/admin/billing/payments.js?v=v643"></script>
-    <script src="js/admin/billing/ui.js?v=v643"></script>
+    <script src="js/admin/superadmin/season-reset.js?v=v645"></script>
+    <script src="js/admin/superadmin/create-direct.js?v=v645"></script>
+    <script src="js/admin/superadmin/individual-entity.js?v=v645"></script>
+    <script src="js/admin/superadmin/secretary.js?v=v645"></script>
+    <script src="js/admin/superadmin/individuals-tab.js?v=v645"></script>
+    <script src="js/admin/superadmin/clubs-tab.js?v=v645"></script>
+    <script src="js/admin/superadmin/requests-tab.js?v=v645"></script>
+    <script src="js/admin/superadmin/messaging.js?v=v645"></script>
+    <script src="js/admin/superadmin/extras.js?v=v645"></script>
+    <script src="js/admin/superadmin/billing.js?v=v645"></script>
+    <script src="js/admin/club/panel.js?v=v645"></script>
+    <script src="js/admin/individual/panel.js?v=v645"></script>
+    <script src="js/admin/billing/payments.js?v=v645"></script>
+    <script src="js/admin/billing/ui.js?v=v645"></script>
 
     <!-- ══ COACH: comunicaciones, reportes, entrenamiento ════════════════════ -->
-    <script src="js/coach/comms/panel.js?v=v643"></script>
-    <script src="js/coach/comms/training-notify.js?v=v643"></script>
-    <script src="js/coach/comms/collective-report.js?v=v643"></script>
-    <script src="js/coach/comms/individual-reports.js?v=v643"></script>
-    <script src="js/coach/comms/contact-manager.js?v=v643"></script>
-    <script src="js/coach/comms/bulk-messaging.js?v=v643"></script>
-    <script src="js/coach/comms/match-reports-send.js?v=v643"></script>
-    <script src="js/coach/comms/match-reports-auto.js?v=v643"></script>
+    <script src="js/coach/comms/panel.js?v=v645"></script>
+    <script src="js/coach/comms/training-notify.js?v=v645"></script>
+    <script src="js/coach/comms/collective-report.js?v=v645"></script>
+    <script src="js/coach/comms/individual-reports.js?v=v645"></script>
+    <script src="js/coach/comms/contact-manager.js?v=v645"></script>
+    <script src="js/coach/comms/bulk-messaging.js?v=v645"></script>
+    <script src="js/coach/comms/match-reports-send.js?v=v645"></script>
+    <script src="js/coach/comms/match-reports-auto.js?v=v645"></script>
     <!-- report-engine.js define `const _RP` y debe ir ANTES de club-reports.js
          (que lo consume). No mover después: ver cabecera de report-engine.js. -->
-    <script src="js/coach/reports/report-engine.js?v=v643"></script>
-    <script src="js/coach/reports/club-reports.js?v=v643"></script>
-    <script src="js/coach/reports/director-config.js?v=v643"></script>
-    <script src="js/coach/reports/events-tab.js?v=v643"></script>
+    <script src="js/coach/reports/report-engine.js?v=v645"></script>
+    <script src="js/coach/reports/club-reports.js?v=v645"></script>
+    <script src="js/coach/reports/director-config.js?v=v645"></script>
+    <script src="js/coach/reports/events-tab.js?v=v645"></script>
     <!-- v603 · Cuadrante semanal del club (Dirección / Coordinación). El orden
          es indiferente: todo se resuelve por window en tiempo de click. -->
-    <script src="js/coach/reports/cuadrante-club.js?v=v643"></script>
+    <script src="js/coach/reports/cuadrante-club.js?v=v645"></script>
     <!-- v609 · Calendario oficial de temporada. El MOTOR va primero porque el
          módulo de pantalla lo usa; aun así ambos se resuelven por window en
          tiempo de click, así que el orden es una cortesía, no un requisito.
          ⚠️ pdf.js NO se enlaza aquí: son 1,5 MB que sólo se cargan cuando
          alguien arrastra un PDF (ver _calCargarPdfJs). -->
-    <script src="js/coach/reports/calendario-parser.js?v=v643"></script>
-    <script src="js/coach/reports/calendario-temporada.js?v=v643"></script>
-    <script src="js/coach/reports/finished-matches-tab.js?v=v643"></script>
-    <script src="js/coach/reports/reports-tab.js?v=v643"></script>
+    <script src="js/coach/reports/calendario-parser.js?v=v645"></script>
+    <script src="js/coach/reports/calendario-temporada.js?v=v645"></script>
+    <script src="js/coach/reports/finished-matches-tab.js?v=v645"></script>
+    <script src="js/coach/reports/reports-tab.js?v=v645"></script>
     <!-- v472 · Descarga en PDF / CSV del resumen de temporada y de los informes
          grupales. Sólo lo consumen los onclick que pinta reports-tab.js, así que
          el orden entre ambos es indiferente; se deja junto a su consumidor. -->
-    <script src="js/coach/reports/reports-export.js?v=v643"></script>
+    <script src="js/coach/reports/reports-export.js?v=v645"></script>
     <!-- Purga de un partido: definicion UNICA que usan el boton de Informes
          y el de Partidos Terminados. Se resuelve en tiempo de click, asi que
          el orden respecto a sus dos llamadores es indiferente. -->
-    <script src="js/coach/reports/match-purge.js?v=v643"></script>
+    <script src="js/coach/reports/match-purge.js?v=v645"></script>
     <!-- SPRINT 4: Training Plans sync con Firestore (debe ir ANTES de panel.js) -->
-    <script src="js/services/training-firestore-sync.js?v=v643"></script>
-    <script src="js/coach/training/panel.js?v=v643"></script>
+    <script src="js/services/training-firestore-sync.js?v=v645"></script>
+    <script src="js/coach/training/panel.js?v=v645"></script>
 
     <!-- ══ ASISTENCIA ══════════════════════════════════════════════════════════
          El almacén va ANTES que la pantalla, y los dos DESPUÉS de
          training-firestore-sync.js: las sesiones sobre las que se pasa lista
          salen del cuadrante semanal (TrainingSync.readWeekDays). -->
-    <script src="js/coach/attendance/attendance-store.js?v=v643"></script>
-    <script src="js/coach/attendance/panel.js?v=v643"></script>
+    <script src="js/coach/attendance/attendance-store.js?v=v645"></script>
+    <script src="js/coach/attendance/panel.js?v=v645"></script>
 
     <!-- ══ PARENT: portal de padres ═══════════════════════════════════════════ -->
-    <script src="js/parent/panel.js?v=v643"></script>
+    <script src="js/parent/panel.js?v=v645"></script>
 
     <!-- ══ CORE: event listeners (debe ir al final) ══════════════════════════ -->
-    <script src="js/core/event-listeners.js?v=v643"></script>
+    <script src="js/core/event-listeners.js?v=v645"></script>
 
     <!-- ══ BANNER: nueva versión disponible (aparece automáticamente) ══ -->
 

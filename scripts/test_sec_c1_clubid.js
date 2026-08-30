@@ -120,7 +120,16 @@ async function callSync(userDoc, data, ctxAuth) {
     const { exports } = loadFunctions(store, authUsers);
     const cf = exports.syncRootClubId.__onCall;
     let error = null, result = null;
-    try { result = await cf(data, { auth: ctxAuth === undefined ? { uid: 'U1' } : ctxAuth }); }
+    // 🛡️ v646 · `app` va SIEMPRE, porque una llamada real siempre lo trae: desde
+    // v646 las callable exigen App Check y `_exigirAppCheck` corta en la primera
+    // linea si `context.app` falta. Sin esto, las seis aserciones de esta parte
+    // se volvieron rojas de golpe — no porque la autorizacion fallara, sino
+    // porque no llegaban a ejecutarla. 🔑 Lo que aqui se prueba es el permiso
+    // por clubId; el cedazo de App Check lo cubre test_app_check.js (5d).
+    try { result = await cf(data, {
+        auth: ctxAuth === undefined ? { uid: 'U1' } : ctxAuth,
+        app: { appId: '1:393110572633:web:test' },
+    }); }
     catch (e) { error = e; }
     return { store, result, error };
 }

@@ -50,11 +50,58 @@ ok('1a · 🔑🔑🔑 no hay recarga automática por versión nueva',
    !/pideLaVersionNueva|_cronosRecargaSegura/.test(HTML),
    'ES LA QUE CAUSÓ EL PARPADEO: tras recargar, la app vuelve a modo LOGIN y ' +
    'ahí la casilla está oculta por diseño');
-ok('1b · el `controllerchange` vuelve a ser el de producción',
-   /addEventListener\('controllerchange',\s*function\s*\(\)\s*\{\s*window\.location\.reload\(\)/.test(HTML),
-   'producción recarga sin condiciones y le funciona');
-ok('1c · no se marca la interacción del usuario (era para la recarga)',
-   !/_cronosHuboInteraccion/.test(HTML) && !/_cronosHuboInteraccion/.test(UTILS));
+// ═══════════════════════════════════════════════════════════════════════════
+//  🔄 2026-08-30 · EL AUTOR REVOCA LA ORDEN DE v544 PARA ESTE PUNTO CONCRETO
+//
+//  Encargo textual: *"cada vez que se abra la aplicación desde el icono,
+//  compruebe automáticamente si hay una versión nueva, la descargue y
+//  actualice la app de forma transparente y automática sin intervención
+//  manual"*. Síntoma real en móvil e iPad: la gente se quedaba clavada en una
+//  versión vieja y sólo salía BORRANDO el icono y recreándolo.
+//
+//  ⚠️ Y ESTAS DOS ASERCIONES SE INTERPONÍAN. Fijaban la AUSENCIA de la
+//  recarga condicionada de v542 —correcto entonces— pero defendían **la
+//  FORMA** (`controllerchange` con `reload()` y nada más) en vez del
+//  MECANISMO (que la pestaña se actualice sola). Es la décima vez en este
+//  proyecto que un guard defiende la forma, y un guard desfasado no sólo
+//  estorba: DESORIENTA, porque parece decir que el cambio está mal.
+//
+//  🔑 POR QUÉ EL DESASTRE DE v542 NO PUEDE REPETIRSE. Aquello fue una recarga
+//  automática que devolvía la app a modo LOGIN mientras el autor rellenaba el
+//  formulario del RGPD. La de ahora NO recarga si hay partido en curso
+//  (`cronosHayPartidoEnCurso`) NI si el usuario ha tocado algo desde que la
+//  vista volvió al frente. Pulsar "REGISTRARSE" es un `pointerdown`: marca la
+//  interacción, y ahí ya no se recarga nada. Las dos condiciones se exigen
+//  abajo, una por una — no basta con que el código las mencione.
+//
+//  Lo que NO cambia y sigue fijado: las capas 1a, 1d, 1e, 1f, 1g y 1h, y las
+//  cinco de v477-v500 de la PARTE 2. La orden de v544 sigue viva para todo lo
+//  demás del arranque.
+// ═══════════════════════════════════════════════════════════════════════════
+ok('1b · 🔑 la pestaña SIGUE actualizándose sola al cambiar de Service Worker',
+   /addEventListener\('controllerchange',\s*function\s*\(\)\s*\{[^}]*\}/.test(HTML) &&
+   /window\.location\.reload\(\)/.test(HTML),
+   'el mecanismo es innegociable: sin él, la pestaña se queda con el SW viejo');
+ok('1b-2 · …y la recarga pasa por las DOS condiciones, no es ciega',
+   /_esSeguroRecargar/.test(HTML) &&
+   /window\._cronosHuboInteraccion/.test(HTML) &&
+   /cronosHayPartidoEnCurso/.test(HTML),
+   'una recarga ciega es literalmente el defecto de v542');
+ok('1c · ⚠️ la marca de interacción se toma EN CAPTURA y desde la propia página',
+   /\['pointerdown', 'keydown', 'touchstart'\]/.test(HTML) &&
+   /\}, true\);/.test(HTML),
+   'un módulo de js/ llega tarde y pierde la PRIMERA pulsación — que es la ' +
+   'que importa: pulsar REGISTRARSE es un pointerdown');
+ok('1c-2 · 🔑 y se REINICIA al volver tras una ausencia larga',
+   /_AUSENCIA_LARGA/.test(HTML) && /_ocultoDesde/.test(HTML),
+   'una PWA suspendida conserva el mismo contexto JS: sin reiniciarla, abrir ' +
+   'desde el icono sería el único caso que NUNCA se actualizaría');
+ok('1c-3 · ⚠️ …pero sólo si hubo `hidden` de verdad (un `focus` no es volver)',
+   /_ocultoDesde \? \(Date\.now\(\) - _ocultoDesde\) : 0/.test(HTML),
+   'con `Infinity` ahí, pulsar en la ventana tras escribir borraba la marca');
+ok('1c-4 · `cronosEsSeguroRecargar` NO vuelve a utils.js (la de v542)',
+   !/_cronosHuboInteraccion/.test(UTILS),
+   'la condición vive en index.html, junto a la única recarga que gobierna');
 ok('1d · no queda el freno antibucle (sobra sin recarga automática)',
    !/_yaSeIntento|cronos_recarga_intentada/.test(HTML));
 ok('1e · ⚠️ `cronosEsSeguroRecargar` retirado de utils.js',

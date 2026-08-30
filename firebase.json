@@ -92,6 +92,21 @@
         ]
       },
       {
+        "_comentario": "v644 · EL SERVICE WORKER DE AVISOS PUSH, SIN CACHEAR, por el mismo motivo que /sw.js: sin cabecera propia cae en el `**` de arriba, donde Firebase pone una hora por defecto (es el agujero medido en v443 y otra vez en v577). Un service worker cacheado es peor que un HTML cacheado: el navegador solo lo reemplaza cuando el BYTE cambia, asi que una copia vieja se queda recibiendo los avisos y ningun despliegue la desaloja. Y este no lleva `?v=` que lo salve — un service worker se registra por su ruta pelada.",
+        "source": "/firebase-messaging-sw.js",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "no-cache, no-store, must-revalidate"
+          },
+          {
+            "_comentario": "El SDK de FCM registra este fichero en la RAIZ si no se le dice otra cosa; aqui se registra a mano en /cronos-push/ (ver js/services/push-superadmin.js) para no desalojar a sw.js. La cabecera deja abiertas AMBAS posibilidades y evita que un ambito legitimo sea rechazado.",
+            "key": "Service-Worker-Allowed",
+            "value": "/"
+          }
+        ]
+      },
+      {
         "_comentario": "v443 · TODOS los HTML sin cachear, no solo index.html. MEDIDO en produccion: live.html se servia con `max-age=3600` porque solo /index.html, /sw.js, /auth.js y /app.js tenian cabecera propia y el resto cae en el `**` sin Cache-Control, donde Firebase pone una hora por defecto. Consecuencia real, reportada por el autor: cada despliegue del visor era INVISIBLE hasta una hora para quien ya lo hubiera abierto, y el autor seguia viendo la version anterior creyendo que el cambio no se habia hecho. Se declara por FORMA (**/*.html) y no fichero a fichero, que es como se ha colado este agujero: el versionado de este proyecto vive en los `?v=` que cache-bust.js pone DENTRO del HTML, asi que el HTML es justo lo que nunca puede quedarse cacheado.",
         "source": "**/*.html",
         "headers": [

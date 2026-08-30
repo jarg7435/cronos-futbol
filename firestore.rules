@@ -1917,6 +1917,41 @@ service cloud.firestore {
       allow read, write: if isAuth() && request.auth.uid == userId;
     }
 
+    // ══════════════════════════════════════════════════════════════════
+    //  🔔 v644 · push_tokens — LOS DISPOSITIVOS QUE RECIBEN AVISOS
+    //
+    //  Un documento por navegador/dispositivo dado de alta. El id ES el
+    //  token de FCM, para que volver a entrar no acumule filas y para que
+    //  el servidor pueda borrar el documento exacto cuando FCM le diga que
+    //  ese token ya no existe.
+    //
+    //  🔑 CADA UNO ESCRIBE EL SUYO Y **NADIE LOS LEE**. La lectura de la
+    //  colección es `false` para todo el mundo, incluido el SuperAdmin: el
+    //  único que necesita la lista es la Cloud Function que envía, y el
+    //  Admin SDK no pasa por estas reglas. Dejar leer aquí sería publicar
+    //  qué cuentas tienen avisos activos y desde qué dispositivos —
+    //  incluida la del SuperAdmin, que es justo la que no interesa señalar.
+    //
+    //  ⚠️ EL `role` DE ESTE DOCUMENTO **NO AUTORIZA NADA**. Lo escribe el
+    //  cliente, así que quien quiera puede ponerse 'superadmin'. Quién
+    //  recibe de verdad lo decide el servidor cotejando el `email` contra
+    //  `cronos_config/superadmins` antes de cada envío
+    //  (`_tokensDelSuperAdmin`, functions/index.js). Aquí sólo se garantiza
+    //  que nadie escriba un token A NOMBRE DE OTRO — que es el agujero que
+    //  cerró la v636 en `platform_requests`, y es el mismo de aquí:
+    //  suplantar el `uid` en el alta te suscribiría al flujo de otro.
+    //
+    //  El `delete` propio existe para poder darse de baja de los avisos sin
+    //  esperar a que el token caduque.
+    // ══════════════════════════════════════════════════════════════════
+    match /push_tokens/{tokenId} {
+      allow read: if false;
+      allow create, update: if isAuth() &&
+                               request.resource.data.get('uid', '') == request.auth.uid &&
+                               request.resource.data.get('token', '') == tokenId;
+      allow delete: if isAuth() && resource.data.get('uid', '') == request.auth.uid;
+    }
+
     // ============================================================
     // COLECCIÓN: offline_events
     // SEC-007: Validate userUid on create

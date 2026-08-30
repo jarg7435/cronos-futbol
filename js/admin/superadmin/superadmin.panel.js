@@ -358,6 +358,19 @@ window.openSuperAdminPanel = async function openSuperAdminPanel() {
     document.body.appendChild(panel);
     saTab('menu');
     setupClubsSyncListener();
+
+    // 🔔 v644 · AVISOS PUSH. Se arranca AQUÍ y no en el arranque de la app
+    //  por dos motivos: es el único sitio donde ya se sabe con certeza que
+    //  quien mira es el SuperAdmin, y es donde hay una cabecera en la que
+    //  colgar el botón 🔔 que pide el permiso — que Safari e iOS sólo
+    //  atienden si sale de un clic de verdad.
+    //  ⚠️ NUNCA con `await`: si el alta se atasca (red, permiso, service
+    //  worker), el panel tiene que estar ya montado y utilizable. Un aviso
+    //  que no llega es un incordio; un panel que no abre deja la
+    //  plataforma sin nadie que apruebe altas.
+    if (typeof window.cronosPushArrancar === 'function') {
+        window.cronosPushArrancar();
+    }
 };
 
 // ═══════════════════════════════════════════════════════════════════

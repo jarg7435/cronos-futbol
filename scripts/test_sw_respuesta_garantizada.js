@@ -285,9 +285,21 @@ console.log('\n── PARTE 4 · nadie tiene que pulsar Ctrl+Shift+R ──');
 {
     const INDEX = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
     const LIVE  = fs.readFileSync(path.join(ROOT, 'live.html'), 'utf8');
+    // ⚠️ v645 · ESTA ASERCIÓN DEFENDÍA LA FORMA, NO EL MECANISMO, y se puso
+    //  roja con la autoactualización de la PWA sin que hubiera ninguna
+    //  regresión: exigía que el callback de `controllerchange` fuese
+    //  literalmente `{ window.location.reload() }` y nada más. Es la misma
+    //  trampa que ya documentó la v541 sobre este mismo fichero.
+    //
+    //  🔑 Ahora exige el MECANISMO —que la pestaña se recargue sola— y deja
+    //  libre el CÓMO. `index.html` recarga a través de `_aplicaOOfrece()`,
+    //  que antepone dos frenos (partido en curso / usuario trabajando);
+    //  `live.html` conserva la forma directa porque no se abre desde el icono
+    //  y no ha hecho falta tocarlo.
     for (const [n, src] of [['index.html', INDEX], ['live.html', LIVE]]) {
         ok('4 · ' + n + ' se recarga sola al cambiar de Service Worker',
-           /addEventListener\('controllerchange',\s*function\s*\(\)\s*\{\s*window\.location\.reload\(\)/.test(src),
+           /addEventListener\('controllerchange'/.test(src) &&
+           /window\.location\.reload\(\)/.test(src),
            'sin esto, la pestaña abierta se queda con el SW viejo');
     }
     const S = sinCom(SW_SRC);

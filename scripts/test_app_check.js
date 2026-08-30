@@ -37,6 +37,7 @@ const ok = (n, cond, extra) => {
 const INIT = leer('js/services/firebase-init.js');
 const LIVE = leer('live.html');
 const SW   = leer('sw.js');
+const FNS  = leer('functions/index.js');
 
 console.log('\n══ v634 · App Check: activo donde puede, callado donde no ══');
 
@@ -160,6 +161,81 @@ console.log('\n4) 🚦 El Service Worker no puede tocar reCAPTCHA');
     ok('4c · ⚠️ vive en www.google.com, que NO entraba por la regla de gstatic',
        /gstatic\.com/.test(fn) && /\/recaptcha\//.test(fn),
        'por eso hizo falta una línea aparte, no bastaba la que ya había');
+}
+
+// ════════════════════════════════════════════════════════════════════
+//  v646 · LA TERCERA PUERTA
+//
+//  🔑🔑 Firestore e Identity Toolkit se ponen en ENFORCED desde Firebase
+//  Console; las CALLABLE no tienen ese interruptor. Su obligatoriedad se
+//  escribe en el codigo, y hasta la v646 no estaba escrita: las diez
+//  funciones invocables quedaban abiertas a cualquiera con la apiKey
+//  publica (que va en el HTML) y una cuenta.
+//
+//  ⚠️ 5d NO ES UNA LISTA DE NOMBRES A PROPOSITO. Se calcula recorriendo
+//  TODAS las callable del fichero: una funcion nueva sin guardia pone esto
+//  rojo el mismo dia que se escribe, que es justo cuando se puede arreglar
+//  sin que nadie se entere.
+// ════════════════════════════════════════════════════════════════════
+console.log('\n5) 🛡️ v646 · Y las Cloud Functions EXIGEN el token');
+{
+    ok('5a · 🔑 existe un unico guardian, `_exigirAppCheck`',
+       /function _exigirAppCheck\(context, nombre\) \{/.test(FNS),
+       'un sitio, no once: reescribir once firmas son once ocasiones de equivocarse');
+
+    ok('5b · 🔑🔑 decide por `context.app`, que solo viene con token VALIDO',
+       /if \(context && context\.app\) return;/.test(FNS),
+       'sin token, o con uno invalido, Firebase deja `context.app` en undefined');
+
+    ok('5c · y el modo por defecto es CORTAR, no mirar',
+       /const APPCHECK_MODO = 'enforce';/.test(FNS));
+
+    // ── 5d · cobertura TOTAL, calculada (ver la nota de arriba) ──────
+    const MARCA   = '.https.onCall(async (data, context) => {';
+    const trozos  = FNS.split(MARCA);
+    const cuerpos = trozos.slice(1);
+    const huerfanas = [];
+    cuerpos.forEach((cuerpo, i) => {
+        // El nombre exportado vive al final del trozo ANTERIOR (para
+        // sendInviteEmail hay un `.runWith(...)` por medio).
+        const previo = trozos[i];
+        const nombres = previo.match(/exports\.(\w+)\s*=/g) || [];
+        const nombre = nombres.length
+            ? nombres[nombres.length - 1].replace(/exports\.|\s*=/g, '')
+            : '(#' + (i + 1) + ')';
+        const primera = (cuerpo.split('\n').find(l => l.trim() !== '') || '').trim();
+        if (primera !== "_exigirAppCheck(context, '" + nombre + "');") {
+            huerfanas.push(nombre + ' → ' + (primera || '(vacia)'));
+        }
+    });
+
+    ok('5d · 🔑🔑 TODA callable llama al guardian en su PRIMERA linea',
+       cuerpos.length >= 10 && huerfanas.length === 0,
+       huerfanas.length
+           ? 'sin atestiguar: ' + huerfanas.join(' · ')
+           : 'se esperaban >= 10 callable y se han encontrado ' + cuerpos.length);
+
+    ok('5e · ⚠️ y ANTES del `context.auth`: una peticion de fuera no llega ' +
+       'ni a leer Firestore',
+       !/onCall\(async \(data, context\) => \{\s*\n\s*if \(!context\.auth\)/.test(FNS),
+       'el orden es lo que evita pagar lecturas por trafico que no viene de la app');
+
+    ok('5f · 🚦 no hay ninguna `onRequest` sin atestiguar',
+       !/functions[\s\S]{0,60}\.https\.onRequest\(/.test(FNS),
+       'una funcion HTTP cruda no pasa por el guardian: si se anyade una, ' +
+       'tiene que verificar el token a mano (verifyToken de firebase-admin/app-check)');
+
+    ok('5g · ⚠️ queda escrita la vuelta atras, y en un solo caracter',
+       /'monitor'/.test(FNS) && /APPCHECK_MODO/.test(FNS) &&
+       /SIN TOKEN/.test(FNS),
+       'si reCAPTCHA se cae, el cliente se queda sin token y TODAS las ' +
+       'callable dirian que no: `monitor` sigue anotando pero deja pasar');
+
+    // El cliente ya adjunta el token solo, pero solo si el objeto
+    // `functions` cuelga de la app que tiene App Check inicializado.
+    ok('5h · 🔑 el cliente pide las funciones sobre ESA misma app',
+       /getFunctions\(app\)/.test(INIT),
+       'una segunda app de Firebase no llevaria token y se caeria por 5d');
 }
 
 console.log('\n──────────────────────────────────────────────────────────');
