@@ -62,12 +62,19 @@ const BORRADAS = {
     'js/core/staff-and-comms.js': [              // §9 cuerpo tecnico (Fase A) + Fase B
         'loadStaffConfig', 'saveStaffConfig', 'renderStaffInBench', 'openRosterManager',
         'clearMasterRoster'],
+    // 🚫 v647 · LAS DIEZ DE «IMPORTAR CON IA» YA NO ESTAN EN LA LISTA porque
+    // ya no existen en ningun sitio: la cadena entera de OCR se elimino de
+    // js/ai/import.js por proteccion de datos (la foto de la lista del equipo
+    // es un documento con datos personales de menores y salia del dispositivo).
+    // Eran: triggerRosterPhoto, processRosterPhoto, compressImageToBase64,
+    // callGeminiVision, callTesseract, parsePlayersFromText, updateUsageCounter,
+    // showOCRError, showRosterPreview y confirmRosterImport.
+    // ⚠️ Este mapa exige DUENYO UNICO, o sea que exige EXISTIR: dejarlas aqui
+    // habria puesto el guard rojo por el borrado correcto. Que NO reaparezcan
+    // lo vigila scripts/test_sin_importar_con_ia.js, que es su sitio.
     'js/ai/import.js': [
-        // §10 importacion de plantilla con IA (Fase A)
-        'triggerRosterPhoto', 'processRosterPhoto', 'compressImageToBase64', 'callGeminiVision',
-        'callTesseract', 'parsePlayersFromText', 'updateUsageCounter', 'showOCRError',
-        // §11 importacion, convocatoria e ir al partido (Fase B)
-        'showRosterPreview', 'confirmRosterImport', 'saveMasterRoster', 'openConvocationModal',
+        // §11 plantilla manual, convocatoria e ir al partido (Fase B)
+        'saveMasterRoster', 'openConvocationModal',
         'saveConvData', 'saveConvPlayers', 'goToTitularSelection', 'startMatchWithConvocation'],
     'js/shared/whatsapp-email.js': [             // §15 envio de convocatoria (Fase A)
         'openConvocationMessage', 'buildConvocationText', 'saveConvConfig',
@@ -177,8 +184,10 @@ ORDER.forEach(f => { decl[f] = declaraciones(rd(f)); });
     ok('1c · cada una vive en el archivo que se espera', mal.length === 0, mal);
     // 97 = 30 (A) + 41 (B) + 20 (C) + 6 (grupo B de la D). Las 4 que subieron de
     // BORRADAS_MULTI a BORRADAS el 2026-07-29 ya se contaban en la Fase C.
-    ok('1d · el recuento cuadra: 101 funciones con duenyo unico',
-        TODAS.length === 101, TODAS.length);
+    // v647 · 101 → 91: las diez de «importar con IA» ya no existen en ningun
+    // archivo, asi que no pueden pedirse con duenyo unico. Ver la nota del mapa.
+    ok('1d · el recuento cuadra: 91 funciones con duenyo unico',
+        TODAS.length === 91, TODAS.length);
 
     // ── las 5 multi-declaradas de la Fase C: se fija QUIEN gana, no que sea unica
     const malGanador = [], malConjunto = [];
@@ -289,7 +298,9 @@ ORDER.forEach(f => { decl[f] = declaraciones(rd(f)); });
         activeActionPlayerId: ['js/match/events/player-actions.js'],
         TUTORIAL_STEPS: ['js/match/demo-tutorial.js'], tutorialStep: ['js/match/demo-tutorial.js'],
         _realtimeUnsubscribe: ['js/services/firestore-storage.js'],
-        _tesseractLoaded: ['js/ai/import.js'],
+        // 🚫 v647 · `_tesseractLoaded` se fue de aqui Y de app-init.js: su unico
+        // consumidor era `callTesseract`, borrado con la cadena de OCR. La
+        // asercion 4c lo detecto sola en cuanto desaparecio el consumidor.
         // ── FASE C · estado INTERCALADO entre las funciones muertas de §2 y §13.
         // `FIELD_MARGIN` esta justo encima de clampToField, `touchData` y
         // `lastTouchTime` entre createPlayerChip y handleTouchStart, y
@@ -317,10 +328,16 @@ ORDER.forEach(f => { decl[f] = declaraciones(rd(f)); });
     ok('4c · todas siguen siendo realmente necesarias (si no, sacarlas de la lista)',
         noUsadas.length === 0, noUsadas);
 
-    // `_tesseractLoaded` merece mencion aparte: el propio ai/import.js lo
-    // documenta ("ya declarado en app.js"), asi que la dependencia es deliberada.
-    ok('4d · ai/import.js sigue documentando su dependencia de _tesseractLoaded',
-        /_tesseractLoaded/.test(rd('js/ai/import.js')));
+    // 🚫 v647 · AQUI ESTABA 4d, que exigia que ai/import.js siguiera
+    // documentando su dependencia de `_tesseractLoaded`. Se RETIRA porque su
+    // premisa ya no existe: no hay dependencia que documentar, la cadena de
+    // OCR entera se borro por proteccion de datos. Mantenerla habria sido
+    // pedir que el fichero hablase de algo que ya no usa — un guard desfasado
+    // que manda al siguiente a "arreglar" lo que esta bien.
+    ok('4d · ⚠️ y NO reaparece la dependencia de _tesseractLoaded',
+        !/_tesseractLoaded/.test(rd('js/ai/import.js')) &&
+        !/let _tesseractLoaded/.test(aiSrc),
+        'si vuelve, es que ha vuelto la importacion con IA: ver test_sin_importar_con_ia.js');
     // window._trWeekOffset: inicializacion del panel de entrenamiento
     ok('4e · app-init.js CONSERVA la inicializacion de window._trWeekOffset',
         /^window\._trWeekOffset\s*=/m.test(aiSrc));

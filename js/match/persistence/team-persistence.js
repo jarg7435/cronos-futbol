@@ -346,6 +346,32 @@ window._showPostMatchOptions = function _showPostMatchOptions() {
     const h1min = Math.floor((masterTimeH1 || 0) / 60);
     const h2min = Math.floor((masterTimeH2 || 0) / 60);
 
+    // ══════════════════════════════════════════════════════════════
+    //  👨‍👩‍👧 v647 · SIN ROL DE FAMILIAS, LA OPCIÓN NO SE PINTA
+    //
+    //  v623 dejó este botón VISIBLE y sólo lo renombró («Enviar Informes a
+    //  Padres» → «Enviar Informes»), y fue una decisión suya deliberada: su
+    //  envío incluye TAMBIÉN al staff, así que ocultarlo parecía dejar al
+    //  club sin informe para su propia dirección.
+    //
+    //  🔑 ESO YA NO SE SOSTIENE, y por eso se puede ocultar sin pérdida: el
+    //  informe del staff NO depende de este botón. `autoDispatchMatchReports`
+    //  se dispara solo al terminar el partido (crono, endMatch o expulsión) y
+    //  su FASE A —informe global al staff— es INCONDICIONAL; lo único que
+    //  `cronosHayPadres()` corta ahí es la fase B, la de padres. O sea que la
+    //  dirección recibe su informe igual, y este botón sólo era un segundo
+    //  camino manual hacia lo mismo.
+    //
+    //  ⚠️ Antes de volver a tocarlo, comprobar que la fase A sigue siendo
+    //  incondicional en match-reports-auto.js. Si algún día se pusiera
+    //  detrás de una bandera, ocultar esto SÍ dejaría al club sin informe.
+    //
+    //  ⚠️ El valor por defecto es SÍ HAY FAMILIAS (v623): sólo la
+    //  desactivación expresa apaga el rol, para que un `extras` que todavía
+    //  no ha bajado de Firestore no esconda la opción durante unos segundos.
+    // ══════════════════════════════════════════════════════════════
+    const _hayFamilias = (typeof window.cronosHayPadres !== 'function') || window.cronosHayPadres();
+
     const modal = document.getElementById('setup-modal');
     if (!modal) return;
 
@@ -404,7 +430,11 @@ window._showPostMatchOptions = function _showPostMatchOptions() {
         <div style="flex:1;overflow-y:auto;padding:1.1rem;
                     display:flex;flex-direction:column;gap:0.6rem;">
 
-            <!-- ENVIAR INFORMES — acción principal -->
+            <!-- ENVIAR INFORMES — acción principal.
+                 Sin rol de familias no se pinta: ver la nota de _hayFamilias
+                 arriba. El informe al staff NO se pierde, lo manda solo la
+                 fase A de autoDispatchMatchReports. -->
+            ${_hayFamilias ? `
             <button onclick="_postMatchSendReports()"
                 style="display:flex;align-items:center;gap:0.9rem;
                        padding:0.9rem 1rem;width:100%;
@@ -417,12 +447,11 @@ window._showPostMatchOptions = function _showPostMatchOptions() {
                 onmouseout="this.style.background='rgba(63,185,80,0.12)'">
                 <span style="font-size:1.4rem;">📊</span>
                 <div style="text-align:left;">
-                    <div style="color:#3fb950;">${(typeof window.cronosHayPadres !== 'function' || window.cronosHayPadres())
-                        ? 'Enviar Informes a Padres' : 'Enviar Informes'}</div>
+                    <div style="color:#3fb950;">Enviar Informes a Padres</div>
                     <div style="font-size:0.72rem;color:var(--text-muted);
                                 font-weight:400;">WhatsApp · Email · App interna</div>
                 </div>
-            </button>
+            </button>` : ''}
 
             <!-- VOLVER AL PARTIDO -->
             <button onclick="_postMatchReturn()"

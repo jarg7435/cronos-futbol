@@ -1551,7 +1551,13 @@ console.log('\n── PARTE 24 · censo de todas las ✕ del area del Entrenador
     // plantilla. NO es un cierre de pantalla y no puede dejar el campo al
     // aire — la plantilla sigue delante. Revisado al subir el numero, que es
     // para lo que esta este alambre.
-    ok('24·total · y 18 botones ✕ censados en el area', totalEquis === 18,
+    // 2026-08-31 (v647) · 18 -> 17, y esta vez BAJA. La ✕ que falta es la de
+    // "Eliminar fila" de la tabla de previsualizacion de `showRosterPreview`,
+    // que se fue entera con la importacion de plantilla con IA (borrada por
+    // proteccion de datos). No cerraba ninguna pantalla: quitaba un jugador
+    // de la lista propuesta por el OCR, y sin OCR no hay lista que podar.
+    // Revisado al bajar el numero, que es igual de deliberado que subirlo.
+    ok('24·total · y 17 botones ✕ censados en el area', totalEquis === 17,
        'encontrados: ' + totalEquis);
 
     // ⚠️ HALLAZGO DE ESTE CENSO, DECLARADO Y NO TOCADO: quedan 3 ✕ cableadas a

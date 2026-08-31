@@ -1632,17 +1632,15 @@ window._trWeekOffset = window._trWeekOffset || 0;
 //    clasicos la ULTIMA declaracion de funcion es la que queda.
 //    Guard: scripts/test_app_init_dead_duplicates.js
 
-// ── OCR con Tesseract.js (100% local, sin API, sin coste) ───────────
-// Carga la librería solo cuando se necesita (lazy load)
-// ══════════════════════════════════════════════════════════════════
-//  CHRONOS FÚTBOL — Importación de plantilla con IA (Gemini Vision)
-//  Motor: Google Gemini 1.5 Flash (gratis hasta 1500 imgs/día)
-//  Fallback: Tesseract.js (100% local, sin límite)
-// ══════════════════════════════════════════════════════════════════
-
-
-// ── Tesseract.js fallback (100% local) ──────────────────────────────
-let _tesseractLoaded = false;
+// 🚫 v647 · AQUI QUEDABA LA BANDERA DE CARGA PEREZOSA DEL OCR, el ultimo
+//    resto de la importacion de plantilla con IA. Era estado COMPARTIDO: lo
+//    declaraba esta capa fosil y lo consumia `callTesseract` en ai/import.js,
+//    que es justo lo que se ha borrado por proteccion de datos. Sin su unico
+//    consumidor la variable ya no sostiene nada, y dejarla ahi habria sido
+//    una pista falsa para quien viniera detras.
+//    ⚠️ Lo cazo el propio guard (4c: "todas siguen siendo realmente
+//    necesarias"), que es exactamente para lo que existe esa asercion.
+//    Guard: scripts/test_sin_importar_con_ia.js
 
 
 // -- Copias muertas eliminadas el 2026-07-28 (Fase B del monolito #5):

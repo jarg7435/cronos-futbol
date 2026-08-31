@@ -349,8 +349,15 @@ parte('PARTE 11 · 🔑🔑 la modalidad cuando #setup-mode ya no existe', () =>
        (sinC.match(/cronosActiveMode\(\)/g) || []).length);
     ok('11d · el selector de invitado también',
        /cronosActiveMode\(\)/.test(sinCom(leer('js/roster/guest-picker.js'))));
-    ok('11e · 🤫 y la importación por foto, que caía a f11 en silencio',
-       /cronosActiveMode\(\)/.test(sinCom(leer('js/ai/import.js'))));
+    // 🚫 v647 · 11e VIGILABA UN CAMINO QUE YA NO EXISTE. La importación por
+    // foto (`showRosterPreview`) caía a 'f11' en silencio y por eso se la
+    // obligó a pasar por `cronosActiveMode()`. La cadena entera de OCR se
+    // borró por protección de datos, así que la asercion se da la vuelta:
+    // ahora lo que se exige es que ese camino NO vuelva. Si reapareciera,
+    // volvería con su defecto de modo, que es lo que costó encontrar.
+    ok('11e · 🤫 y la importación por foto ya no existe (no puede caer a f11)',
+       !/showRosterPreview/.test(sinCom(leer('js/ai/import.js'))),
+       'si vuelve, tiene que volver pasando por cronosActiveMode()');
 
     // Comportamiento real: sin el elemento en el DOM, no lanza y recuerda.
     const sb = { console, document: { getElementById: () => null }, window: null };

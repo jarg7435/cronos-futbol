@@ -120,10 +120,34 @@ ok('4b · ⚠️ el STAFF sigue en la lista (decision suya)',
    /const staff = contacts\.filter\(c => c\.type !== 'parent'\)/.test(SEND) &&
    !/staff = !_hayFamilias/.test(SEND),
    'ocultarlo entero dejaria al club sin informe para su direccion');
-ok('4c · el boton se renombra cuando no hay familias',
-   /cronosHayPadres\(\)[\s\S]{0,120}'Enviar Informes'/.test(POST));
-ok('4d · …y sigue existiendo (NO se oculta)',
-   /_postMatchSendReports\(\)/.test(POST));
+// ⚠️⚠️ v647 · 4c/4d FIJABAN LO CONTRARIO Y HUBO QUE DARLES LA VUELTA.
+// v623 dejo el boton VISIBLE y solo renombrado, por decision suya: parecia
+// que ocultarlo dejaba al club sin informe para su direccion. El 2026-08-31
+// pidio expresamente ocultarlo, y se pudo hacer SIN esa perdida porque la
+// fase A del despacho automatico (informe al staff) es INCONDICIONAL: el
+// boton solo era un segundo camino manual hacia lo mismo.
+// 🔑 Se REESCRIBEN, no se borran: un guard desfasado desorienta el arreglo
+// siguiente tanto como uno ausente.
+ok('4c · ⚠️ sin familias el boton NO se pinta (v647, antes solo se renombraba)',
+   /\$\{_hayFamilias \? `/.test(POST) &&
+   !/\? 'Enviar Informes a Padres' : 'Enviar Informes'/.test(POST),
+   'tiene que desaparecer entero, no cambiar de rotulo');
+ok('4d · …y CON familias se sigue pintando',
+   /_postMatchSendReports\(\)/.test(POST) &&
+   /const _hayFamilias =/.test(POST),
+   'ocultarlo siempre seria la regresion contraria');
+// 🔑🔑 LA ASERCION QUE HACE SEGURO OCULTARLO. Si algun dia la fase A se
+// pusiera detras de una bandera, el club se quedaria sin NINGUN informe:
+// ni el automatico ni el boton, que ya no esta. Se fija por POSICION —
+// `_hayFamilias` se declara DESPUES de la fase A, o sea que no la gobierna.
+// ⚠️ El ancla es la ESCRITURA del informe de staff, no el rotulo "FASE A":
+// `AUTO` viene despojado de comentarios, asi que anclar en el comentario
+// daba un -1 silencioso. (Ya paso en v525: cazar el propio comentario.)
+ok('4e · 🔑🔑 la fase A (staff) corre ANTES de mirar si hay familias',
+   AUTO.indexOf("'staff_match_report'") !== -1 &&
+   AUTO.indexOf('const _hayFamilias') !== -1 &&
+   AUTO.indexOf("'staff_match_report'") < AUTO.indexOf('const _hayFamilias'),
+   'es lo unico que permite ocultar el boton del post-partido sin perdida');
 
 // ── PARTE 5 · el resto del rastro ───────────────────────────────────
 console.log('\nPARTE 5 · el resto del rastro del colectivo');

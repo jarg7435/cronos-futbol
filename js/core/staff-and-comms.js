@@ -356,23 +356,21 @@ function openRosterManager() {
                                font-weight:700; cursor:pointer; white-space:nowrap;">
                         ✅ ASISTENCIA
                     </button>
-                    <button onclick="triggerRosterPhoto()"
-                        title="Haz una foto a la lista de jugadores y la IA la importa automáticamente"
-                        style="display:flex; align-items:center; gap:0.5rem; padding:0.5rem 1rem;
-                               background:rgba(240,136,62,0.15); border:1px solid rgba(240,136,62,0.5);
-                               border-radius:8px; color:var(--secondary); font-size:0.85rem;
-                               font-weight:700; cursor:pointer; white-space:nowrap;">
-                        📷 IMPORTAR CON IA
-                    </button>
+                    <!-- 🚫 v647 · AQUÍ ESTABA «📷 IMPORTAR CON IA», RETIRADO POR RGPD.
+                         La plantilla se introduce SÓLO a mano (nombre y alias). El
+                         botón abría un OCR sobre una FOTO de la lista del equipo:
+                         un documento externo con datos personales de menores que
+                         salía del dispositivo (Gemini Vision vía Cloudflare Worker).
+                         ⚠️ No basta con esconder el botón: la cadena entera
+                         (triggerRosterPhoto → processRosterPhoto → compresión →
+                         Gemini/Tesseract → previsualización) se ha ELIMINADO de
+                         js/ai/import.js, y el <input type="file"> de esta pantalla
+                         con ella. Guard: scripts/test_sin_importar_con_ia.js. -->
                 </div>
             </div>
             <p style="font-size: 0.8rem; color: var(--text-muted); margin-bottom:0.8rem;">
-                Completa los datos de tus ${limit} jugadores · El Alias es el nombre que aparecerá en la ficha ·
-                <span style="color:var(--secondary);">📷 Haz una foto a la lista y la IA la importa sola</span>
+                Completa los datos de tus ${limit} jugadores · El Alias es el nombre que aparecerá en la ficha
             </p>
-            <!-- Input oculto para seleccionar imagen -->
-            <input type="file" id="roster-photo-input" accept="image/*" capture="environment"
-                style="display:none;" onchange="processRosterPhoto(this)">
             <div style="overflow-x: auto;">
                 <table class="roster-table">
                     <thead>
