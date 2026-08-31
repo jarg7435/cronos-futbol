@@ -2585,15 +2585,44 @@ async function _tokensDelSuperAdmin() {
     return [];
   }
 
+  /* ══════════════════════════════════════════════════════════════════
+     🚨 SEC-P01 (2026-09-01) · EL CORREO SE RESUELVE DESDE AUTH, NO DEL DOC
+
+     Antes se comparaba `t.email` —un campo que ESCRIBE EL CLIENTE— con la
+     lista de SuperAdmins, y el comentario de aqui mismo lo cantaba: «LA
+     COMPROBACION QUE CONVIERTE UN DATO DEL CLIENTE EN AUTORIZACION».
+     Cualquier cuenta podia crear su documento de token con `email: '<el del
+     SuperAdmin>'` —la regla solo exigia que el `uid` fuese el suyo— y
+     recibir en su movil los avisos de solicitudes.
+
+     🔑 EL PUNTO CIEGO ESTABA ESCRITO AL LADO: el cliente documenta que «el
+     `role` es informativo y el servidor NO se fia de el (lo escribe el
+     cliente)». Y el `role` solo FILTRA, mientras que el `email` AUTORIZA.
+     Se blindo el campo del que se desconfiaba y se dejo abierto el que
+     decide. Desconfiar de un campo y no del de al lado.
+
+     Ahora el correo sale de **Firebase Auth**, que el usuario no escribe.
+     ⚠️ Falla hacia el NO: si `getUser` peta o la cuenta no existe, ese
+     dispositivo no recibe.
+     ⚠️ Una lectura de Auth por token: son 4 y todos del SuperAdmin.
+     ⚠️ El `where('role')` se queda como FILTRO barato, no como permiso.
+     ══════════════════════════════════════════════════════════════════ */
   const snap = await db.collection(PUSH_TOKENS_COL).where('role', '==', 'superadmin').get();
   const salida = [];
-  snap.forEach(d => {
+  for (const d of snap.docs) {
     const t = d.data() || {};
-    const correo = String(t.email || '').toLowerCase();
-    // 🔑 LA COMPROBACION QUE CONVIERTE UN DATO DEL CLIENTE EN AUTORIZACION.
-    if (!t.token || !correos.includes(correo)) return;
+    if (!t.token || !t.uid) continue;
+    let correoReal = '';
+    try {
+      const u = await admin.auth().getUser(String(t.uid));
+      correoReal = String((u && u.email) || '').toLowerCase();
+    } catch (e) {
+      console.warn('[pushSA] no se pudo resolver el correo de', t.uid, ':', e.message);
+      continue;                       // sin correo verificado no se envia
+    }
+    if (!correos.includes(correoReal)) continue;
     salida.push({ id: d.id, token: t.token });
-  });
+  }
   return salida;
 }
 

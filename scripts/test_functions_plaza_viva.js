@@ -176,6 +176,43 @@ console.log('\n3) 🔒 SEC-F05 · el rol se corrobora contra el documento del cl
     }
 }
 
+// ════════════════════════════════════════════════════════════════════
+//  PARTE 4 · SEC-P01 · a quien se le mandan los avisos del SuperAdmin
+//
+//  `_tokensDelSuperAdmin` filtra por `role` pero AUTORIZA por `email`. Ese
+//  correo lo escribia el CLIENTE en su propio documento de token, y la regla
+//  solo exigia que el `uid` fuese el suyo: bastaba poner el correo del
+//  SuperAdmin para recibir sus avisos de solicitudes en tu movil.
+//
+//  🔑 El punto ciego estaba escrito al lado, en el cliente: «el `role` es
+//  informativo y el servidor NO se fia de el (lo escribe el cliente)». Se
+//  blindo el campo del que se desconfiaba y se dejo abierto EL QUE DECIDE.
+//  Desconfiar de un campo y no del de al lado.
+// ════════════════════════════════════════════════════════════════════
+console.log('\n4) 📣 SEC-P01 · el correo del token sale de Auth, no del documento');
+{
+    const i = CODE.indexOf('async function _tokensDelSuperAdmin');
+    const bloque = i === -1 ? '' : CODE.slice(i, CODE.indexOf('\n}', i));
+
+    ok('4a · se pudo acotar `_tokensDelSuperAdmin`', !!bloque);
+
+    ok('4b · 🔑🔑 el correo se resuelve con `admin.auth().getUser`',
+       /admin\.auth\(\)\.getUser\(String\(t\.uid\)\)/.test(bloque),
+       'Auth es la unica fuente del correo que el usuario no escribe');
+
+    ok('4c · 🔑 y NO se usa el `email` del documento para decidir',
+       !/t\.email/.test(bloque),
+       'ese campo lo escribe el cliente: era el agujero');
+
+    ok('4d · ⚠️ falla hacia el NO si Auth no responde',
+       /catch[\s\S]{0,200}continue;/.test(bloque),
+       'sin correo verificado, ese dispositivo no recibe');
+
+    ok('4e · el `role` sigue usandose solo como FILTRO de la consulta',
+       /where\('role', '==', 'superadmin'\)/.test(bloque) &&
+       !/correos\.includes\(String\(t\.role/.test(bloque));
+}
+
 console.log('\n──────────────────────────────────────────────────────────');
 console.log('Resultado: ' + pass + '/' + (pass + fail) + (fail ? '  ❌' : '  ✅'));
 process.exit(fail ? 1 : 0);

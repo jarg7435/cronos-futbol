@@ -378,6 +378,40 @@ function casos() {
           col: 'clubs', exp: 'DENY', auth: adminConClaims, doc: docAdmin,
           method: 'create', entrante: { name: 'CD Falso', adminEmail: 'a@x.es' },
           why: 'el reparto de verbos no puede haber aflojado el create de rebote' },
+
+        // ══════════════════════════════════════════════════════════════
+        //  PARTE 8 · SEC-P01 · el `email` del token de push
+        //
+        //  El emisor filtra por `role` pero AUTORIZA por `email`. La regla
+        //  exigia que el `uid` fuese el tuyo y dejaba `email` libre: bastaba
+        //  escribir el correo del SuperAdmin en tu propio documento para
+        //  recibir sus avisos de solicitudes en tu movil.
+        //
+        //  🔑 El punto ciego estaba escrito al lado, en el cliente: «el
+        //  `role` es informativo y el servidor NO se fia de el». Se blindo el
+        //  campo del que se desconfiaba y se dejo abierto el que decide.
+        // ══════════════════════════════════════════════════════════════
+        { n: '8a · registrar TU propio token con TU correo sigue valiendo',
+          col: 'push_tokens', docId: 'TOK1', exp: 'ALLOW', auth: adminConClaims, doc: docAdmin,
+          method: 'create',
+          entrante: { uid: 'admin_uid', token: 'TOK1', email: 'a@club.es', role: 'superadmin' },
+          why: 'es lo que hace el boton 🔔: si esto se rompe, nadie puede darse de alta' },
+
+        { n: '8b · 🔑🔑 pero NO con el correo de OTRO (el del SuperAdmin)',
+          col: 'push_tokens', docId: 'TOK2', exp: 'DENY', auth: adminConClaims, doc: docAdmin,
+          method: 'create',
+          entrante: { uid: 'admin_uid', token: 'TOK2', email: 'sa@chronos.es', role: 'superadmin' },
+          why: 'era el agujero: el emisor autoriza por ese correo, y lo escribia el cliente' },
+
+        { n: '8c · ⚠️ ni omitiendolo, que dejaria decidir al emisor a ciegas',
+          col: 'push_tokens', docId: 'TOK3', exp: 'DENY', auth: adminConClaims, doc: docAdmin,
+          method: 'create',
+          entrante: { uid: 'admin_uid', token: 'TOK3', role: 'superadmin' } },
+
+        { n: '8d · y el `uid` ajeno se sigue denegando (lo que ya cubria la regla)',
+          col: 'push_tokens', docId: 'TOK4', exp: 'DENY', auth: adminConClaims, doc: docAdmin,
+          method: 'create',
+          entrante: { uid: 'otro_uid', token: 'TOK4', email: 'a@club.es', role: 'superadmin' } },
     ];
 }
 

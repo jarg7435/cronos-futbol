@@ -2008,11 +2008,41 @@ service cloud.firestore {
     //  El `delete` propio existe para poder darse de baja de los avisos sin
     //  esperar a que el token caduque.
     // ══════════════════════════════════════════════════════════════════
+    // ══════════════════════════════════════════════════════════════════
+    //  🚨 SEC-P01 (2026-09-01) · EL `email` DEL TOKEN ES EL QUE DECIDE
+    //
+    //  La regla exigia que el `uid` fuese el tuyo… y dejaba `email` y `role`
+    //  libres. El emisor (`_tokensDelSuperAdmin`) filtra por `role` pero
+    //  AUTORIZA por `email`, comparandolo con `cronos_config/superadmins`.
+    //  O sea que cualquier cuenta podia escribir:
+    //      push_tokens/<su token FCM> = { uid: <el suyo>, token: <el suyo>,
+    //                                     role: 'superadmin',
+    //                                     email: '<el del SuperAdmin>' }
+    //  y recibir en su movil los avisos de solicitudes del SuperAdmin.
+    //
+    //  🔑 EL PUNTO CIEGO, que esta escrito en el propio cliente
+    //  (js/services/push-superadmin.js): «el `role` es informativo y el
+    //  servidor NO se fia de el (lo escribe el cliente)». Se blindo el campo
+    //  del que se desconfiaba y se dejo abierto EL QUE DECIDE, que lo escribe
+    //  igual de libremente. Desconfiar de un campo y no del de al lado.
+    //
+    //  Ahora el correo tiene que ser el del TOKEN DE SESION, que lo emite
+    //  Firebase y el usuario no puede falsificar.
+    //  ⚠️ Con su guarda `in`: la asercion 2a de test_rules_no_direct_access
+    //  exige que todo `request.auth.token.CAMPO` la lleve.
+    //
+    //  ⚠️ Esto solo gobierna ESCRITURAS. El backend, ademas, ya no se fia del
+    //  campo: resuelve el correo desde Firebase Auth por uid (SEC-P01 en
+    //  functions/index.js). Cinturon y tirantes, porque el dato ya escrito
+    //  no lo arregla una regla.
+    // ══════════════════════════════════════════════════════════════════
     match /push_tokens/{tokenId} {
       allow read: if false;
       allow create, update: if isAuth() &&
                                request.resource.data.get('uid', '') == request.auth.uid &&
-                               request.resource.data.get('token', '') == tokenId;
+                               request.resource.data.get('token', '') == tokenId &&
+                               ('email' in request.auth.token) &&
+                               request.resource.data.get('email', '') == request.auth.token.email;
       allow delete: if isAuth() && resource.data.get('uid', '') == request.auth.uid;
     }
 
