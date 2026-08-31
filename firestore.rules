@@ -608,8 +608,72 @@ service cloud.firestore {
     // COLECCIÓN: clubs
     // SEC-008: Require authentication for read
     // ============================================================
+    // ══════════════════════════════════════════════════════════════════
+    //  🔒 SEC-L04 · paso 2 de 2 (Paso 2, auditoria 2026-08-31)
+    //     EL `list` DEJA DE SER UN VOLCADO
+    //
+    //  Tenia `read: if isAuth()`, y `read` = `get` + `list`. Como `isAuth()`
+    //  no mira `resource`, no constrinye la consulta: cualquier cuenta hacia
+    //  `getDocs(collection(db,'clubs'))` y se llevaba la coleccion ENTERA —
+    //  con el `adminEmail` de cada club, o sea el correo del administrador de
+    //  toda la plataforma, y el `createdBySA`. El alta es abierta, asi que la
+    //  unica barrera era registrarse.
+    //
+    //  🔑 SE PARTE EN DOS VERBOS, que es de lo que iba todo esto:
+    //    · `get`  se queda en `isAuth()`. NO se toca: hay que conocer el id, y
+    //             lo leen muchas pantallas para su propio club. Ahi no hay
+    //             cosecha posible.
+    //    · `list` pasa a exigir que la consulta venga ACOTADA. Cada disyunto
+    //             mira `resource.data`, y eso es justo lo que obliga al
+    //             cliente a filtrar: sin `where`, la consulta se deniega.
+    //
+    //  ⚠️⚠️ DOS CAMPOS, Y LOS DOS ESTAN MEDIDOS. El cliente preguntaba por
+    //  cuatro; se comprobaron los 5 documentos de `clubs` en produccion
+    //  (2026-08-31) y el resultado obligo a recortar:
+    //    · `adminEmail` → presente en los 5.   ✅ se queda
+    //    · `adminUid`   → presente en los 5.   ✅ se queda
+    //    · `email`      → AUSENTE en los 3 clubes y sin correo utilizable en
+    //                     los 2 individuales.  ❌ fuera
+    //    · `createdBy`  → AUSENTE EN LOS CINCO. ❌ fuera
+    //
+    //  🚨🚨 Y NO ES UNA PODA COSMETICA: DEJARLOS HABRIA ROTO ESTA REGLA. En
+    //  un `list` la condicion se evalua contra CADA documento devuelto, y el
+    //  `||` solo cortocircuita cuando algo da VERDADERO. Una consulta por
+    //  `adminUid` habria seguido evaluando el disyunto de `email` sobre los
+    //  tres clubes que no lo tienen → **la regla se AVERIA** → consulta
+    //  denegada. El sintoma: el club_admin no encuentra su club, sin un solo
+    //  error visible (la busqueda va en try/catch). Se salvo MIDIENDO los
+    //  documentos, no razonando sobre ellos.
+    //
+    //  ⚠️ ACCESO DIRECTO AL CAMPO (`resource.data.adminEmail`) Y NO
+    //  `.data.get(campo, '')`, que es lo que usa el resto del fichero para no
+    //  averiarse si falta el campo — y por eso la asercion 1a del arnes
+    //  prohibe el acceso directo. Aqui hay EXCEPCION, y es deliberada: el
+    //  motor solo reconoce la comparacion como restriccion de la consulta en
+    //  su forma directa; con `.get()` dejaria de autorizar los `where` y
+    //  volveriamos al volcado. Es seguro PORQUE los dos campos estan en todos
+    //  los documentos, que es justo lo que se midio. ⚠️ Si alguna vez se
+    //  anyade un club sin `adminEmail` o sin `adminUid`, esta regla se averia:
+    //  el alta (create-direct.js) los pone siempre.
+    //
+    //  Guard: scripts/test_clubs_sin_barrido.js por el lado del cliente; la
+    //  PARTE 7 del arnes de reglas, por el lado de aqui.
+    //
+    //  ⚠️⚠️ ESTO NO LO PUEDE VERIFICAR EL ARNES. El metodo `:test` de la Rules
+    //  API evalua DOCUMENTOS, no CONSULTAS ([[reference_rules_test_api]]), asi
+    //  que la parte que de verdad importa —que un `where` autorice y un
+    //  `getDocs` pelado no— se comprueba USANDO LA APP. Por eso el cliente se
+    //  desplego y se probo ANTES que esta regla, y no al reves.
+    //  Vuelta atras: `allow read: if isAuth();` y `deploy:prod:rules`.
+    // ══════════════════════════════════════════════════════════════════
     match /clubs/{clubId} {
-      allow read: if isAuth();
+      allow get: if isAuth();
+      allow list: if isAuth() && (
+                    isSuperAdmin() ||
+                    (('email' in request.auth.token) &&
+                     resource.data.adminEmail == request.auth.token.email) ||
+                    resource.data.adminUid == request.auth.uid
+                  );
       allow create: if isSuperAdmin();
       allow update: if isSuperAdmin() ||
                        isClubAdmin(clubId) ||

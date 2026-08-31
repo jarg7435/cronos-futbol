@@ -90,10 +90,15 @@ async function openClubAdminPanel(preClubId = null) {
             //  ⚠️ EL ORDEN IMPORTA y es el de antes: adminEmail, adminUid,
             //  createdBy. El `find` original paraba en la primera que casaba.
             // ══════════════════════════════════════════════════════════
+            // ⚠️ SOLO DOS CAMPOS, y se recorto MIDIENDO. El `find` original
+            //    miraba tambien `createdBy`, pero se comprobaron los 5
+            //    documentos de `clubs` en produccion (2026-08-31) y ese campo
+            //    **no existe en ninguno**: la consulta no podia devolver nada.
+            //    Y dejarlo en la REGLA habria averiado el `list` — ver la nota
+            //    de SEC-L04 en firestore.rules.
             const _mias = [];
             for (const [campo, valor] of [['adminEmail', me.email],
-                                          ['adminUid',   me.uid],
-                                          ['createdBy',  me.uid]]) {
+                                          ['adminUid',   me.uid]]) {
                 if (!valor) continue;
                 try {
                     const s = await getDocs(query(collection(db, 'clubs'), where(campo, '==', valor)));

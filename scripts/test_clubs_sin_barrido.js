@@ -109,15 +109,25 @@ console.log('\n2) 🔒 Los dos rastreos de «lo mio» van FILTRADOS');
     const AUTH  = sinCom(leer('js/services/auth.js'));
 
     // panel.js · el club propio, por los TRES campos del `find` original.
-    ok('2a · club/panel.js pregunta por adminEmail, adminUid y createdBy',
-       /'adminEmail'/.test(PANEL) && /'adminUid'/.test(PANEL) && /'createdBy'/.test(PANEL) &&
+    // ⚠️ DOS CAMPOS, NO LOS CUATRO DEL `find` ORIGINAL, y el recorte esta
+    // MEDIDO sobre los 5 documentos de produccion (2026-08-31): `createdBy` no
+    // existe en ninguno y `email` no lleva correo utilizable en ninguno.
+    // 🚨 No es cosmetico: dejarlos en la REGLA habria averiado el `list`, ya
+    // que en una consulta la condicion se evalua contra CADA documento y el
+    // `||` solo cortocircuita en verdadero. Ver SEC-L04 en firestore.rules.
+    ok('2a · club/panel.js pregunta por adminEmail y adminUid (los que existen)',
+       /'adminEmail'/.test(PANEL) && /'adminUid'/.test(PANEL) &&
        /where\(campo, '==', valor\)/.test(PANEL),
        'perder uno deja al club_admin sin encontrar su club, y sin error');
 
-    // auth.js · la entidad individual, por los DOS campos del filtro original.
-    ok('2b · 🔑 auth.js pregunta por adminEmail **y** por email',
-       /for \(const campo of \['adminEmail', 'email'\]\)/.test(AUTH),
-       'Firestore no tiene OR entre campos distintos: hacen falta las dos consultas');
+    ok('2a2 · ⚠️ y NO por createdBy, que no existe en ningun documento',
+       !/'createdBy'/.test(PANEL),
+       'la consulta no devolveria nada y en la regla averiaria el list');
+
+    // auth.js · la entidad individual, por el campo que SI esta en los 5.
+    ok('2b · 🔑 auth.js pregunta por adminEmail con `where`',
+       /where\('adminEmail', '==', user\.email\)/.test(AUTH),
+       'es el unico de los dos campos originales que lleva un correo real');
 
     ok('2c · ⚠️ y sigue exigiendo type === \'individual\'',
        /c\.type === 'individual'/.test(AUTH),

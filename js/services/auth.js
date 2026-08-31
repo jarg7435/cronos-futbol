@@ -921,27 +921,28 @@ export async function checkAuthorization(user) {
                     //  regla dejase LISTAR todos los clubes a cualquier
                     //  cuenta — y el documento lleva `adminEmail`.
                     //
-                    //  🔑 DOS consultas, no una: el filtro original miraba
-                    //  `adminEmail` **o** `email`, y Firestore no tiene OR
-                    //  entre campos distintos. Perder el segundo dejaria sin
-                    //  encontrar su entidad a los individuales dados de alta
-                    //  con `email`, y el sintoma seria "no tengo panel".
+                    //  🔑 UNA consulta, por `adminEmail`. El filtro original
+                    //  miraba `adminEmail` **o** `email`, pero se comprobaron
+                    //  los 5 documentos de `clubs` en produccion (2026-08-31):
+                    //  `email` esta AUSENTE en los tres clubes y no lleva un
+                    //  correo utilizable en los dos individuales, mientras que
+                    //  `adminEmail` esta en los cinco. La segunda consulta no
+                    //  podia devolver nada, y dejarla en la REGLA habria
+                    //  averiado el `list` — ver la nota de SEC-L04 en
+                    //  firestore.rules.
                     //
                     //  ⚠️ El `type === 'individual'` se sigue comprobando
                     //  AQUI, no en la consulta: anyadirlo como segundo
                     //  `where` pediria un indice compuesto que no existe.
                     // ══════════════════════════════════════════════════
-                    for (const campo of ['adminEmail', 'email']) {
-                        if (indDoc) break;
-                        const s = await getDocs(query(collection(fa.db, 'clubs'),
-                                                      where(campo, '==', user.email)));
-                        s.forEach(d => {
-                            const c = d.data();
-                            if (!indDoc && c.type === 'individual') {
-                                indDoc = d; indData = c; indCollection = 'clubs';
-                            }
-                        });
-                    }
+                    const _s = await getDocs(query(collection(fa.db, 'clubs'),
+                                                   where('adminEmail', '==', user.email)));
+                    _s.forEach(d => {
+                        const c = d.data();
+                        if (!indDoc && c.type === 'individual') {
+                            indDoc = d; indData = c; indCollection = 'clubs';
+                        }
+                    });
                 } catch(_) {}
 
                 if (!indDoc) {

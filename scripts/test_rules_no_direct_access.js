@@ -64,9 +64,30 @@ console.log('\n── PARTE 1 · resource.data / request.resource.data ──');
     const dRes = [...CODE.matchAll(reRes)].map(m => m[0]);
     const dReq = [...CODE.matchAll(reReq)].map(m => m[0]);
 
-    ok('1a · ningun acceso directo a resource.data.CAMPO',
-       dRes.length === 0,
-       dRes.length + ' encontrados: ' + [...new Set(dRes)].slice(0, 8).join(', '));
+    // ⚠️⚠️ UNA EXCEPCION, Y SOLO UNA: el `allow list` de `clubs` (SEC-L04).
+    //
+    //  El motivo de esta asercion es que un acceso directo AVERIA la regla si
+    //  el campo falta, y una regla averiada se lee como un permiso mal puesto.
+    //  Pero el `list` acotado NO PUEDE usar `.data.get()`: el motor solo
+    //  reconoce la comparacion como restriccion de la consulta en su forma
+    //  directa, y con `.get()` dejaria de autorizar los `where` — volviendo al
+    //  volcado de toda la coleccion, que es lo que SEC-L04 cierra.
+    //
+    //  🔑 La excepcion es segura porque se MIDIO: `adminEmail` y `adminUid`
+    //  estan en los 5 documentos de `clubs` en produccion. Por eso la lista
+    //  enumera los DOS campos concretos y no exime al bloque entero: cualquier
+    //  OTRO campo directo, aqui o en otra regla, sigue poniendo esto rojo.
+    const EXCEPCIONES = ['resource.data.adminEmail', 'resource.data.adminUid'];
+    const dResReal = dRes.filter(x => !EXCEPCIONES.includes(x));
+
+    ok('1a · ningun acceso directo a resource.data.CAMPO (salvo el list de clubs)',
+       dResReal.length === 0,
+       dResReal.length + ' encontrados: ' + [...new Set(dResReal)].slice(0, 8).join(', '));
+
+    ok('1a2 · ⚠️ y las dos excepciones siguen siendo SOLO del `allow list` de clubs',
+       (CODE.match(/resource\.data\.adminEmail/g) || []).length === 1 &&
+       (CODE.match(/resource\.data\.adminUid/g) || []).length === 1,
+       'si aparecen mas veces, alguien las ha usado fuera del list y puede averiar su regla');
     ok('1b · ningun acceso directo a request.resource.data.CAMPO',
        dReq.length === 0,
        dReq.length + ' encontrados: ' + [...new Set(dReq)].slice(0, 8).join(', '));
@@ -310,6 +331,44 @@ function casos() {
           col: 'cronos_config', docId: 'superadmins', exp: 'DENY', auth: adminConClaims,
           doc: docAdmin, method: 'get', existing: { emails: ['sa@chronos.es'] },
           why: 'es la raiz de confianza de isSuperAdminEmail(): el agujero de SEC-M02' },
+
+        // ══════════════════════════════════════════════════════════════
+        //  PARTE 7 · SEC-L04 paso 2 · `clubs`: `get` intacto, `list` acotado
+        //
+        //  ⚠️⚠️ LO QUE ESTA PARTE **NO** PUEDE PROBAR: que el `list` quede
+        //  acotado. El metodo `:test` evalua DOCUMENTOS, no CONSULTAS, asi
+        //  que no hay forma de simular aqui un `getDocs` con o sin `where`.
+        //  Eso se comprueba USANDO LA APP, y por eso el cliente se desplego y
+        //  se probo antes que la regla.
+        //
+        //  🔑 LO QUE SI PRUEBA, que es el riesgo REAL del cambio: que al
+        //  partir `read` en `get` + `list` no se haya perdido el `get`. Lo
+        //  usan muchas pantallas para leer SU club por id, y si se hubiera
+        //  caido el sintoma seria media aplicacion vacia sin un solo error.
+        // ══════════════════════════════════════════════════════════════
+        { n: '7a · 🔑 `clubs`: el `get` por id sigue abierto a cualquier sesion',
+          col: 'clubs', exp: 'ALLOW', auth: adminConClaims, doc: docAdmin,
+          method: 'get', existing: { name: 'CD X', adminEmail: 'otro@x.es' },
+          why: 'hay que conocer el id: ahi no hay cosecha, y lo lee media aplicacion' },
+
+        { n: '7b · …tambien para un club que NO es el suyo (no se ha colado un dueño)',
+          col: 'clubs', exp: 'ALLOW', auth: adminConClaims, doc: docAdmin,
+          method: 'get', existing: { name: 'CD Ajeno', adminEmail: 'nadie@x.es', adminUid: 'otro' },
+          why: 'restringir el `get` es OTRA decision: aqui solo se cerro el volcado' },
+
+        { n: '7c · ⚠️ y la regla NO se averia con un club sin `adminEmail`',
+          col: 'clubs', exp: 'ALLOW', auth: adminConClaims, doc: docAdmin,
+          method: 'get', existing: { name: 'CD Viejo' },
+          why: 'documentos legacy sin el campo: una regla que LANZA se lee como permiso mal puesto' },
+
+        { n: '7d · el SuperAdmin sigue pudiendo crear clubes',
+          col: 'clubs', exp: 'ALLOW', auth: sa, doc: null,
+          method: 'create', entrante: { name: 'CD Nuevo', adminEmail: 'a@x.es' } },
+
+        { n: '7e · 🔒 …y un club_admin cualquiera sigue sin poder crearlos',
+          col: 'clubs', exp: 'DENY', auth: adminConClaims, doc: docAdmin,
+          method: 'create', entrante: { name: 'CD Falso', adminEmail: 'a@x.es' },
+          why: 'el reparto de verbos no puede haber aflojado el create de rebote' },
     ];
 }
 
