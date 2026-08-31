@@ -137,11 +137,15 @@ function post(url, token, payload) {
         req.on('error', reject); req.write(body); req.end();
     });
 }
-const mocks = (uid, data) => [
+// `saEmails` permite simular la lista de correos de SuperAdmin. Por defecto va
+// VACIA (y `exists` en false), que es como estaba: asi ninguna asercion aprueba
+// por la puerta del correo sin pedirlo. La PARTE 5 la usa para comprobar la
+// resistencia de `isSuperAdmin()` con un token SIN el claim `role`.
+const mocks = (uid, data, saEmails) => [
     { function: 'exists', args: [{ exactValue: `${DB}/users/${uid}` }], result: { value: data !== null } },
     { function: 'get', args: [{ exactValue: `${DB}/users/${uid}` }], result: { value: { data: data || {} } } },
-    { function: 'exists', args: [{ exactValue: `${DB}/cronos_config/superadmins` }], result: { value: false } },
-    { function: 'get', args: [{ exactValue: `${DB}/cronos_config/superadmins` }], result: { value: { data: { emails: [] } } } },
+    { function: 'exists', args: [{ exactValue: `${DB}/cronos_config/superadmins` }], result: { value: !!(saEmails && saEmails.length) } },
+    { function: 'get', args: [{ exactValue: `${DB}/cronos_config/superadmins` }], result: { value: { data: { emails: saEmails || [] } } } },
 ];
 
 const CLUB = 'clubA';
@@ -153,6 +157,11 @@ const iso = () => new Date().toISOString();
 const adminSinClaims = { uid: 'admin_uid', token: { email: 'a@club.es', firebase: { sign_in_provider: 'password' } } };
 const adminConClaims = { uid: 'admin_uid', token: { email: 'a@club.es', role: 'club_admin', clubId: CLUB, firebase: { sign_in_provider: 'password' } } };
 const docAdmin = { clubId: CLUB, isAuthorized: true, role: 'club_admin' };
+
+// SuperAdmin por las DOS vias de isSuperAdmin(): por claim y por correo. La
+// segunda es la que sostiene al SA cuyo token todavia no trae el claim.
+const sa = { uid: 'sa_uid', token: { email: 'sa@chronos.es', role: 'superadmin', firebase: { sign_in_provider: 'password' } } };
+const saSinClaim = { uid: 'sa_uid', token: { email: 'sa@chronos.es', firebase: { sign_in_provider: 'password' } } };
 
 function casos() {
     return [
@@ -190,6 +199,66 @@ function casos() {
           method: 'update',
           existing: { createdBy: 'admin_uid', status: 'active', events: [] },
           entrante: { createdBy: 'admin_uid', status: 'active', events: ['x'] } },
+
+        // ══════════════════════════════════════════════════════════════
+        //  PARTE 4 · SEC-L01 (Paso 2, 2026-08-31) · `config` CERRADA
+        //
+        //  Tenia `read: if isAuth()`. `isAuth()` no mira `resource`, asi que
+        //  no constrinye la consulta: cualquier cuenta se llevaba la
+        //  coleccion entera con un `getDocs`. Se cerro del todo tras medir
+        //  que esta MUERTA (0 referencias en el codigo, 0 documentos en
+        //  produccion).
+        //
+        //  ⚠️ 4c NO ES DECORACION. `config` y `cronos_config` son vecinas y
+        //  se parecen; `cronos_config/push` lo lee el aviso del SuperAdmin
+        //  con cualquier sesion. Si el cierre se hubiera escrito sobre la
+        //  coleccion equivocada, 4a/4b pasarian igual y el fallo saldria en
+        //  4c — que es justo para lo que esta.
+        // ══════════════════════════════════════════════════════════════
+        { n: '4a · 🔒 `config`: un autenticado ya NO puede leerla',
+          col: 'config', exp: 'DENY', auth: adminConClaims, doc: docAdmin,
+          method: 'get', existing: { cualquiera: 1 },
+          why: 'antes `read: if isAuth()` permitia volcar la coleccion entera' },
+
+        { n: '4b · …ni escribir en ella',
+          col: 'config', exp: 'DENY', auth: adminConClaims, doc: docAdmin,
+          method: 'create', entrante: { cualquiera: 1 },
+          why: 'esta muerta: 0 documentos en produccion y 0 lectores en el codigo' },
+
+        { n: '4c · ⚠️ y la VECINA `cronos_config/push` se sigue leyendo',
+          col: 'cronos_config', docId: 'push', exp: 'ALLOW', auth: adminConClaims,
+          doc: docAdmin, method: 'get', existing: { vapidKey: 'x' },
+          why: 'la lee push-superadmin.js con cualquier sesion: cerrarla romperia el aviso' },
+
+        // ══════════════════════════════════════════════════════════════
+        //  PARTE 5 · SEC-L02 · `billing_plans` solo para el SuperAdmin
+        //
+        //  Tenia `read: if isAuth()`: cualquier cuenta se llevaba el catalogo
+        //  comercial entero con un `getDocs`. Se ESTRECHA al SA en vez de
+        //  cerrarse —a diferencia de `config`— porque el panel de
+        //  Facturacion la lee en cuatro sitios.
+        //
+        //  ⚠️ 5c ES LA IMPORTANTE. El SA con el TOKEN VIEJO (sin el claim
+        //  `role`) es un caso REAL en este proyecto, y es el que motivo toda
+        //  la PARTE 3. Si `billing_plans` dependiera solo del claim, ese SA
+        //  se quedaria fuera de su propio panel — y en SILENCIO, porque las
+        //  cuatro lecturas llevan `.catch(() => null)` y caen a los planes
+        //  por defecto. Aqui pasa por el CORREO, que resuelve la regla.
+        // ══════════════════════════════════════════════════════════════
+        { n: '5a · el SuperAdmin sigue leyendo los planes',
+          col: 'billing_plans', exp: 'ALLOW', auth: sa, doc: null,
+          method: 'get', existing: { code: 'pro', precio: 10 } },
+
+        { n: '5b · 🔒 un club_admin cualquiera ya NO puede volcarlos',
+          col: 'billing_plans', exp: 'DENY', auth: adminConClaims, doc: docAdmin,
+          method: 'get', existing: { code: 'pro', precio: 10 },
+          why: 'antes `read: if isAuth()` se lo daba a cualquier cuenta registrada' },
+
+        { n: '5c · ⚠️ y el SA con el TOKEN VIEJO entra por el correo',
+          col: 'billing_plans', exp: 'ALLOW', auth: saSinClaim, doc: null,
+          saEmails: ['sa@chronos.es'],
+          method: 'get', existing: { code: 'pro', precio: 10 },
+          why: 'sin esta via, un claim sin propagar dejaria al SA fuera de su panel y en silencio' },
     ];
 }
 
@@ -210,13 +279,15 @@ function casos() {
                 expectation: c.exp,
                 request: {
                     auth: c.auth,
-                    path: `${DB}/${c.col}/D1`,
+                    // `docId` deja fijar el id cuando la regla depende de EL
+                    // (p. ej. `configId != 'superadmins'`); por defecto, D1.
+                    path: `${DB}/${c.col}/${c.docId || 'D1'}`,
                     method: c.method,
                     time: iso(),
                     resource: c.entrante ? { data: c.entrante } : undefined,
                 },
                 resource: c.existing ? { data: c.existing } : undefined,
-                functionMocks: mocks(c.auth.uid, c.doc),
+                functionMocks: mocks(c.auth.uid, c.doc, c.saEmails),
                 pathEncoding: 'PLAIN',
             }));
             const r = await post(`https://firebaserules.googleapis.com/v1/projects/${PROJECT}:test`,

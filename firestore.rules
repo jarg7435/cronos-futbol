@@ -1965,9 +1965,35 @@ service cloud.firestore {
     // ============================================================
     // COLECCIÓN: config / cronos_config
     // ============================================================
+    // ══════════════════════════════════════════════════════════════════
+    //  🔒 SEC-L01 (Paso 2, auditoria 2026-08-31) · `config` CERRADA
+    //
+    //  Tenia `read: if isAuth()`. Como `isAuth()` NO mira `resource`, no
+    //  constrinye la consulta: cualquier cuenta podia hacer
+    //  `getDocs(collection('config'))` y llevarse la coleccion ENTERA. Es la
+    //  misma familia de defecto que cerro v633 en `invites` (`read` = `get` +
+    //  `list`), pero aqui ni siquiera hacia falta separarlos.
+    //
+    //  🔑 SE CIERRA ENTERA, LECTURA Y ESCRITURA, y no se acota: esta
+    //  coleccion esta MUERTA. Medido antes de tocar nada, que es lo que
+    //  convierte "no le encuentro consumidores" —argumento debil— en prueba:
+    //    · 0 referencias en TODO el cliente y en functions (ni `doc(db,
+    //      'config')` ni `collection(db, 'config')`, en ninguna forma).
+    //    · 0 documentos en PRODUCCION (Firestore REST, 2026-08-31).
+    //  Una coleccion sin documentos y sin lectores no necesita permisos.
+    //
+    //  ⚠️ SI ALGUN DIA HACE FALTA: no reabrir con `isAuth()`. Anyadir un
+    //  `allow get` del documento concreto que se necesite y dejar `list`
+    //  cerrado — un `read` amplio sobre una coleccion de configuracion es
+    //  justamente lo que se esta quitando aqui.
+    //
+    //  ⚠️ El SuperAdmin no pierde nada: escribia por `isSuperAdmin()`, y el
+    //  Admin SDK y la consola NO pasan por las reglas.
+    //
+    //  Guard: scripts/test_rules_no_direct_access.js (PARTE 4)
+    // ══════════════════════════════════════════════════════════════════
     match /config/{configId} {
-      allow read: if isAuth();
-      allow write: if isSuperAdmin();
+      allow read, write: if false;
     }
 
     // ══════════════════════════════════════════════════════════════════
@@ -2106,8 +2132,39 @@ service cloud.firestore {
     // ============================================================
     // COLECCIONES DE FACTURACIÓN
     // ============================================================
+    // ══════════════════════════════════════════════════════════════════
+    //  🔒 SEC-L02 (Paso 2, auditoria 2026-08-31) · `billing_plans`, solo el SA
+    //
+    //  Tenia `read: if isAuth()`. Como `isAuth()` no mira `resource`, no
+    //  constrinye la consulta: cualquier cuenta podia hacer
+    //  `getDocs(collection('billing_plans'))` y llevarse el catalogo
+    //  comercial entero.
+    //
+    //  ⚠️⚠️ AQUI **NO** SE CIERRA, A DIFERENCIA DE `config` (SEC-L01). Las dos
+    //  estaban vacias en produccion, pero vacia no es muerta: `config` no
+    //  tenia NI UN lector en el codigo y esta si tiene CUATRO, todos en
+    //  js/admin/superadmin/billing.js (316, 438, 492, 580) — el panel de
+    //  Facturacion. Cerrarla habria roto ese panel en cuanto el SA creara el
+    //  primer plan. 🔑 Antes de cerrar, mirar los LECTORES, no el contenido.
+    //
+    //  Ningun consumidor fuera del panel del SuperAdmin: ni el club ve aqui
+    //  su plan (lo lleva `clubs/{clubId}.plan`), ni las suscripciones ni las
+    //  facturas pasan por esta coleccion.
+    //
+    //  ⚠️ NO deja fuera al SA con el TOKEN VIEJO: `isSuperAdmin()` vale por
+    //  el claim `role` **o** por `isSuperAdminEmail()`, y ese `get()` lo hace
+    //  la REGLA — no depende del permiso de lectura del cliente. Es la misma
+    //  resistencia en la que se apoyo SEC-M02.
+    //
+    //  ⚠️ Y si esto se equivocara, FALLARIA EN SILENCIO: las cuatro lecturas
+    //  del panel llevan `.catch(() => null)` y caen a los planes por defecto,
+    //  asi que un permission-denied se veria como "no hay planes". Por eso el
+    //  guard lo comprueba EVALUANDO la regla y no mirando la pantalla.
+    //
+    //  Guard: scripts/test_rules_no_direct_access.js (PARTE 5)
+    // ══════════════════════════════════════════════════════════════════
     match /billing_plans/{planId} {
-      allow read: if isAuth();
+      allow read:  if isSuperAdmin();
       allow write: if isSuperAdmin();
     }
 
