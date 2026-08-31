@@ -1108,8 +1108,21 @@ window.billIndividualView = async function(containerId) {
     try {
         const { db, collection, getDocs, query, where } = await _billingFS();
         const me = window._cronosCurrentUser;
+        /* ⏳ AQUI SE QUEDABA CLAVADO EN «Cargando suscripción…».
+           Este `return` se iba SIN tocar el contenedor, que dos lineas antes
+           se habia puesto a «⏳ Cargando suscripción…». Resultado: ni error ni
+           contenido, el hilo cortado en silencio y el usuario mirando un
+           reloj de arena para siempre.
+           🔑 Su funcion HERMANA, `billClubView`, ya lo hacia bien —pinta «No
+           se encontró información del club» y sale—. Se escribieron distinto y
+           solo una de las dos cierra el hilo. Cuando un `return` temprano deja
+           puesto un cartel de «cargando», ese cartel es la interfaz final. */
         const uid = me?.uid;
-        if (!uid) return;
+        if (!uid) {
+            cont.innerHTML = `<div style="color:#8b949e;padding:1rem;font-size:0.85rem;">` +
+                             `No se pudo identificar tu cuenta. Vuelve a entrar e inténtalo de nuevo.</div>`;
+            return;
+        }
 
         const entityId = me?.individualEntityId || me?.clubId || uid;
 
