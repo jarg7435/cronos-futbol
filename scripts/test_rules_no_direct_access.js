@@ -322,7 +322,16 @@ function casos() {
           doc: docAdmin, method: 'get', existing: { vapidKey: 'x' },
           why: 'solo se lee al abrir el panel del SA (superadmin.panel.js:372)' },
 
-        { n: '6d · 🔑 el documento `acces` (con errata, REAL en produccion) queda denegado',
+        // ⚠️ `acces` YA NO EXISTE: se borro de produccion el 2026-09-01 tras
+        // comprobar que nadie lo leia y que su codigo no aparecia en el
+        // codigo fuente. Era el primer intento (7 de mayo, con errata en el
+        // id) y al dia siguiente se creo `access` bien escrito.
+        // 🔑 EL CASO SE QUEDA, y no es nostalgia: el `:test` SIMULA, asi que
+        // no necesita que el documento exista. Lo que fija es que un id
+        // CUALQUIERA fuera de la lista blanca se deniega — y ese id concreto
+        // es el ejemplo real de por que la lista negra no valia. Borrar la
+        // asercion al borrar el dato dejaria sin vigilancia la regla.
+        { n: '6d · 🔑 un id fuera de la lista blanca queda denegado (p.ej. el `acces` con errata)',
           col: 'cronos_config', docId: 'acces', exp: 'DENY', auth: adminConClaims,
           doc: docAdmin, method: 'get', existing: { basura: 1 },
           why: 'con la lista NEGRA era legible por cualquier cuenta: esto es lo que arregla la blanca' },
