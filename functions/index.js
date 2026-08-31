@@ -168,6 +168,51 @@ function _cuentaHabilitada(d) {
          d.status !== 'removed' && d.status !== 'blocked' && d.status !== 'rejected';
 }
 
+/* ══════════════════════════════════════════════════════════════════════
+   🔒 SEC-F01 (Paso 3, auditoria 2026-08-31) · UNA PLAZA VIVA SE PRUEBA,
+      NO SE PRESUME
+
+   Cinco sitios decidian con `r.isAuthorized !== false`. Eso es FAIL-OPEN, la
+   leccion de v617: en algo que AUTORIZA, «no se» se convierte en SI. Una
+   entrada de `allRoles` SIN el campo pasaba por autorizada.
+
+   🚨🚨 Y NO ERA TEORICO, porque el usuario PUEDE escribir su propio
+   `allRoles`: el `allow update` de `users/{userId}` prohibe tocar `role`,
+   `isAuthorized`, `status`, `clubId`… pero **`allRoles` no esta en esa
+   lista** (se dejo abierto a proposito para poder anyadir plazas
+   PENDIENTES). La cadena completa que esto cierra:
+
+     1. Ser director AUTORIZADO del club A.
+     2. Anyadirse a mano una entrada `{ clubId: 'CLUB_B' }` sin
+        `isAuthorized` — permitido por las reglas.
+     3. Llamar a `syncRootClubId({ clubId: 'CLUB_B' })`: su comprobacion
+        `isAuthorized !== false` daba VERDADERO sobre esa entrada.
+     4. La funcion escribe el `clubId` de la RAIZ con el Admin SDK, que NO
+        pasa por las reglas — justamente el campo que las reglas prohiben
+        que el usuario se cambie.
+     5. `isClubDirectorOf('CLUB_B')` lee la raiz y ya da VERDADERO:
+        **director de un club ajeno.**
+
+   🔑 SE ARREGLA EN UNA FUNCION Y NO EN CINCO SITIOS, para que el proximo
+   que pregunte por una plaza herede la regla sin acordarse de ella.
+
+   ⚠️ SE ADMITE EL ALIAS `authorized`, como ya hacia
+   `_callerHasClubPermission`: hay datos antiguos que lo usan y exigir solo
+   `isAuthorized` dejaria fuera plazas legitimas.
+
+   ⚠️ MEDIDO ANTES DE APRETAR (produccion, 2026-08-31): 13 entradas de
+   `allRoles` en 7 usuarios — 10 con `isAuthorized:true`, 3 con `false` y
+   **NINGUNA sin el campo**. O sea que pasar de `!== false` a `=== true` no
+   deja fuera ni una plaza legitima de las que hay hoy.
+
+   Guard: scripts/test_functions_plaza_viva.js
+   ══════════════════════════════════════════════════════════════════════ */
+function _plazaViva(r) {
+  return !!r &&
+         (r.isAuthorized === true || r.authorized === true) &&
+         r.status !== 'rejected' && r.status !== 'removed';
+}
+
 /* `esSA` llega YA RESUELTO desde el token (ver _esSuperAdmin). Esta funcion
    ya no decide sobre el rol de SuperAdmin por su cuenta. */
 function _callerHasClubPermission(callerDoc, targetClubId, esSA) {
@@ -1150,12 +1195,9 @@ exports.autoSetClaimsOnApproval = functions.firestore
     const clubId =
       after.clubId ||
       (Array.isArray(after.allRoles)
-        ? (after.allRoles.find(
-            (r) => r && r.clubId &&
-                   r.isAuthorized !== false &&
-                   r.status !== 'rejected' &&
-                   r.status !== 'removed'
-          ) || {}).clubId
+        // SEC-F01 · de aqui sale el `clubId` que va al CLAIM, o sea la raiz
+        // de la autorizacion. Una plaza sin `isAuthorized` no puede elegirlo.
+        ? (after.allRoles.find((r) => r && r.clubId && _plazaViva(r)) || {}).clubId
         : null);
 
     if (!role || !clubId) return;
@@ -1362,8 +1404,9 @@ exports.sendInviteEmail = functions
   const _habilitado = _cuentaHabilitada(_cd);
   /* Plaza VIVA de director o administrador de club (revocada no cuenta). */
   const _plazaStaff = (Array.isArray(_cd.allRoles) ? _cd.allRoles : []).find(
-    (r) => r && ['director', 'club_admin'].includes(r.role) &&
-           r.isAuthorized !== false && r.status !== 'rejected' && r.status !== 'removed'
+    // SEC-F01 · esta plaza decide quien puede invitar Y con la marca de que
+    // club: una entrada sin `isAuthorized` permitia invitar en nombre ajeno.
+    (r) => r && ['director', 'club_admin'].includes(r.role) && _plazaViva(r)
   ) || null;
   const _esStaffRaiz = _habilitado && ['director', 'club_admin'].includes(_cd.role);
   const _puedeInvitar = _esSA || _esStaffRaiz || (_habilitado && !!_plazaStaff);
@@ -1691,7 +1734,7 @@ exports.registerStaffUid = functions.https.onCall(async (data, context) => {
     }
 
     const hasRole = userData.role === role ||
-      (userData.allRoles || []).some(r => r.role === role && r.isAuthorized !== false && r.status !== 'rejected' && r.status !== 'removed');
+      (userData.allRoles || []).some(r => r.role === role && _plazaViva(r));   // SEC-F01
 
     if (!hasRole) {
       throw new functions.https.HttpsError('permission-denied', 'No tienes el rol ' + role);
@@ -1705,8 +1748,7 @@ exports.registerStaffUid = functions.https.onCall(async (data, context) => {
     const rootMatchesClub = userData.role === role &&
       userData.clubId != null && userData.clubId === clubId;
     const roleForClub = Array.isArray(userData.allRoles) && userData.allRoles.some(
-      (r) => r && r.role === role && r.clubId === clubId &&
-             r.isAuthorized !== false && r.status !== 'rejected' && r.status !== 'removed'
+      (r) => r && r.role === role && r.clubId === clubId && _plazaViva(r)   // SEC-F01
     );
 
     if (!rootMatchesClub && !roleForClub) {
@@ -1765,10 +1807,13 @@ exports.syncRootClubId = functions.https.onCall(async (data, context) => {
     const userData = userDoc.data() || {};
 
     // 1. La cuenta debe estar habilitada (mismo criterio que registerStaffUid).
-    if (userData.isAuthorized === false ||
-        userData.status === 'rejected' ||
-        userData.status === 'removed' ||
-        userData.status === 'blocked') {
+    /* 🔒 SEC-F01 · LA PUERTA TAMBIEN ERA FAIL-OPEN. Preguntaba
+       `isAuthorized === false`, asi que una cuenta con el campo AUSENTE
+       pasaba. Es la misma trampa de v617 en su otra forma: no basta con
+       descartar el NO, hay que exigir el SI. `_cuentaHabilitada` pide
+       `isAuthorized === true` y es la misma puerta que ya usan
+       registerStaffUid y sendInviteEmail — aqui faltaba. */
+    if (!_cuentaHabilitada(userData)) {
       throw new functions.https.HttpsError('permission-denied', 'Cuenta no habilitada');
     }
 
@@ -1778,10 +1823,11 @@ exports.syncRootClubId = functions.https.onCall(async (data, context) => {
     //    cliente proponga sin respaldo en el propio documento.
     const rootMatches = userData.clubId != null && userData.clubId === clubId;
     const roleMatches = Array.isArray(userData.allRoles) && userData.allRoles.some(
-      (r) => r && r.clubId === clubId &&
-             r.isAuthorized !== false &&
-             r.status !== 'rejected' &&
-             r.status !== 'removed'
+      // 🚨 SEC-F01 · ESTA ES LA GRAVE. Lo que sigue escribe el `clubId` de la
+      // RAIZ con el Admin SDK —el campo que las reglas prohiben que el usuario
+      // se cambie— y `isClubDirectorOf` lo lee para conceder permisos. Una
+      // entrada de `allRoles` escrita por el propio usuario abria el club ajeno.
+      (r) => r && r.clubId === clubId && _plazaViva(r)
     );
 
     if (!rootMatches && !roleMatches) {

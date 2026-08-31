@@ -608,8 +608,17 @@ function buildSandbox({ elements = {}, secMethod = 'email', hasFunctions = true,
         ok('17b · admite director y club_admin', /'director',\s*'club_admin'/.test(bloque));
         ok('17c · 🔑 mira allRoles, no sólo la raíz (en este proyecto la raíz va desfasada: v563, v581)',
            /allRoles/.test(bloque));
-        ok('17d · ⚠️ y descarta las plazas revocadas',
-           /status\s*!==\s*'removed'/.test(bloque) && /isAuthorized\s*!==\s*false/.test(bloque));
+        // ⚠️ SEC-F01 (2026-08-31) · ESTA ASERCION FIJABA LA FORMA VIEJA, y la
+        // forma vieja era el defecto: `isAuthorized !== false` es FAIL-OPEN
+        // (una plaza SIN el campo pasaba, y el usuario puede escribirse su
+        // propio `allRoles`). La comprobacion se mudo a `_plazaViva`, que
+        // exige `=== true`. Lo que 17d protege —que una plaza revocada no
+        // sirva para invitar— sigue vigente y ahora es MAS estricto.
+        // 🔑 Se reescribe apuntando al ayudante; su comportamiento lo prueba
+        // caso a caso scripts/test_functions_plaza_viva.js (PARTE 2).
+        ok('17d · ⚠️ y descarta las plazas revocadas (via _plazaViva, SEC-F01)',
+           /_plazaViva\(r\)/.test(bloque),
+           'si vuelve un `isAuthorized !== false` aqui, vuelve el fail-open');
         ok('17e · 🔑🔑 el club se IMPONE al que no es SuperAdmin (si no, el campo editable dejaría invitar en nombre de otro club)',
            /_esSA\s*\?\s*data\.clubName\s*:/.test(bloque));
         ok('17f · sigue exigiendo sesión', /if \(!context\.auth\)/.test(bloque));
