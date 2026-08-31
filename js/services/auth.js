@@ -912,13 +912,36 @@ export async function checkAuthorization(user) {
                 let indCollection = null;
 
                 try {
-                    const clubsSnap = await getDocs(collection(fa.db, 'clubs'));
-                    clubsSnap.forEach(d => {
-                        const c = d.data();
-                        if (c.type === 'individual' && (c.adminEmail === user.email || c.email === user.email)) {
-                            if (!indDoc) { indDoc = d; indData = c; indCollection = 'clubs'; }
-                        }
-                    });
+                    // ══════════════════════════════════════════════════
+                    //  🔒 SEC-L04 (Paso 2, 2026-08-31) · POR LO MIO, NO POR
+                    //     TODA LA COLECCION
+                    //
+                    //  Antes era `getDocs(collection(fa.db,'clubs'))` y el
+                    //  filtro se hacia en el cliente. Eso obligaba a que la
+                    //  regla dejase LISTAR todos los clubes a cualquier
+                    //  cuenta — y el documento lleva `adminEmail`.
+                    //
+                    //  🔑 DOS consultas, no una: el filtro original miraba
+                    //  `adminEmail` **o** `email`, y Firestore no tiene OR
+                    //  entre campos distintos. Perder el segundo dejaria sin
+                    //  encontrar su entidad a los individuales dados de alta
+                    //  con `email`, y el sintoma seria "no tengo panel".
+                    //
+                    //  ⚠️ El `type === 'individual'` se sigue comprobando
+                    //  AQUI, no en la consulta: anyadirlo como segundo
+                    //  `where` pediria un indice compuesto que no existe.
+                    // ══════════════════════════════════════════════════
+                    for (const campo of ['adminEmail', 'email']) {
+                        if (indDoc) break;
+                        const s = await getDocs(query(collection(fa.db, 'clubs'),
+                                                      where(campo, '==', user.email)));
+                        s.forEach(d => {
+                            const c = d.data();
+                            if (!indDoc && c.type === 'individual') {
+                                indDoc = d; indData = c; indCollection = 'clubs';
+                            }
+                        });
+                    }
                 } catch(_) {}
 
                 if (!indDoc) {

@@ -72,16 +72,38 @@ async function openClubAdminPanel(preClubId = null) {
     // Si el Club Admin no tiene clubId, intentar buscarlo en Firestore
     if (!clubId && !isSA) {
         try {
-            const clubsSnap = await getDocs(collection(db, 'clubs'));
-            const clubs = [];
-            clubsSnap.forEach(d => clubs.push({ id: d.id, ...d.data() }));
-
-            // Buscar club donde el usuario sea admin (por email o por uid)
-            const myClub = clubs.find(c =>
-                (c.adminEmail === me.email) ||
-                (c.adminUid === me.uid) ||
-                (c.createdBy === me.uid)
-            );
+            // ══════════════════════════════════════════════════════════
+            //  🔒 SEC-L04 (Paso 2, 2026-08-31) · SE PREGUNTA POR LO MIO,
+            //     NO SE DESCARGA LA COLECCION ENTERA
+            //
+            //  Antes esto era `getDocs(collection(db,'clubs'))` y el filtro
+            //  se hacia EN EL CLIENTE. Funcionaba, pero obligaba a que la
+            //  regla dejase LISTAR todos los clubes a cualquier cuenta — y
+            //  el documento de club lleva `adminEmail`, o sea el correo del
+            //  administrador de cada club de la plataforma.
+            //
+            //  🔑 Tres consultas FILTRADAS en vez de un barrido: cada una
+            //  pregunta por el mismo criterio que tenia el `find`, pero en
+            //  el servidor. Asi la regla puede exigir que la consulta venga
+            //  acotada al propio usuario, que es lo que impide el volcado.
+            //
+            //  ⚠️ EL ORDEN IMPORTA y es el de antes: adminEmail, adminUid,
+            //  createdBy. El `find` original paraba en la primera que casaba.
+            // ══════════════════════════════════════════════════════════
+            const _mias = [];
+            for (const [campo, valor] of [['adminEmail', me.email],
+                                          ['adminUid',   me.uid],
+                                          ['createdBy',  me.uid]]) {
+                if (!valor) continue;
+                try {
+                    const s = await getDocs(query(collection(db, 'clubs'), where(campo, '==', valor)));
+                    s.forEach(d => _mias.push({ id: d.id, ...d.data() }));
+                    if (_mias.length) break;   // el `find` paraba en la primera
+                } catch (qErr) {
+                    if (window._CRONOS_DEBUG) console.warn('[ClubAdmin] consulta por ' + campo + ':', qErr.message);
+                }
+            }
+            const myClub = _mias[0] || null;
             if (myClub) {
                 clubId = myClub.id;
                 // Actualizar el documento del usuario con el clubId
@@ -92,17 +114,18 @@ async function openClubAdminPanel(preClubId = null) {
                 } catch(updErr) {
                     if(window._CRONOS_DEBUG) if(window._CRONOS_DEBUG) console.warn('[ClubAdmin] No se pudo actualizar clubId en user doc:', updErr.message);
                 }
-            } else if (clubs.length === 1) {
-                // Si solo hay un club, asumir que es el suyo
-                clubId = clubs[0].id;
-                try {
-                    await updateDoc(doc(db, 'users', me.uid), { clubId: clubs[0].id, clubName: clubs[0].name || '' });
-                    me.clubId = clubs[0].id;
-                    me.clubName = clubs[0].name || '';
-                } catch(updErr2) {
-                    if(window._CRONOS_DEBUG) if(window._CRONOS_DEBUG) console.warn('[ClubAdmin] No se pudo actualizar clubId:', updErr2.message);
-                }
             }
+            // 🗑️ SEC-L04 · AQUI HABIA UN «si solo hay un club, asumir que es
+            //    el suyo», que ADIVINABA: cogia `clubs[0]` y le escribia ese
+            //    clubId al usuario en su documento. Se retira por dos razones,
+            //    y la primera basta:
+            //      1. Es una asignacion a ciegas. Un club_admin cuyo documento
+            //         de club no le nombre por ninguno de los tres campos
+            //         acababa metido en un club que puede no ser el suyo, y
+            //         encima PERSISTIDO con updateDoc.
+            //      2. Dependia de descargar la coleccion entera para saber que
+            //         solo habia uno — justo lo que este cambio elimina.
+            //    ⚠️ Hoy no se disparaba nunca: en produccion hay 5 clubes.
         } catch(findErr) {
             console.warn('[ClubAdmin] Error buscando club:', findErr.message);
         }
