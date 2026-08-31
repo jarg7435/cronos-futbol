@@ -213,6 +213,41 @@ function _plazaViva(r) {
          r.status !== 'rejected' && r.status !== 'removed';
 }
 
+/* ══════════════════════════════════════════════════════════════════════
+   🔒 SEC-F04 (Paso 4·1, auditoria 2026-08-31) · UNA PLAZA NO PUEDE
+      SEÑALAR A OTRO CLUB QUE EL DE LA RAIZ
+
+   SEC-F01 puso `_plazaViva` fail-closed, pero no bastaba: **el `true` de esa
+   entrada lo escribe el propio usuario**. El `allow update` de
+   `users/{userId}` protege claves de PRIMER NIVEL, y tocar `allRoles` solo
+   aparece como esa clave — las entradas llevan dentro su `role`, su `clubId`
+   y su `isAuthorized`.
+
+   🔑🔑 LO QUE SI ESTA PROTEGIDO ES EL `clubId` DE LA RAIZ: esta en la lista
+   de campos que el `allow update` prohibe cambiarse. Asi que atar la plaza a
+   el cierra la escalada CROSS-CLUB —la grave, la que convertia a un director
+   del club A en director del B— sin depender de ningun dato que haya que
+   sembrar antes.
+
+   ⚠️ MEDIDO ANTES DE ESCRIBIRLO (produccion, 2026-08-31): de las 10 plazas
+   autorizadas que existen, **las 10 tienen el mismo `clubId` que su raiz**.
+   Cero plazas cruzadas en datos reales. O sea que esto no le quita nada a
+   nadie: solo cierra la puerta a lo que no existe todavia.
+
+   ⏳ LO QUE ESTO **NO** CIERRA, y toca en el paso siguiente: el ROL dentro
+   del propio club. Un entrenador puede seguir declarandose `director` de SU
+   club. Eso es elevacion intra-club, y se cierra corroborando el rol contra
+   `clubs/{clubId}.directorUids` / `coordinatorUids` / `adminUid` — que hoy
+   estan VACIOS y hay que sembrar primero.
+
+   Guard: scripts/test_functions_plaza_viva.js (PARTE 3)
+   ══════════════════════════════════════════════════════════════════════ */
+function _plazaDeSuClub(userData, r) {
+  if (!_plazaViva(r)) return false;
+  const raiz = (userData && (userData.clubId || userData.individualEntityId)) || null;
+  return !!raiz && !!r.clubId && r.clubId === raiz;
+}
+
 /* `esSA` llega YA RESUELTO desde el token (ver _esSuperAdmin). Esta funcion
    ya no decide sobre el rol de SuperAdmin por su cuenta. */
 function _callerHasClubPermission(callerDoc, targetClubId, esSA) {
@@ -1197,6 +1232,17 @@ exports.autoSetClaimsOnApproval = functions.firestore
       (Array.isArray(after.allRoles)
         // SEC-F01 · de aqui sale el `clubId` que va al CLAIM, o sea la raiz
         // de la autorizacion. Una plaza sin `isAuthorized` no puede elegirlo.
+        // ⚠️ SEC-F04 · ESTE RESPALDO SE QUEDA, A PROPOSITO. Se quito y hubo
+        //    que devolverlo: `test_sec_c1_clubid.js` (2a/2b) documenta que el
+        //    trigger PUEBLA la raiz desde `allRoles`, y es la via de migracion
+        //    de los usuarios multi-rol. Quitarla es un cambio de conducta que
+        //    no toca en este paso.
+        //    🔑 Y su riesgo es BAJO: el `||` de arriba solo llega hasta aqui
+        //    cuando la raiz NO tiene club, y para eso hace falta una cuenta
+        //    ya autorizada sin `clubId` — estado que la aprobacion no produce
+        //    (requests-tab.js:399 lo escribe). Medido: ninguno de los 5
+        //    usuarios con plaza esta asi.
+        //    ⏳ Se atara al documento del club en el paso 3, cuando exista.
         ? (after.allRoles.find((r) => r && r.clubId && _plazaViva(r)) || {}).clubId
         : null);
 
@@ -1768,7 +1814,7 @@ exports.registerStaffUid = functions.https.onCall(async (data, context) => {
     }
 
     const hasRole = userData.role === role ||
-      (userData.allRoles || []).some(r => r.role === role && _plazaViva(r));   // SEC-F01
+      (userData.allRoles || []).some(r => r.role === role && _plazaDeSuClub(userData, r));   // SEC-F01+F04
 
     if (!hasRole) {
       throw new functions.https.HttpsError('permission-denied', 'No tienes el rol ' + role);
@@ -1782,7 +1828,10 @@ exports.registerStaffUid = functions.https.onCall(async (data, context) => {
     const rootMatchesClub = userData.role === role &&
       userData.clubId != null && userData.clubId === clubId;
     const roleForClub = Array.isArray(userData.allRoles) && userData.allRoles.some(
-      (r) => r && r.role === role && r.clubId === clubId && _plazaViva(r)   // SEC-F01
+      // SEC-F01+F04 · la plaza tiene que ser del club que dice la RAIZ, asi
+      // que `clubId` solo puede ser ese: no hay forma de registrarse como
+      // staff de un club ajeno escribiendose la entrada.
+      (r) => r && r.role === role && r.clubId === clubId && _plazaDeSuClub(userData, r)
     );
 
     if (!rootMatchesClub && !roleForClub) {
@@ -1855,14 +1904,32 @@ exports.syncRootClubId = functions.https.onCall(async (data, context) => {
     //    clubId raíz ya existente, o con algún allRoles[].clubId autorizado
     //    (escrito por el SA vía Admin SDK). NUNCA se confía en un clubId que el
     //    cliente proponga sin respaldo en el propio documento.
+    /* ══════════════════════════════════════════════════════════════
+       🚨🚨 SEC-F04 · AQUI EMPEZABA LA ESCALADA CROSS-CLUB, Y SE CIERRA
+       QUITANDO LA RAMA DE `allRoles`.
+
+       Esta funcion escribe el `clubId` de la RAIZ con el Admin SDK —el
+       campo que las reglas prohiben que el usuario se cambie— y
+       `isClubDirectorOf` lo lee para conceder permisos. Validaba «que el
+       clubId propuesto pertenece de verdad al usuario» mirando `allRoles`…
+       que es precisamente lo que el usuario SI puede escribirse. La cadena:
+       anyadirse `{clubId:'CLUB_B'}` → llamar aqui → la funcion escribe la
+       raiz → director del club B.
+
+       🔑 Ahora solo se acepta CONFIRMAR lo que la raiz ya dice. En la
+       practica la funcion queda inocua: no puede MOVER a nadie de club.
+
+       ⚠️ Era una via de MIGRACION (poblar la raiz desde `allRoles`, v183) y
+       esa via se pierde de momento. Medido: los 5 usuarios con plaza ya
+       tienen `clubId` en la raiz, asi que hoy no migra a nadie. Y las altas
+       nuevas lo escriben directamente al aprobar (requests-tab.js:399).
+
+       ⏳ SE RECUPERA EN EL PASO SIGUIENTE con una rama corroborada por el
+       DOCUMENTO DEL CLUB (`adminUid` / `directorUids` / `coordinatorUids`),
+       que hoy estan vacios. ⛔ No devolverla mirando `allRoles`.
+       ══════════════════════════════════════════════════════════════ */
     const rootMatches = userData.clubId != null && userData.clubId === clubId;
-    const roleMatches = Array.isArray(userData.allRoles) && userData.allRoles.some(
-      // 🚨 SEC-F01 · ESTA ES LA GRAVE. Lo que sigue escribe el `clubId` de la
-      // RAIZ con el Admin SDK —el campo que las reglas prohiben que el usuario
-      // se cambie— y `isClubDirectorOf` lo lee para conceder permisos. Una
-      // entrada de `allRoles` escrita por el propio usuario abria el club ajeno.
-      (r) => r && r.clubId === clubId && _plazaViva(r)
-    );
+    const roleMatches = false;
 
     if (!rootMatches && !roleMatches) {
       throw new functions.https.HttpsError(

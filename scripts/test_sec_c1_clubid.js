@@ -135,13 +135,44 @@ async function callSync(userDoc, data, ctxAuth) {
 }
 
 (async () => {
-    // 1a. clubId presente en allRoles autorizado → éxito, raíz poblada.
+    // ══════════════════════════════════════════════════════════════════
+    //  🚨 SEC-F04 (2026-08-31) · 1a FIJABA LA VIA POR LA QUE SE ESCALABA
+    //
+    //  Decia: «clubId presente en allRoles autorizado → éxito, raíz poblada».
+    //  Eso ERA el defecto. `allRoles` NO esta protegido por el `allow update`
+    //  de `users/{userId}` —solo lo estan las claves de primer nivel—, asi
+    //  que el propio usuario podia escribirse `{clubId:'CLUB_B',
+    //  isAuthorized:true}`, llamar aqui, y esta funcion le escribia el
+    //  `clubId` de la RAIZ con el Admin SDK. `isClubDirectorOf` lee esa raiz:
+    //  director de un club ajeno.
+    //
+    //  🔑 El caso se INVIERTE, no se borra: lo que antes tenia que pasar es
+    //  justo lo que ahora tiene que fallar. Y se conserva el camino legitimo
+    //  (confirmar el club que la raiz ya dice), para que quede claro que la
+    //  funcion sigue viva y no se ha desactivado por las bravas.
+    //
+    //  ⚠️ Medido en produccion antes de cambiarlo: las 10 plazas autorizadas
+    //  tienen el mismo `clubId` que su raiz, o sea que nadie dependia de esta
+    //  migracion. ⏳ Se recupera en el paso 3 con una rama corroborada por el
+    //  DOCUMENTO DEL CLUB. ⛔ No devolverla mirando `allRoles`.
+    // ══════════════════════════════════════════════════════════════════
+    {
+        const { result, error } = await callSync(
+            { isAuthorized: true, status: 'active', allRoles: [{ role: 'director', clubId: 'CLUB_B', isAuthorized: true }] },
+            { clubId: 'CLUB_B' });
+        ok('1a · 🔑🔑 una plaza SOLO en allRoles ya NO mueve la raíz (escalada cross-club)',
+           !!error && /no corresponde/i.test(error.message || ''),
+           'el usuario se escribe esa entrada él mismo: ' + (error ? error.message : 'NO HUBO ERROR'));
+    }
+    // 1a2. El camino legítimo: confirmar el club que la raíz ya dice.
     {
         const { store, result, error } = await callSync(
-            { isAuthorized: true, status: 'active', allRoles: [{ role: 'director', clubId: 'CLUB_A', isAuthorized: true }] },
+            { isAuthorized: true, status: 'active', clubId: 'CLUB_A',
+              allRoles: [{ role: 'director', clubId: 'CLUB_A', isAuthorized: true }] },
             { clubId: 'CLUB_A' });
-        ok('1a · clubId en allRoles autorizado → éxito', !error && result && result.success === true, error && error.message);
-        ok('1a · raíz users/U1.clubId === CLUB_A', store.users.U1.clubId === 'CLUB_A', JSON.stringify(store.users.U1));
+        ok('1a2 · …pero confirmar el club que YA dice la raíz sigue funcionando',
+           !error && result && result.success === true, error && error.message);
+        ok('1a2 · y la raíz sigue en CLUB_A', store.users.U1.clubId === 'CLUB_A', JSON.stringify(store.users.U1));
     }
 
     // 1b. clubId AJENO (no está en allRoles ni en raíz) → permission-denied.
