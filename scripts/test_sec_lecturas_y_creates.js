@@ -79,8 +79,20 @@ const REGLAS_HOY = fs.readFileSync(path.join(ROOT, 'firestore.rules'), 'utf8');
 
 // Cada parche, y como se revierte para reconstruir el ruleset vulnerable.
 const PARCHES = [
+    // ⚠️ SEC-L03 (2026-08-31) SUSTITUYO LA FORMA DEL PARCHE, no lo quito.
+    // SEC-M02 cerraba `superadmins` con una LISTA NEGRA (`configId !=`), y el
+    // Paso 2 le dio la vuelta a lista BLANCA: se enumera lo que si hace falta
+    // (`access` para todos, `push` solo SA) y lo demas queda denegado por
+    // omision. El `antes` NO cambia: sigue siendo el ruleset vulnerable con el
+    // que se comprueba que el parche hace algo.
+    // 🔑 Se actualiza el testigo en vez de borrar el caso: lo que esta
+    // asercion protege —que `superadmins` no lo lea cualquier autenticado—
+    // sigue vigente, y ahora ademas por partida doble.
     { nombre: 'SEC-M02 · cronos_config',
-      hoy: "      allow read: if isAuth() && configId != 'superadmins';",
+      hoy: "      allow get: if isAuth() && (\n" +
+           "                   configId == 'access' ||\n" +
+           "                   (configId == 'push' && isSuperAdmin())\n" +
+           "                 );",
       antes: '      allow read: if isAuth();' },
     { nombre: 'SEC-M01 · notifications',
       hoy: '      allow create: if isSuperAdmin();\n      allow update: if isAuth() && (\n        isSuperAdmin() ||\n        request.auth.uid == resource.data.get(\'userId\', null)\n      );\n      allow delete: if isSuperAdmin();',

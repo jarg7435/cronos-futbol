@@ -225,10 +225,18 @@ function casos() {
           method: 'create', entrante: { cualquiera: 1 },
           why: 'esta muerta: 0 documentos en produccion y 0 lectores en el codigo' },
 
-        { n: '4c · ⚠️ y la VECINA `cronos_config/push` se sigue leyendo',
-          col: 'cronos_config', docId: 'push', exp: 'ALLOW', auth: adminConClaims,
-          doc: docAdmin, method: 'get', existing: { vapidKey: 'x' },
-          why: 'la lee push-superadmin.js con cualquier sesion: cerrarla romperia el aviso' },
+        // ⚠️ TESTIGO CAMBIADO (SEC-L03, el mismo dia). 4c usaba
+        // `cronos_config/push`, que entonces leia cualquier sesion. SEC-L03 lo
+        // restringio al SuperAdmin y esta asercion se puso roja: correcta al
+        // escribirla, invalidada por MI PROPIO cambio una hora despues.
+        // 🔑 Su PROPOSITO no cambia —comprobar que no se cerro la coleccion
+        // VECINA por equivocacion al cerrar `config`—, solo el testigo: ahora
+        // es `access`, que es el que tiene que seguir abierto a cualquier
+        // sesion. Se REESCRIBE, no se borra.
+        { n: '4c · ⚠️ y la VECINA `cronos_config/access` se sigue leyendo',
+          col: 'cronos_config', docId: 'access', exp: 'ALLOW', auth: adminConClaims,
+          doc: docAdmin, method: 'get', existing: { code: '1234' },
+          why: 'lo lee app-init.js en el arranque: cerrar la vecina dejaria a todos fuera' },
 
         // ══════════════════════════════════════════════════════════════
         //  PARTE 5 · SEC-L02 · `billing_plans` solo para el SuperAdmin
@@ -259,6 +267,49 @@ function casos() {
           saEmails: ['sa@chronos.es'],
           method: 'get', existing: { code: 'pro', precio: 10 },
           why: 'sin esta via, un claim sin propagar dejaria al SA fuera de su panel y en silencio' },
+
+        // ══════════════════════════════════════════════════════════════
+        //  PARTE 6 · SEC-L03 · `cronos_config`, de lista NEGRA a BLANCA
+        //
+        //  SEC-M02 cerro `superadmins` excluyendo su id. Una lista negra
+        //  concede todo lo que nadie se acordo de prohibir: cada documento
+        //  nuevo nacia legible por cualquier cuenta. Ahora se enumera lo que
+        //  SI hace falta —`access` para todos, `push` solo para el SA— y lo
+        //  demas queda denegado por omision.
+        //
+        //  ⚠️ 6d ES LA PRUEBA DE QUE LA LISTA BLANCA FUNCIONA. `acces` (sin
+        //  la segunda `s`) EXISTE en produccion junto al `access` bueno y no
+        //  lo lee nadie. Con la lista negra era legible. Es el caso exacto
+        //  que motivo darle la vuelta al criterio, y por eso se fija con un
+        //  documento REAL y no inventado.
+        //
+        //  ⚠️ 6e: `superadmins` es la raiz de confianza de
+        //  isSuperAdminEmail(). Tiene que seguir cerrado por ESTE comodin,
+        //  porque las reglas SE SUMAN y el bloque especifico no lo anula.
+        // ══════════════════════════════════════════════════════════════
+        { n: '6a · `access` lo sigue leyendo cualquier sesion (codigo de acceso)',
+          col: 'cronos_config', docId: 'access', exp: 'ALLOW', auth: adminConClaims,
+          doc: docAdmin, method: 'get', existing: { code: '1234' },
+          why: 'lo lee app-init.js en el arranque: cerrarlo dejaria a todos fuera' },
+
+        { n: '6b · `push` SOLO el SuperAdmin',
+          col: 'cronos_config', docId: 'push', exp: 'ALLOW', auth: sa, doc: null,
+          method: 'get', existing: { vapidKey: 'x' } },
+
+        { n: '6c · 🔒 …y un club_admin ya NO lo lee',
+          col: 'cronos_config', docId: 'push', exp: 'DENY', auth: adminConClaims,
+          doc: docAdmin, method: 'get', existing: { vapidKey: 'x' },
+          why: 'solo se lee al abrir el panel del SA (superadmin.panel.js:372)' },
+
+        { n: '6d · 🔑 el documento `acces` (con errata, REAL en produccion) queda denegado',
+          col: 'cronos_config', docId: 'acces', exp: 'DENY', auth: adminConClaims,
+          doc: docAdmin, method: 'get', existing: { basura: 1 },
+          why: 'con la lista NEGRA era legible por cualquier cuenta: esto es lo que arregla la blanca' },
+
+        { n: '6e · ⚠️ `superadmins` sigue cerrado por el comodin (las reglas SE SUMAN)',
+          col: 'cronos_config', docId: 'superadmins', exp: 'DENY', auth: adminConClaims,
+          doc: docAdmin, method: 'get', existing: { emails: ['sa@chronos.es'] },
+          why: 'es la raiz de confianza de isSuperAdminEmail(): el agujero de SEC-M02' },
     ];
 }
 

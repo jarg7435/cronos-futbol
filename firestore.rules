@@ -2018,8 +2018,52 @@ service cloud.firestore {
     //  lee el documento con `get()` DESDE LAS REGLAS, que no depende del
     //  permiso de lectura del cliente: la autorizacion del SA sigue intacta.
     // ══════════════════════════════════════════════════════════════════
+    // ══════════════════════════════════════════════════════════════════
+    //  🔒 SEC-L03 (Paso 2, auditoria 2026-08-31) · DE LISTA NEGRA A BLANCA
+    //
+    //  SEC-M02 (justo arriba) cerro el agujero EXCLUYENDO un id:
+    //  `configId != 'superadmins'`. Funciono, pero deja el criterio al reves
+    //  del que toca — una LISTA NEGRA concede todo lo que nadie se acordo de
+    //  prohibir. Cualquier documento nuevo de esta coleccion nacia legible
+    //  por cualquier cuenta sin que nadie decidiera nada.
+    //
+    //  👉 Se le da la vuelta: se enumera lo que SI hace falta. MEDIDO, no
+    //  supuesto — estos son TODOS los lectores del cliente:
+    //    · `access` → app-init.js:41, el codigo de acceso. Lo necesita
+    //                 CUALQUIER sesion: se queda abierto a autenticados.
+    //    · `push`   → push-superadmin.js:253, la clave VAPID. Solo se lee al
+    //                 abrir el panel del SA (`cronosPushArrancar` se llama
+    //                 UNICAMENTE desde superadmin.panel.js:372) → solo SA.
+    //    · `superadmins` → su bloque de abajo. Sigue solo para el SA.
+    //  Cualquier otro id queda DENEGADO por omision, que es lo que se busca.
+    //
+    //  🔑 Y `get` EN VEZ DE `read`, que es la otra mitad: `read` = `get` +
+    //  `list`. Nadie hace `collection('cronos_config')` en todo el codigo, o
+    //  sea que el `list` no le hace falta a nadie y no se concede. Misma
+    //  disciplina que v633 en `invites`.
+    //
+    //  ⚠️ ESTO TAPA UN DOCUMENTO REAL: en produccion hay un `acces` —sin la
+    //  segunda `s`— junto al `access` bueno. No lo lee NADIE (0 referencias).
+    //  Con la lista negra era legible; con la blanca ya no. Borrarlo es
+    //  aparte: eso es dato, no regla.
+    //
+    //  ⚠️ NO ROMPE EL ARRANQUE: `loadAccessCode` conserva su via, y el
+    //  `permission-denied` de antes del login se sigue tratando como el caso
+    //  normal (app-init.js:47). Tampoco toca al SA: `isSuperAdminEmail()` lee
+    //  `superadmins` con un `get()` DESDE LAS REGLAS, que no depende del
+    //  permiso de lectura del cliente.
+    //
+    //  ⚠️ RECORDATORIO DE SEC-M02: las reglas SE SUMAN. El bloque especifico
+    //  de abajo NO anula a este comodin — por eso la puerta de `superadmins`
+    //  tiene que seguir cerrada AQUI, y ahora lo esta por omision.
+    //
+    //  Guard: scripts/test_rules_no_direct_access.js (PARTE 6)
+    // ══════════════════════════════════════════════════════════════════
     match /cronos_config/{configId} {
-      allow read: if isAuth() && configId != 'superadmins';
+      allow get: if isAuth() && (
+                   configId == 'access' ||
+                   (configId == 'push' && isSuperAdmin())
+                 );
       allow write: if isSuperAdmin();
     }
 
