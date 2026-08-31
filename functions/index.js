@@ -240,12 +240,59 @@ function _plazaViva(r) {
    `clubs/{clubId}.directorUids` / `coordinatorUids` / `adminUid` — que hoy
    estan VACIOS y hay que sembrar primero.
 
-   Guard: scripts/test_functions_plaza_viva.js (PARTE 3)
+   🗑️ EL AYUDANTE `_plazaDeSuClub` VIVIA AQUI Y SE HA RETIRADO. Hizo su
+   trabajo: ato la plaza al club de la raiz y cerro la escalada cross-club
+   mientras no existia el dato del club. SEC-F05 (Paso 4·3) lo SUPERA con un
+   criterio mas estricto —la raiz sola, o el documento del club— y lo dejo
+   sin un solo consumidor. Codigo muerto que dice «yo decido» es peor que
+   ninguno: quien lo leyera creeria que `allRoles` todavia autoriza algo.
+   ⚠️ Si algun dia vuelve a hacer falta consultar `allRoles` para decidir,
+   NO se reescribe esto: se corrobora contra `clubs/{clubId}` (SEC-F05).
    ══════════════════════════════════════════════════════════════════════ */
-function _plazaDeSuClub(userData, r) {
-  if (!_plazaViva(r)) return false;
-  const raiz = (userData && (userData.clubId || userData.individualEntityId)) || null;
-  return !!raiz && !!r.clubId && r.clubId === raiz;
+
+/* ══════════════════════════════════════════════════════════════════════
+   🔒 SEC-F05 (Paso 4·3, auditoria 2026-08-31) · EL ROL SE CORROBORA CONTRA
+      EL DOCUMENTO DEL CLUB
+
+   SEC-F04 ato la plaza al `clubId` de la RAIZ y con eso cerro la escalada
+   CROSS-CLUB. Lo que quedaba abierto era el ROL dentro del propio club: un
+   entrenador podia declararse `director` de SU club escribiendose la entrada
+   en `allRoles`, que no esta protegido por el `allow update`.
+
+   🔑 AHORA YA SE PUEDE CERRAR, porque el dato existe. `clubs/{clubId}` solo
+   lo escriben el SuperAdmin, el admin de ese club y el Admin SDK — nunca un
+   usuario cualquiera. El backfill del Paso 4·2 lo sembro: la corroboracion
+   de plazas paso de 4/10 a 10/10.
+
+   ⚠️ FALLA HACIA EL NO. Si el club no existe o la lectura peta,
+   `_clubDeLaRaiz` devuelve null y `_clubCorrobora` da false. Es un cambio
+   respecto al `!dato ||` de v617: aqui «no se» significa NO.
+
+   ⚠️ `user` (entrenador) NO SE CORROBORA y no hace falta: es el rol base, no
+   eleva nada, y el backfill no lo sembro a proposito. Solo se corroboran los
+   tres que conceden: club_admin, director y coordinator.
+
+   Guard: scripts/test_functions_plaza_viva.js (PARTE 4)
+   ══════════════════════════════════════════════════════════════════════ */
+async function _clubDeLaRaiz(userData) {
+  const id = (userData && (userData.clubId || userData.individualEntityId)) || null;
+  if (!id) return null;
+  try {
+    const s = await admin.firestore().collection('clubs').doc(id).get();
+    return s.exists ? Object.assign({ id: id }, s.data() || {}) : null;
+  } catch (e) {
+    console.warn('[SEC-F05] no se pudo leer clubs/' + id + ':', e.message);
+    return null;   // sin dato no se corrobora nada
+  }
+}
+
+function _clubCorrobora(club, uid, roles) {
+  if (!club || !uid || !Array.isArray(roles)) return false;
+  const enLista = (campo) => Array.isArray(club[campo]) && club[campo].indexOf(uid) !== -1;
+  return roles.some((r) =>
+    (r === 'club_admin'  && club.adminUid === uid) ||
+    (r === 'director'    && enLista('directorUids')) ||
+    (r === 'coordinator' && enLista('coordinatorUids')));
 }
 
 /* `esSA` llega YA RESUELTO desde el token (ver _esSuperAdmin). Esta funcion
@@ -1482,7 +1529,16 @@ exports.sendInviteEmail = functions
   const _tk = (context.auth && context.auth.token) || {};
   const _esStaffRaiz = _habilitado && ['director', 'club_admin'].includes(_cd.role);
   const _esStaffClaim = ['director', 'club_admin'].includes(_tk.role || '');
-  const _puedeInvitar = _esSA || _esStaffRaiz || _esStaffClaim;
+  /* 🌱 SEC-F05 · TERCERA VIA, Y DEVUELVE LO QUE SEC-F03 QUITO. Al cerrar la
+     puerta de `allRoles` se quedaron sin invitar 6 plazas legitimas que solo
+     vivian ahi (medido: 4 de 10 las corroboraba la raiz). El backfill del
+     Paso 4·2 sembro el documento del club, asi que ahora se les puede
+     reconocer por una fuente que ellos NO escriben.
+     ⚠️ El club candidato es el de la RAIZ (SEC-F04): una sola lectura, y no
+     hay forma de senyalar a otro. */
+  const _clubRaiz = _habilitado ? await _clubDeLaRaiz(_cd) : null;
+  const _corroboradoPorClub = _clubCorrobora(_clubRaiz, context.auth.uid, ['club_admin', 'director']);
+  const _puedeInvitar = _esSA || _esStaffRaiz || _esStaffClaim || _corroboradoPorClub;
 
   if (!callerDoc.exists || !_puedeInvitar) {
     /* Mensaje que dice QUE pasa, para que el cliente no tenga que adivinar. */
@@ -1496,7 +1552,10 @@ exports.sendInviteEmail = functions
      SEC-F03 · sale de la RAIZ, que el usuario no puede escribir. Ya NO se
      acepta el `clubName` de una plaza de `allRoles`: era la via por la que
      se invitaba en nombre de otro club. */
-  const _clubPropio = _esSA ? null : (_cd.clubName || null);
+  /* SEC-F05 · si la raiz no trae `clubName`, se usa el NOMBRE DEL DOCUMENTO
+     DEL CLUB que acaba de corroborar al invitante. Sigue sin aceptarse nada
+     del cliente: las dos fuentes son de escritura ajena al usuario. */
+  const _clubPropio = _esSA ? null : (_cd.clubName || (_clubRaiz && _clubRaiz.name) || null);
 
   /* ==================================================================== */
   /* 🛡️ SEC-DEP1 (auditoria 2026-08-26) · SANEADO DE CABECERAS DE CORREO   */
@@ -1813,8 +1872,24 @@ exports.registerStaffUid = functions.https.onCall(async (data, context) => {
       throw new functions.https.HttpsError('permission-denied', 'Cuenta no habilitada');
     }
 
-    const hasRole = userData.role === role ||
-      (userData.allRoles || []).some(r => r.role === role && _plazaDeSuClub(userData, r));   // SEC-F01+F04
+    /* ══════════════════════════════════════════════════════════════
+       🔁 SEC-F05 · SE ROMPE UNA CIRCULARIDAD, y por eso aqui NO se usa la
+       corroboracion por el documento del club.
+
+       Esta funcion es la que ESCRIBE `directorUids`/`coordinatorUids`, que
+       desde SEC-F05 son la fuente que corrobora el rol. Si decidiera mirando
+       `allRoles` —que el usuario escribe—, el camino seria: me anyado la
+       plaza → llamo aqui → me meto en `directorUids` → y a partir de ahi
+       quedo "corroborado" por una lista en la que me he metido yo. La fuente
+       de verdad no puede ser escribible a partir de lo que ella misma
+       corrobora.
+
+       🔑 Por eso el unico criterio es la RAIZ, que el `allow update` protege.
+       Quien tenga plazas legitimas que solo viven en `allRoles` YA esta en
+       las listas: lo hizo el backfill del Paso 4·2, con confirmacion del
+       SuperAdmin, que es quien debe concederlas.
+       ══════════════════════════════════════════════════════════════ */
+    const hasRole = userData.role === role;
 
     if (!hasRole) {
       throw new functions.https.HttpsError('permission-denied', 'No tienes el rol ' + role);
@@ -1827,12 +1902,10 @@ exports.registerStaffUid = functions.https.onCall(async (data, context) => {
     // ahora que el rol este ligado a ESE clubId (raiz o allRoles autorizado).
     const rootMatchesClub = userData.role === role &&
       userData.clubId != null && userData.clubId === clubId;
-    const roleForClub = Array.isArray(userData.allRoles) && userData.allRoles.some(
-      // SEC-F01+F04 · la plaza tiene que ser del club que dice la RAIZ, asi
-      // que `clubId` solo puede ser ese: no hay forma de registrarse como
-      // staff de un club ajeno escribiendose la entrada.
-      (r) => r && r.role === role && r.clubId === clubId && _plazaDeSuClub(userData, r)
-    );
+    // 🔁 SEC-F05 · misma razon que arriba: la lista que esta funcion ESCRIBE
+    // no puede autorizarse desde `allRoles`. Solo la RAIZ decide, y ella ya
+    // exige el clubId en `rootMatchesClub`.
+    const roleForClub = false;
 
     if (!rootMatchesClub && !roleForClub) {
       throw new functions.https.HttpsError('permission-denied', 'No tienes el rol ' + role + ' en ese club (cross-club)');
@@ -1924,12 +1997,28 @@ exports.syncRootClubId = functions.https.onCall(async (data, context) => {
        tienen `clubId` en la raiz, asi que hoy no migra a nadie. Y las altas
        nuevas lo escriben directamente al aprobar (requests-tab.js:399).
 
-       ⏳ SE RECUPERA EN EL PASO SIGUIENTE con una rama corroborada por el
-       DOCUMENTO DEL CLUB (`adminUid` / `directorUids` / `coordinatorUids`),
-       que hoy estan vacios. ⛔ No devolverla mirando `allRoles`.
+       ✅ SEC-F05 (Paso 4·3) · LA MIGRACION VUELVE, PERO CORROBORADA. Ya no
+       se pregunta a `allRoles` sino al DOCUMENTO DEL CLUB, que el usuario no
+       escribe. Asi se recupera lo que la funcion existia para hacer —poblar
+       la raiz de un multi-rol— sin devolver el agujero.
+       ⛔ Si esto vuelve a mirar `allRoles`, vuelve la escalada.
        ══════════════════════════════════════════════════════════════ */
     const rootMatches = userData.clubId != null && userData.clubId === clubId;
-    const roleMatches = false;
+    let roleMatches = false;
+    if (!rootMatches) {
+      /* ⚠️ Se lee el club QUE PIDE, no el de la raiz: aqui la raiz puede
+         estar vacia —es justo el caso que se quiere migrar—, asi que el
+         anclaje no puede ser ella. Lo es el documento del club, que solo
+         escriben el SA, el admin de ese club y el Admin SDK. */
+      let clubPedido = null;
+      try {
+        const s = await admin.firestore().collection('clubs').doc(clubId).get();
+        clubPedido = s.exists ? Object.assign({ id: clubId }, s.data() || {}) : null;
+      } catch (e) {
+        console.warn('[syncRootClubId] no se pudo leer clubs/' + clubId + ':', e.message);
+      }
+      roleMatches = _clubCorrobora(clubPedido, uid, ['club_admin', 'director', 'coordinator']);
+    }
 
     if (!rootMatches && !roleMatches) {
       throw new functions.https.HttpsError(

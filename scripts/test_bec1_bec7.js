@@ -41,7 +41,17 @@ ok('coordinator de C -> clubId C: ALLOW',
 // verifica que el codigo fuente ya NO usa solo hasRole para autorizar
 ok('fuente contiene rootMatchesClub', /rootMatchesClub/.test(src));
 ok('fuente contiene roleForClub', /roleForClub/.test(src));
-ok('fuente valida r.clubId === clubId', /r\.clubId === clubId/.test(src));
+// ⚠️ SEC-F05 (2026-08-31) · esta asercion exigia `r.clubId === clubId`, o sea
+// que la rama de `allRoles` comparase el club. Ya NO hay rama de `allRoles`:
+// `roleForClub` es `false` fijo y solo decide la RAIZ. La proteccion de BE-C1
+// —no registrarse como staff de un club ajeno— pasa de estar ACOTADA a ser
+// ABSOLUTA, asi que se comprueba eso en vez del patron viejo.
+// 🔑 El motivo de cerrarla del todo es una CIRCULARIDAD: esta funcion escribe
+// `directorUids`, que desde SEC-F05 es la lista que corrobora el rol. Si se
+// autorizara desde `allRoles` —que el usuario escribe—, uno se mete solo en la
+// lista y a partir de ahi queda "corroborado" por ella.
+ok('fuente: roleForClub ya no sale de allRoles (BE-C1 absoluto)',
+   /const roleForClub = false;/.test(src) && !/r\.clubId === clubId/.test(src));
 
 // ---------- BE-C7: whitelist de acciones ----------
 const ALLOWED = ['goal','goal_cancelled','card','yellow_card','red_card','red_card_reversed','injury','substitute','substitution','formation_change','actions_cleared'];

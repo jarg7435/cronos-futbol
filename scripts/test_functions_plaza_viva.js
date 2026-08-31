@@ -64,27 +64,35 @@ console.log('\n1) 🔓 No queda ni un fail-open');
     // aparezca 2 veces (su definicion y esa llamada) es la forma de comprobar
     // que nadie se ha saltado el ayudante nuevo para volver a la version
     // suelta, que no ata la plaza a ningun club.
-    // Esperadas 3: la definicion, la llamada desde `_plazaDeSuClub`, y UNA
-    // excepcion deliberada — el respaldo del trigger `autoSetClaimsOnApproval`.
-    // ⚠️ Esa excepcion se intento quitar y hubo que devolverla:
-    // `test_sec_c1_clubid.js` (2a/2b) documenta que el trigger PUEBLA la raiz
-    // desde `allRoles`, y es la via de migracion de los multi-rol. Su riesgo
-    // es bajo (solo se llega ahi cuando la raiz no tiene club, estado que la
-    // aprobacion no produce) y se atara al documento del club en el paso 3.
-    // 🔑 Que el numero sea EXACTO es lo que hace que una cuarta llamada suelta
-    // —alguien saltandose `_plazaDeSuClub`— ponga esto rojo.
+    // 🔑🔑 EL INVARIANTE FUERTE, y sustituye a contar `_plazaViva`: ¿cuantos
+    // sitios del codigo MIRAN `allRoles` para decidir algo? Tras SEC-F05 debe
+    // quedar UNO SOLO, el respaldo del trigger `autoSetClaimsOnApproval`.
+    // ⚠️ Ese se intento quitar y hubo que devolverlo: `test_sec_c1_clubid.js`
+    // (2a/2b) documenta que el trigger PUEBLA la raiz desde `allRoles` y es la
+    // via de migracion de los multi-rol; su riesgo es bajo, porque solo se
+    // llega ahi cuando la raiz no tiene club, estado que la aprobacion no
+    // produce.
+    // Contar `allRoles` en CODIGO —no `_plazaViva`— caza tambien a quien lo
+    // consulte a mano sin pasar por ningun ayudante, que es como volveria el
+    // agujero.
+    // ⚠️ SE CUENTA `_plazaViva`, NO `allRoles`. Contar `allRoles` a secas da
+    // 23: el fichero lo usa por todas partes para cosas legitimas —escribirlo
+    // al aprobar, filtrar listas, archivar— y ninguna de esas AUTORIZA. El
+    // ayudante es el que marca «esto decide», asi que es lo que hay que contar.
+    // Esperadas 2: su definicion y el respaldo del trigger.
     const usosViva = (CODE.match(/_plazaViva\(/g) || []).length;
-    ok('1d · 🔑🔑 `_plazaViva` no se usa suelto salvo la excepcion del trigger',
-       usosViva === 3,
-       'apariciones de _plazaViva(): ' + usosViva + ' (esperadas 3: definicion + _plazaDeSuClub + trigger)');
+    ok('1d · 🔑🔑 solo UN sitio AUTORIZA mirando `allRoles` (el trigger)',
+       usosViva === 2,
+       'apariciones de _plazaViva(): ' + usosViva + ' (esperadas 2: definicion + trigger)');
 
-    ok('1e · y los consumidores de `allRoles` pasan por `_plazaDeSuClub`',
-       (CODE.match(/_plazaDeSuClub\(/g) || []).length >= 3,
-       'definicion + los dos puntos de registerStaffUid');
-
-    ok('1f · 🚨 `syncRootClubId` ya NO mira `allRoles` para decidir el club',
-       /const roleMatches = false;/.test(CODE),
+    ok('1e · 🚨 `syncRootClubId` no decide por `allRoles`…',
+       !/roleMatches = .*allRoles/.test(CODE),
        'era el arranque de la escalada cross-club: escribe el clubId de la RAIZ');
+
+    ok('1f · …y `registerStaffUid` tampoco (rompe la CIRCULARIDAD)',
+       /const roleForClub = false;/.test(CODE) && /const hasRole = userData\.role === role;/.test(CODE),
+       'es la funcion que ESCRIBE directorUids, la lista que ahora corrobora: ' +
+       'si se autorizara desde allRoles, uno se mete solo y queda "corroborado"');
 }
 
 // ════════════════════════════════════════════════════════════════════
@@ -130,34 +138,39 @@ console.log('\n2) 🔬 Y `_plazaViva` se COMPORTA como dice');
 //  de OTRO club no vale. Era la que convertia a un director del club A en
 //  director del B por `syncRootClubId`.
 // ════════════════════════════════════════════════════════════════════
-console.log('\n3) 🔒 SEC-F04 · la plaza tiene que ser del club de la RAIZ');
+//  SEC-F05 · el ROL se corrobora contra el DOCUMENTO DEL CLUB, que solo
+//  escriben el SuperAdmin, el admin de ese club y el Admin SDK. Es lo que
+//  permite cerrar la elevacion INTRA-club que SEC-F04 dejaba abierta: un
+//  entrenador declarandose `director` de SU propio club.
+//
+//  ⚠️ 3b y 3c son las del hallazgo: no basta con estar en el documento, hay
+//  que estar en la LISTA DE ESE ROL. Confundirlas daria a cualquier
+//  coordinador los permisos de director.
+console.log('\n3) 🔒 SEC-F05 · el rol se corrobora contra el documento del club');
 {
-    const mv = SRC.match(/function _plazaViva\(r\) \{[\s\S]*?\n\}/);
-    const md = SRC.match(/function _plazaDeSuClub\(userData, r\) \{[\s\S]*?\n\}/);
-    if (!mv || !md) { ok('3· se pudieron extraer los dos ayudantes', false); }
+    const m = SRC.match(/function _clubCorrobora\(club, uid, roles\) \{[\s\S]*?\n\}/);
+    if (!m) { ok('3· se pudo extraer _clubCorrobora', false); }
     else {
         const sb = {}; vm.createContext(sb);
-        vm.runInContext(mv[0] + '\n' + md[0] + '\nthis.f = _plazaDeSuClub;', sb);
+        vm.runInContext(m[0] + '\nthis.f = _clubCorrobora;', sb);
         const f = sb.f;
-        const VIVA = { isAuthorized: true, status: 'active' };
+        const CLUB = { id: 'CLUB_A', adminUid: 'U_ADMIN',
+                       directorUids: ['U_DIR'], coordinatorUids: ['U_COO'] };
         const casos = [
-            ['3a · plaza viva EN el club de la raiz → si',
-             { clubId: 'CLUB_A' }, Object.assign({ role: 'director', clubId: 'CLUB_A' }, VIVA), true],
-            ['3b · 🔑🔑 plaza viva de OTRO club → NO (la escalada cross-club)',
-             { clubId: 'CLUB_A' }, Object.assign({ role: 'director', clubId: 'CLUB_B' }, VIVA), false,
-             'aunque el usuario se haya escrito isAuthorized:true, el club de la raiz no lo respalda'],
-            ['3c · ⚠️ raiz SIN club → no vale ninguna (no hay con que contrastar)',
-             { role: 'club_admin' }, Object.assign({ role: 'director', clubId: 'CLUB_B' }, VIVA), false],
-            ['3d · entidad individual: vale `individualEntityId` como raiz',
-             { individualEntityId: 'IND_1' }, Object.assign({ role: 'individual', clubId: 'IND_1' }, VIVA), true],
-            ['3e · plaza revocada del propio club → no',
-             { clubId: 'CLUB_A' }, { role: 'director', clubId: 'CLUB_A', isAuthorized: false }, false],
-            ['3f · entrada sin clubId → no',
-             { clubId: 'CLUB_A' }, Object.assign({ role: 'director' }, VIVA), false],
-            ['3g · userData null no revienta', null, Object.assign({ clubId: 'CLUB_A' }, VIVA), false],
+            ['3a · el adminUid del club es club_admin', CLUB, 'U_ADMIN', ['club_admin'], true],
+            ['3b · 🔑 quien esta en directorUids NO es club_admin', CLUB, 'U_DIR', ['club_admin'], false,
+             'estar en el documento no basta: hay que estar en la lista de ESE rol'],
+            ['3c · 🔑 ni el coordinador es director', CLUB, 'U_COO', ['director'], false],
+            ['3d · el director si es director', CLUB, 'U_DIR', ['director'], true],
+            ['3e · vale con que case UNO de los roles pedidos', CLUB, 'U_COO', ['director', 'coordinator'], true],
+            ['3f · un uid ajeno no es nada', CLUB, 'U_OTRO', ['club_admin', 'director', 'coordinator'], false],
+            ['3g · ⚠️ club null → NO corrobora (falla hacia el no)', null, 'U_ADMIN', ['club_admin'], false,
+             'si la lectura del club peta, _clubDeLaRaiz devuelve null: «no se» = NO'],
+            ['3h · club SIN las listas no revienta', { id: 'X' }, 'U_DIR', ['director'], false],
+            ['3i · uid vacio no corrobora', CLUB, null, ['club_admin'], false],
         ];
-        casos.forEach(([n, ud, r, esperado, why]) => {
-            let res; try { res = f(ud, r); } catch (e) { res = 'LANZA: ' + e.message; }
+        casos.forEach(([n, club, uid, roles, esperado, why]) => {
+            let res; try { res = f(club, uid, roles); } catch (e) { res = 'LANZA: ' + e.message; }
             ok(n, res === esperado, (why ? why + ' | ' : '') + 'devolvio ' + res);
         });
     }
