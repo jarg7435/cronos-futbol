@@ -274,8 +274,7 @@ function _plazaViva(r) {
 
    Guard: scripts/test_functions_plaza_viva.js (PARTE 4)
    ══════════════════════════════════════════════════════════════════════ */
-async function _clubDeLaRaiz(userData) {
-  const id = (userData && (userData.clubId || userData.individualEntityId)) || null;
+async function _leerClub(id) {
   if (!id) return null;
   try {
     const s = await admin.firestore().collection('clubs').doc(id).get();
@@ -284,6 +283,10 @@ async function _clubDeLaRaiz(userData) {
     console.warn('[SEC-F05] no se pudo leer clubs/' + id + ':', e.message);
     return null;   // sin dato no se corrobora nada
   }
+}
+
+async function _clubDeLaRaiz(userData) {
+  return _leerClub((userData && (userData.clubId || userData.individualEntityId)) || null);
 }
 
 function _clubCorrobora(club, uid, roles) {
@@ -1271,28 +1274,37 @@ exports.autoSetClaimsOnApproval = functions.firestore
     if (!after.isAuthorized || after.status === 'removed' || after.status === 'blocked') return;
 
     const role = after.role;
-    // clubId autorizado: primero la raíz; si está vacía, el primer allRoles[]
-    // con clubId cuyo rol NO esté rechazado/eliminado (mismo criterio que
-    // syncRootClubId, para no poblar la raíz con un clubId de un rol revocado).
-    const clubId =
-      after.clubId ||
-      (Array.isArray(after.allRoles)
-        // SEC-F01 · de aqui sale el `clubId` que va al CLAIM, o sea la raiz
-        // de la autorizacion. Una plaza sin `isAuthorized` no puede elegirlo.
-        // ⚠️ SEC-F04 · ESTE RESPALDO SE QUEDA, A PROPOSITO. Se quito y hubo
-        //    que devolverlo: `test_sec_c1_clubid.js` (2a/2b) documenta que el
-        //    trigger PUEBLA la raiz desde `allRoles`, y es la via de migracion
-        //    de los usuarios multi-rol. Quitarla es un cambio de conducta que
-        //    no toca en este paso.
-        //    🔑 Y su riesgo es BAJO: el `||` de arriba solo llega hasta aqui
-        //    cuando la raiz NO tiene club, y para eso hace falta una cuenta
-        //    ya autorizada sin `clubId` — estado que la aprobacion no produce
-        //    (requests-tab.js:399 lo escribe). Medido: ninguno de los 5
-        //    usuarios con plaza esta asi.
-        //    ⏳ Se atara al documento del club en el paso 3, cuando exista.
-        ? (after.allRoles.find((r) => r && r.clubId && _plazaViva(r)) || {}).clubId
-        : null);
 
+    /* ══════════════════════════════════════════════════════════════
+       🔒 SEC-F06 (2026-08-31) · EL RESPALDO DEL TRIGGER, CORROBORADO
+
+       Era el ULTIMO sitio donde `allRoles` decidia algo. Y decide mucho: de
+       este `clubId` sale el CLAIM, y `isClubAdmin(clubId)` de las reglas lee
+       EL CLAIM, no el documento.
+
+       🚨 EL CAMINO QUE CIERRA: el trigger dispara tambien cuando el usuario
+       cambia su PROPIO `allRoles` —esta dentro de `significantChange`—. Una
+       cuenta autorizada con `role:'club_admin'` en la raiz y SIN `clubId`
+       podia escribirse `{clubId:'CLUB_B'}` y salir con el claim de
+       administrador del club B. Hace falta ese estado concreto —autorizada y
+       sin club—, que la aprobacion no produce, y por eso se dejo abierto
+       hasta tener con que cerrarlo.
+
+       🔑 Ya se puede: el candidato tiene que estar CORROBORADO por el
+       documento del club (backfill del Paso 4·2), que el usuario no escribe.
+       Falla hacia el NO. ⛔ No devolver el `find` suelto: era el agujero.
+       ══════════════════════════════════════════════════════════════ */
+    let clubId = after.clubId || null;
+    if (!clubId && Array.isArray(after.allRoles)) {
+      for (const r of after.allRoles) {
+        if (!r || !r.clubId || !_plazaViva(r)) continue;
+        if (_clubCorrobora(await _leerClub(r.clubId), userId,
+                           ['club_admin', 'director', 'coordinator'])) {
+          clubId = r.clubId;
+          break;
+        }
+      }
+    }
     if (!role || !clubId) return;
 
     // SEC-C1: si la raíz clubId está vacía pero lo resolvimos desde allRoles,
@@ -2010,14 +2022,8 @@ exports.syncRootClubId = functions.https.onCall(async (data, context) => {
          estar vacia —es justo el caso que se quiere migrar—, asi que el
          anclaje no puede ser ella. Lo es el documento del club, que solo
          escriben el SA, el admin de ese club y el Admin SDK. */
-      let clubPedido = null;
-      try {
-        const s = await admin.firestore().collection('clubs').doc(clubId).get();
-        clubPedido = s.exists ? Object.assign({ id: clubId }, s.data() || {}) : null;
-      } catch (e) {
-        console.warn('[syncRootClubId] no se pudo leer clubs/' + clubId + ':', e.message);
-      }
-      roleMatches = _clubCorrobora(clubPedido, uid, ['club_admin', 'director', 'coordinator']);
+      roleMatches = _clubCorrobora(await _leerClub(clubId), uid,
+                                   ['club_admin', 'director', 'coordinator']);
     }
 
     if (!rootMatches && !roleMatches) {

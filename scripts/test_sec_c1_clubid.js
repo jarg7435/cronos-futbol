@@ -231,8 +231,19 @@ async function callSync(userDoc, data, ctxAuth) {
     // ═══════════════════ PARTE 2 · trigger autoSetClaimsOnApproval ═════════
     console.log('\n── PARTE 2 · trigger autoSetClaimsOnApproval (código real) ──');
 
-    async function runTrigger(before, after, claims) {
-        const store = { users: { U1: Object.assign({}, after) } };
+    // ⚠️ SEC-F06 (2026-08-31) · EL STORE AHORA LLEVA EL DOCUMENTO DEL CLUB.
+    // El respaldo del trigger —resolver el `clubId` del CLAIM desde
+    // `allRoles`— ya no se cree la entrada: exige que `clubs/{id}` corrobore
+    // al usuario, porque ese documento el usuario NO lo escribe. Sin sembrarlo
+    // aqui, 2a/2b fallarian por AUSENCIA DE DATO y no por un defecto — que es
+    // la peor clase de rojo, el que manda a arreglar lo que esta bien.
+    // 🔑 Que el arnes tenga que sembrarlo es la prueba de que la corroboracion
+    // se exige de verdad: quitar `directorUids` de aqui pone 2a en rojo.
+    async function runTrigger(before, after, claims, club) {
+        const store = {
+            users: { U1: Object.assign({}, after) },
+            clubs: { CLUB_A: club || { id: 'CLUB_A', name: 'CD PRUEBA', directorUids: ['U1'] } },
+        };
         const authUsers = { U1: { customClaims: claims || {} } };
         const { exports } = loadFunctions(store, authUsers);
         const trig = exports.autoSetClaimsOnApproval;
@@ -262,6 +273,33 @@ async function callSync(userDoc, data, ctxAuth) {
         const after  = { role: 'director', isAuthorized: true, status: 'active', allRoles: [{ role: 'director', clubId: 'CLUB_A', isAuthorized: true }, { role: 'coach', clubId: 'CLUB_A', isAuthorized: true }] };
         const { store } = await runTrigger(before, after, { role: 'director', clubId: 'CLUB_A' });
         ok('2b · claims ya OK + allRoles cambia → raíz migrada igualmente', store.users.U1.clubId === 'CLUB_A', JSON.stringify(store.users.U1));
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  🚨 2d · SEC-F06 · LA ASERCIÓN DEL HALLAZGO
+    //
+    //  El trigger dispara TAMBIÉN cuando el propio usuario cambia su
+    //  `allRoles` (está dentro de `significantChange`). Una cuenta autorizada
+    //  con `role:'club_admin'` en la raíz y SIN `clubId` podía escribirse una
+    //  plaza de otro club y salir con el CLAIM de administrador de ese club —
+    //  y `isClubAdmin()` de las reglas lee el CLAIM, no el documento.
+    //
+    //  Aquí el club existe pero NO le nombra: sin corroboración, ni raíz ni
+    //  claim. Es la diferencia entre «lo dice él» y «lo dice el club».
+    // ══════════════════════════════════════════════════════════════════
+    {
+        const before = { role: 'club_admin', isAuthorized: true, status: 'active', allRoles: [] };
+        const after  = { role: 'club_admin', isAuthorized: true, status: 'active',
+                         allRoles: [{ role: 'club_admin', clubId: 'CLUB_A', isAuthorized: true, status: 'active' }] };
+        // El club existe, pero NO nombra a U1 por ningún lado.
+        const { store, authUsers } = await runTrigger(before, after, {},
+            { id: 'CLUB_A', name: 'CD AJENO', directorUids: [], coordinatorUids: [] });
+        ok('2d · 🔑🔑 una plaza que el club NO corrobora no puebla la raíz',
+           !store.users.U1.clubId,
+           'raíz quedó en ' + JSON.stringify(store.users.U1.clubId) + ' — el usuario se escribió esa entrada');
+        ok('2d · …ni reparte el claim del club',
+           !(authUsers.U1.customClaims && authUsers.U1.customClaims.clubId),
+           'claims: ' + JSON.stringify(authUsers.U1.customClaims));
     }
 
     // 2c. Usuario removido → el trigger NO puebla clubId.
