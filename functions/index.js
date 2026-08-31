@@ -1400,16 +1400,43 @@ exports.sendInviteEmail = functions
      de vias se exige CUENTA HABILITADA: sin esto, una cuenta recien creada
      podia declararse 'director' y mandar correos con la marca de la
      plataforma a quien quisiera. */
+  /* ══════════════════════════════════════════════════════════════════
+     🚨 SEC-F03 (Paso 4, 2026-08-31) · LA PLAZA SALE DE LA RAIZ O DEL
+        CLAIM. NUNCA DE `allRoles`.
+
+     Aqui se decidia con una plaza de `allRoles`, y SEC-F01 creyo cerrarlo
+     exigiendo `isAuthorized === true` en la entrada. NO SIRVE: **el que
+     escribe ese `true` es el propio atacante**. El `hasAny([...])` del
+     `allow update` de `users/{userId}` protege claves de PRIMER NIVEL, y
+     tocar el array solo aparece como la clave `allRoles` — las entradas
+     llevan dentro sus propios `role`, `clubId` e `isAuthorized`.
+     Medido con el metodo `:test`: un entrenador cualquiera puede anyadirse
+     una plaza autorizada de otro club, y hasta una de superadmin.
+
+     👉 Consecuencia concreta que esto cierra: **cualquier usuario
+     autorizado podia mandar invitaciones con la marca de la plataforma en
+     nombre de CUALQUIER club.** Es lo unico de esa familia que era
+     aprovechable sin ser ya director.
+
+     🔑 Se verifica contra lo que el usuario NO puede escribir:
+       · la RAIZ del documento (`role`), protegida por el `allow update`;
+       · el CLAIM del token, que solo pone el Admin SDK.
+     Ninguna de las dos se puede falsificar desde la consola del navegador.
+
+     ⚠️ ESTO DEJA FUERA A QUIEN SOLO TENGA LA PLAZA EN `allRoles`. Medido en
+     produccion (2026-08-31): de 10 plazas autorizadas, 4 las corrobora la
+     raiz y **6 no las corrobora ninguna fuente no falsificable**. Esas 6 no
+     podran invitar hasta que exista el dato con el que verificarlas — es
+     decidido, no un descuido. El arreglo completo (sembrar el documento del
+     club y verificar contra el) queda para una sesion dedicada.
+     ⛔ NO "arreglar" esto volviendo a mirar `allRoles`: seria reabrirlo.
+     ══════════════════════════════════════════════════════════════════ */
   const _esSA = await _esSuperAdmin(context);
   const _habilitado = _cuentaHabilitada(_cd);
-  /* Plaza VIVA de director o administrador de club (revocada no cuenta). */
-  const _plazaStaff = (Array.isArray(_cd.allRoles) ? _cd.allRoles : []).find(
-    // SEC-F01 · esta plaza decide quien puede invitar Y con la marca de que
-    // club: una entrada sin `isAuthorized` permitia invitar en nombre ajeno.
-    (r) => r && ['director', 'club_admin'].includes(r.role) && _plazaViva(r)
-  ) || null;
+  const _tk = (context.auth && context.auth.token) || {};
   const _esStaffRaiz = _habilitado && ['director', 'club_admin'].includes(_cd.role);
-  const _puedeInvitar = _esSA || _esStaffRaiz || (_habilitado && !!_plazaStaff);
+  const _esStaffClaim = ['director', 'club_admin'].includes(_tk.role || '');
+  const _puedeInvitar = _esSA || _esStaffRaiz || _esStaffClaim;
 
   if (!callerDoc.exists || !_puedeInvitar) {
     /* Mensaje que dice QUE pasa, para que el cliente no tenga que adivinar. */
@@ -1419,10 +1446,11 @@ exports.sendInviteEmail = functions
     );
   }
 
-  /* El club del invitante, para imponerlo mas abajo. */
-  const _clubPropio = _esSA
-    ? null
-    : (_cd.clubName || (_plazaStaff && _plazaStaff.clubName) || null);
+  /* El club del invitante, para imponerlo mas abajo.
+     SEC-F03 · sale de la RAIZ, que el usuario no puede escribir. Ya NO se
+     acepta el `clubName` de una plaza de `allRoles`: era la via por la que
+     se invitaba en nombre de otro club. */
+  const _clubPropio = _esSA ? null : (_cd.clubName || null);
 
   /* ==================================================================== */
   /* 🛡️ SEC-DEP1 (auditoria 2026-08-26) · SANEADO DE CABECERAS DE CORREO   */
@@ -1490,7 +1518,13 @@ exports.sendInviteEmail = functions
   const body = _quitarMarcador(data.body);
   /* ⚠️ `clubName` NO se desestructura arriba a proposito: para quien no es */
   /* SuperAdmin manda su club, no lo que venga en el payload.              */
-  const clubName = _esSA ? data.clubName : (_clubPropio || data.clubName);
+  /* 🚨 SEC-F03 · AQUI HABIA UN SEGUNDO AGUJERO, EN LA MISMA FUNCION Y MAS
+     simple: decia `(_clubPropio || data.clubName)`. Ese `||` DESHACIA la
+     imposicion que promete el comentario de arriba — a quien no tuviera
+     `clubName` en la raiz se le cogia el que mandaba el CLIENTE, que es un
+     campo editable del formulario. Ahora, si la raiz no dice de que club es,
+     la invitacion sale SIN club en vez de con el que diga el navegador. */
+  const clubName = _esSA ? data.clubName : _clubPropio;
   /* SECURITY: escapar toda entrada de usuario que se interpole en HTML */
   const _esc = (v) => { if (v === null || v === undefined) return ''; return String(v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;'); };
   if (!to) {

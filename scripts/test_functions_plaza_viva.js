@@ -59,9 +59,14 @@ console.log('\n1) 🔓 No queda ni un fail-open');
        'escribe el clubId de la RAIZ: es la funcion mas peligrosa del fichero');
 
     // Los cinco sitios + la definicion.
+    // v647/SEC-F03 · eran cinco puntos + la definicion; `sendInviteEmail` dejo
+    // de mirar `allRoles` por completo (la plaza sale de la raiz o del claim),
+    // asi que quedan CUATRO + la definicion. Bajar este numero es deliberado:
+    // significa que un consumidor ha dejado de fiarse de `allRoles`, que es la
+    // direccion correcta. Subirlo, que alguien ha vuelto a fiarse.
     const usos = (CODE.match(/_plazaViva\(/g) || []).length;
-    ok('1d · los cinco puntos de decision pasan por el MISMO ayudante',
-       usos >= 6, 'apariciones de _plazaViva(): ' + usos);
+    ok('1d · los puntos que aun miran `allRoles` pasan por el MISMO ayudante',
+       usos === 5, 'apariciones de _plazaViva(): ' + usos + ' (esperadas 5)');
 }
 
 // ════════════════════════════════════════════════════════════════════

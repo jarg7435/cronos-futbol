@@ -584,6 +584,15 @@ function buildSandbox({ elements = {}, secMethod = 'email', hasFunctions = true,
     {
         const fnSrc = fs.readFileSync(path.join(ROOT, 'functions', 'index.js'), 'utf8');
         const bloque = fnSrc.slice(fnSrc.indexOf('exports.sendInviteEmail'), fnSrc.indexOf('exports.registerStaffUid'));
+        // ⚠️⚠️ `bloque` LLEVA LOS COMENTARIOS DENTRO, y las aserciones de
+        // AUSENCIA (17d, 17e2) se enganchaban a las notas que EXPLICAN el
+        // arreglo: la de SEC-F03 cita `allRoles` y cita el
+        // `_clubPropio || data.clubName` que acaba de eliminar. Verde
+        // imposible de conseguir y rojo que no significa nada.
+        // 🔑 Es la SEXTA vez en esta auditoria que un comentario contamina una
+        // comprobacion. Las de ausencia miran `codigo`; las de presencia
+        // pueden seguir con `bloque`.
+        const codigo = bloque.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
         ok('17a · 🔑 ya NO exige ser SuperAdmin para enviar',
            !/!\['superadmin',\s*'admin'\]\.includes\(callerDoc\.data\(\)\.role\)/.test(bloque));
         // ⚠️ ESTA ES LA QUE DE VERDAD CIERRA EL CASO, y la añadí porque el
@@ -596,8 +605,13 @@ function buildSandbox({ elements = {}, secMethod = 'email', hasFunctions = true,
         // registrarse y una cuenta nueva podia declararse 'director' para
         // mandar correos con la marca de la plataforma. Lo que 17a2 protege
         // —que la decision NO se reduzca al SuperAdmin— se sigue midiendo.
+        // ⚠️ SEC-F03 (2026-08-31) · la tercera rama era `(_habilitado &&
+        // !!_plazaStaff)`, o sea una plaza sacada de `allRoles`… que el propio
+        // usuario puede escribirse. Se sustituye por el CLAIM, que solo pone el
+        // Admin SDK. Lo que 17a2 protege —que la decision no se reduzca al
+        // SuperAdmin, el defecto de v594— sigue vigente: quedan tres ramas.
         ok('17a2 · 🔑🔑 la DECISIÓN no se reduce al SuperAdmin (recrear el defecto pone esto en rojo)',
-           /_puedeInvitar\s*=\s*_esSA\s*\|\|\s*_esStaffRaiz\s*\|\|\s*\(_habilitado && !!_plazaStaff\)/.test(bloque));
+           /_puedeInvitar\s*=\s*_esSA\s*\|\|\s*_esStaffRaiz\s*\|\|\s*_esStaffClaim/.test(bloque));
         ok('17a2b · 🛡️ y el SuperAdmin se resuelve por el TOKEN, no por el documento',
            /const _esSA = await _esSuperAdmin\(context\);/.test(bloque) &&
            !/\['superadmin', 'admin'\]\.includes\(_cd\.role\)/.test(bloque));
@@ -616,11 +630,36 @@ function buildSandbox({ elements = {}, secMethod = 'email', hasFunctions = true,
         // sirva para invitar— sigue vigente y ahora es MAS estricto.
         // 🔑 Se reescribe apuntando al ayudante; su comportamiento lo prueba
         // caso a caso scripts/test_functions_plaza_viva.js (PARTE 2).
-        ok('17d · ⚠️ y descarta las plazas revocadas (via _plazaViva, SEC-F01)',
-           /_plazaViva\(r\)/.test(bloque),
-           'si vuelve un `isAuthorized !== false` aqui, vuelve el fail-open');
+        // 🚨 SEC-F03 · 17d ha cambiado DOS VECES el mismo dia, y la segunda es
+        // la buena. Primero fijaba `isAuthorized !== false` (fail-open);
+        // SEC-F01 lo paso a `_plazaViva`… que tampoco vale, porque el `true`
+        // de esa entrada lo escribe el propio usuario. Ahora la plaza NO SALE
+        // de `allRoles` en absoluto: sale de la raiz o del claim.
+        // 🔑 Por eso la asercion se da la vuelta: lo que hay que vigilar es
+        // que `allRoles` NO vuelva a decidir aqui.
+        ok('17d · 🔑🔑 la plaza NO se saca de `allRoles` (ni con isAuthorized)',
+           !/allRoles/.test(codigo),
+           'el usuario puede escribirse esa entrada: mirarla es reabrir el agujero');
         ok('17e · 🔑🔑 el club se IMPONE al que no es SuperAdmin (si no, el campo editable dejaría invitar en nombre de otro club)',
            /_esSA\s*\?\s*data\.clubName\s*:/.test(bloque));
+        // 🚨 SEC-F03 · 17e comprobaba que la imposicion EXISTIA, no que
+        // FUNCIONARA. Decia `(_clubPropio || data.clubName)`, y ese `||` la
+        // deshacia: a quien no tuviera `clubName` en la raiz se le cogia el que
+        // mandaba el CLIENTE — un campo editable del formulario. Una asercion
+        // puede pasar mirando la mitad buena de la linea.
+        // ⚠️ SE CUENTA, NO SE BUSCA UNA GRAFIA. La primera version de esta
+        // asercion casaba literalmente `_clubPropio || data.clubName`, y el
+        // red-check la colo escribiendo el MISMO fallo de otra forma
+        // (`(_clubPropio && _clubPropio) || data.clubName`). Contar las
+        // apariciones fija la PROPIEDAD: el `clubName` del cliente solo puede
+        // aparecer UNA vez, en la rama del SuperAdmin. Cualquier respaldo que
+        // alguien anyada para el resto sube el numero, se escriba como se
+        // escriba.
+        const _delCliente = (codigo.match(/data\.clubName/g) || []).length;
+        ok('17e2 · 🔑 …y la imposición NO cae de vuelta al `clubName` del cliente',
+           _delCliente === 1,
+           'data.clubName aparece ' + _delCliente + ' veces (debe ser 1: solo la rama del SA). ' +
+           'Sin raiz que lo respalde, la invitacion sale SIN club, no con el que diga el navegador');
         ok('17f · sigue exigiendo sesión', /if \(!context\.auth\)/.test(bloque));
     }
 
