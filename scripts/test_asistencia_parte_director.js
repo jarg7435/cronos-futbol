@@ -235,6 +235,30 @@ ok('7d · un motivo desconocido no deja un hueco', !!CA.motivoIcon('inventado'))
 ok('7e · la lista de pasar lista llama a motivoIcon',
    /motivoIcon\(m\.m\)/.test(PANEL), 'seguía pintando el icono genérico');
 
+// ── PARTE 7 bis · y la REJILLA del parte mensual, igual ──────────────
+//  Reporte del autor (2026-09-01, captura del parte de Agosto): en el parte
+//  mensual todas las justificadas salían con el mismo 🩹. v620 arregló la
+//  lista de pasar lista y dejó la rejilla con el icono escrito a mano.
+//
+//  🔑🔑 SE MIDE SOBRE LA CELDA, NO SOBRE EL HTML ENTERO. Buscar 📚 a secas da
+//  VERDE con el defecto puesto: el desglose de faltas del pie ya pintaba los
+//  cuatro iconos de `MOTIVOS`. Por eso cada aserción exige el icono DENTRO del
+//  `<td>` cuyo title es el de esa causa — que es justo lo que fallaba.
+ok('7f · la celda de una justificada por ESTUDIOS lleva 📚',
+   /<td title="Justificada: Estudios"[^>]*>📚<\/td>/.test(html),
+   'la rejilla seguía pintando el icono genérico');
+ok('7g · …y la de MOTIVO MÉDICO conserva el suyo',
+   /<td title="Justificada: Motivo médico[^"]*"[^>]*>🩹<\/td>/.test(html));
+// Presencia (7f) y ausencia (7h) juntas: la de ausencia sola daría verde con
+// la celda de estudios borrada del todo.
+ok('7h · y la de estudios ya NO pinta el 🩹 de "justificada"',
+   !/<td title="Justificada: Estudios"[^>]*>🩹<\/td>/.test(html));
+// El icono de la celda y el de la leyenda del pie salen de la MISMA lista: si
+// alguien vuelve a escribir uno a mano, la tabla y su desglose se separan.
+ok('7i · el icono de la celda es el mismo que el de su leyenda del desglose',
+   html.indexOf('<td title="Justificada: Estudios" style="text-align:center; padding:0.3rem 0.2rem; color:#f0883e;">' +
+                CA.motivoIcon('estudios') + '</td>') !== -1);
+
 console.log('\n------------------------------------------------------------');
 console.log('Resultado: ' + ok_ + '/' + n + ' pruebas superadas.');
 process.exit(mal > 0 ? 1 : 0);

@@ -757,7 +757,16 @@
                 var txt = '·', col = 'rgba(255,255,255,0.15)', tit = 'Sin marcar';
                 if (m && m.s === 'P') { txt = '✅'; col = '#3fb950'; tit = 'Presente'; }
                 else if (m && m.s === 'I') { txt = '❌'; col = '#ff5858'; tit = 'Falta injustificada'; }
-                else if (m && m.s === 'J') { txt = '🩹'; col = '#f0883e'; tit = 'Justificada: ' + motivoLabel(m.m); }
+                // 🎨 CADA CAUSA CON SU ICONO, TAMBIÉN AQUÍ. v620 arregló esto
+                // en la lista de "pasar lista" y dejó la rejilla del parte con
+                // el 🩹 escrito a mano: estudios, trabajo, médico y otros se
+                // veían los cuatro iguales, y el desglose de abajo —que sí
+                // usaba `MOTIVOS`— contradecía a la tabla que tenía encima.
+                // El icono sale de la MISMA lista que ese desglose, así que la
+                // leyenda de abajo y la celda no se pueden volver a separar.
+                // ⚠️ Sin motivo grabado, `motivoIcon` devuelve el 🩹 genérico:
+                // una justificada sin causa se sigue viendo como antes.
+                else if (m && m.s === 'J') { txt = motivoIcon(m.m); col = '#f0883e'; tit = 'Justificada: ' + motivoLabel(m.m); }
                 html += '<td title="' + esc(tit) + '" style="text-align:center; padding:0.3rem 0.2rem; color:' + col + ';">' + txt + '</td>';
             });
             html += '<td style="text-align:center; font-weight:700; color:#3fb950;">' + r.P + '</td>' +
