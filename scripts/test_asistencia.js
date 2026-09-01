@@ -185,6 +185,30 @@ function ponPlantilla(localStorage) {
     ok('C3 · el resumen de la sesión cuadra',
        rs.P === 1 && rs.I === 1 && rs.J === 0 && rs.sinMarcar === 1, JSON.stringify(rs));
 
+    // ── C6-C8 · el contador de la pestaña del día (v653) ─────────────
+    //  Mostraba `P+I+J` —el AVANCE de pasar lista—: con la lista terminada
+    //  ponía 25/25 aunque hubieran faltado tres, y la barra de justo debajo
+    //  decía «✅ 22 · 🩹 3» en la misma pantalla.
+    //
+    //  ⚠️ SE MIDE SOBRE EL CÓDIGO SIN COMENTARIOS. El comentario que explica
+    //  el arreglo nombra `P+I+J` y «25/25», así que un grep a secas casaría
+    //  con la explicación del propio arreglo — cuatro aserciones de este
+    //  proyecto ya dieron verde contra un comentario.
+    const sinComent = s => s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+    const lineaCont = sinComent(SRC_PANEL).split('\n')
+        .filter(l => l.indexOf("'/' + fichas.length") !== -1);
+    // Presencia PRIMERO: sin esto, las dos siguientes darían verde por no
+    // tener nada que mirar.
+    ok('C3a · el guard encuentra el contador de la pestaña',
+       lineaCont.length === 1, 'encontradas ' + lineaCont.length + ' líneas');
+    ok('C3b · 🔑 cuenta a los PRESENTES, no a los marcados',
+       /res\.P \+ '\/' \+ fichas\.length/.test(lineaCont[0] || '') &&
+       !/hechas \+ '\/'/.test(lineaCont[0] || ''), lineaCont[0]);
+    // ⚠️ Y el avance NO se tira: si el numerador tiñera, un día en que no vino
+    //    nadie (P=0) se vería gris igual que un día sin empezar.
+    ok('C3c · ⚠️ pero el COLOR lo sigue decidiendo el avance, no los presentes',
+       /hechas \?/.test(lineaCont[0] || ''), lineaCont[0]);
+
     // Desmarcar devuelve a "sin marcar", no a presente
     A.desmarcar('2026-08-10', 'ALC02');
     const datos2 = A._mesLocal(A.docId(win.cronosMyTeamId(), '2026-08'));

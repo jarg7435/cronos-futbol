@@ -154,7 +154,22 @@ function _attRenderSemana() {
     sesiones.forEach(function (s) {
         var activa = s.fecha === window._attDayKey;
         var res = window.CronosAttendance.resumenSesion(marks, s.fecha, fichas);
+        // 🔑 EL CONTADOR DE LA PESTAÑA DICE CUÁNTOS VINIERON, NO CUÁNTOS ESTÁN
+        // MARCADOS. Hasta v653 mostraba `P+I+J`, que es el AVANCE de pasar
+        // lista: con la lista terminada salía 25/25 aunque hubieran faltado
+        // tres, y la barra de justo debajo decía «✅ 22 · 🩹 3» en la misma
+        // pantalla. Un «25/25» que no cambia nunca al marcar faltas no informa
+        // de nada, y encima contradice al resumen de al lado.
+        //
+        // ⚠️ PERO EL AVANCE NO SE TIRA: sigue decidiendo el COLOR. Si el
+        // numerador tiñera, un día en que no vino nadie (P=0) se vería gris,
+        // igual que un día sin empezar, y son cosas distintas. Gris = aún sin
+        // pasar lista; azul = ya hay marcas. El `title` desambigua del todo.
         var hechas = res.P + res.I + res.J;
+        var faltas = res.I + res.J;
+        var pista = res.P + ' presente' + (res.P === 1 ? '' : 's') + ' de ' + fichas.length +
+                    ' · ' + faltas + ' falta' + (faltas === 1 ? '' : 's') +
+                    (res.sinMarcar ? ' · ' + res.sinMarcar + ' sin marcar' : '');
         var icono = s.tipo === 'partido' ? '⚽' : '🏃';
         var col = s.tipo === 'partido' ? '#f0883e' : '#3fb950';
         html += '' +
@@ -165,7 +180,7 @@ function _attRenderSemana() {
           'color:var(--text); min-width:74px;">' +
           '<div style="font-size:0.72rem; font-weight:700; color:' + col + ';">' + icono + ' ' + _attNombreDia(s.fecha) + '</div>' +
           '<div style="font-size:0.66rem; color:var(--text-muted);">' + _attDiaMes(s.fecha) + '</div>' +
-          '<div style="font-size:0.62rem; margin-top:2px; color:' + (hechas ? '#58a6ff' : 'var(--text-muted)') + ';">' + hechas + '/' + fichas.length + '</div>' +
+          '<div title="' + _attEsc(pista) + '" style="font-size:0.62rem; margin-top:2px; color:' + (hechas ? '#58a6ff' : 'var(--text-muted)') + ';">' + res.P + '/' + fichas.length + '</div>' +
         '</button>';
     });
     html += '</div>';
