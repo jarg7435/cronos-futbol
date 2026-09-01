@@ -403,7 +403,18 @@ window._attTodosPresentes = function () {
 //  DISTINTIVO DE ASISTENCIA EN LA CONVOCATORIA
 // ════════════════════════════════════════════════════════════════════
 //  Rellena los <span class="conv-att"> que openConvocationModal deja
-//  preparados, con la asistencia de las últimas 4 semanas.
+//  preparados, con la asistencia del CICLO ENTRE PARTIDOS: desde el día
+//  siguiente al último partido hasta la fecha del que se convoca.
+//
+//  🔑 HASTA v654 ERAN «LOS ÚLTIMOS 28 DÍAS», una ventana fija que no tiene
+//  nada que ver con la decisión que se está tomando: metía dentro el partido
+//  anterior y su semana. El ciclo real no mide 28 días —depende de cuándo se
+//  jugó— y es lo que el entrenador tiene en la cabeza al convocar.
+//
+//  🔑 LA FECHA SALE DEL CAMPO `#conv-date`, NO DE HOY. Es la del partido que
+//  se convoca, y el entrenador la cambia: por eso se repinta al cambiarla.
+//  Repintar es seguro —esta función sólo escribe sobre los spans— pero
+//  reconstruir la rejilla NO lo sería, ver abajo.
 //
 //  🔑 NO REPINTA NADA: escribe sobre los spans ya existentes. La rejilla de
 //  convocatoria guarda el estado de cada jugador (convocado / titular) en
@@ -412,12 +423,34 @@ window._attTodosPresentes = function () {
 //
 //  ⚠️ Es informativo. No bloquea, no ordena la lista y no descarta a nadie:
 //  la decisión sigue siendo del entrenador.
+// La fecha del partido que se convoca. Si el campo no está o viene vacío,
+// hoy: es lo que ya hacía el propio `<input type="date">` como valor inicial.
+function _attFechaConvocatoria() {
+    var el = document.getElementById('conv-date');
+    var v = el && el.value ? String(el.value) : '';
+    if (/^\d{4}-\d{2}-\d{2}$/.test(v)) return v;
+    return (typeof window._cronosLocalDateKey === 'function')
+        ? window._cronosLocalDateKey(new Date()) : '';
+}
+
 window._cronosPintarAsistenciaConv = async function () {
     if (!window.CronosAttendance) return;
     var spans = document.querySelectorAll('.conv-att[data-att-ficha]');
     if (!spans.length) return;
 
-    try { await window.CronosAttendance.precargarMeses(28); } catch (e) { return; }
+    var hasta = _attFechaConvocatoria();
+    if (!hasta) return;
+
+    // Repintar al cambiar la fecha del partido: el ciclo se mide HASTA ella,
+    // así que con otra fecha el número es otro. El interruptor va sobre el
+    // propio nodo para no encadenar oyentes en cada repintado.
+    var campo = document.getElementById('conv-date');
+    if (campo && !campo._attCicloOyente) {
+        campo._attCicloOyente = true;
+        campo.addEventListener('change', function () { window._cronosPintarAsistenciaConv(); });
+    }
+
+    try { await window.CronosAttendance.precargarCiclo(hasta); } catch (e) { return; }
 
     // La pantalla puede haber cambiado mientras se cargaba.
     spans = document.querySelectorAll('.conv-att[data-att-ficha]');
@@ -427,7 +460,7 @@ window._cronosPintarAsistenciaConv = async function () {
         if (!ficha) continue;
 
         var r = null;
-        try { r = window.CronosAttendance.resumenReciente(ficha, 28); } catch (e) { r = null; }
+        try { r = window.CronosAttendance.resumenCiclo(ficha, hasta); } catch (e) { r = null; }
         if (!r || !r.registradas) { el.style.display = 'none'; continue; }
 
         var pct = r.pct == null ? 0 : r.pct;
@@ -435,8 +468,15 @@ window._cronosPintarAsistenciaConv = async function () {
         var fondo = pct >= 80 ? 'rgba(63,185,80,0.15)'
                   : (pct >= 60 ? 'rgba(240,136,62,0.15)' : 'rgba(255,88,88,0.15)');
 
+        // ⚠️ EL PERIODO SE DICE SIEMPRE, y se dice CUÁL. Sin partido anterior
+        //    el rango es la ventana de respaldo, y un «3/4» que no dice de qué
+        //    periodo habla es peor que no ponerlo.
+        var periodo = r.ultimoPartido
+            ? 'Desde el último partido (' + _attDiaMes(r.ultimoPartido) + ') hasta el ' + _attDiaMes(r.hasta)
+            : 'Sin partido anterior · desde el ' + _attDiaMes(r.desde) + ' hasta el ' + _attDiaMes(r.hasta);
+
         el.textContent = r.P + '/' + r.registradas + (r.I ? ' ⚠' : '');
-        el.title = 'Últimas 4 semanas: ' + r.P + ' de ' + r.registradas + ' sesiones (' + pct + '%)' +
+        el.title = periodo + ': ' + r.P + ' de ' + r.registradas + ' sesiones (' + pct + '%)' +
                    (r.I ? ' · ' + r.I + ' falta(s) injustificada(s)' : '') +
                    (r.J ? ' · ' + r.J + ' justificada(s)' : '');
         el.style.background = fondo;

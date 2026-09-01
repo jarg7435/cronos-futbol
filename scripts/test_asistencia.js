@@ -361,6 +361,144 @@ function ponPlantilla(localStorage) {
        /CronosAttendance\.marcar\(/.test(SRC_PANEL));
 }
 
+// ═════════════════════════════════════════════════════════════════════
+// J · EL CICLO ENTRE PARTIDOS (v654)
+// ═════════════════════════════════════════════════════════════════════
+//  El distintivo de la convocatoria medía «los últimos 28 días», una ventana
+//  fija que metía dentro el partido anterior y su semana. Debe medir el CICLO:
+//  desde el día siguiente al último partido hasta el partido que se convoca.
+//
+//  🔑 SE EJECUTA EL ALMACÉN DE VERDAD, no se busca texto: se monta un
+//  cuadrante con DOS partidos y se comprueba dónde cae la frontera. Un grep
+//  no sabe si el 15 de agosto entra o sale del rango.
+{
+    const { win, localStorage } = nuevoEntorno();
+    seEntra(win, 'club_x', 'alevin', 'C');
+    ponPlantilla(localStorage);
+    const A = win.CronosAttendance;
+
+    // Dos semanas, un partido al final de cada una.
+    win.TrainingSync.saveWeek('2026-08-10', {
+        '2026-08-10': { tipo: 'entrenamiento', hora: '17:00' },
+        '2026-08-12': { tipo: 'entrenamiento', hora: '17:00' },
+        '2026-08-15': { tipo: 'partido liga',  hora: '10:00' }
+    });
+    win.TrainingSync.saveWeek('2026-08-17', {
+        '2026-08-17': { tipo: 'entrenamiento', hora: '17:00' },
+        '2026-08-19': { tipo: 'entrenamiento', hora: '17:00' },
+        '2026-08-22': { tipo: 'partido liga',  hora: '10:00' }
+    });
+
+    // Presencia PRIMERO, y el resto tolera el null: sin esto, el día que
+    // alguien se lleve la función por delante la batería REVIENTA en seco y
+    // ni se llega a ver qué falta ni corren las pruebas de más abajo.
+    const hayCiclo = typeof A.rangoCiclo === 'function' && typeof A.resumenCiclo === 'function';
+    ok('J0 · el almacén expone el cálculo del ciclo', hayCiclo);
+
+    const r = hayCiclo ? A.rangoCiclo('2026-08-22') : null;
+    ok('J1 · 🔑 el ciclo arranca el día SIGUIENTE al último partido',
+       r && r.desde === '2026-08-16', JSON.stringify(r && r.desde));
+    ok('J2 · …y ese último partido es el del 15, no otro',
+       r && r.ultimoPartido === '2026-08-15', JSON.stringify(r && r.ultimoPartido));
+    const fechas = (r && r.sesiones || []).map(s => s.fecha);
+    ok('J3 · ⚠️ el partido ANTERIOR queda FUERA del ciclo que cierra',
+       fechas.indexOf('2026-08-15') === -1, JSON.stringify(fechas));
+    ok('J4 · el ciclo son las 3 sesiones de la semana, con su partido dentro',
+       fechas.length === 3 && fechas[0] === '2026-08-17' && fechas[2] === '2026-08-22',
+       JSON.stringify(fechas));
+
+    // Y que de verdad ha cambiado: la ventana vieja de 28 días se llevaba
+    // también la semana anterior entera.
+    A.marcar('2026-08-10', 'ALC01', 'P', null, { tipo: 'entrenamiento' });
+    A.marcar('2026-08-12', 'ALC01', 'P', null, { tipo: 'entrenamiento' });
+    A.marcar('2026-08-15', 'ALC01', 'P', null, { tipo: 'partido' });
+    A.marcar('2026-08-17', 'ALC01', 'P', null, { tipo: 'entrenamiento' });
+    A.marcar('2026-08-19', 'ALC01', 'I', null, { tipo: 'entrenamiento' });
+    A.marcar('2026-08-22', 'ALC01', 'P', null, { tipo: 'partido' });
+
+    const rc = hayCiclo ? A.resumenCiclo('ALC01', '2026-08-22') : null;
+    ok('J5 · 🔑 el recuento es el del CICLO (2 de 3), no el del mes',
+       rc && rc.P === 2 && rc.registradas === 3, JSON.stringify(rc && { P: rc.P, reg: rc.registradas }));
+    ok('J6 · y lleva el periodo consigo, para poder decirlo en pantalla',
+       rc && rc.desde === '2026-08-16' && rc.hasta === '2026-08-22' &&
+       rc.ultimoPartido === '2026-08-15', JSON.stringify(rc && rc.desde));
+
+    // ⚠️ Contraste con lo que había antes: si las dos dieran lo mismo, esta
+    //    batería no probaría que el rango cambió.
+    const viejo = A.resumenJugador(
+        A._mesLocal(A.docId(win.cronosMyTeamId(), '2026-08')).marks,
+        A.sesionesDeMes('2026-08'), 'ALC01');
+    ok('J7 · ⚠️ y NO coincide con el recuento del mes entero (5 de 6)',
+       viejo.registradas === 6 && rc && rc.registradas === 3,
+       JSON.stringify({ mes: viejo.registradas, ciclo: rc && rc.registradas }));
+
+    // Sin partido anterior: respaldo declarado, no un silencio.
+    const solo = hayCiclo ? A.rangoCiclo('2026-08-15') : null;
+    ok('J8 · sin partido anterior lo DICE (ultimoPartido = null)',
+       solo && solo.ultimoPartido === null, JSON.stringify(solo && solo.ultimoPartido));
+    ok('J9 · …y entonces el respaldo son 28 días hacia atrás',
+       solo && solo.desde === '2026-07-18', JSON.stringify(solo && solo.desde));
+}
+
+// ═════════════════════════════════════════════════════════════════════
+// J10 · EL PARTIDO ANTERIOR SE ENCUENTRA AUNQUE EL CUADRANTE NO LO TENGA
+// ═════════════════════════════════════════════════════════════════════
+//  🔑🔑 El cuadrante vive en localStorage y sólo tiene las semanas que ESE
+//  navegador ha visitado; el parte guarda una copia congelada de cada sesión
+//  en la que se pasó lista. Si el ciclo mirara sólo al cuadrante, un partido
+//  de hace tres semanas podría no existir en este dispositivo y el rango se
+//  iría al respaldo SIN DECIR NADA: el número saldría mal, sin ningún error.
+{
+    const { win, localStorage } = nuevoEntorno();
+    seEntra(win, 'club_x', 'alevin', 'C');
+    ponPlantilla(localStorage);
+    const A = win.CronosAttendance;
+
+    win.TrainingSync.saveWeek('2026-08-10', {
+        '2026-08-15': { tipo: 'partido liga', hora: '10:00' }
+    });
+    win.TrainingSync.saveWeek('2026-08-17', {
+        '2026-08-19': { tipo: 'entrenamiento', hora: '17:00' },
+        '2026-08-22': { tipo: 'partido liga',  hora: '10:00' }
+    });
+    // Se pasó lista en el partido del 15 → queda CONGELADO en el parte.
+    A.marcar('2026-08-15', 'ALC01', 'P', null, { tipo: 'partido', hora: '10:00' });
+
+    // Y ahora el cuadrante de esa semana desaparece de este dispositivo.
+    win.TrainingSync.saveWeek('2026-08-10', {});
+    ok('J10a · el cuadrante ya no tiene el partido del 15',
+       A.sesionesDeSemana('2026-08-10').length === 0,
+       JSON.stringify(A.sesionesDeSemana('2026-08-10')));
+
+    const r = (typeof A.rangoCiclo === 'function') ? A.rangoCiclo('2026-08-22') : null;
+    ok('J10b · 🔑 aun así el ciclo lo encuentra, por la copia CONGELADA',
+       r && r.ultimoPartido === '2026-08-15' && r.desde === '2026-08-16',
+       JSON.stringify(r && { u: r.ultimoPartido, d: r.desde }));
+}
+
+// ═════════════════════════════════════════════════════════════════════
+// J11-J13 · Y QUE LA CONVOCATORIA LO USE
+// ═════════════════════════════════════════════════════════════════════
+//  Tener el cálculo bueno y seguir llamando al viejo era el defecto de v620,
+//  repetido. El pintor del distintivo NO se puede ejecutar aquí (toca el DOM),
+//  así que se mide su fuente — pero SIN COMENTARIOS: el comentario que explica
+//  el arreglo nombra «28 días» y `resumenReciente`, y un grep a secas casaría
+//  con la explicación del propio arreglo.
+{
+    const sinComent = s => s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+    const P = sinComent(SRC_PANEL);
+    const i = P.indexOf('_cronosPintarAsistenciaConv = ');
+    const pintor = i === -1 ? '' : P.slice(i, i + 2600);
+    // Presencia primero: sin el bloque, las otras dos no miran nada.
+    ok('J11 · el guard encuentra el pintor del distintivo', pintor.length > 500,
+       'bloque de ' + pintor.length + ' caracteres');
+    ok('J12 · 🔑 pide el CICLO, no la ventana de 28 días',
+       /precargarCiclo\(/.test(pintor) && /resumenCiclo\(/.test(pintor) &&
+       !/resumenReciente\(/.test(pintor), pintor.slice(0, 200));
+    ok('J13 · y el «hasta» es la fecha del PARTIDO que se convoca',
+       /conv-date/.test(P), 'no lee la fecha de la convocatoria');
+}
+
 // ─────────────────────────────────────────────────────────────────────
 console.log('\n' + (fail === 0 ? 'OK' : 'FALLOS') + ': ' + pass + ' pass, ' + fail + ' fail');
 process.exit(fail === 0 ? 0 : 1);

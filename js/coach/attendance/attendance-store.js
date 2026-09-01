@@ -473,6 +473,141 @@
     }
 
     // ══════════════════════════════════════════════════════════════════
+    //  EL CICLO ENTRE PARTIDOS — el criterio REAL para convocar (v654)
+    // ══════════════════════════════════════════════════════════════════
+    //  Lo que el entrenador mira al convocar no son «los últimos 28 días»:
+    //  es **lo que ha hecho el jugador DESDE EL ÚLTIMO PARTIDO**. Esa es la
+    //  unidad de trabajo real —el ciclo entre encuentros— y su longitud
+    //  cambia: una semana normal, tres semanas de parón, dos días entre
+    //  partido de liga y amistoso. Una ventana fija de 28 días mete dentro
+    //  partidos anteriores y su semana, que ya no pintan nada en esta
+    //  decisión.
+    //
+    //  El rango va **desde el día SIGUIENTE al último partido** hasta la
+    //  fecha del partido que se convoca, ambos incluidos. El partido
+    //  anterior queda FUERA a propósito: es el cierre del ciclo pasado.
+    //
+    //  🔑🔑 LAS SESIONES SE BUSCAN EN DOS SITIOS Y SE UNEN. El cuadrante
+    //  (`sesionesDeMes`) vive en localStorage y sólo tiene las semanas que
+    //  ese navegador ha visitado; el parte guarda una copia CONGELADA de
+    //  cada sesión en la que se pasó lista. Mirando sólo el cuadrante, un
+    //  partido de hace tres semanas puede sencillamente no existir en este
+    //  dispositivo, y entonces el ciclo se iría al respaldo **sin decir
+    //  nada** y el número saldría mal sin ningún error. Ver la nota de
+    //  `sesionesDeParte`.
+    //
+    //  ⚠️ COSTE. Cada mes que se mira hacia atrás es UNA lectura. Por eso
+    //  `precargarCiclo` carga de mes en mes y **para en cuanto encuentra el
+    //  partido anterior**: en el caso normal —el partido de la semana
+    //  pasada— es una sola lectura, la misma que antes.
+    var CICLO_MESES_ATRAS   = 3;   // tope de meses hacia atrás
+    var CICLO_DIAS_RESPALDO = 28;  // ventana si NO hay partido anterior
+
+    function _sumarDias(fecha, n) {
+        var y = parseInt(String(fecha).slice(0, 4), 10);
+        var m = parseInt(String(fecha).slice(5, 7), 10);
+        var d = parseInt(String(fecha).slice(8, 10), 10);
+        if (!y || !m || !d) return String(fecha);
+        return _clave(new Date(y, m - 1, d + n, 12, 0, 0));
+    }
+
+    function _mesDesplazado(mes, delta) {
+        var y = parseInt(String(mes).slice(0, 4), 10);
+        var m = parseInt(String(mes).slice(5, 7), 10);
+        if (!y || !m) return String(mes);
+        return _clave(new Date(y, m - 1 + delta, 1, 12, 0, 0)).slice(0, 7);
+    }
+
+    function _tope(maxMeses) {
+        return (typeof maxMeses === 'number' && maxMeses >= 0) ? maxMeses : CICLO_MESES_ATRAS;
+    }
+
+    // Sesiones de un mes uniendo el CUADRANTE con las CONGELADAS del parte.
+    // ⚠️ El tipo de las congeladas se vuelve a normalizar con `_tipoDeSesion`:
+    //    hoy se guarda ya normalizado, pero una marca antigua pudo congelar
+    //    'partido liga' tal cual, y `=== 'partido'` no lo reconocería.
+    function _sesionesDeMesUnidas(mes, eq) {
+        var out = {};
+        sesionesDeMes(mes).forEach(function (s) { out[s.fecha] = s; });
+        var datos = _mesLocal(docId((eq || {}).teamId, mes));
+        sesionesDeParte(datos).forEach(function (s) {
+            if (out[s.fecha]) return;
+            var t = _tipoDeSesion(s);
+            if (!t) return;
+            out[s.fecha] = { fecha: s.fecha, tipo: t, tipoRaw: s.tipoRaw, hora: s.hora, lugar: '' };
+        });
+        return Object.keys(out).sort().map(function (f) { return out[f]; });
+    }
+
+    // El rango del ciclo y las sesiones que caen dentro.
+    // Devuelve `ultimoPartido: null` cuando no hay ninguno detrás: entonces
+    // el rango es la ventana de respaldo, y quien pinte DEBE decirlo —un
+    // número que no dice de qué periodo habla es peor que no ponerlo—.
+    function rangoCiclo(hasta, maxMeses) {
+        var eq = _miEquipo();
+        if (!eq || !hasta) return null;
+
+        var tope = _tope(maxMeses);
+        var mesFin = mesDe(hasta);
+        var sesiones = [], ultimo = null;
+
+        for (var i = 0; i <= tope; i++) {
+            var ses = _sesionesDeMesUnidas(_mesDesplazado(mesFin, -i), eq);
+            sesiones = ses.concat(sesiones);
+            for (var k = ses.length - 1; k >= 0; k--) {
+                if (ses[k].tipo === 'partido' && ses[k].fecha < hasta) { ultimo = ses[k].fecha; break; }
+            }
+            if (ultimo) break;
+        }
+
+        var desde = ultimo ? _sumarDias(ultimo, 1) : _sumarDias(hasta, -CICLO_DIAS_RESPALDO);
+        return {
+            desde: desde,
+            hasta: hasta,
+            ultimoPartido: ultimo,
+            sesiones: sesiones.filter(function (s) {
+                return s.fecha >= desde && s.fecha <= hasta;
+            })
+        };
+    }
+
+    async function precargarCiclo(hasta, maxMeses) {
+        var eq = _miEquipo();
+        if (!eq || !hasta) return;
+        var tope = _tope(maxMeses);
+        var mesFin = mesDe(hasta);
+        for (var i = 0; i <= tope; i++) {
+            try { await cargarMes(_mesDesplazado(mesFin, -i), eq); } catch (e) {}
+            var r = rangoCiclo(hasta, i);
+            if (r && r.ultimoPartido) return;   // ya está el cierre del ciclo
+        }
+    }
+
+    // ⚠️ Lee de la caché local, igual que `resumenReciente`: quien llame debe
+    //    haber hecho antes `await precargarCiclo(hasta)`.
+    function resumenCiclo(ficha, hasta, maxMeses) {
+        var eq = _miEquipo();
+        if (!eq) return null;
+        var r = rangoCiclo(hasta, maxMeses);
+        if (!r || !r.sesiones.length) return null;
+
+        // Las marcas de TODOS los meses que toca el rango: un ciclo largo
+        // puede cruzar más de dos.
+        var marks = {}, mm = mesDe(r.desde), fin = mesDe(r.hasta);
+        while (mm <= fin) {
+            var datos = _mesLocal(docId(eq.teamId, mm));
+            Object.keys(datos.marks || {}).forEach(function (f) { marks[f] = datos.marks[f]; });
+            mm = _mesDesplazado(mm, 1);
+        }
+
+        var out = resumenJugador(marks, r.sesiones, ficha);
+        out.desde = r.desde;
+        out.hasta = r.hasta;
+        out.ultimoPartido = r.ultimoPartido;
+        return out;
+    }
+
+    // ══════════════════════════════════════════════════════════════════
     //  BLOQUE DE TEXTO PARA EL INFORME COLECTIVO
     // ══════════════════════════════════════════════════════════════════
     //  Sumatoria mensual de asistencias y faltas, en el mismo formato de
@@ -855,6 +990,9 @@
         publicarYa: publicarYa,
         precargarMeses: precargarMeses,
         resumenReciente: resumenReciente,
+        precargarCiclo: precargarCiclo,
+        rangoCiclo: rangoCiclo,
+        resumenCiclo: resumenCiclo,
         textoMensual: textoMensual,
         MOTIVOS: MOTIVOS,
         motivoLabel: motivoLabel,
