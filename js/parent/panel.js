@@ -636,8 +636,18 @@ async function openParentPanel(initialTab) {
             return;
         }
 
-        const MOT = { estudios: '📚 Estudios', trabajo: '💼 Trabajo',
-                      medico: '🩹 Motivo médico / lesión', otros: '• Otros' };
+        // 🔑 LOS MOTIVOS SALEN DEL ALMACÉN, NO DE UNA COPIA. Esta pantalla tenía
+        // su propio mapa escrito a mano y ya divergió: al cambiar el icono de
+        // 'otros' en `MOTIVOS`, la familia habría seguido viendo el punto que el
+        // entrenador ya no ve. `attendance-store.js` se carga antes que este
+        // fichero (index.html), pero el respaldo se queda: si un día no está,
+        // vale más una etiqueta vieja que un motivo en blanco.
+        const MOT = (window.CronosAttendance && Array.isArray(window.CronosAttendance.MOTIVOS))
+            ? window.CronosAttendance.MOTIVOS.reduce(function (acc, mo) {
+                  acc[mo.id] = mo.icon + ' ' + mo.label; return acc;
+              }, {})
+            : { estudios: '📚 Estudios', trabajo: '💼 Trabajo',
+                medico: '🩹 Motivo médico / lesión', otros: '📝 Otros' };
 
         let html = '';
         fichas.forEach(f => {

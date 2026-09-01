@@ -259,6 +259,25 @@ function ponPlantilla(localStorage) {
        JSON.stringify(win.CronosAttendance.MOTIVOS));
     ok('E4 · ⚠️ no hay ningún campo de texto libre para la causa',
        !/textarea/i.test(SRC_PANEL.slice(SRC_PANEL.indexOf('Causa:'), SRC_PANEL.indexOf('Causa:') + 1200)));
+
+    // ── El icono tiene que VERSE (v652) ──────────────────────────────
+    // 'otros' era '•', y la rejilla del parte pinta '·' en "Sin marcar": dos
+    // puntitos que sólo separaba el color. La regla que se fija es la de la
+    // FORMA, no el emoji concreto: un signo de puntuación del plano básico no
+    // vale como icono de causa. Los cuatro emojis viven fuera del BMP
+    // (codePointAt > 0xFFFF), un punto o una equis no.
+    const iconos = win.CronosAttendance.MOTIVOS.map(m => m.icon);
+    ok('E5 · ningún icono de causa es un signo de puntuación',
+       iconos.every(ic => ic.codePointAt(0) > 0xFFFF), JSON.stringify(iconos));
+    ok('E6 · …y ninguno se confunde con el hueco de "Sin marcar"',
+       iconos.every(ic => ic !== '·' && ic !== '•' && ic !== '.'), JSON.stringify(iconos));
+
+    // ⚠️ Y LA PANTALLA DE FAMILIAS NO PUEDE LLEVAR SU PROPIA COPIA. Tenía un
+    // mapa de motivos escrito a mano; al cambiar el icono de 'otros' la familia
+    // habría seguido viendo el punto que el entrenador ya no ve.
+    ok('E7 · el panel de familias saca los motivos del almacén, no de una copia',
+       /CronosAttendance\.MOTIVOS/.test(SRC_PPANEL) &&
+       !/otros:\s*'•/.test(SRC_PPANEL), 'seguía con su mapa propio de motivos');
 }
 
 // ═════════════════════════════════════════════════════════════════════

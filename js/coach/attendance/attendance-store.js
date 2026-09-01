@@ -55,7 +55,13 @@
         { id: 'estudios', label: 'Estudios',            icon: '📚' },
         { id: 'trabajo',  label: 'Trabajo',             icon: '💼' },
         { id: 'medico',   label: 'Motivo médico / lesión', icon: '🩹' },
-        { id: 'otros',    label: 'Otros',               icon: '•'  }
+        // ⚠️ 'otros' NO PUEDE SER UN PUNTO. Fue '•' hasta v652, y en la rejilla
+        // del parte mensual la celda "Sin marcar" pinta '·': dos puntitos que
+        // sólo se distinguían por el color y por el `title`. El icono de una
+        // causa tiene que leerse de un vistazo — para eso está la rejilla—, así
+        // que aquí van cuatro EMOJIS con silueta y color propios, ninguno un
+        // signo de puntuación.
+        { id: 'otros',    label: 'Otros',               icon: '📝' }
     ];
 
     function motivoLabel(id) {
