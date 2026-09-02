@@ -123,16 +123,77 @@ function openConvocationModal() {
     // (`mode` en unas funciones, `currentMode` en otras) sin cambiar nada.
     const roster = window.cronosPlantillaAmbas();
     const myPlayers = roster[currentMode] || [];
-    const maxConvoked = currentMode === 'f7' ? 14 : 18;
     const minForMatch = currentMode === 'f7' ? 5 : 7;
 
     const isMobile = window.innerWidth < 640;
     const cols = isMobile ? 2 : (currentMode === 'f7' ? 3 : 5);
-    const maxTitulares = currentMode === 'f7' ? 7 : 11;
     const minTitulares = currentMode === 'f7' ? 5 : 7;
 
     // Restore saved convocation data
     const savedConv = JSON.parse(localStorage.getItem('cronos_conv_data') || '{}');
+
+    // ════════════════════════════════════════════════════════════════
+    //  ⚖️ v666 · LOS CUPOS DEPENDEN DEL TIPO DE PARTIDO, ASÍ QUE CAMBIAN
+    // ════════════════════════════════════════════════════════════════
+    //  Hasta aquí `maxConvoked` y `maxTitulares` eran CONSTANTES calculadas al
+    //  pintar (14/18 y 7/11, siempre). Ahora el tipo de partido puede cambiar
+    //  sin salir de la pantalla, y con él el cupo: un AMISTOSO no tiene acta de
+    //  federación y la convocatoria queda abierta, mientras que el tope de
+    //  TITULARES no lo relaja nadie —en el campo hay siete u once—.
+    //
+    //  🔑 LOS NÚMEROS NO SE ESCRIBEN AQUÍ: salen de `cronosCupoConvocatoria`
+    //     (js/core/utils.js), que es la definición única que estrenó v660 para
+    //     el informe manual. Copiarlos habría dejado dos tablas que un día
+    //     dirán cosas distintas del mismo partido.
+    //
+    //  🔑 PASAN DE `const` A `let` Y NADA MÁS. Todos los sitios que los usan
+    //     —el clic sobre el jugador 15, `convocationError`, los contadores— los
+    //     LEEN, así que con recalcular la variable se enteran los tres sin
+    //     tocar ni una comparación. Es la forma de cambiar esto sin reabrir el
+    //     camino crítico que arregló v506.
+    //
+    //  ⚠️ «SIN TOPE» SE REPRESENTA CON UN NÚMERO ENORME, no con null: las tres
+    //     comparaciones son `>` y `>=`, y contra null darían por bueno
+    //     cualquier valor negativo y compararían mal. El texto de «sin tope»
+    //     viaja aparte, en `maxConvokedTxt`.
+    let maxConvoked = currentMode === 'f7' ? 14 : 18;
+    let maxTitulares = currentMode === 'f7' ? 7 : 11;
+    let maxConvokedTxt = String(maxConvoked);
+
+    function _convTipoActual() {
+        const el = document.getElementById('conv-type');
+        return (el && el.value) || savedConv.type || 'amistoso';
+    }
+
+    // Recalcula los cupos con la regla única y refresca lo que los muestra.
+    function _convRecalcularCupos() {
+        const tipo = _convTipoActual();
+        let cupo = null;
+        if (typeof window.cronosCupoConvocatoria === 'function') {
+            cupo = window.cronosCupoConvocatoria(currentMode, tipo);
+        }
+        if (!cupo) {
+            // ⚠️ Sin la regla cargada NO se inventa una tabla de repuesto: se
+            //    queda el cupo estricto de competición, que es el que había
+            //    hasta v665. «No sé» no puede significar «sin límite» (v617).
+            maxConvoked = currentMode === 'f7' ? 14 : 18;
+            maxTitulares = currentMode === 'f7' ? 7 : 11;
+            maxConvokedTxt = String(maxConvoked);
+        } else {
+            maxTitulares = cupo.maxTitulares;
+            if (cupo.maxConvocados == null) {
+                maxConvoked = Number.MAX_SAFE_INTEGER;
+                maxConvokedTxt = 'sin tope';
+            } else {
+                maxConvoked = cupo.maxConvocados;
+                maxConvokedTxt = String(maxConvoked);
+            }
+        }
+        const elC = document.getElementById('conv-max-conv');
+        const elT = document.getElementById('conv-max-tit');
+        if (elC) elC.textContent = (maxConvokedTxt === 'sin tope') ? 'sin tope' : ('de ' + maxConvokedTxt + ' max');
+        if (elT) elT.textContent = 'min ' + minForMatch + ' · max ' + maxTitulares;
+    }
 
     const modal = document.getElementById('setup-modal');
     modal.style.display = 'flex';
@@ -151,6 +212,29 @@ function openConvocationModal() {
                         border-radius:10px; padding:0.8rem 1rem; margin-bottom:0.8rem;">
                 <div style="font-size:0.78rem; font-weight:700; color:var(--primary);
                             margin-bottom:0.5rem; letter-spacing:0.5px;">\u26BD DATOS DEL PARTIDO</div>
+                <!-- \u{1F3C6} EL TIPO DE PARTIDO, LO PRIMERO (v666).
+                     No es orden por gusto: de el dependen los CUPOS de
+                     convocatoria y si hay o no calendario oficial que ofrecer,
+                     asi que preguntarlo el ultimo obligaba a rehacer lo de
+                     arriba. Mismo criterio que en el informe manual (v664). -->
+                <div style="margin-bottom:0.6rem;">
+                    <label style="font-size:0.72rem; color:var(--text-muted); display:block; margin-bottom:0.2rem;">\u{1F3C6} Tipo de partido</label>
+                    <div style="display:flex; gap:0.5rem; flex-wrap:wrap; align-items:center;">
+                        <select id="conv-type" class="conv-input" onchange="_convCambiarTipo()" style="max-width:14rem;">
+                            <option value="liga" ${savedConv.type==='liga'?'selected':''}>\u{1F3C6} Liga</option>
+                            <option value="copa" ${savedConv.type==='copa'?'selected':''}>\u{1F3C5} Copa</option>
+                            <option value="torneo" ${savedConv.type==='torneo'?'selected':''}>\u{1F396}\uFE0F Torneo</option>
+                            <option value="amistoso" ${(savedConv.type||'amistoso')==='amistoso'?'selected':''}>\u{1F91D} Amistoso</option>
+                        </select>
+                        <div id="conv-cupo-txt" style="flex:1; min-width:12rem; font-size:0.68rem;
+                             color:var(--text-muted); line-height:1.5;"></div>
+                    </div>
+                </div>
+
+                <!-- \u{1F4C5} EL CALENDARIO OFICIAL. Solo se pinta en LIGA y solo si el
+                     club lo importo; lo rellena _convCargarCalendario(). -->
+                <div id="conv-cal-box" style="display:none; margin-bottom:0.6rem;"></div>
+
                 <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(160px, 1fr)); gap:0.5rem;">
                     <div>
                         <label style="font-size:0.72rem; color:var(--text-muted); display:block; margin-bottom:0.2rem;">\u{1F4C5} Fecha</label>
@@ -174,14 +258,11 @@ function openConvocationModal() {
                             placeholder="Equipo rival"
                             value="${typeof escapeHtml==='function'? escapeHtml(savedConv.rival||TEAM_NAMES.away||''): savedConv.rival||TEAM_NAMES.away||''}">
                     </div>
-                    <div>
-                        <label style="font-size:0.72rem; color:var(--text-muted); display:block; margin-bottom:0.2rem;">\u{1F3C6} Tipo de partido</label>
-                        <select id="conv-type" class="conv-input">
-                            <option value="liga" ${savedConv.type==='liga'?'selected':''}>Liga</option>
-                            <option value="copa" ${savedConv.type==='copa'?'selected':''}>Copa</option>
-                            <option value="amistoso" ${(savedConv.type||'amistoso')==='amistoso'?'selected':''}>Amistoso</option>
-                            <option value="torneo" ${savedConv.type==='torneo'?'selected':''}>Torneo</option>
-                        </select>
+                    <div id="conv-jornada-box">
+                        <label style="font-size:0.72rem; color:var(--text-muted); display:block; margin-bottom:0.2rem;">\u{1F522} Jornada</label>
+                        <input type="number" min="1" max="60" id="conv-jornada" class="conv-input"
+                            onwheel="this.blur()"
+                            value="${typeof escapeHtml==='function'? escapeHtml(String(savedConv.jornada||'')): (savedConv.jornada||'')}">
                     </div>
                     <div>
                         <label style="font-size:0.72rem; color:var(--text-muted); display:block; margin-bottom:0.2rem;">\u{1F4DD} Hora presentaci\u00f3n</label>
@@ -210,13 +291,13 @@ function openConvocationModal() {
                             border-radius:10px; padding:0.7rem 1rem; text-align:center;">
                     <div style="font-size:0.68rem; color:var(--text-muted); text-transform:uppercase; letter-spacing:1px; margin-bottom:2px;">Convocados</div>
                     <div id="conv-num-conv" style="font-size:2.2rem; font-weight:900; color:var(--primary); line-height:1;">0</div>
-                    <div style="font-size:0.6rem; color:var(--text-muted);">de ${maxConvoked} max</div>
+                    <div id="conv-max-conv" style="font-size:0.6rem; color:var(--text-muted);">de ${maxConvoked} max</div>
                 </div>
                 <div id="conv-counter-tit" style="background:rgba(240,136,62,0.1); border:2px solid rgba(240,136,62,0.35);
                             border-radius:10px; padding:0.7rem 1rem; text-align:center;">
                     <div style="font-size:0.68rem; color:var(--text-muted); text-transform:uppercase; letter-spacing:1px; margin-bottom:2px;">Titulares</div>
                     <div id="conv-num-tit" style="font-size:2.2rem; font-weight:900; color:#f0883e; line-height:1;">0</div>
-                    <div style="font-size:0.6rem; color:var(--text-muted);">min ${minForMatch} · max ${maxTitulares}</div>
+                    <div id="conv-max-tit" style="font-size:0.6rem; color:var(--text-muted);">min ${minForMatch} · max ${maxTitulares}</div>
                 </div>
             </div>
 
@@ -299,6 +380,119 @@ function openConvocationModal() {
     // construir el innerHTML aquí borraría la selección de convocados y
     // titulares que el entrenador llevara hecha.
     if (typeof _cronosPintarAsistenciaConv === 'function') _cronosPintarAsistenciaConv();
+
+    // ════════════════════════════════════════════════════════════════
+    //  📅 v666 · EL CALENDARIO OFICIAL, TAMBIÉN EN LA CONVOCATORIA
+    // ════════════════════════════════════════════════════════════════
+    //  Encargo del autor: que esta pantalla funcione «igual que en el módulo de
+    //  informes manuales». En LIGA se ofrecen los partidos del calendario
+    //  importado y al elegir uno se autocompletan rival, campo, hora y jornada.
+    //
+    //  🔑 SE LEE CON LA MISMA FUNCIÓN, `calPartidosDeEquipo()` (v659), que ya
+    //     conoce la forma del almacén (11 documentos mensuales) y el índice.
+    //     Y el `filaId` que pide ES `cronosTeamId()`, la misma clave con la que
+    //     el cuadrante identifica la fila del equipo: por eso el entrenador ve
+    //     su calendario sin pasar por una pantalla del director.
+    //
+    //  ⚠️ NO PUEDE TUMBAR LA CONVOCATORIA. Es una comodidad: si la lectura
+    //     falla, o el club no ha importado nada, quedan los campos a mano
+    //     exactamente como estaban antes de v666. Por eso va detrás del pintado
+    //     y dentro de su propio try.
+    window._convPartidosCal = [];
+
+    window._convCambiarTipo = function () {
+        _convRecalcularCupos();
+        const tipo = _convTipoActual();
+        const esLiga = (tipo === 'liga');
+        const caja = document.getElementById('conv-cal-box');
+        // La JORNADA sólo tiene sentido en liga; un amistoso no la tiene y una
+        // copa va por rondas. Es la misma separación del informe manual.
+        const jor = document.getElementById('conv-jornada-box');
+        if (jor) jor.style.display = esLiga ? '' : 'none';
+        if (caja) caja.style.display = (esLiga && window._convPartidosCal.length) ? '' : 'none';
+
+        const txt = document.getElementById('conv-cupo-txt');
+        if (txt) {
+            const modo = currentMode === 'f7' ? 'Fútbol 7' : 'Fútbol 11';
+            txt.innerHTML = (maxConvokedTxt === 'sin tope')
+                ? '🤝 ' + modo + ' · convocatoria <strong style="color:#3fb950;">abierta</strong>, ' +
+                  'sin límite de convocados. El tope de <strong>' + maxTitulares +
+                  ' titulares</strong> se mantiene: en el campo no caben más.'
+                : '⚖️ ' + modo + ' · máximo <strong>' + maxConvokedTxt + ' convocados</strong> y ' +
+                  '<strong>' + maxTitulares + ' titulares</strong>.';
+        }
+        if (typeof updateConvCounters === 'function') updateConvCounters();
+    };
+
+    // Vuelca en los campos el partido elegido del calendario.
+    window._convElegirPartidoCal = function (v) {
+        const i = parseInt(v, 10);
+        const p = (i >= 0) ? window._convPartidosCal[i] : null;
+        if (!p) return;              // «a mano»: no se toca nada de lo escrito
+        const set = (id, valor) => { const e = document.getElementById(id); if (e) e.value = valor; };
+        set('conv-date', p.fecha || '');
+        set('conv-rival', p.rival || '');
+        set('conv-venue', p.sede || '');
+        set('conv-time', p.hora || '');
+        set('conv-jornada', p.jornada == null ? '' : String(p.jornada));
+        // 🏠/✈️ La localía del partido la lleva el interruptor LOCAL/VISITA del
+        //    menú de arranque, que es de donde salen `TEAM_NAMES` y el rol del
+        //    equipo. Aquí sólo se avisa de lo que dice el calendario para que
+        //    el entrenador lo cuadre; cambiarlo a su espalda reescribiría la
+        //    identidad del partido desde una pantalla que no la gobierna.
+        if (typeof showToast === 'function') {
+            showToast('📅 J' + (p.jornada || '?') + ' · ' + (p.rival || '') +
+                      ' · ' + (p.local === false ? '✈️ fuera' : '🏠 en casa'), 4000);
+        }
+    };
+
+    (async function _convCargarCalendario() {
+        try {
+            if (typeof window.calPartidosDeEquipo !== 'function') return;
+            const eq = (typeof window.cronosMyTeam === 'function') ? window.cronosMyTeam() : null;
+            if (!eq || !eq.clubId || !eq.teamId) return;
+            const lista = await window.calPartidosDeEquipo(eq.clubId, eq.teamId) || [];
+            if (!lista.length) return;
+            window._convPartidosCal = lista;
+
+            const hoy = (typeof _cronosLocalDateKey === 'function')
+                ? _cronosLocalDateKey(new Date()) : new Date().toISOString().slice(0, 10);
+            const jugados = [], porJugar = [];
+            lista.forEach((p, i) => {
+                const et = (p.jornada ? 'J' + p.jornada + ' · ' : '') + (p.fecha || '') +
+                           (p.hora ? ' · ' + p.hora : '') +
+                           ' · ' + (p.local !== false ? '🏠 ' : '✈️ ') + (p.rival || 'Rival');
+                const op = '<option value="' + i + '">' +
+                           (typeof escapeHtml === 'function' ? escapeHtml(et) : et) + '</option>';
+                ((p.fecha || '') <= hoy ? jugados : porJugar).push(op);
+            });
+
+            const caja = document.getElementById('conv-cal-box');
+            if (!caja) return;
+            caja.innerHTML =
+                '<label style="font-size:0.72rem; color:var(--text-muted); display:block; margin-bottom:0.2rem;">' +
+                    '📅 Jornada y partido · calendario oficial</label>' +
+                '<select id="conv-cal" class="conv-input" onchange="_convElegirPartidoCal(this.value)" ' +
+                    'style="width:100%;">' +
+                    '<option value="-1" selected>✍️ A mano (no usar el calendario)</option>' +
+                    (jugados.length  ? '<optgroup label="Ya jugados">' + jugados.reverse().join('') + '</optgroup>' : '') +
+                    (porJugar.length ? '<optgroup label="Aún por jugar">' + porJugar.join('') + '</optgroup>' : '') +
+                '</select>' +
+                '<div style="font-size:0.66rem; color:var(--text-muted); margin-top:0.2rem;">' +
+                    '📅 <strong style="color:#3fb950;">' + lista.length + ' partidos</strong> del calendario ' +
+                    'oficial. Al elegir uno se rellenan solos el rival, el campo, la hora y la jornada.</div>';
+
+            // ⚠️ AQUÍ NO SE PRESELECCIONA NINGÚN PARTIDO, al revés que en el
+            //    informe manual, y es deliberado: allí se registra un partido
+            //    YA JUGADO y acertar es casi seguro; aquí se está preparando el
+            //    PRÓXIMO, y pisar el rival o el campo que el entrenador acabe
+            //    de escribir sería peor que no ayudar. Se ofrece y él elige.
+            if (typeof window._convCambiarTipo === 'function') window._convCambiarTipo();
+        } catch (e) {
+            console.warn('[Convocatoria] no se pudo leer el calendario oficial:',
+                         e && e.message ? e.message : e);
+        }
+    })();
 
     const countEl = document.getElementById('conv-count');
     const goBtn   = document.getElementById('btn-go-titulares');
@@ -448,6 +642,12 @@ function openConvocationModal() {
         updateConvCounters();
     }
 
+    // v666 · Y ANTES DE PINTAR, APLICAR EL CUPO DEL TIPO GUARDADO. Si la última
+    //   convocatoria fue un amistoso, la pantalla tiene que abrir ya con la
+    //   convocatoria abierta; si no, el contador diría «de 14 max» mientras la
+    //   validación permite más, que es la peor de las dos mentiras posibles.
+    if (typeof window._convCambiarTipo === 'function') window._convCambiarTipo();
+
     // v506 · Pintar el estado inicial SIEMPRE (haya equipo cargado o no):
     //   asi el motivo del bloqueo se ve desde el primer momento y no solo
     //   despues del primer clic.
@@ -534,6 +734,9 @@ function saveConvData() {
         venue:    document.getElementById('conv-venue')?.value.trim() || '',
         rival:    document.getElementById('conv-rival')?.value.trim() || '',
         type:     document.getElementById('conv-type')?.value     || 'amistoso',
+        // v666 · La jornada, que ahora puede venir del calendario oficial. Sólo
+        // se pregunta en LIGA, así que en amistoso/copa/torneo viaja vacía.
+        jornada:  document.getElementById('conv-jornada')?.value.trim() || '',
         meettime: document.getElementById('conv-meettime')?.value || '',
         // 💬 Mensaje del entrenador para los jugadores. Va APARTE de `type`:
         // ver el comentario de _cronosConvExtra() en whatsapp-email.js, donde
@@ -609,7 +812,28 @@ function goToTitularSelection() {
     const titularCount = matchPlayers.filter(p => p.initialStatus === 'field').length;
 
     const minTitulares = currentMode === 'f7' ? 5 : 7;
-    const maxConvocados = currentMode === 'f7' ? 14 : 18;
+
+    // ════════════════════════════════════════════════════════════════
+    //  🔴 v667 · ESTE TOPE TAMBIEN TIENE QUE CONOCER EL TIPO DE PARTIDO
+    // ════════════════════════════════════════════════════════════════
+    //  Aqui habia un `currentMode === 'f7' ? 14 : 18` fijo, y con v666 eso paso
+    //  a ser una CONTRADICCION: la pantalla de convocatoria ya deja convocar
+    //  sin tope en un amistoso, pero al pulsar IR AL PARTIDO este `if` lo
+    //  rechazaba con «Maximo 14 convocados». Una capa permite y la siguiente
+    //  deniega — el peor sitio donde dejar dos criterios, porque el usuario ya
+    //  ha hecho el trabajo.
+    //
+    //  🔑 Se pide el cupo a la MISMA regla unica (`cronosCupoConvocatoria`), y
+    //     el respaldo —si utils.js no hubiera cargado— es el ESTRICTO de
+    //     siempre: «no se» no puede significar «sin limite» (v617).
+    let maxConvocados = currentMode === 'f7' ? 14 : 18;
+    if (typeof window.cronosCupoConvocatoria === 'function') {
+        const _tipo = (document.getElementById('conv-type') && document.getElementById('conv-type').value) ||
+                      (window._savedConvData && window._savedConvData.type) || 'amistoso';
+        const _cupo = window.cronosCupoConvocatoria(currentMode, _tipo);
+        if (_cupo) maxConvocados = (_cupo.maxConvocados == null) ? Number.MAX_SAFE_INTEGER : _cupo.maxConvocados;
+    }
+
     // v506 · Los limites se comprueban ANTES de tocar nada, y cada aborto
     //   devuelve false para que ningun envoltorio siga adelante. Se mira
     //   primero el MAXIMO de convocados: es el que rompia el partido.
@@ -628,6 +852,13 @@ function goToTitularSelection() {
 
     window.activeConvocation = matchPlayers;
     window._convokedPlayers = matchPlayers;
+
+    // 🏷️ v667 · El rival elegido en la convocatoria pasa a ser el nombre del
+    //    equipo contrario del partido. Va AQUI —despues de las validaciones y
+    //    antes de pintar nada— para que no se aplique cuando la convocatoria se
+    //    rechaza y para que `spawnInitialPlayers()` y el marcador ya nazcan con
+    //    el nombre bueno. Ver la nota larga junto a la funcion.
+    if (typeof _convHeredarRivalAlPartido === 'function') _convHeredarRivalAlPartido();
 
     document.body.classList.remove('setup-mode');
     spawnInitialPlayers();
@@ -670,6 +901,62 @@ function startMatchFromTitularSelection() {
     // v506 · propaga el veredicto: false = convocatoria invalida, no se arranca
     return goToTitularSelection();
 }
+
+// ════════════════════════════════════════════════════════════════════
+//  🏷️ v667 · EL RIVAL DE LA CONVOCATORIA SE HEREDA AL PARTIDO
+// ════════════════════════════════════════════════════════════════════
+//  Reportado por el autor con capturas (2026-09-03): elige «Maspalomas» en la
+//  convocatoria —del calendario oficial o a mano— y al pasar al partido el
+//  marcador sigue diciendo «VISITANTE». El dato estaba escrito y no viajaba.
+//
+//  🔑 POR QUE NO VIAJABA. `TEAM_NAMES` lo fija `confirmSetup()` desde las dos
+//     casillas del menu de arranque, y la convocatoria es una pantalla
+//     POSTERIOR que nunca las tocaba: el rival vivia solo en
+//     `cronos_conv_data`, que es lo que se manda a las familias.
+//
+//  🔑🔑 Y EL RIVAL NO ES SIEMPRE «away». `TEAM_NAMES.home`/`away` son LOCAL y
+//     VISITANTE del ENCUENTRO, y `window._userTeamRole` dice cual de los dos
+//     es el equipo del entrenador. Si dirige de visitante, el rival es el
+//     LOCAL. Escribirlo siempre en `away` le pondria el nombre del rival a su
+//     PROPIO equipo — y de ahi salen el marcador, el informe y la
+//     retransmision. Es la misma cautela que obligo a `_cMyTeamKey()`.
+//
+//  ⚠️ SE ESCRIBE TAMBIEN EN LA CASILLA DEL SETUP, no solo en `TEAM_NAMES`: si
+//     el entrenador vuelve atras y confirma el arranque, `confirmSetup()` lee
+//     la casilla y volveria a poner «VISITANTE» encima. Dejar los dos sitios
+//     de acuerdo es lo que hace que el nombre no se pierda por el camino.
+//
+//  ⚠️ NO PISA UN NOMBRE CON UNO VACIO: sin rival en la convocatoria no se toca
+//     nada, y el partido arranca exactamente como antes de v667.
+function _convHeredarRivalAlPartido() {
+    try {
+        const el = document.getElementById('conv-rival');
+        const guardado = (typeof window !== 'undefined' && window._savedConvData) || {};
+        const rival = String((el && el.value) || guardado.rival || '').trim();
+        if (!rival) return '';
+
+        // El rival ocupa el lado CONTRARIO al del equipo del entrenador.
+        const miLado    = (window._userTeamRole === 'away') ? 'away' : 'home';
+        const ladoRival = (miLado === 'away') ? 'home' : 'away';
+        const nombre    = rival.toUpperCase();
+
+        if (typeof TEAM_NAMES !== 'undefined' && TEAM_NAMES) TEAM_NAMES[ladoRival] = nombre;
+
+        const input = document.getElementById('setup-' + ladoRival + '-name');
+        if (input) input.value = nombre;
+
+        // El marcador de arriba, que es donde el vio el fallo.
+        const rotulo = document.getElementById(ladoRival === 'away' ? 'team-b-name' : 'team-a-name');
+        if (rotulo) rotulo.textContent = nombre;
+
+        return nombre;
+    } catch (e) {
+        // ⚠️ Un nombre no puede impedir que arranque un partido.
+        console.warn('[Convocatoria] no se pudo heredar el rival:', e && e.message ? e.message : e);
+        return '';
+    }
+}
+if (typeof window !== 'undefined') window._convHeredarRivalAlPartido = _convHeredarRivalAlPartido;
 
 
 function startMatchWithConvocation() {
@@ -730,6 +1017,12 @@ function startMatchWithConvocation() {
     if (typeof liveMatchId !== 'undefined') liveMatchId = null;
     if (typeof liveIsActive !== 'undefined') liveIsActive = false;
     window._cronosLastDispatchedMatch = null;
+
+    // 🏷️ v667 · LA SEGUNDA VIA AL PARTIDO, y por eso se hereda tambien aqui.
+    //    Hay DOS funciones que arrancan un encuentro desde la convocatoria
+    //    (`goToTitularSelection` y esta): poner la herencia solo en una es
+    //    justo la forma de que el nombre aparezca unas veces si y otras no.
+    if (typeof _convHeredarRivalAlPartido === 'function') _convHeredarRivalAlPartido();
 
     document.body.classList.remove('setup-mode');
     spawnInitialPlayers();

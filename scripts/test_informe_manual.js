@@ -1115,7 +1115,7 @@ ok('4d · index.html carga el módulo',
 ok('4e · el Service Worker lo precachea',
    /'\.\/js\/coach\/comms\/manual-report\.js'/.test(sw));
 ok('4f · el CACHE_NAME subió (si no, nadie recibe el código nuevo)',
-   /const\s+CACHE_NAME\s*=\s*'cronos-cache-v665'/.test(sw));
+   /const\s+CACHE_NAME\s*=\s*'cronos-cache-v667'/.test(sw));
 
 // 🔑 EL CALENDARIO SE LEE POR SU FUNCIÓN, NO COPIANDO SU ALMACÉN.
 ok('4g · calendario-temporada.js exporta calPartidosDeEquipo',
