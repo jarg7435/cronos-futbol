@@ -366,17 +366,27 @@ const inCol = (written, col) => written.filter(w => w.col === col);
             if (rel !== 'js/coach/comms/panel.js' && rel !== 'js/coach/comms/individual-reports.js'
                 && /\b(openIndividualReports|_sendAllIndividualReports)\b/.test(txt)) orphanRefs.push(rel);
         }
-        ok('1c · fan-in de openMisInformes = app-init.js + setup-modal.js (y nada mas)',
-            JSON.stringify(callers.sort()) === JSON.stringify(['js/core/app-init.js', 'js/core/setup-modal.js']),
+        // ⚠️ v659 · TERCER INVOCADOR, Y ES LEGITIMO: manual-report.js vuelve a
+        //    esta pantalla despues de guardar un informe a mano, porque el
+        //    documento recien escrito TIENE que aparecer ya en el listado (es
+        //    uno mas de cronos_player_reports). Se anade a la lista en vez de
+        //    aflojar la asercion: lo que esta vigila es que el fan-in siga
+        //    siendo CONOCIDO y corto, no que sean dos exactamente.
+        ok('1c · fan-in de openMisInformes = app-init.js + setup-modal.js + manual-report.js (y nada mas)',
+            JSON.stringify(callers.sort()) === JSON.stringify([
+                'js/coach/comms/manual-report.js', 'js/core/app-init.js', 'js/core/setup-modal.js']),
             callers);
         ok('1d · ⚠️ openIndividualReports / _sendAllIndividualReports no tienen invocador en TODO el repo',
             orphanRefs.length === 0, orphanRefs);
         const panel = fs.readFileSync(ORIGIN, 'utf8');
-        ok('1e · las dos llamadas a openMisInformes estan protegidas con typeof',
+        ok('1e · las tres llamadas a openMisInformes estan protegidas con typeof',
             (fs.readFileSync(path.join(ROOT, 'js', 'core', 'app-init.js'), 'utf8')
                 .includes("typeof openMisInformes==='function'"))
             && /typeof openMisInformes === .{0,3}function/.test(
-                fs.readFileSync(path.join(ROOT, 'js', 'core', 'setup-modal.js'), 'utf8')));
+                fs.readFileSync(path.join(ROOT, 'js', 'core', 'setup-modal.js'), 'utf8'))
+            // v659 · la vuelta desde el informe manual, con la misma guarda.
+            && /typeof window\.openMisInformes === 'function'/.test(
+                fs.readFileSync(path.join(ROOT, 'js', 'coach', 'comms', 'manual-report.js'), 'utf8')));
         ok('1f · la autoasignacion window.openIndividualReports = window.openIndividualReports sigue en panel.js',
             /window\.openIndividualReports\s+= window\.openIndividualReports;/.test(panel));
     }

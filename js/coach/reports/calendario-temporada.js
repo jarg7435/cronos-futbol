@@ -183,6 +183,64 @@ window.calResumenEquipo = async function (clubId, filaId) {
 };
 
 // ════════════════════════════════════════════════════════════════════
+//  🔗 LO QUE CONSUME «AÑADIR INFORME» (v659)
+// ════════════════════════════════════════════════════════════════════
+//  La temporada ENTERA de UN equipo, en una lista plana ordenada por fecha:
+//      [{ fecha, jornada, hora, rival, local, sede }, …]
+//
+//  🔑 VIVE AQUÍ Y NO EN EL FORMULARIO. La forma del almacén —11 documentos
+//  `CALENDARIO__{mes}` con un mapa `partidos[filaId][fecha]`— es una decisión
+//  de ESTE fichero, tomada por el coste de lectura de Firestore. Que el
+//  formulario de informes manuales la conociera sería una segunda copia de la
+//  cascada, y el día que cambie el almacén sólo se enteraría una de las dos.
+//  Es exactamente el motivo por el que `cronosMyTeam` acabó siendo única.
+//
+//  🔑 `filaId` ES EL teamId. La fila del cuadrante se identifica con
+//  `cronosTeamId(clubId, cat, sub)` (cuadrante-club.js, `_cqIdFilaEquipo`),
+//  que es la MISMA clave con la que se sellan los informes. Por eso el
+//  entrenador puede pedir su calendario sin pasar por el cuadrante, que es
+//  una pantalla del director.
+//
+//  ⚠️ NO LANZA NUNCA. Un club sin calendario importado devuelve [] y quien
+//  llama sigue funcionando: el calendario es una comodidad, no un requisito.
+// ════════════════════════════════════════════════════════════════════
+window.calPartidosDeEquipo = async function (clubId, filaId) {
+    if (!clubId || !filaId) return [];
+    try {
+        const idx = await _calLeerIndice(clubId);
+        const info = idx.equipos && idx.equipos[filaId];
+        // Los meses que el índice dice que ocupa este equipo; si el índice no
+        // lo sabe (importaciones anteriores al índice), los 11 de la temporada.
+        const meses = (info && Array.isArray(info.meses) && info.meses.length)
+            ? info.meses
+            : _calMesesDe(window.CalParser.temporadaDe(new Date()));
+
+        const salida = [];
+        for (const mes of meses) {
+            const delMes = await _calLeerMes(clubId, mes);
+            const delEquipo = (delMes || {})[filaId] || {};
+            Object.keys(delEquipo).forEach(fecha => {
+                const d = delEquipo[fecha] || {};
+                salida.push({
+                    fecha: fecha,
+                    jornada: d.jornada == null ? '' : d.jornada,
+                    hora: d.hora || '',
+                    rival: d.rival || '',
+                    local: d.local === true,
+                    sede: d.sede || '',
+                });
+            });
+        }
+        return salida.sort((a, b) => a.fecha.localeCompare(b.fecha) ||
+                                     String(a.hora).localeCompare(String(b.hora)));
+    } catch (e) {
+        console.warn('[Calendario] no se pudo leer la temporada del equipo:',
+                     e && e.message ? e.message : e);
+        return [];
+    }
+};
+
+// ════════════════════════════════════════════════════════════════════
 //  ESCRITURA
 // ════════════════════════════════════════════════════════════════════
 //  ⚠️ SE LEE, SE MODIFICA Y SE ESCRIBE EL MES ENTERO (`merge:false`).

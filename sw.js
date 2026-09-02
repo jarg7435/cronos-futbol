@@ -2640,7 +2640,7 @@
 //          las ramas de director y coordinador que anadio v610/v611 se AVERIABAN
 //          en el simulador y nadie las probaba. 8 casos nuevos -> 46/46.
 const VERSION = 'v399';
-const CACHE_NAME = 'cronos-cache-v658';
+const CACHE_NAME = 'cronos-cache-v661';
 
 const ASSETS = [
     './',
@@ -2722,6 +2722,10 @@ const ASSETS = [
     './js/coach/comms/bulk-messaging.js',
     './js/coach/comms/match-reports-send.js',
     './js/coach/comms/match-reports-auto.js',
+    // v659 · Informe manual del partido no cronometrado. Va al precache como
+    // el resto del panel: sin el, un entrenador sin cobertura —que es
+    // justamente quien lo necesita— abriria "Anadir informe" y no habria nada.
+    './js/coach/comms/manual-report.js',
     './js/coach/reports/report-engine.js',
     './js/coach/reports/club-reports.js',
     './js/coach/reports/director-config.js',

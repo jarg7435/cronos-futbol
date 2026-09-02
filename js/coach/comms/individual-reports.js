@@ -82,6 +82,23 @@ window.openMisInformes = async function openMisInformes() {
                 </div>
             </div>
             <div style="display:flex;align-items:center;gap:0.5rem;">
+                <!-- ➕ v659 · AÑADIR INFORME (js/coach/comms/manual-report.js).
+                     El partido que no se pudo cronometrar — sin cobertura, sin
+                     batería o por despiste— se registra a mano y escribe los
+                     MISMOS documentos que un partido en directo, así que
+                     aparece en este mismo listado sin que aquí haya que
+                     filtrar ni leer nada nuevo.
+                     ⚠️ Guarda typeof: si el módulo no ha cargado, el botón
+                     avisa en vez de romper el onclick (v472: un botón que no
+                     puede hacer nada es peor que no tenerlo).
+                     ⚠️⚠️ Y NADA DE BACKTICKS AQUÍ DENTRO: este comentario vive
+                     dentro de una plantilla de JavaScript, así que un acento
+                     grave la cerraría y partiría el fichero entero. -->
+                <button onclick="typeof openAnadirInforme === 'function' ? openAnadirInforme() : showToast('⚠️ El módulo de informes manuales no está disponible', 4000)"
+                    title="Registrar a mano un partido que no se pudo seguir en directo"
+                    style="background:rgba(63,185,80,0.12);border:1px solid rgba(63,185,80,0.4);
+                           color:#3fb950;padding:0.35rem 0.8rem;border-radius:6px;
+                           cursor:pointer;font-size:0.74rem;font-weight:700;">➕ Añadir informe</button>
                 <button onclick="navBack()"
                     style="background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);
                            color:var(--text-muted);padding:0.35rem 0.8rem;border-radius:6px;
@@ -219,6 +236,15 @@ window.openMisInformes = async function openMisInformes() {
                     Los informes se guardan automáticamente al finalizar un partido
                     y al enviar el Informe Colectivo.
                 </div>
+                <!-- v659 · La pantalla vacía es justo donde hace falta la salida:
+                     un entrenador que no ve nada aquí suele ser el que no pudo
+                     usar la app en el campo. -->
+                <button onclick="typeof openAnadirInforme === 'function' ? openAnadirInforme() : showToast('⚠️ El módulo de informes manuales no está disponible', 4000)"
+                    style="margin-top:1.2rem;background:rgba(63,185,80,0.12);
+                           border:1px solid rgba(63,185,80,0.4);color:#3fb950;
+                           padding:0.55rem 1.1rem;border-radius:8px;cursor:pointer;
+                           font-size:0.78rem;font-weight:700;">
+                    ➕ Añadir un informe a mano</button>
             </div>`;
             return;
         }

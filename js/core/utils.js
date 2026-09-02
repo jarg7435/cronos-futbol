@@ -2340,6 +2340,51 @@ function cronosMyTeamId() {
 //    collective-report); con una copia en cada uno, el día que cambie el
 //    criterio dos de ellos se quedarían atrás y el acumulado mezclaría
 //    partidos contados con reglas distintas.
+// ════════════════════════════════════════════════════════════════════
+//  🧮 EL CUPO DE LA CONVOCATORIA (v659) · modalidad × tipo de partido
+// ════════════════════════════════════════════════════════════════════
+//  Regla de competición del autor (2026-09-02):
+//
+//      PARTIDO DE LIGA      F7 → 14 convocados · 7 titulares
+//                           F11 → 18 convocados · 11 titulares
+//      PARTIDO AMISTOSO     convocatoria ABIERTA (sin tope)
+//                           pero el tope de TITULARES SE MANTIENE (7 / 11)
+//
+//  🔑 EL TOPE DE TITULARES NO ES ADMINISTRATIVO, ES DE JUEGO: en el campo hay
+//     siete u once, se juegue lo que se juegue. Por eso es lo único que el
+//     amistoso NO relaja. El de convocados sí lo es —lo fija el acta de la
+//     federación— y en un amistoso no hay acta.
+//
+//  ⚠️ SE DEVUELVE `null`, NO `Infinity`, PARA "SIN TOPE". Infinity sobrevive
+//     mal a un JSON.stringify (sale `null` igualmente, pero por accidente) y
+//     hace que un `>` compare contra algo que no es un número de verdad.
+//     `null` obliga a quien llama a preguntarse si hay tope, que es la
+//     pregunta correcta.
+//
+//  ⚠️⚠️ ESTA FUNCIÓN NACE COMO LA DEFINICIÓN ÚNICA, PERO NO ES LA ÚNICA COPIA
+//     QUE HAY HOY EN EL REPOSITORIO. Los números 14/18 y 7/11 están además
+//     escritos en línea en js/ai/import.js (la pantalla de convocatoria en
+//     vivo, ×2), js/core/event-listeners.js y js/shared/whatsapp-email.js.
+//     NO se han tocado en esta ronda a propósito: son el camino del partido en
+//     directo, no se pueden probar sin navegador, y el encargo era el
+//     formulario manual. 👉 Si algún día cambian los cupos, hay que mirar LOS
+//     CINCO SITIOS — o, mejor, hacer que los otros cuatro llamen aquí. Queda
+//     escrito para que no se descubra por sorpresa (lección de v551).
+//
+//  ⚠️ Y OJO: la pantalla de convocatoria EN VIVO aplica 14/18 SIEMPRE, sin
+//     distinguir liga de amistoso. La distinción es nueva y hoy sólo la conoce
+//     el informe manual.
+function cronosCupoConvocatoria(modalidad, tipoPartido) {
+    var f11 = String(modalidad || '').toLowerCase() === 'f11';
+    var amistoso = String(tipoPartido || '').toLowerCase() === 'amistoso';
+    return {
+        modalidad:     f11 ? 'f11' : 'f7',
+        tipo:          amistoso ? 'amistoso' : 'liga',
+        maxConvocados: amistoso ? null : (f11 ? 18 : 14),   // null = sin tope
+        maxTitulares:  f11 ? 11 : 7,
+    };
+}
+
 function cronosFueTitular(p) {
     if (!p) return false;
     if (p.initialStatus === 'field') return true;
@@ -2349,6 +2394,7 @@ function cronosFueTitular(p) {
 }
 
 window.cronosFueTitular   = cronosFueTitular;
+window.cronosCupoConvocatoria = cronosCupoConvocatoria;
 window.cronosTeamSlug     = cronosTeamSlug;
 window.cronosTeamId       = cronosTeamId;
 window.cronosTeamIdOfDoc  = cronosTeamIdOfDoc;
