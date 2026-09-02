@@ -92,6 +92,19 @@
 //  titulares (un equipo que llega justo) sí pudo pasar, y bloquearlo sería
 //  impedir registrar un partido que ocurrió.
 //
+//  ── ⚖️ LA CONGRUENCIA GOLES ↔ MARCADOR (v663) ───────────────────────
+//  Encargo del autor: que no se pueda invertir el marcador. En este formulario
+//  TODO gol es de un convocado nuestro —no existe «gol del rival»—, así que la
+//  cuenta de goles de los sucesos se compara con «Nuestros goles» sin ninguna
+//  ambigüedad, y la localía no interviene.
+//    ⛔ más goleadores que goles → IMPOSIBLE, bloquea.
+//    ⚠️ menos goleadores que goles → LEGÍTIMO (gol en propia del rival, o no
+//       recuerda quién marcó), sólo avisa.
+//    🔄 si los goles anotados cuadran EXACTAMENTE con los del rival, es la
+//       firma del marcador tecleado al revés: se dice y se ofrece invertirlo.
+//  Todo en `_mrCongruencia`, y el panel se pinta en `_mrPintarGuardar`, que es
+//  lo único que se repinta con cada cambio.
+//
 //  ── LOS MINUTOS SE CALCULAN, PERO MANDA ÉL ──────────────────────────
 //  Se derivan de la convocatoria (quién salió de inicio) y de los cambios, que
 //  es como los cuenta el cronómetro. La roja CIERRA el tiempo del expulsado
@@ -268,20 +281,75 @@
     // ── El partido elegido, en una sola forma ────────────────────────
     // Da igual que venga del calendario o del formulario manual: de aquí para
     // abajo el resto del fichero maneja UN solo objeto.
+    //  🔑 UNA SOLA FUENTE DE VERDAD: `S.manual`.
+    //
+    //  Antes esto elegía entre DOS sitios —la fila del calendario si había una
+    //  seleccionada, y `S.manual` si no—, y `S.sel` mandaba sobre lo que se
+    //  veía en pantalla. Con el flujo nuevo (v664) elegir un partido del
+    //  calendario RELLENA `S.manual`, así que lo que se guarda es exactamente
+    //  lo que hay escrito en las casillas. Eso permite corregir un dato del
+    //  calendario —un partido aplazado, un campo cambiado— sin salirse a «otro
+    //  partido», y elimina la posibilidad de que la pantalla diga una cosa y el
+    //  documento guarde otra.
+    //
+    //  `S.sel` sobrevive SÓLO para saber qué opción marcar en el desplegable.
     function _mrPartidoElegido(S) {
-        if (S.sel >= 0 && S.partidos[S.sel]) {
-            var p = S.partidos[S.sel];
-            return {
-                fecha: p.fecha, rival: p.rival, local: p.local !== false,
-                jornada: p.jornada == null ? '' : String(p.jornada),
-                hora: p.hora || '', sede: p.sede || '',
-            };
-        }
         var m = S.manual;
         return {
             fecha: m.fecha, rival: String(m.rival || '').trim(), local: m.local !== false,
             jornada: String(m.jornada || ''), hora: m.hora || '', sede: m.sede || '',
         };
+    }
+
+    // Vuelca una fila del calendario oficial en los campos del formulario.
+    function _mrAplicarDelCalendario(i) {
+        var S = window._mrState;
+        var p = S.partidos[i];
+        if (!p) return false;
+        S.sel = i;
+        S.manual = {
+            fecha:   p.fecha || _mrHoy(),
+            rival:   p.rival || '',
+            local:   p.local !== false,
+            jornada: p.jornada == null ? '' : String(p.jornada),
+            hora:    p.hora || '',
+            sede:    p.sede || '',
+        };
+        return true;
+    }
+
+    // ── ¿Sobre qué partido del calendario se abre el formulario? ─────
+    //  EL MÁS CERCANO A HOY: el último ya jugado —que es el que se viene a
+    //  registrar en el 99 % de los casos— y, si aún no se ha jugado ninguno
+    //  (temporada recién empezada), el primero. Devuelve el índice, o -1 si no
+    //  hay calendario.
+    //
+    //  🔑 FUNCIÓN APARTE, Y NO UN BUCLE DENTRO DE `openAnadirInforme`, PARA QUE
+    //     EL GUARD EJECUTE ESTO Y NO UNA COPIA. Un test que reimplementa la
+    //     regla que dice vigilar se pone verde con el defecto puesto: es
+    //     exactamente lo que pasó en v620.
+    //
+    //  ⚠️ `partidos` viene ORDENADO POR FECHA (lo ordena calPartidosDeEquipo),
+    //     y de eso depende que el índice 0 sea el más próximo.
+    function _mrPreseleccion(partidos, hoy) {
+        var lista = Array.isArray(partidos) ? partidos : [];
+        var elegido = -1;
+        for (var i = 0; i < lista.length; i++) {
+            if (lista[i] && lista[i].fecha <= hoy) elegido = i;
+        }
+        if (elegido < 0 && lista.length) elegido = 0;
+        return elegido;
+    }
+
+    // ¿Se ofrece el desplegable del calendario oficial?
+    //  🔑 SÓLO EN LIGA, y sólo si el equipo tiene calendario importado. Un
+    //     amistoso o una copa NO figuran en el calendario regular de la
+    //     federación —es la razón por la que el autor pidió separarlos—, así
+    //     que ofrecer ahí una lista de jornadas de liga sólo puede inducir a
+    //     error.
+    function _mrUsaCalendario() {
+        var S = window._mrState;
+        return S.tipoPartido === 'liga' && S.partidos.length > 0;
     }
 
     // ════════════════════════════════════════════════════════════════
@@ -515,12 +583,27 @@
             S.partidos = [];
         }
 
-        // Si hay calendario, se preselecciona el ÚLTIMO partido ya jugado: es
-        // el que casi siempre se viene a registrar.
-        var hoy = _mrHoy();
-        for (var i = 0; i < S.partidos.length; i++) {
-            if (S.partidos[i].fecha <= hoy) S.sel = i;
-        }
+        // ══════════════════════════════════════════════════════════════
+        //  🔴 SE ABRE SOBRE EL PARTIDO MÁS CERCANO A HOY, NUNCA EN «a mano»
+        // ══════════════════════════════════════════════════════════════
+        //  Aquí había un fallo medido contra producción el 2026-09-02: esto
+        //  sólo preseleccionaba un partido si su fecha era ANTERIOR O IGUAL a
+        //  hoy. El calendario real del Alevín C del CD DÍA tiene 30 jornadas y
+        //  **la primera es el 12 de septiembre**, así que a principio de
+        //  temporada NO HAY NINGÚN PARTIDO PASADO: no se preseleccionaba nada,
+        //  el desplegable nacía en «✍️ Otro partido (a mano)» con la fecha de
+        //  hoy y el rival vacío… y desde fuera eso se ve exactamente igual que
+        //  «el calendario no está importado». Las 30 jornadas estaban ahí, sólo
+        //  que había que abrir la lista para verlas.
+        //
+        //  🔑 Y es lo que pidió el autor: la opción manual se mantiene
+        //     «únicamente si se desea», no como punto de partida.
+        //
+        //  El criterio vive en `_mrPreseleccion`, aparte, para que el guard
+        //  ejecute LA DE VERDAD en vez de una copia escrita en el propio test
+        //  (la lección de v620).
+        var elegido = _mrPreseleccion(S.partidos, _mrHoy());
+        if (elegido >= 0) _mrAplicarDelCalendario(elegido);
 
         _mrPintarFormulario();
     };
@@ -616,57 +699,121 @@
                     'border-radius:7px;padding:0.35rem 0.5rem;font-size:0.76rem;font-family:inherit;';
 
     // ── 1️⃣ El partido ───────────────────────────────────────────────
+    // ════════════════════════════════════════════════════════════════
+    //  1️⃣ EL PARTIDO · el TIPO manda, y va lo primero (v664)
+    // ════════════════════════════════════════════════════════════════
+    //  Encargo del autor: preguntar primero qué clase de partido es y que el
+    //  resto del bloque reaccione. No es sólo estética —el tipo ya gobernaba
+    //  los cupos de convocatoria—: es que la fuente de los datos del partido es
+    //  DISTINTA según el tipo.
+    //
+    //   🏆 LIGA     → el partido sale del CALENDARIO OFICIAL importado, y
+    //                 elegirlo autocompleta rival, jornada, fecha y localía.
+    //   🏅 COPA     → no está en el calendario regular: los datos van a mano.
+    //   🤝 AMISTOSO → igual, y además con la convocatoria abierta.
+    //
+    //  ⚠️ SIN CALENDARIO IMPORTADO, LA LIGA NO SE QUEDA SIN FORMULARIO. El
+    //     desplegable desaparece y quedan los campos a mano con su aviso: si
+    //     no, un equipo cuyo club aún no ha importado el calendario no podría
+    //     registrar ni un partido de liga.
     function _mrPintarPartido() {
         var S = window._mrState;
         var hoy = _mrHoy();
-        var opciones = '';
 
-        if (S.partidos.length) {
-            var jugados = [], porJugar = [];
-            S.partidos.forEach(function (p, i) {
-                var txt = (p.jornada ? 'J' + p.jornada + ' · ' : '') + _mrFechaLarga(p.fecha) +
-                          ' · ' + (p.local !== false ? 'vs ' : 'en casa de ') + (p.rival || 'Rival');
-                var op = '<option value="' + i + '"' + (S.sel === i ? ' selected' : '') + '>' + _mrE(txt) + '</option>';
-                (p.fecha <= hoy ? jugados : porJugar).push(op);
-            });
-            // Los ya jugados PRIMERO: son los que se vienen a registrar.
-            if (jugados.length)  opciones += '<optgroup label="Ya jugados">' + jugados.reverse().join('') + '</optgroup>';
-            if (porJugar.length) opciones += '<optgroup label="Aún por jugar">' + porJugar.join('') + '</optgroup>';
-        }
-        opciones += '<option value="-1"' + (S.sel < 0 ? ' selected' : '') + '>✍️ Otro partido (a mano)</option>';
-
-        var aviso = S.partidos.length ? '' :
-            '<div style="font-size:0.68rem;color:#f0883e;margin-bottom:0.5rem;">' +
-            'ℹ️ Este equipo no tiene calendario oficial importado, así que los datos del partido van a mano.</div>';
-
-        var html = aviso +
-            '<label style="display:block;font-size:0.68rem;color:var(--text-muted);margin-bottom:0.25rem;">' +
-                'Jornada y partido</label>' +
-            '<select id="mr-sel-partido" onchange="_mrElegirPartido(this.value)" ' +
-                'style="' + _MR_INPUT + 'width:100%;margin-bottom:0.7rem;">' + opciones + '</select>' +
-            '<div id="mr-manual">' + _mrCamposManuales() + '</div>' +
-            // ⚖️ EL TIPO DE PARTIDO GOBIERNA LOS CUPOS, así que va aquí arriba y
-            //    no escondido: cambiarlo repinta la convocatoria entera.
-            '<div style="display:flex;gap:0.6rem;flex-wrap:wrap;align-items:flex-end;margin-top:0.7rem;">' +
+        // ── El selector de TIPO, lo primero de todo ──────────────────
+        var opcionTipo = function (id, etiqueta) {
+            return '<option value="' + id + '"' + (S.tipoPartido === id ? ' selected' : '') + '>' +
+                   etiqueta + '</option>';
+        };
+        var html =
+            '<div style="display:flex;gap:0.6rem;flex-wrap:wrap;align-items:flex-end;margin-bottom:0.8rem;">' +
                 _mrCampo('Tipo de partido',
-                    '<select id="mr-tipo" onchange="_mrTipoPartido(this.value)" style="' + _MR_INPUT + '">' +
-                    '<option value="liga"' + (S.tipoPartido !== 'amistoso' ? ' selected' : '') +
-                        '>🏆 Partido de Liga</option>' +
-                    '<option value="amistoso"' + (S.tipoPartido === 'amistoso' ? ' selected' : '') +
-                        '>🤝 Partido Amistoso</option></select>') +
+                    '<select id="mr-tipo" onchange="_mrTipoPartido(this.value)" ' +
+                    'style="' + _MR_INPUT + 'min-width:12rem;">' +
+                    opcionTipo('liga',     '🏆 Partido de Liga') +
+                    opcionTipo('copa',     '🏅 Partido de Copa') +
+                    opcionTipo('amistoso', '🤝 Partido Amistoso') +
+                    '</select>') +
                 '<div style="flex:1;min-width:12rem;font-size:0.68rem;color:var(--text-muted);' +
                      'line-height:1.5;padding-bottom:0.25rem;">' + _mrTextoCupo() + '</div>' +
-            '</div>' +
+            '</div>';
+
+        // ── El calendario oficial: SÓLO en liga ──────────────────────
+        if (S.tipoPartido === 'liga') {
+            if (_mrUsaCalendario()) {
+                var jugados = [], porJugar = [];
+                S.partidos.forEach(function (p, i) {
+                    // 🏠 / ✈️ en vez de «vs» y «en casa de»: el texto anterior
+                    //    («en casa de Maspalomas») se leía como si el rival
+                    //    jugara en su casa, que es justo el dato que aquí no se
+                    //    puede confundir — de él sale la localía del informe.
+                    var txt = (p.jornada ? 'J' + p.jornada + ' · ' : '') +
+                              _mrFechaLarga(p.fecha) +
+                              (p.hora ? ' · ' + p.hora : '') +
+                              ' · ' + (p.local !== false ? '🏠 ' : '✈️ ') + (p.rival || 'Rival');
+                    var op = '<option value="' + i + '"' + (S.sel === i ? ' selected' : '') + '>' +
+                             _mrE(txt) + '</option>';
+                    (p.fecha <= hoy ? jugados : porJugar).push(op);
+                });
+                var opciones = '';
+                // Los ya jugados PRIMERO y del más reciente al más antiguo: son
+                // los que se vienen a registrar.
+                if (jugados.length)  opciones += '<optgroup label="Ya jugados">' + jugados.reverse().join('') + '</optgroup>';
+                if (porJugar.length) opciones += '<optgroup label="Aún por jugar">' + porJugar.join('') + '</optgroup>';
+                opciones += '<option value="-1"' + (S.sel < 0 ? ' selected' : '') +
+                            '>✍️ Otro partido (a mano)</option>';
+
+                html +=
+                    '<label style="display:block;font-size:0.68rem;color:var(--text-muted);' +
+                        'margin-bottom:0.25rem;">Jornada y partido · calendario oficial</label>' +
+                    '<select id="mr-sel-partido" onchange="_mrElegirPartido(this.value)" ' +
+                        'style="' + _MR_INPUT + 'width:100%;margin-bottom:0.55rem;">' + opciones + '</select>' +
+                    '<div style="font-size:0.66rem;color:var(--text-muted);margin-bottom:0.6rem;">' +
+                        // 📋 Se dice CUÁNTOS hay. Sin este número, un desplegable
+                        //    cerrado sobre la opción manual es indistinguible de
+                        //    «no hay calendario» — que es exactamente la
+                        //    confusión que originó esta ronda.
+                        '📅 <strong style="color:#3fb950;">' + S.partidos.length + ' partidos</strong> ' +
+                        'del calendario oficial de la temporada. Al elegir uno se rellenan solos la ' +
+                        'fecha, el rival, la jornada y la localía; puedes corregir cualquiera si el ' +
+                        'encuentro se cambió.</div>';
+            } else {
+                html +=
+                    '<div style="font-size:0.68rem;color:#f0883e;margin-bottom:0.6rem;">' +
+                    'ℹ️ Este equipo no tiene calendario oficial importado, así que los datos del ' +
+                    'partido de liga van a mano.</div>';
+            }
+        } else {
+            html +=
+                '<div style="font-size:0.66rem;color:var(--text-muted);margin-bottom:0.6rem;">' +
+                (S.tipoPartido === 'copa'
+                    ? '🏅 Un partido de copa no figura en el calendario regular de liga: sus datos van a mano.'
+                    : '🤝 Un amistoso no figura en ningún calendario oficial: sus datos van a mano.') +
+                '</div>';
+        }
+
+        html +=
+            '<div id="mr-manual">' + _mrCamposManuales() + '</div>' +
             '<div style="display:flex;gap:0.6rem;flex-wrap:wrap;align-items:flex-end;margin-top:0.7rem;">' +
+                // `onwheel="this.blur()"` en los tres: ver la nota del minuto
+                // de los sucesos. Un marcador que sube solo al pasar la rueda
+                // por encima es peor aquí que en ningún sitio.
                 _mrCampo('Nuestros goles', '<input type="number" min="0" max="99" id="mr-gf" value="' +
                     S.golesPropios + '" onchange="_mrCampoPartido(\'golesPropios\', this.value)" ' +
-                    'style="' + _MR_INPUT + 'width:5rem;">') +
+                    'onwheel="this.blur()" style="' + _MR_INPUT + 'width:5rem;">') +
                 _mrCampo('Goles del rival', '<input type="number" min="0" max="99" id="mr-gc" value="' +
                     S.golesRival + '" onchange="_mrCampoPartido(\'golesRival\', this.value)" ' +
-                    'style="' + _MR_INPUT + 'width:5rem;">') +
+                    'onwheel="this.blur()" style="' + _MR_INPUT + 'width:5rem;">') +
                 _mrCampo('Duración (min)', '<input type="number" min="10" max="130" id="mr-dur" value="' +
                     S.duracion + '" onchange="_mrCampoPartido(\'duracion\', this.value)" ' +
-                    'style="' + _MR_INPUT + 'width:5.5rem;">') +
+                    'onwheel="this.blur()" style="' + _MR_INPUT + 'width:5.5rem;">') +
+            '</div>' +
+            // Recordatorio ESTÁTICO. La cuenta viva y la alarma van abajo, en
+            // el panel de congruencia, que sí se repinta con cada cambio: un
+            // contador aquí se quedaría desfasado al tocar un suceso.
+            '<div style="font-size:0.66rem;color:var(--text-muted);margin-top:0.45rem;line-height:1.5;">' +
+                '⚖️ «Nuestros goles» tiene que cuadrar con los goles que anotes abajo a tus ' +
+                'jugadores. Si no cuadra, se te avisa antes de guardar.' +
             '</div>';
 
         var c = document.getElementById('mr-partido');
@@ -678,36 +825,50 @@
                'margin-bottom:0.25rem;">' + _mrE(etiqueta) + '</label>' + control + '</div>';
     }
 
+    // Los campos del partido. Se pintan SIEMPRE y SIEMPRE editables: elegir del
+    // calendario los RELLENA, no los sustituye por un resumen de sólo lectura.
+    // Así un partido aplazado o con el campo cambiado se corrige sin tener que
+    // salirse a «otro partido».
+    //
+    // ⚠️ La JORNADA sólo se pregunta en LIGA. Un amistoso no tiene jornada, y
+    //    una copa se juega por rondas, no por jornadas: pedirla ahí sería pedir
+    //    un dato que no existe. Es la separación que pidió el autor.
     function _mrCamposManuales() {
         var S = window._mrState;
-        if (S.sel >= 0) {
-            var p = S.partidos[S.sel] || {};
-            return '<div style="font-size:0.7rem;color:var(--text-muted);line-height:1.6;">' +
-                '📅 ' + _mrE(_mrFechaLarga(p.fecha)) + (p.hora ? ' · ' + _mrE(p.hora) : '') +
-                ' · <strong style="color:' + (p.local !== false ? '#3fb950' : '#f0883e') + ';">' +
-                (p.local !== false ? 'En casa' : 'Fuera') + '</strong>' +
-                (p.sede ? ' · 📍 ' + _mrE(p.sede) : '') + '</div>';
-        }
         var m = S.manual;
         return '<div style="display:flex;gap:0.6rem;flex-wrap:wrap;">' +
-            _mrCampo('Fecha', '<input type="date" value="' + _mrE(m.fecha) + '" ' +
+            _mrCampo('Fecha', '<input type="date" id="mr-fecha" value="' + _mrE(m.fecha) + '" ' +
                 'onchange="_mrCampoManual(\'fecha\', this.value)" style="' + _MR_INPUT + '">') +
-            _mrCampo('Rival', '<input type="text" maxlength="60" value="' + _mrE(m.rival) + '" ' +
+            _mrCampo('Rival', '<input type="text" id="mr-rival" maxlength="60" value="' + _mrE(m.rival) + '" ' +
                 'placeholder="Nombre del rival" onchange="_mrCampoManual(\'rival\', this.value)" ' +
                 'style="' + _MR_INPUT + 'min-width:11rem;">') +
-            _mrCampo('Dónde', '<select onchange="_mrCampoManual(\'local\', this.value)" style="' + _MR_INPUT + '">' +
+            _mrCampo('Dónde', '<select id="mr-donde" onchange="_mrCampoManual(\'local\', this.value)" ' +
+                'style="' + _MR_INPUT + '">' +
                 '<option value="1"' + (m.local !== false ? ' selected' : '') + '>En casa</option>' +
                 '<option value="0"' + (m.local === false ? ' selected' : '') + '>Fuera</option></select>') +
-            _mrCampo('Jornada', '<input type="number" min="1" max="60" value="' + _mrE(m.jornada) + '" ' +
-                'onchange="_mrCampoManual(\'jornada\', this.value)" style="' + _MR_INPUT + 'width:5rem;">') +
+            (S.tipoPartido === 'liga'
+                ? _mrCampo('Jornada', '<input type="number" id="mr-jornada" min="1" max="60" value="' +
+                    _mrE(m.jornada) + '" onchange="_mrCampoManual(\'jornada\', this.value)" ' +
+                    'onwheel="this.blur()" style="' + _MR_INPUT + 'width:5rem;">')
+                : '') +
+            (m.sede
+                ? '<div style="align-self:flex-end;font-size:0.68rem;color:var(--text-muted);' +
+                       'padding-bottom:0.45rem;">📍 ' + _mrE(m.sede) +
+                       (m.hora ? ' · ' + _mrE(m.hora) : '') + '</div>'
+                : '') +
         '</div>';
     }
 
     window._mrElegirPartido = function (v) {
         var S = window._mrState;
-        S.sel = _mrNum(v, -1);
-        var c = document.getElementById('mr-manual');
-        if (c) c.innerHTML = _mrCamposManuales();
+        var i = _mrNum(v, -1);
+        // «Otro partido (a mano)»: se conserva lo que ya hubiera escrito. Si se
+        // vaciaran los campos, elegir esa opción sin querer borraría el trabajo.
+        if (i < 0) S.sel = -1;
+        else _mrAplicarDelCalendario(i);
+        // Se repinta el bloque ENTERO: los campos de abajo acaban de cambiar de
+        // valor, que es justo el «auto-completar» del encargo.
+        _mrPintarPartido();
         _mrPintarGuardar();
     };
 
@@ -781,6 +942,10 @@
                     '<input type="number" min="0" max="130" id="mr-min-' + _mrE(j.dorsal) + '" ' +
                     'value="' + min + '"' + (conv ? '' : ' disabled') +
                     ' onchange="_mrMinuto(\'' + _mrE(j.dorsal) + '\', this.value)" ' +
+                    // Ver la nota del minuto de los sucesos: con el foco puesto,
+                    // la rueda del ratón cambia el número mientras se recorre
+                    // el modal. Esta tabla tiene 25 filas: es donde más pasa.
+                    'onwheel="this.blur()" ' +
                     'style="' + _MR_INPUT + 'width:4.2rem;text-align:center;"></td>' +
             '</tr>';
         }).join('');
@@ -813,7 +978,8 @@
         var avisos = '';
         if (sobranConv) {
             avisos += aviso(true,
-                '⛔ <strong>' + nConv + ' convocados</strong> en un partido de Liga de ' +
+                '⛔ <strong>' + nConv + ' convocados</strong> en un partido de ' +
+                (S.tipoPartido === 'copa' ? 'Copa' : 'Liga') + ' de ' +
                 (cupo.modalidad === 'f11' ? 'Fútbol 11' : 'Fútbol 7') + ': el máximo es <strong>' +
                 cupo.maxConvocados + '</strong>. Quita <strong>' + (nConv - cupo.maxConvocados) +
                 '</strong> antes de guardar.');
@@ -874,7 +1040,8 @@
         if (si) {
             var cupo = _mrCupo();
             if (cupo.maxConvocados != null && _mrConvocados().length >= cupo.maxConvocados) {
-                _mrToast('⛔ Máximo ' + cupo.maxConvocados + ' convocados en un partido de Liga de ' +
+                _mrToast('⛔ Máximo ' + cupo.maxConvocados + ' convocados en un partido de ' +
+                         (S.tipoPartido === 'copa' ? 'Copa' : 'Liga') + ' de ' +
                          (cupo.modalidad === 'f11' ? 'Fútbol 11' : 'Fútbol 7') +
                          '. Si fue un amistoso, cámbialo arriba.', 5000);
                 _mrPintarPlantilla();   // devuelve la casilla a su sitio
@@ -994,22 +1161,37 @@
 
     // La frase que explica el cupo vigente, al lado del selector.
     function _mrTextoCupo() {
+        var S = window._mrState;
         var c = _mrCupo();
         var m = c.modalidad === 'f11' ? 'Fútbol 11' : 'Fútbol 7';
-        return c.maxConvocados == null
-            ? '🤝 ' + m + ' · convocatoria <strong style="color:#3fb950;">abierta</strong>, ' +
-              'sin límite de convocados. El tope de <strong>' + c.maxTitulares +
-              ' titulares</strong> se mantiene igual: en el campo no caben más.'
-            : '🏆 ' + m + ' · máximo <strong>' + c.maxConvocados + ' convocados</strong> y ' +
-              '<strong>' + c.maxTitulares + ' titulares</strong>.';
+        if (c.maxConvocados == null) {
+            return '🤝 ' + m + ' · convocatoria <strong style="color:#3fb950;">abierta</strong>, ' +
+                   'sin límite de convocados. El tope de <strong>' + c.maxTitulares +
+                   ' titulares</strong> se mantiene igual: en el campo no caben más.';
+        }
+        // La copa lleva acta como la liga, así que comparte cupo. Se nombra
+        // para que no parezca que se le ha aplicado el de liga por descuido.
+        return (S.tipoPartido === 'copa' ? '🏅 Copa · ' : '🏆 Liga · ') + m +
+               ' · máximo <strong>' + c.maxConvocados + ' convocados</strong> y ' +
+               '<strong>' + c.maxTitulares + ' titulares</strong>.';
     }
 
     window._mrTipoPartido = function (v) {
         var S = window._mrState;
-        S.tipoPartido = (String(v) === 'amistoso') ? 'amistoso' : 'liga';
-        // Se repinta TODO el bloque del partido —no sólo la frase— porque el
-        // texto del cupo vive ahí, y además la convocatoria, que es la que
-        // cambia de color cuando el cupo se rebasa.
+        var t = String(v || '').toLowerCase();
+        S.tipoPartido = (t === 'amistoso' || t === 'copa') ? t : 'liga';
+        // ⚠️ AL SALIR DE LIGA SE SUELTA LA FILA DEL CALENDARIO, pero NO se
+        //    borra lo ya escrito: si venías de un partido de liga y lo pasas a
+        //    copa, conservas rival y fecha y sólo se te retira la jornada, que
+        //    en copa no existe. Vaciar los campos aquí castigaría un cambio de
+        //    idea con la pérdida de todo lo tecleado.
+        if (S.tipoPartido !== 'liga') {
+            S.sel = -1;
+            S.manual.jornada = '';
+        }
+        // Se repinta TODO el bloque del partido —no sólo la frase— porque
+        // cambian el desplegable del calendario, los campos y el texto del
+        // cupo; y la convocatoria, que es la que cambia de color al rebasarlo.
         _mrPintarPartido();
         _mrPintarPlantilla();
         _mrPintarGuardar();
@@ -1073,11 +1255,26 @@
             return;
         }
 
-        var ordenados = S.sucesos.slice().sort(function (a, b) {
-            return _mrNum(a.minuto, 0) - _mrNum(b.minuto, 0);
-        });
-
-        var filas = ordenados.map(function (s) {
+        // ══════════════════════════════════════════════════════════════
+        //  🔴 EL ORDEN DE LAS FILAS ES EL ORDEN EN QUE SE AÑADIERON.
+        //     NO SE ORDENA POR MINUTO, Y ESA ES LA CORRECCIÓN.
+        // ══════════════════════════════════════════════════════════════
+        //  Aquí había un `.sort()` por minuto, y con él la lista se REORDENABA
+        //  bajo los dedos: escribías el minuto de una fila, la lista se
+        //  repintaba ordenada y esa fila SE MOVÍA de sitio. Desde fuera se ve
+        //  como si los valores se contagiaran entre filas o como si el minuto
+        //  de la primera se cambiara solo. (Reportado con capturas el
+        //  2026-09-02: la fila vacía, añadida la SEGUNDA, salía la PRIMERA por
+        //  tener minuto 0.)
+        //
+        //  🔑 EL ESTADO NUNCA ESTUVO MAL: cada fila se identifica por su `id`,
+        //     no por su posición. Lo que engañaba era la POSICIÓN en pantalla.
+        //
+        //  ⚠️ Y NO HACE FALTA ORDENAR AQUÍ PARA NADA: al guardar, el minutaje
+        //     (`_mrCalcularMinutos`) y el historial (`_mrHistorialPorDorsal`)
+        //     ordenan por minuto por su cuenta. El informe sale igual de bien
+        //     con las filas del formulario en el orden que sea.
+        var filas = S.sucesos.map(function (s) {
             var tipos = _MR_TIPOS.map(function (t) {
                 return '<option value="' + t.id + '"' + (s.tipo === t.id ? ' selected' : '') + '>' +
                        t.etiqueta + '</option>';
@@ -1087,8 +1284,16 @@
                         'margin-bottom:0.4rem;background:rgba(0,0,0,0.2);">' +
                 "<select onchange=\"_mrSuceso('" + s.id + "','tipo',this.value)\" style=\"" + _MR_INPUT +
                     'min-width:9.5rem;">' + tipos + '</select>' +
+                // ⚠️ `onwheel="this.blur()"`: un <input type="number"> CON EL
+                //    FOCO cambia de valor al girar la rueda del ratón. Como
+                //    esto vive en un modal largo que se recorre con la rueda,
+                //    bastaba con escribir un minuto y seguir bajando con el
+                //    cursor encima para que el número subiera SOLO. Es la otra
+                //    mitad del «se autoincrementa» que él reportó, y el remedio
+                //    estándar es soltar el foco en cuanto empieza el gesto.
                 "<input type=\"number\" min=\"0\" max=\"99\" value=\"" + _mrNum(s.minuto, 0) + "\" " +
-                    "onchange=\"_mrSuceso('" + s.id + "','minuto',this.value)\" title=\"Minuto\" " +
+                    "onchange=\"_mrSuceso('" + s.id + "','minuto',this.value)\" " +
+                    'onwheel="this.blur()" title="Minuto del partido" ' +
                     'style="' + _MR_INPUT + 'width:4.2rem;text-align:center;">' +
                 "<span style=\"font-size:0.66rem;color:var(--text-muted);\">'</span>" +
                 (s.tipo === 'cambio'
@@ -1126,21 +1331,98 @@
         var S = window._mrState;
         S.sucesos = S.sucesos.filter(function (s) { return s.id !== id; });
         _mrPintarSucesos();
-        _mrRefrescarMinutos();
-        _mrPintarPlantilla();
+        _mrPintarPlantilla();     // recalcula y repinta los minutos de una vez
         _mrPintarGuardar();
     };
 
+    // 🔴 SÓLO SE REPINTA LA LISTA CUANDO LA FILA CAMBIA DE FORMA.
+    //
+    //  Antes se repintaba entera en CADA cambio, incluido el del minuto. Eso
+    //  destruye el propio <input> que el usuario está usando: con las flechas
+    //  del selector numérico —que disparan `change` en cada clic— el campo
+    //  desaparecía y nacía otro debajo del cursor a mitad del gesto.
+    //
+    //  🔑 Un cambio de MINUTO o de JUGADOR no altera el marcado de la fila: el
+    //     valor ya está en pantalla, escrito por el propio usuario. Sólo el
+    //     TIPO lo altera (un «cambio» necesita un segundo desplegable, «Entra»),
+    //     y ahí sí hay que repintar.
     window._mrSuceso = function (id, campo, valor) {
         var S = window._mrState;
         var s = S.sucesos.filter(function (x) { return x.id === id; })[0];
         if (!s) return;
         if (campo === 'minuto') s.minuto = Math.min(99, Math.max(0, _mrNum(valor, 0)));
         else s[campo] = valor;
-        if (campo === 'tipo' && valor !== 'cambio') s.dorsalEntra = '';
-        _mrPintarSucesos();
-        _mrPintarPlantilla();     // los minutos calculados cambian
+        if (campo === 'tipo') {
+            if (valor !== 'cambio') s.dorsalEntra = '';
+            _mrPintarSucesos();
+        }
+        // Los minutos calculados sí cambian, pero se refrescan CASILLA A
+        // CASILLA (respetando la que tenga el foco y las corregidas a mano) en
+        // vez de rehacer la tabla entera.
+        _mrRefrescarMinutos();
         _mrPintarGuardar();
+    };
+
+    // ════════════════════════════════════════════════════════════════
+    //  ⚖️ CONGRUENCIA ENTRE LOS GOLES DE LOS SUCESOS Y EL MARCADOR
+    // ════════════════════════════════════════════════════════════════
+    //  Encargo del autor (2026-09-02): impedir la inversión local/visitante.
+    //  Si sus jugadores anotan 6 goles en los sucesos, el marcador no puede
+    //  decir que marcaron 5 y el rival 6 —eso es el marcador tecleado al
+    //  revés—, y mucho menos dar ganador al contrario con los tantos siendo
+    //  nuestros.
+    //
+    //  🔑 EN ESTE FORMULARIO TODO GOL ES NUESTRO. No hay opción de «gol del
+    //     rival»: cada suceso se le anota a un convocado. Por eso la cuenta de
+    //     goles de los sucesos es, por construcción, GOLES DE NUESTRO EQUIPO, y
+    //     se puede comparar con la casilla «Nuestros goles» sin ambigüedad.
+    //     (La localía no entra aquí: el formulario pregunta «nuestros» y «del
+    //     rival», y es al guardar cuando eso se reparte en scoreHome/scoreAway
+    //     según `myTeamRole`. Ver `_mrGuardar`.)
+    //
+    //  ⚠️ LA ASIMETRÍA ES DELIBERADA, y es lo que hace útil esta validación:
+    //
+    //   ⛔ MÁS GOLEADORES QUE GOLES → IMPOSIBLE. Seis jugadores no pueden haber
+    //      marcado si el equipo hizo cinco. BLOQUEA.
+    //   ⚠️ MENOS GOLEADORES QUE GOLES → LEGÍTIMO, y no se puede bloquear: un
+    //      gol en propia puerta del rival cuenta para nosotros y NO tiene
+    //      goleador nuestro, y además el entrenador puede no recordar quién
+    //      marcó cada uno. Sólo se avisa.
+    //
+    //  🔄 Y hay una firma inequívoca del marcador AL REVÉS: los goles anotados
+    //     no cuadran con los nuestros pero cuadran EXACTAMENTE con los del
+    //     rival. Ahí no se adivina: se dice lo que parece y se ofrece un botón
+    //     para intercambiarlos, que es lo que pidió el autor («corrigiendo la
+    //     asignación… antes de dejar guardar»).
+    function _mrCongruencia() {
+        var S = window._mrState;
+        // Sólo los goles con jugador asignado: uno sin jugador ya lo bloquea
+        // otra comprobación, y contarlo aquí daría una alarma falsa mientras se
+        // está rellenando la fila.
+        var enSucesos = S.sucesos.filter(function (s) {
+            return s.tipo === 'gol' && s.dorsal;
+        }).length;
+        var propios = _mrNum(S.golesPropios, 0);
+        var rival   = _mrNum(S.golesRival, 0);
+        return {
+            enSucesos: enSucesos,
+            propios: propios,
+            rival: rival,
+            sobran:    Math.max(0, enSucesos - propios),
+            sinAnotar: Math.max(0, propios - enSucesos),
+            // La firma del marcador invertido.
+            invertido: enSucesos > propios && enSucesos === rival,
+        };
+    }
+
+    window._mrInvertirMarcador = function () {
+        var S = window._mrState;
+        var t = S.golesPropios;
+        S.golesPropios = S.golesRival;
+        S.golesRival = t;
+        _mrPintarPartido();
+        _mrPintarGuardar();
+        _mrToast('🔄 Marcador corregido: ' + S.golesPropios + ' - ' + S.golesRival, 3500);
     };
 
     // ── 4️⃣ Guardar ─────────────────────────────────────────────────
@@ -1180,13 +1462,27 @@
         //    convocatoria vacía o sin titulares— porque son problemas distintos
         //    y esconder uno detrás de otro obliga a arreglarlos de uno en uno.
         if (cupo.maxConvocados != null && nc > cupo.maxConvocados) {
-            out.push('Un partido de Liga de ' + modTxt + ' admite como máximo ' +
+            out.push('Un partido de ' + (S.tipoPartido === 'copa' ? 'Copa' : 'Liga') + ' de ' +
+                     modTxt + ' admite como máximo ' +
                      cupo.maxConvocados + ' convocados y tienes ' + nc +
                      '. Quita ' + (nc - cupo.maxConvocados) + '.');
         }
         if (nt > cupo.maxTitulares) {
             out.push('En ' + modTxt + ' se sale con ' + cupo.maxTitulares +
                      ' titulares y tienes ' + nt + '. Quita ' + (nt - cupo.maxTitulares) + '.');
+        }
+
+        // ⛔ CONGRUENCIA GOLES ↔ MARCADOR. Ver `_mrCongruencia`: sólo bloquea el
+        //    caso IMPOSIBLE (más goleadores que goles). El contrario —goles sin
+        //    goleador anotado— es legítimo y va como aviso, no como problema.
+        var g = _mrCongruencia();
+        if (g.sobran > 0) {
+            out.push('Tus jugadores tienen ' + g.enSucesos + ' goles anotados en los sucesos y el ' +
+                     'marcador sólo os da ' + g.propios +
+                     (g.invertido
+                        ? '. El marcador parece estar AL REVÉS: ' + g.rival + ' goles son los que ' +
+                          'cuadran con tus goleadores.'
+                        : '. Corrige el marcador o quita los goles que sobren.'));
         }
         S.sucesos.forEach(function (s, i) {
             if (!s.dorsal) out.push('El suceso ' + (i + 1) + ' no tiene jugador.');
@@ -1206,7 +1502,51 @@
         var problemas = _mrProblemas();
         var hayFamilias = (typeof window.cronosHayPadres !== 'function') || window.cronosHayPadres();
 
-        c.innerHTML =
+        // ══════════════════════════════════════════════════════════════
+        //  ⚖️ EL PANEL DE CONGRUENCIA, SEPARADO Y ANTES QUE LOS DEMÁS AVISOS
+        // ══════════════════════════════════════════════════════════════
+        //  Va aparte del listado naranja de problemas a propósito: es el error
+        //  que el autor pidió cazar, no se parece a «falta el rival», y encima
+        //  trae ACCIÓN (el botón de invertir). Mezclado entre seis viñetas se
+        //  leería como una más.
+        var g = _mrCongruencia();
+        var panel = '';
+        if (g.sobran > 0) {
+            panel =
+            '<div style="border:1px solid rgba(255,88,88,0.45);background:rgba(255,88,88,0.08);' +
+                 'border-radius:10px;padding:0.7rem 0.85rem;margin-bottom:0.8rem;">' +
+                '<div style="font-size:0.78rem;font-weight:700;color:#ff5858;margin-bottom:0.35rem;">' +
+                    '⛔ El marcador contradice a los goleadores</div>' +
+                '<div style="font-size:0.72rem;color:#e6edf3;line-height:1.6;">' +
+                    'En los sucesos hay <strong>' + g.enSucesos + ' goles</strong> anotados a jugadores ' +
+                    'tuyos, pero el marcador dice que tu equipo hizo <strong>' + g.propios + '</strong> ' +
+                    'y el rival <strong>' + g.rival + '</strong>.' +
+                    (g.invertido
+                        ? ' <strong style="color:#ff5858;">Los ' + g.enSucesos + ' cuadran justo con los ' +
+                          'del rival: parece que has tecleado el marcador al revés.</strong>'
+                        : ' Un equipo no puede tener más goleadores que goles.') +
+                '</div>' +
+                (g.invertido
+                    ? '<button onclick="_mrInvertirMarcador()" style="margin-top:0.55rem;' +
+                      _mrBtn('#ff5858') + '">🔄 Invertir el marcador (' + g.propios + '-' + g.rival +
+                      ' → ' + g.rival + '-' + g.propios + ')</button>'
+                    : '') +
+            '</div>';
+        } else if (g.sinAnotar > 0) {
+            // ⚠️ AVISO, NUNCA BLOQUEO: un gol en propia puerta del rival cuenta
+            //    para nosotros y no tiene goleador nuestro.
+            panel =
+            '<div style="border:1px solid rgba(240,136,62,0.3);background:rgba(240,136,62,0.07);' +
+                 'border-radius:10px;padding:0.55rem 0.8rem;margin-bottom:0.8rem;' +
+                 'font-size:0.7rem;color:#f0883e;line-height:1.6;">' +
+                '⚠️ El marcador os da <strong>' + g.propios + '</strong> goles y en los sucesos hay ' +
+                '<strong>' + g.enSucesos + '</strong> con goleador. Faltan <strong>' + g.sinAnotar +
+                '</strong> por anotar. Se puede guardar así —un gol en propia puerta del rival no ' +
+                'tiene goleador vuestro—, pero esos goles no se le sumarán a nadie en la temporada.' +
+            '</div>';
+        }
+
+        c.innerHTML = panel +
             (problemas.length
                 ? '<div style="font-size:0.72rem;color:#f0883e;background:rgba(240,136,62,0.07);' +
                     'border:1px solid rgba(240,136,62,0.25);border-radius:10px;padding:0.6rem 0.8rem;' +
@@ -1251,7 +1591,8 @@
 
         if (!confirm(
             'Se va a guardar el informe del partido:\n\n' +
-            '  ' + (S.tipoPartido === 'amistoso' ? 'AMISTOSO' : 'LIGA') + ' · ' +
+            '  ' + (S.tipoPartido === 'amistoso' ? 'AMISTOSO'
+                  : S.tipoPartido === 'copa'     ? 'COPA' : 'LIGA') + ' · ' +
             (p.local ? 'CASA' : 'FUERA') + ' · ' + p.fecha + ' · vs ' + p.rival + '\n' +
             '  Resultado: ' + S.golesPropios + ' - ' + S.golesRival + '\n' +
             '  ' + convocados.length + ' convocados · ' + _mrTitulares().length + ' titulares · ' +
@@ -1350,9 +1691,9 @@
                     // `competition` es el campo que ya pintan el TXT del informe
                     // y el Panel de Dirección; aquí se rellena con el tipo de
                     // partido en vez de dejarlo mudo.
-                    competition: S.tipoPartido === 'amistoso'
-                        ? 'Amistoso'
-                        : ('Liga' + (p.jornada ? ' · Jornada ' + p.jornada : '')),
+                    competition: S.tipoPartido === 'amistoso' ? 'Amistoso'
+                               : S.tipoPartido === 'copa'     ? 'Copa'
+                               : ('Liga' + (p.jornada ? ' · Jornada ' + p.jornada : '')),
                     // Y el dato estructurado, con el MISMO vocabulario que la
                     // convocatoria en vivo ('liga' | 'amistoso'): el texto de
                     // arriba es para leer, éste es para filtrar.
@@ -1651,8 +1992,19 @@
         partidoElegido: _mrPartidoElegido,
         titulares: _mrTitulares,
         titularesEsperados: _mrTitularesEsperados,
+        // Expuestas SÓLO para el guard: hay que poder PINTAR y medir el
+        // resultado. La fila de sucesos, por su orden (v662); el bloque del
+        // partido, por qué se pregunta primero y qué aparece según el tipo
+        // (v664). Medir el fichero fuente no vale: las opciones del desplegable
+        // se construyen, no están escritas literalmente.
+        pintarSucesos: _mrPintarSucesos,
+        pintarPartido: _mrPintarPartido,
         problemas: _mrProblemas,
         cupo: _mrCupo,
+        usaCalendario: _mrUsaCalendario,
+        aplicarDelCalendario: _mrAplicarDelCalendario,
+        preseleccion: _mrPreseleccion,
+        congruencia: _mrCongruencia,
         modalidad: _mrModalidad,
         convocados: _mrConvocados,
         matchId: _mrMatchId,

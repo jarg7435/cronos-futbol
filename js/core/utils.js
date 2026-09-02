@@ -2345,10 +2345,17 @@ function cronosMyTeamId() {
 // ════════════════════════════════════════════════════════════════════
 //  Regla de competición del autor (2026-09-02):
 //
-//      PARTIDO DE LIGA      F7 → 14 convocados · 7 titulares
+//      LIGA y COPA          F7 → 14 convocados · 7 titulares
 //                           F11 → 18 convocados · 11 titulares
 //      PARTIDO AMISTOSO     convocatoria ABIERTA (sin tope)
 //                           pero el tope de TITULARES SE MANTIENE (7 / 11)
+//
+//  🔑 LA COPA VA CON LA LIGA, no con el amistoso, y no es un descuido de la
+//     implementación: el tope de convocados lo fija el ACTA de la federación,
+//     y una copa oficial tiene acta igual que la liga. Lo que distingue al
+//     amistoso es que no la hay. La condición se escribe por eso en positivo
+//     sobre `amistoso` y no como una lista de competiciones oficiales, que
+//     habría que ir ampliando cada vez que aparezca un torneo nuevo.
 //
 //  🔑 EL TOPE DE TITULARES NO ES ADMINISTRATIVO, ES DE JUEGO: en el campo hay
 //     siete u once, se juegue lo que se juegue. Por eso es lo único que el

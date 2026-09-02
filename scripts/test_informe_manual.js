@@ -1,5 +1,6 @@
 // ════════════════════════════════════════════════════════════════════
-//  test_informe_manual.js · «Añadir informe» (v659) + normativa (v660)
+//  test_informe_manual.js · «Añadir informe» v659 · normativa v660 ·
+//  el id invisible v661 · las filas de sucesos v662
 // ════════════════════════════════════════════════════════════════════
 //
 //  QUÉ VIGILA. El informe manual sólo sirve si es INDISTINGUIBLE de uno
@@ -27,13 +28,19 @@
 //             ejecuta, y después se comprueba que el formulario BLOQUEE de
 //             verdad. La aserción que más importa es que el amistoso abra la
 //             convocatoria pero NO relaje los titulares.
+//   PARTE 7 · 🔴 CADA FILA DE SUCESOS, INDEPENDIENTE (v662). Se pinta contra
+//             un DOM de juguete que CUENTA los repintados: el defecto no
+//             estaba en el mapeo por id, sino en que la lista se reordenaba
+//             por minuto y se repintaba entera en cada cambio.
+//   PARTE 6 · 🔴 EL NOMBRE DEL DOCUMENTO (v661). Se simula la ventana de 500
+//             ordenada por `__name__` desc: con el prefijo `manual_` el
+//             informe se quedaba fuera y era invisible en «Mis Informes».
 //   PARTE 4 · Los enganches: el botón en «Mis Informes», el <script> de
 //             index.html, el precache del Service Worker y la ausencia de
 //             reglas nuevas.
 //
-//  ⚠️ La PARTE 5 se imprime ANTES que la 4 a propósito: sus datos hacen falta
-//  para las aserciones de enganche del cupo, y separarlas costaría más de lo
-//  que aclara.
+//  ⚠️ El ORDEN DE IMPRESIÓN no es 1-2-3-4-5-6-7: las partes 7, 6 y 5 van antes
+//  que la 4 porque preparan datos que la 4 usa. Cada bloque dice qué mide.
 //
 //  ⚠️ CADA AUSENCIA VA CON UNA PRESENCIA AL LADO (lección de v654 y v651): si
 //  el módulo no cargara, la batería tiene que decir QUÉ falta, no reventar con
@@ -434,6 +441,460 @@ if (MR.problemas && MR.estadoNuevo) {
 }
 
 // ════════════════════════════════════════════════════════════════════
+console.log('\n── PARTE 9 · 🔀 el tipo de partido manda sobre el bloque 1 ──');
+// ════════════════════════════════════════════════════════════════════
+//  Encargo del autor (implementar.txt, 2026-09-02): el TIPO se pregunta lo
+//  primero y el resto del bloque reacciona.
+//    🏆 LIGA     → desplegable del calendario oficial; elegirlo AUTOCOMPLETA
+//                  rival, jornada, fecha y localía.
+//    🏅 COPA     → sin desplegable; campos a mano; cupo de competición oficial.
+//    🤝 AMISTOSO → sin desplegable; campos a mano; convocatoria abierta.
+
+if (MR.estadoNuevo && MR.partidoElegido && cargoElModulo) {
+    const conCalendario = (tipo) => {
+        const S = MR.estadoNuevo();
+        S.equipo = { clubId: 'C', category: 'alevin', subcategory: 'A', teamId: 't' };
+        S.tipoPartido = tipo;
+        S.partidos = [
+            { fecha: '2026-08-30', jornada: 2, hora: '10:00', rival: 'CD Uno',  local: true,  sede: 'Campo A' },
+            { fecha: '2026-09-06', jornada: 3, hora: '12:00', rival: 'CD Dos',  local: false, sede: 'Campo B' },
+        ];
+        win._mrState = S;
+        return S;
+    };
+
+    // 🔑 LO QUE PIDIÓ: elegir del calendario AUTOCOMPLETA los cuatro campos.
+    const S = conCalendario('liga');
+    win._mrElegirPartido('1');
+    let p = MR.partidoElegido(win._mrState);
+    ok('9a · 🔑 elegir del calendario autocompleta el RIVAL',   p.rival === 'CD Dos', p.rival);
+    ok('9b · 🔑 …la FECHA',                                     p.fecha === '2026-09-06', p.fecha);
+    ok('9c · 🔑 …la JORNADA',                                   String(p.jornada) === '3', p.jornada);
+    ok('9d · 🔑 …y la LOCALÍA',                                 p.local === false, String(p.local));
+
+    // ⚠️ Y queda EDITABLE: corregir un dato del calendario tiene que valer.
+    win._mrCampoManual('rival', 'CD Corregido');
+    ok('9e · ⚠️ lo autocompletado se puede corregir',
+       MR.partidoElegido(win._mrState).rival === 'CD Corregido');
+    // 🔑 Y lo corregido es lo que se guarda: una sola fuente de verdad.
+    ok('9f · 🔑 manda lo que hay en las casillas, no la fila del calendario',
+       win._mrState.partidos[1].rival === 'CD Dos' &&
+       MR.partidoElegido(win._mrState).rival === 'CD Corregido');
+
+    // Cambiar a otro partido vuelve a rellenar.
+    win._mrElegirPartido('0');
+    p = MR.partidoElegido(win._mrState);
+    ok('9g · elegir otro partido vuelve a rellenar', p.rival === 'CD Uno' && p.local === true);
+
+    // «Otro partido (a mano)» NO borra lo escrito.
+    win._mrElegirPartido('-1');
+    ok('9h · ⚠️ «otro partido» conserva lo ya escrito (no castiga el cambio de idea)',
+       MR.partidoElegido(win._mrState).rival === 'CD Uno' && win._mrState.sel === -1);
+
+    // ── Copa y amistoso: sin calendario ──────────────────────────────
+    conCalendario('liga');
+    win._mrTipoPartido('copa');
+    ok('9i · 🏅 copa: se suelta la fila del calendario', win._mrState.sel === -1);
+    ok('9j · 🏅 y se retira la jornada (una copa va por rondas)',
+       win._mrState.manual.jornada === '');
+    ok('9k · 🏅 pero la copa MANTIENE el cupo de competición oficial',
+       MR.cupo().maxConvocados === 14 && MR.cupo().maxTitulares === 7,
+       JSON.stringify(MR.cupo()));
+
+    conCalendario('liga');
+    win._mrTipoPartido('amistoso');
+    ok('9l · 🤝 amistoso: convocatoria abierta', MR.cupo().maxConvocados === null);
+    ok('9m · 🤝 y el tope de titulares se mantiene', MR.cupo().maxTitulares === 7);
+
+    // Un valor desconocido cae a liga, que es el estricto.
+    conCalendario('liga');
+    win._mrTipoPartido('lo-que-sea');
+    ok('9n · ⚠️ un tipo desconocido cae a LIGA, el estricto',
+       win._mrState.tipoPartido === 'liga' && MR.cupo().maxConvocados === 14);
+
+    // Y al volver a liga sin calendario, el formulario no se queda inservible.
+    const SinCal = MR.estadoNuevo();
+    SinCal.equipo = { clubId: 'C', category: 'alevin', subcategory: 'A', teamId: 't' };
+    SinCal.partidos = [];
+    win._mrState = SinCal;
+    ok('9o · ⚠️ liga SIN calendario importado no ofrece desplegable…',
+       MR.usaCalendario() === false);
+    ok('9p · …pero sigue habiendo campos a mano', typeof MR.partidoElegido(SinCal).rival === 'string');
+}
+
+// ── 🔴 v665 · EL FORMULARIO ABRE SOBRE EL CALENDARIO, NO EN «a mano» ─
+//  Medido contra PRODUCCIÓN el 2026-09-02: el calendario real del Alevín C del
+//  CD DÍA tiene 30 jornadas y la PRIMERA es el 12 de septiembre. La
+//  preselección sólo miraba partidos con fecha <= hoy, así que a principio de
+//  temporada no elegía ninguno: el desplegable nacía en «✍️ Otro partido (a
+//  mano)», con la fecha de hoy y el rival vacío — indistinguible de «no hay
+//  calendario importado», que es como lo vio el autor.
+//
+//  🔑 Las jornadas SIEMPRE estuvieron en la lista. Lo que fallaba era por cuál
+//     se abría. Por eso las aserciones miran LA OPCIÓN SELECCIONADA, no si la
+//     lista tiene elementos: eso último ya pasaba con el defecto puesto.
+ok('9·-1 · el módulo expone la preselección real para poder ejecutarla',
+   cargoElModulo && typeof MR.preseleccion === 'function',
+   'sin ella el guard tendría que reimplementarla, que es como se pone verde con el defecto puesto');
+
+if (MR.estadoNuevo && MR.aplicarDelCalendario && MR.pintarPartido && MR.preseleccion && cargoElModulo) {
+    const els0 = {};
+    const nodo0 = (id) => (els0[id] || (els0[id] = { id, innerHTML: '', value: '', style: {}, dataset: {} }));
+    const docReal0 = sandbox.document;
+    sandbox.document = { getElementById: nodo0, activeElement: null };
+
+    // Las tres primeras jornadas REALES de producción (REST, 2026-09-02).
+    const REALES = [
+        { fecha: '2026-09-12', jornada: 1, hora: '11:00', rival: 'Maspalomas',   local: true,  sede: 'Cru. Arinaga' },
+        { fecha: '2026-09-18', jornada: 2, hora: '21:00', rival: 'AD Huracán B', local: false, sede: 'Pepe Gonçalvez' },
+        { fecha: '2026-09-26', jornada: 3, hora: '11:00', rival: 'San Fernando', local: true,  sede: 'Cru. Arinaga' },
+    ];
+
+    // 🔑 SE EJECUTA LA PRESELECCIÓN DEL PRODUCTO (`_mrPreseleccion`), no una
+    //    copia escrita aquí: un test que reimplementa la regla que vigila se
+    //    pone verde con el defecto puesto (v620).
+    const abrir = (partidos, hoy) => {
+        const S = MR.estadoNuevo();
+        S.equipo = { clubId: 'club_mqvr9m11_g9kj', category: 'alevin', subcategory: 'C',
+                     teamId: 'club-mqvr9m11-g9kj__alevin__c' };
+        S.partidos = partidos;
+        win._mrState = S;
+        const elegido = MR.preseleccion(partidos, hoy);
+        if (elegido >= 0) MR.aplicarDelCalendario(elegido);
+        MR.pintarPartido();
+        return nodo0('mr-partido').innerHTML;
+    };
+    const valor = (h, id) => (h.match(new RegExp('id="' + id + '"[^>]*value="([^"]*)"')) || ['', ''])[1];
+
+    // 🚨 SU CASO REAL: temporada que aún no ha empezado.
+    const h = abrir(REALES, '2026-09-02');
+    ok('9·1 · 🚨 sin partidos pasados, NO abre en «otro partido (a mano)»',
+       !/<option value="-1" selected/.test(h),
+       'abría en la opción manual y parecía que no había calendario');
+    ok('9·2 · 🔑 abre sobre el PRIMERO de la temporada', /<option value="0" selected/.test(h));
+    ok('9·3 · con el rival ya puesto',   valor(h, 'mr-rival') === 'Maspalomas', valor(h, 'mr-rival'));
+    ok('9·4 · la fecha del partido, no la de hoy', valor(h, 'mr-fecha') === '2026-09-12', valor(h, 'mr-fecha'));
+    ok('9·5 · y la jornada',             valor(h, 'mr-jornada') === '1', valor(h, 'mr-jornada'));
+
+    // Con partidos ya jugados manda el ÚLTIMO jugado, que es el que se registra.
+    const conPasados = [{ fecha: '2026-08-20', jornada: 0, hora: '11:00', rival: 'Amistoso Viejo',
+                          local: true, sede: 'X' }].concat(REALES);
+    const h2 = abrir(conPasados, '2026-09-02');
+    ok('9·6 · con partidos jugados abre sobre el ÚLTIMO jugado',
+       valor(h2, 'mr-fecha') === '2026-08-20', valor(h2, 'mr-fecha'));
+
+    // 📅 La cuenta visible: sin ella, un desplegable cerrado sobre la opción
+    //    manual es indistinguible de «no hay calendario».
+    ok('9·7 · 📅 se dice cuántos partidos trae el calendario',
+       /3 partidos<\/strong>/.test(h), 'no aparece el recuento');
+
+    // 🏠/✈️ · «en casa de Maspalomas» se leía como si jugara el rival en su casa.
+    ok('9·8 · la localía se marca con 🏠 y ✈️, sin frases ambiguas',
+       /🏠 Maspalomas/.test(h) && /✈️ AD Huracán B/.test(h) && h.indexOf('en casa de') === -1);
+
+    // La opción manual SIGUE estando: «únicamente si se desea».
+    ok('9·9 · la opción manual sigue disponible', /value="-1"/.test(h));
+
+    sandbox.document = docReal0;
+}
+
+// ── Y ahora el BLOQUE PINTADO DE VERDAD ─────────────────────────────
+//  🔑 Se mide el HTML que sale, no el fichero fuente: las opciones del
+//     desplegable se CONSTRUYEN, así que buscar `value="copa"` en el código
+//     daría rojo en falso aunque la opción exista en pantalla (pasó al
+//     escribir este guard).
+ok('9·0 · el módulo expone el pintado del bloque del partido',
+   cargoElModulo && typeof MR.pintarPartido === 'function',
+   'sin él las aserciones de marcado NO SE EJECUTAN');
+
+if (MR.pintarPartido && MR.estadoNuevo) {
+    const els = {};
+    const nodo = (id) => (els[id] || (els[id] = { id, innerHTML: '', value: '', style: {}, dataset: {} }));
+    const docReal = sandbox.document;
+    sandbox.document = { getElementById: nodo, activeElement: null };
+
+    const pinta = (tipo, conCal) => {
+        const S = MR.estadoNuevo();
+        S.equipo = { clubId: 'C', category: 'alevin', subcategory: 'A', teamId: 't' };
+        S.tipoPartido = tipo;
+        S.partidos = conCal
+            ? [{ fecha: '2026-08-30', jornada: 2, hora: '10:00', rival: 'CD Uno', local: true, sede: 'Campo A' }]
+            : [];
+        win._mrState = S;
+        MR.pintarPartido();
+        return nodo('mr-partido').innerHTML;
+    };
+
+    const hLiga = pinta('liga', true);
+    const posTipo = hLiga.indexOf('mr-tipo');
+    const posCal  = hLiga.indexOf('mr-sel-partido');
+    const posGF   = hLiga.indexOf('mr-gf');
+
+    ok('9q · presencia: el bloque pinta el tipo, el calendario y el marcador',
+       posTipo !== -1 && posCal !== -1 && posGF !== -1,
+       'tipo=' + posTipo + ' cal=' + posCal + ' marcador=' + posGF);
+    // 🔑 LO QUE PIDIÓ TEXTUALMENTE: «lo primero que se pregunte, arriba del todo».
+    ok('9r · 🔑 el TIPO se pinta ANTES que el desplegable del calendario', posTipo < posCal);
+    ok('9s · 🔑 y antes que el marcador',                                  posTipo < posGF);
+    ok('9t · 🏅 las TRES opciones están en el desplegable de tipo',
+       /value="liga"/.test(hLiga) && /value="copa"/.test(hLiga) && /value="amistoso"/.test(hLiga));
+    ok('9u · 🏆 en liga con calendario se pinta la jornada',
+       hLiga.indexOf('mr-jornada') !== -1);
+
+    // 🏅 y 🤝: sin desplegable de calendario, y sin jornada.
+    const hCopa = pinta('copa', true);
+    ok('9v · 🏅 en copa NO se pinta el desplegable del calendario',
+       hCopa.indexOf('mr-sel-partido') === -1);
+    ok('9w · 🏅 ni la jornada',            hCopa.indexOf('mr-jornada') === -1);
+    ok('9x · 🏅 pero sí el rival y la fecha a mano',
+       hCopa.indexOf('mr-rival') !== -1 && hCopa.indexOf('mr-fecha') !== -1 &&
+       hCopa.indexOf('mr-donde') !== -1);
+
+    const hAmis = pinta('amistoso', true);
+    ok('9y · 🤝 en amistoso tampoco hay calendario, y sí campos a mano',
+       hAmis.indexOf('mr-sel-partido') === -1 && hAmis.indexOf('mr-rival') !== -1);
+
+    // ⚠️ Liga SIN calendario: no puede quedarse sin formulario.
+    const hSinCal = pinta('liga', false);
+    ok('9z · ⚠️ liga sin calendario: aviso y campos a mano, nunca pantalla muerta',
+       hSinCal.indexOf('mr-sel-partido') === -1 && hSinCal.indexOf('mr-rival') !== -1 &&
+       /no tiene calendario oficial importado/.test(hSinCal));
+
+    sandbox.document = docReal;
+}
+
+// ════════════════════════════════════════════════════════════════════
+console.log('\n── PARTE 8 · ⚖️ el marcador no puede contradecir a los goleadores ──');
+// ════════════════════════════════════════════════════════════════════
+//  Encargo del autor (2026-09-02): impedir la inversión local/visitante. Si
+//  sus jugadores anotan 6 goles, el marcador no puede darle 5 al equipo y 6 al
+//  rival.
+//
+//  🔑 LA ASIMETRÍA ES EL CORAZÓN DE ESTO, y por eso hay aserciones en los dos
+//     sentidos: más goleadores que goles es IMPOSIBLE y bloquea; menos es
+//     LEGÍTIMO (un gol en propia puerta del rival cuenta para nosotros y no
+//     tiene goleador nuestro) y sólo avisa. Un guard que sólo mirase el primer
+//     caso dejaría pasar un bloqueo que impediría registrar partidos reales.
+
+ok('8·0 · el módulo expone la comprobación de congruencia',
+   cargoElModulo && typeof MR.congruencia === 'function',
+   'sin ella las aserciones de esta parte NO SE EJECUTAN');
+
+if (MR.congruencia && MR.problemas) {
+    // El estado del partido de su captura: CD DÍA vs vecindario, 6 goleadores.
+    const conGoles = (propios, rival, nGoles) => {
+        const S = MR.estadoNuevo();
+        S.equipo = { clubId: 'C', category: 'alevin', subcategory: 'A', teamId: 't' };
+        S.sel = -1;
+        S.manual = { fecha: '2026-09-02', rival: 'vecindario', local: true, jornada: '3', hora: '', sede: '' };
+        S.jugadores = [];
+        for (let n = 1; n <= 14; n++) {
+            S.jugadores.push({ ficha: 'F' + n, dorsal: String(n), nombre: 'Jugador ' + n, alias: 'J' + n });
+            S.conv[String(n)] = true;
+        }
+        for (let n = 1; n <= 7; n++) S.tit[String(n)] = true;
+        S.golesPropios = propios;
+        S.golesRival = rival;
+        S.sucesos = [];
+        for (let i = 0; i < nGoles; i++) {
+            S.sucesos.push({ id: 'g' + i, tipo: 'gol', minuto: 10 + i, dorsal: String(i + 1), dorsalEntra: '' });
+        }
+        win._mrState = S;
+        return S;
+    };
+    const hayCongruencia = (probs) => probs.some(t => /goles anotados en los sucesos/.test(t));
+
+    // ⛔ EL CASO DEL ENCARGO: 6 goleadores, marcador 5-6 (tecleado al revés).
+    conGoles(5, 6, 6);
+    let g = MR.congruencia();
+    ok('8a · detecta que sobran goleadores',  g.sobran === 1, 'sobran=' + g.sobran);
+    ok('8b · 🔄 y reconoce la firma del marcador AL REVÉS', g.invertido === true);
+    ok('8c · ⛔ NO deja guardar', hayCongruencia(MR.problemas()), MR.problemas().join(' | '));
+    ok('8d · el aviso dice que parece invertido',
+       MR.problemas().some(t => /AL REV[ÉE]S/.test(t)), MR.problemas().join(' | '));
+
+    // 🔄 Y al invertirlo, queda congruente y deja guardar.
+    win._mrInvertirMarcador();
+    const S2 = win._mrState;
+    ok('8e · 🔄 invertir el marcador intercambia los dos valores',
+       S2.golesPropios === 6 && S2.golesRival === 5,
+       S2.golesPropios + '-' + S2.golesRival);
+    ok('8f · y entonces SÍ deja guardar', MR.problemas().length === 0, MR.problemas().join(' | '));
+
+    // ⛔ Sobran goleadores SIN que sea una inversión (6 goleadores, 5-2).
+    conGoles(5, 2, 6);
+    g = MR.congruencia();
+    ok('8g · ⛔ más goleadores que goles bloquea aunque no sea inversión',
+       g.sobran === 1 && g.invertido === false && hayCongruencia(MR.problemas()));
+    ok('8h · …y ahí NO se ofrece invertir (sería adivinar)',
+       !MR.problemas().some(t => /AL REV[ÉE]S/.test(t)));
+
+    // ⚠️ MENOS GOLEADORES QUE GOLES: legítimo, NO puede bloquear.
+    conGoles(6, 5, 4);
+    g = MR.congruencia();
+    ok('8i · ⚠️ 🔑 goles sin goleador anotado NO bloquean (gol en propia del rival)',
+       g.sinAnotar === 2 && g.sobran === 0 && !hayCongruencia(MR.problemas()),
+       MR.problemas().join(' | '));
+
+    // ✅ Cuadrado: ni alarma ni aviso.
+    conGoles(6, 5, 6);
+    g = MR.congruencia();
+    ok('8j · ✅ cuadrado: sin alarma y sin aviso',
+       g.sobran === 0 && g.sinAnotar === 0 && MR.problemas().length === 0);
+
+    // Un 0-0 sin goles tampoco puede dar alarma.
+    conGoles(0, 0, 0);
+    ok('8k · un 0-0 sin goles no dispara nada',
+       MR.congruencia().sobran === 0 && MR.problemas().length === 0);
+
+    // ⚠️ Un gol SIN jugador asignado no cuenta como goleador: si contara,
+    //    añadir la fila y no haber elegido aún el jugador daría alarma falsa.
+    const S3 = conGoles(1, 0, 0);
+    S3.sucesos = [{ id: 'x', tipo: 'gol', minuto: 5, dorsal: '', dorsalEntra: '' }];
+    win._mrState = S3;
+    ok('8l · ⚠️ un gol a medio rellenar no cuenta como goleador',
+       MR.congruencia().enSucesos === 0);
+
+    // Las tarjetas y los cambios no son goles.
+    const S4 = conGoles(0, 0, 0);
+    S4.sucesos = [
+        { id: 'a', tipo: 'amarilla', minuto: 5, dorsal: '1', dorsalEntra: '' },
+        { id: 'c', tipo: 'cambio',   minuto: 6, dorsal: '1', dorsalEntra: '8' },
+        { id: 'l', tipo: 'lesion',   minuto: 7, dorsal: '2', dorsalEntra: '' },
+    ];
+    win._mrState = S4;
+    ok('8m · sólo cuentan los goles, no las tarjetas ni los cambios',
+       MR.congruencia().enSucesos === 0);
+}
+
+// El panel y su botón de corrección tienen que existir en el marcado.
+{
+    const src = leer(F_MANUAL);
+    ok('8n · hay panel de alarma en ROJO para la incongruencia',
+       /El marcador contradice a los goleadores/.test(src) && /255,88,88/.test(src));
+    ok('8o · 🔄 y botón para invertir el marcador',
+       /_mrInvertirMarcador\(\)/.test(src) && /window\._mrInvertirMarcador\s*=/.test(src));
+}
+
+// ════════════════════════════════════════════════════════════════════
+console.log('\n── PARTE 7 · 🔴 cada fila de sucesos, independiente de las demás ──');
+// ════════════════════════════════════════════════════════════════════
+//  EL FALLO QUE ESTO IMPIDE (reportado con capturas el 2026-09-02): al añadir
+//  un segundo suceso y tocar su minuto, «los valores se interfieren y el
+//  minuto del primero se autoincrementa».
+//
+//  🔑 EL MAPEO POR `id` NUNCA ESTUVO MAL. Lo que engañaba era la PANTALLA:
+//   1. la lista se pintaba ORDENADA POR MINUTO mientras el estado guardaba el
+//      orden de alta, así que al escribir un minuto la fila SE MOVÍA de sitio;
+//   2. cada cambio de minuto REPINTABA la lista entera y destruía el <input>
+//      que se estaba usando (con las flechas del selector numérico, que
+//      disparan `change` en cada clic, el campo desaparecía a mitad del gesto).
+//
+//  ⚠️ ESTO NO SE PUEDE MEDIR CON UNA REGEX: se pinta de verdad contra un DOM
+//     de juguete y se cuenta cuántas veces se repinta.
+
+// 🔑 PRESENCIA ANTES QUE AUSENCIA. Sin esto, quitar `pintarSucesos` de
+//    `_mrInterno` haría que TODO este bloque se saltara en silencio y el guard
+//    seguiría en verde con el defecto puesto (la forma de verde falso que ya
+//    costó dos rondas).
+ok('7·0 · el módulo expone el pintado de sucesos para poder medirlo',
+   cargoElModulo && typeof MR.pintarSucesos === 'function',
+   'sin él las 12 aserciones de esta parte NO SE EJECUTAN');
+
+if (MR.pintarSucesos && MR.estadoNuevo && cargoElModulo) {
+    // DOM de juguete: cada elemento cuenta las veces que le reescriben el HTML.
+    const els = {};
+    const nodo = (id) => {
+        if (!els[id]) {
+            els[id] = { id: id, _html: '', escrituras: 0, value: '', style: {}, dataset: {} };
+            Object.defineProperty(els[id], 'innerHTML', {
+                get() { return this._html; },
+                set(v) { this._html = v; this.escrituras++; },
+            });
+        }
+        return els[id];
+    };
+    const docReal = sandbox.document;
+    sandbox.document = { getElementById: nodo, activeElement: null };
+
+    const S = MR.estadoNuevo();
+    S.equipo = { clubId: 'C', category: 'alevin', subcategory: 'A', teamId: 't' };
+    S.jugadores = [
+        { ficha: 'F5', dorsal: '5', nombre: 'Dani', alias: 'DANI' },
+        { ficha: 'F6', dorsal: '6', nombre: 'Iván', alias: 'IVÁN' },
+    ];
+    S.conv['5'] = true; S.conv['6'] = true; S.tit['5'] = true;
+    // A se añade PRIMERO pero con minuto MAYOR: si la lista se ordenara por
+    // minuto, B saldría delante. Es exactamente la pareja de sus capturas.
+    S.sucesos = [
+        { id: 'A', tipo: 'gol', minuto: 5, dorsal: '6', dorsalEntra: '' },
+        { id: 'B', tipo: 'gol', minuto: 1, dorsal: '5', dorsalEntra: '' },
+    ];
+    win._mrState = S;
+
+    MR.pintarSucesos();
+    const html = nodo('mr-sucesos').innerHTML;
+    const posA = html.indexOf("'A','minuto'");
+    const posB = html.indexOf("'B','minuto'");
+
+    ok('7a · las dos filas se pintan, cada una con su propio id',
+       posA !== -1 && posB !== -1, 'A=' + posA + ' B=' + posB);
+    // 🚨 LA ASERCIÓN DEL FALLO. Con el `.sort()` por minuto esto era FALSO.
+    ok('7b · 🚨 el orden es el de ALTA, no el del minuto',
+       posA !== -1 && posB !== -1 && posA < posB,
+       'la fila añadida primero (minuto 5) tiene que salir antes que la del minuto 1');
+
+    // Cada input lleva SU valor, no el del vecino.
+    ok('7c · cada fila pinta su propio minuto',
+       /value="5"[^>]*_mrSuceso\('A','minuto'/.test(html.replace(/\s+/g, ' ')) ||
+       html.indexOf('value="5"') < posA + 400,
+       'el minuto 5 tiene que ir en la fila A');
+
+    // 🔑🔑 LO QUE MÁS IMPORTA: escribir un minuto NO puede repintar la lista.
+    const antes = nodo('mr-sucesos').escrituras;
+    win._mrSuceso('B', 'minuto', '3');
+    ok('7d · 🔑🔑 cambiar un minuto NO repinta la lista (no destruye el input)',
+       nodo('mr-sucesos').escrituras === antes,
+       'se repintó ' + (nodo('mr-sucesos').escrituras - antes) + ' vez/veces');
+    ok('7e · …pero el estado sí se actualiza', S.sucesos.filter(s => s.id === 'B')[0].minuto === 3);
+    ok('7f · …y no toca al otro suceso',       S.sucesos.filter(s => s.id === 'A')[0].minuto === 5);
+
+    // Cambiar el TIPO sí tiene que repintar: la fila cambia de forma (un
+    // «cambio» necesita el segundo desplegable, «Entra»).
+    const antes2 = nodo('mr-sucesos').escrituras;
+    win._mrSuceso('A', 'tipo', 'cambio');
+    ok('7g · cambiar el TIPO sí repinta (la fila cambia de forma)',
+       nodo('mr-sucesos').escrituras > antes2);
+    ok('7h · y aparece el desplegable de quién entra',
+       nodo('mr-sucesos').innerHTML.indexOf("'A','dorsalEntra'") !== -1);
+
+    // Y el orden sigue siendo el de alta tras repintar.
+    const html2 = nodo('mr-sucesos').innerHTML;
+    ok('7i · 🚨 tras repintar, el orden de alta se mantiene',
+       html2.indexOf("'A','minuto'") < html2.indexOf("'B','minuto'"));
+
+    // ⚠️ La rueda del ratón sobre un número CON FOCO cambia el valor.
+    ok('7j · ⚠️ los minutos sueltan el foco al girar la rueda',
+       /onwheel="this\.blur\(\)"/.test(html2));
+
+    sandbox.document = docReal;
+}
+
+// Y no sólo los de sucesos: TODOS los campos numéricos del formulario.
+// 🚨 Se cuentan las dos cosas y se comparan. Buscar «hay algún onwheel» daría
+//    verde en falso con uno solo puesto — que es la forma de verde falso que ya
+//    se pagó en v651.
+{
+    const src = leer(F_MANUAL);
+    const numericos = (src.match(/type=\\?"number\\?"/g) || []).length;
+    const conRueda  = (src.match(/onwheel="this\.blur\(\)"/g) || []).length;
+    ok('7k · presencia: el formulario tiene campos numéricos que medir', numericos > 0,
+       'ninguno: la aserción de abajo no valdría nada');
+    ok('7l · ⚠️ TODOS sueltan el foco al girar la rueda', conRueda >= numericos,
+       numericos + ' campos numéricos y sólo ' + conRueda + ' con `onwheel`');
+}
+
+// ════════════════════════════════════════════════════════════════════
 console.log('\n── PARTE 6 · 🔴 el informe SALE en la lista de «Mis Informes» ──');
 // ════════════════════════════════════════════════════════════════════
 //  EL FALLO QUE ESTO IMPIDE (reportado con capturas el 2026-09-02): el informe
@@ -654,7 +1115,7 @@ ok('4d · index.html carga el módulo',
 ok('4e · el Service Worker lo precachea',
    /'\.\/js\/coach\/comms\/manual-report\.js'/.test(sw));
 ok('4f · el CACHE_NAME subió (si no, nadie recibe el código nuevo)',
-   /const\s+CACHE_NAME\s*=\s*'cronos-cache-v661'/.test(sw));
+   /const\s+CACHE_NAME\s*=\s*'cronos-cache-v665'/.test(sw));
 
 // 🔑 EL CALENDARIO SE LEE POR SU FUNCIÓN, NO COPIANDO SU ALMACÉN.
 ok('4g · calendario-temporada.js exporta calPartidosDeEquipo',
@@ -704,8 +1165,9 @@ ok('4r · ⚠️ no hace falta ninguna colección nueva en firestore.rules',
 ok('4s · los documentos van marcados con manualEntry', /manualEntry:\s*true/.test(manual));
 
 // ⚖️ El tipo de partido: selector, dato guardado y vocabulario compartido.
-ok('4t · hay selector de tipo de partido (Liga / Amistoso)',
-   /_mrTipoPartido/.test(manual) && /value="amistoso"/.test(manual) && /value="liga"/.test(manual));
+// El desplegable de tipo se comprueba PINTADO en la parte 9 (sus opciones se
+// construyen, no están escritas literalmente). Aquí sólo su manejador.
+ok('4t · existe el manejador del tipo de partido', /window\._mrTipoPartido\s*=/.test(manual));
 ok('4u · el tipo viaja en el documento como matchType',
    /matchType:\s*S\.tipoPartido/.test(manualCodigo));
 // 🔑 MISMO VOCABULARIO QUE LA CONVOCATORIA EN VIVO ('liga'|'amistoso'), no uno
