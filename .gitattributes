@@ -14,3 +14,12 @@
 *.woff binary
 *.woff2 binary
 *.svg binary
+
+# v658 · El modelo de idioma del lector de capturas (js/vendor/tesseract/) es
+# BINARIO y no lleva extensión conocida, así que sin esta línea le tocaría el
+# `* text=auto` de arriba. Si git le convirtiera los finales de línea, el
+# fichero quedaría corrupto y el OCR fallaría al cargarlo — en el clon, no
+# aquí, que es la peor forma de romperse. Este proyecto ya perdió un fichero
+# por una trampa de codificación.
+*.traineddata binary
+*.wasm binary

@@ -495,6 +495,351 @@ ok('8f · hay cache de mes para no releer al pasar de semana', /_calState\.cache
 ok('8g · la cache se invalida al escribir', /delete window\._calState\.cache\[/.test(TEMP));
 
 // ════════════════════════════════════════════════════════════════════
+console.log('\n10 · LA TABLA WEB DEL PORTAL DEL FEDERADO (v655)');
+// ════════════════════════════════════════════════════════════════════
+//  Encargo del autor (implementar.txt, 2026-09-01) + capturas 9809/9810: el
+//  importador tenía que admitir, además del PDF oficial de la FIFLP, la tabla
+//  del Portal del Federado — Jornada · Fecha · Hora · Equipo Casa · Equipo
+//  Fuera · Campo · Resultado.
+//
+//  🚨 LO QUE HACÍA ANTES, medido con estos mismos datos: de 5 jornadas
+//  pegadas salían 2 filas, los dos rivales mal («1 JOVERO», «13 ARINAGA,
+//  C.D. MAJORERAS») y una localía invertida. No daba error: daba basura con
+//  pinta de buena, que es lo que este bloque existe para que no vuelva.
+//
+//  🔑 Y SE EJECUTA EL MOTOR, no se mira su código. Comprobar que el fichero
+//  contiene la palabra "tabulador" no dice si sabe leer una tabla.
+{
+    const CAB = ['Jornada', 'Fecha', 'Hora', 'Equipo Casa', 'Equipo Fuera', 'Campo', 'Resultado'];
+    // Filas REALES de sus capturas, con los tres casos que rompían antes:
+    // guion pegado dentro del nombre, campo sin la palabra "campo" delante, y
+    // el número de jornada suelto en la primera columna.
+    const FIL = [
+        ['1',  '25-09-2026', '20:30', 'JOVERO-LAS ROSAS, C.D.',                'ARINAGA, C.D.',                  'LAS ROSAS',                     '-'],
+        ['2',  '02-10-2026', '20:30', 'ARINAGA, C.D.',                         'VELEZ, U.D. LOS',                'MUNICIPAL DE ARINAGA',          '-'],
+        ['3',  '08-10-2026', '21:00', 'CERRUDA SANTA LUCIA DE TIRAJANA, C.D.', 'ARINAGA, C.D.',                  'CAMPO MUNICIPAL DE VECINDARIO', '-'],
+        ['13', '18-12-2026', '20:30', 'ARINAGA, C.D.',                         'MAJORERAS-GUAYADEQUE, C.F. LAS', 'MUNICIPAL DE ARINAGA',          '-'],
+        ['30', '09-05-2027', '11:00', 'UNION MARINA, C.F.',                    'ARINAGA, C.D.',                  'MANUEL MARTIN "NAÑO"',          '-'],
+    ];
+    const MIAS = ['ARINAGA, C.D.'];
+    const lee = (txt) => P.interpretar(P.lineasDeTexto(txt), { misNombres: MIAS, inicioTemporada: 2026 });
+    const TITULO = 'LIGA SEGUNDA REGIONAL GRAN CANARIA - GRUPO 3\n';
+
+    // ── 10a · Lo que copia un navegador de una tabla HTML: TABULADORES ──
+    const A = lee(TITULO + [CAB].concat(FIL).map(f => f.join('\t')).join('\n'));
+    ok('10a · 🔑🔑 el tabulador ya no se aplasta: hay campos',
+       P.lineasDeTexto('uno\tdos\ttres')[0].campos.length === 3,
+       P.lineasDeTexto('uno\tdos\ttres')[0].campos);
+    ok('10a · entran las 5 jornadas', A.filas.length === 5, A.filas.length);
+    ok('10a · y por el camino de la CABECERA, que es el que no adivina',
+       A.resumen.porCabecera === true, A.resumen);
+    ok('10a · las 5 en verde', A.resumen.verde === 5, A.resumen);
+
+    // El `|| {}` no es adorno: sin él, cuando esto se rompe el guard REVIENTA
+    // en la primera aserción y esconde las otras cinco, que son las que dicen
+    // qué se rompió exactamente.
+    const jA = (n) => A.filas.find(f => f.jornada === n) || {};
+    // 🔴 EL DEFECTO MEDIDO: el número de jornada acababa dentro del rival.
+    ok('10a · 🔴 ningún rival empieza por el número de jornada',
+       !A.filas.some(f => /^\d/.test(String(f.rival || '').trim())),
+       A.filas.map(f => f.rival));
+    // 🔴 Y EL OTRO: el guion PEGADO partía el nombre por la mitad.
+    ok('10a · 🔴 «JOVERO-LAS ROSAS» no se parte por su propio guion',
+       /^JOVERO-LAS ROSAS/.test(jA(1).rival), jA(1).rival);
+    ok('10a · ni «MAJORERAS-GUAYADEQUE»',
+       /^MAJORERAS-GUAYADEQUE/.test(jA(13).rival), jA(13).rival);
+    // 🔴 Y LA LOCALÍA, que se leía al revés: la 13 se juega EN CASA.
+    ok('10a · la jornada 13 es en CASA (columna «Equipo Casa»)', jA(13).local === true, jA(13));
+    ok('10a · y la 1 es FUERA', jA(1).local === false, jA(1));
+    // ⚠️ «MUNICIPAL DE ARINAGA» no lo reconocía nadie como instalación.
+    ok('10a · el campo va en su casilla, no pegado al rival',
+       jA(13).sede === 'MUNICIPAL DE ARINAGA' && !/MUNICIPAL/.test(jA(13).rival),
+       [jA(13).rival, jA(13).sede]);
+    ok('10a · la fecha, en ISO y con el año de cada mitad de temporada',
+       jA(1).fecha === '2026-09-25' && A.filas.find(f => f.jornada === 30).fecha === '2027-05-09');
+
+    // ── 10b · La misma tabla alineada con blancos anchos ─────────────
+    const anchos = [9, 13, 8, 40, 34, 32, 10];
+    const B = lee([CAB].concat(FIL).map(f => f.map((c, i) => c.padEnd(anchos[i])).join('')).join('\n'));
+    ok('10b · alineada con espacios entra igual', B.filas.length === 5 && B.resumen.verde === 5, B.resumen);
+
+    // ── 10c · El copiado que baja UNA CELDA POR RENGLÓN ──────────────
+    const C = lee(TITULO + CAB.concat(...FIL).join('\n') + '\nMostrando 30 de 30\n');
+    ok('10c · se repliega la tabla que baja en vertical',
+       C.filas.length === 5 && C.resumen.porCabecera === true, C.resumen);
+    ok('10c · con los mismos rivales que por tabulador',
+       JSON.stringify(C.filas.map(f => f.rival)) === JSON.stringify(A.filas.map(f => f.rival)),
+       C.filas.map(f => f.rival));
+    // ⚠️ Y el pie de la tabla NO se pliega como si fuera un partido.
+    ok('10c · el pie de página no se convierte en partido',
+       !C.filas.some(f => /Mostrando/i.test(f.rival + ' ' + f.sede)), C.filas.map(f => f.rival));
+
+    // ── 10d · 🚨 SIN CABECERA NO SE PLIEGA NADA ──────────────────────
+    //  Plegar por un ciclo inventado no daría cero partidos —eso sería
+    //  inofensivo—: daría una temporada entera de partidos falsos.
+    const D = P.lineasDeTexto(['uno','dos','tres','cuatro','cinco','seis','siete','ocho','nueve','diez'].join('\n'));
+    ok('10d · 🚨 una lista sin cabecera se queda como está', D.length === 10, D.length);
+
+    // ── 10e · La cabecera del portal, reconocida entera ──────────────
+    const cabP = P.mapaDeCabecera(P.lineasDeTexto(CAB.join('\t')));
+    ok('10e · «Equipo Casa» es la columna del local', cabP && cabP.idx.local === 3, cabP && cabP.idx);
+    ok('10e · «Equipo Fuera» la del visitante', cabP && cabP.idx.visitante === 4, cabP && cabP.idx);
+    ok('10e · y «Resultado» no estorba aunque no sirva para nada', !!cabP, cabP);
+}
+
+// ── 10f · La pantalla ────────────────────────────────────────────────
+//  🔑 Anclado en CÓDIGO EJECUTABLE, no en rótulos: en v647 cuatro
+//  comprobaciones de una misma ronda se dispararon con sus propios
+//  comentarios explicando el arreglo.
+//  ⚠️ Se busca la etiqueta EMITIDA —abre comilla simple y `<details`—, no la
+//  mención: la nota que explica por qué se sacó de ahí nombra `<details>` y
+//  con un ancla floja se cazaría a sí misma. Es literalmente lo que pasó
+//  cuatro veces en v647.
+ok('10f · la caja de pegar texto ya no vive dentro de un <details>',
+   !/'<details/.test(TEMP) && /id="cal-texto"/.test(TEMP));
+ok('10f · una imagen se reconoce como imagen', /\^image\\\//.test(TEMP));
+ok('10f · y un .txt/.csv se lee y entra por la vía de texto',
+   /txt\|csv/.test(TEMP) && /file\.text\(\)/.test(TEMP));
+
+// ════════════════════════════════════════════════════════════════════
+console.log('\n11 · LA CAPTURA DE PANTALLA (OCR, v656)');
+// ════════════════════════════════════════════════════════════════════
+//  Segundo encargo del autor sobre lo mismo (2026-09-01): que la zona de
+//  importación acepte la captura igual que acepta el PDF.
+//
+//  🔑🔑 ESTE FIXTURE NO ES SINTÉTICO. Son las palabras y las cajas que el OCR
+//  sacó DE VERDAD de su captura 9810 —jornadas 12 a 19, tal cual, con sus
+//  coordenadas reales—. Un maquetado inventado por mí probaría que mi idea de
+//  una tabla se lee bien, que es exactamente la trampa de v614: tres rondas
+//  de maquetas sintéticas y el PDF real lo cerró en diez minutos.
+//
+//  ⚠️ Y ES LA MITAD SIN CABECERA de la tabla, que es el caso difícil: hay que
+//  deducir qué columna es el local, cuál el visitante y cuál el campo sin que
+//  el documento lo diga en ninguna parte.
+{
+    const CRUDO = [
+    [["12",31,44,177,187],["12-12-2026",131,197,168,196],["16:00",254,284,177,187],["UNION",328,369,177,187],["VECINDARIO",373,450,168,196],["ATLETICO",457,519,168,196],["ARINAGA,",736,798,177,189],["C.D.",802,824,177,187],["CAMPO",1145,1192,177,187],["MUNICIPAL",1197,1266,177,187],["DE",1270,1287,177,187],["VECINDARIO",1291,1372,177,187],["-",1538,1542,183,184]],
+    [["13",31,44,218,228],["18-12-2026",131,197,209,237],["20:30",253,284,218,228],["ARINAGA,",327,389,218,230],["C.D.",394,415,218,228],["MAJORERAS-GUAYADEQUE,",737,914,218,230],["C.F.",919,939,218,228],["LAS",946,969,218,228],["MUNICIPAL",1146,1215,218,228],["DE",1219,1233,218,228],["ARINAGA",1238,1298,218,228],["-",1538,1542,224,225]],
+    [["14",31,45,258,268],["08-01-2027",131,197,249,277],["21:00",253,284,258,268],["VALDECASAS,",327,416,258,270],["C.D.",421,443,258,268],["ARINAGA,",736,798,258,270],["C.D.",802,824,258,268],["EL",1146,1161,258,268],["CALERO",1164,1217,258,268],["-",1538,1542,264,265]],
+    [["15",31,44,299,309],["15-01-2027",131,197,290,318],["20:30",253,284,299,309],["ARINAGA,",327,389,299,311],["C.D.",394,415,299,309],["UNION",737,778,299,309],["MARINA,",782,835,299,311],["C.F.",840,860,299,309],["MUNICIPAL",1146,1215,299,309],["DE",1219,1233,299,309],["ARINAGA",1238,1298,299,309],["-",1538,1542,305,306]],
+    [["16",31,44,339,349],["22-01-2027",126,197,330,358],["20:30",253,284,339,349],["ARINAGA,",327,389,339,351],["C.D.",394,415,339,349],["JOVERO-LAS",736,818,339,349],["ROSAS,",823,871,339,351],["C.D.",875,897,339,349],["MUNICIPAL",1146,1215,339,349],["DE",1219,1233,339,349],["ARINAGA",1238,1298,339,349],["-",1538,1542,345,346]],
+    [["17",31,44,380,390],["29-01-2027",130,197,371,399],["20:30",253,284,380,390],["VELEZ,",327,372,380,392],["U.D.",377,398,380,390],["LOS",406,431,380,390],["ARINAGA,",736,798,380,392],["C.D.",802,824,380,390],["MONTAÑA",1146,1209,377,390],["LOS",1212,1238,380,390],["VELEZ",1241,1283,380,390],["-",1538,1542,386,387]],
+    [["18",31,44,420,430],["05-02-2027",131,197,411,439],["20:30",253,284,420,430],["ARINAGA,",327,389,420,432],["C.D.",394,415,420,430],["CERRUDA",737,801,420,430],["SANTA",804,846,420,430],["LUCIA",849,885,412,440],["DE",891,906,420,430],["TIRAJANA,",911,977,420,432],["C.D.",982,1003,420,430],["MUNICIPAL",1146,1215,420,430],["DE",1219,1233,420,430],["ARINAGA",1238,1298,420,430],["-",1538,1542,426,427]],
+    [["19",31,44,461,471],["12-02-2027",131,197,452,480],["21:00",253,284,461,471],["OJOS",328,363,461,471],["DE",367,384,461,471],["GARZA,",389,436,461,473],["C.D.",441,462,461,471],["ARINAGA,",736,798,461,473],["C.D.",802,824,461,471],["OJOS",1145,1180,461,471],["DE",1185,1202,461,471],["GARZA",1206,1251,461,471],["-",1538,1542,467,468]],
+    ];
+    const deOCR = (crudo) => crudo.map(f => ({
+        palabras: f.map(p => ({ texto: p[0], x0: p[1], x1: p[2], y0: p[3], y1: p[4] })),
+    }));
+
+    const L = P.lineasDeOCR(deOCR(CRUDO));
+    ok('11a · cada fila sale con el MISMO número de campos',
+       L.length === 8 && new Set(L.map(l => l.campos.length)).size === 1,
+       L.map(l => l.campos.length));
+
+    const R = P.interpretar(L, { misNombres: ['ARINAGA, C.D.'], inicioTemporada: 2026 });
+    ok('11b · entran las 8 jornadas de la captura', R.filas.length === 8, R.filas.length);
+    // 🔑 Sin fila de cabecera: las columnas se deducen por su CONTENIDO.
+    ok('11b · 🔑🔑 y por el camino de columnas, no por heurística',
+       R.resumen.porCabecera === true, R.resumen);
+    ok('11b · las 8 en verde', R.resumen.verde === 8, R.resumen);
+
+    const j = (n) => R.filas.find(f => f.jornada === n) || {};
+    // 🔴 LA LOCALÍA, que es lo que decide el color de la casilla del cuadrante.
+    ok('11c · la 13 es en casa y la 12 fuera',
+       j(13).local === true && j(12).local === false, [j(12).local, j(13).local]);
+    ok('11c · y la 17 fuera, la 18 en casa',
+       j(17).local === false && j(18).local === true, [j(17).local, j(18).local]);
+    // ⚠️⚠️ LA TRAMPA MEDIDA: el club se llama como el pueblo donde juega, así
+    // que «MUNICIPAL DE ARINAGA» —el CAMPO— se parece a «ARINAGA, C.D.» tanto
+    // como la columna del equipo, y sale en MÁS filas. Elegir «la columna
+    // donde más aparezco» se lleva la sede y deja los rivales siendo campos.
+    ok('11d · 🔴 el rival es el equipo, no el campo',
+       j(13).rival === 'MAJORERAS-GUAYADEQUE, C.F. LAS' && /MUNICIPAL DE ARINAGA/.test(j(13).sede),
+       [j(13).rival, j(13).sede]);
+    ok('11d · y en un partido fuera, igual',
+       j(14).rival === 'VALDECASAS, C.D' && j(14).sede === 'EL CALERO',
+       [j(14).rival, j(14).sede]);
+    ok('11d · ningún rival lleva el nombre de una instalación',
+       !R.filas.some(f => /^(CAMPO|MUNICIPAL)\b/i.test(String(f.rival || ''))),
+       R.filas.map(f => f.rival));
+    ok('11e · las fechas y las horas, en su sitio',
+       j(12).fecha === '2026-12-12' && j(12).hora === '16:00' &&
+       j(19).fecha === '2027-02-12' && j(19).hora === '21:00',
+       [j(12).fecha, j(12).hora, j(19).fecha, j(19).hora]);
+
+    // ── 11f · 🚨 UNA JORNADA MAL LEÍDA NO PUEDE SALIR EN VERDE ───────
+    //  La columna de la jornada es la más estrecha y es donde el OCR se
+    //  equivoca: «12» leído como «1». Antes eso salía VERDE —«puedes pasar de
+    //  largo»— porque `_confianza` sólo miraba que hubiera un número.
+    const roto = deOCR(CRUDO);
+    roto[0].palabras[0].texto = '1';    // 12 → 1, la errata real medida
+    const RB = P.interpretar(P.lineasDeOCR(roto), { misNombres: ['ARINAGA, C.D.'], inicioTemporada: 2026 });
+    const f12 = RB.filas.find(f => f.fecha === '2026-12-12') || {};
+    ok('11f · 🚨 la jornada mal leída se corrige por su posición', f12.jornada === 12, f12);
+    ok('11f · 🚨 y NO se queda en verde: se marca para revisar',
+       f12.confianza === 'amarillo' && f12.jornadaSupuesta === true, f12);
+    // ⚠️ Y lo demás no se toca: corregir de más sería el mismo defecto.
+    ok('11f · las otras siete siguen en verde', RB.resumen.verde === 7, RB.resumen);
+
+    // ── 11g · 🚨 SIN PRUEBAS SUFICIENTES, NO SE RESPONDE ─────────────
+    //  Deducir las columnas decide la localía de una temporada entera. Con un
+    //  recorte de tres filas no hay forma de saber cuál es el local.
+    ok('11g · 🚨 con tres filas no se deduce nada',
+       P.cabeceraPorContenido(P.lineasDeOCR(deOCR(CRUDO.slice(0, 3))), ['ARINAGA, C.D.'], 0.5) === null);
+}
+
+// ── 11h · El lector de imágenes, alojado y sin salir del aparato ─────
+//  ⛔ v543 se revirtió entera por traer una biblioteca de un CDN, y v647
+//  borró el OCR anterior porque mandaba la imagen FUERA del dispositivo.
+//  Anclado en código ejecutable, no en las notas que explican todo esto.
+ok('11h · el OCR se aloja en el proyecto, no en un CDN',
+   /CAL_OCR_DIR\s*=\s*'js\/vendor\/tesseract\//.test(TEMP) &&
+   /CAL_OCR_LIB\s*=\s*CAL_OCR_DIR/.test(TEMP));
+ok('11h · ⛔ y NO viaja a ningún servicio de fuera',
+   !/https?:\/\/[^'"\s]*(tesseract|ocr|vision|googleapis|cloudflare)/i.test(TEMP));
+ok('11h · se carga solo al soltar una imagen (perezoso)',
+   /_calCargarOCR/.test(TEMP) && !/<script[^>]*tesseract/i.test(INDEX));
+// ⛔ `cache.addAll` es ATÓMICO: 4 MB que fallen tumban la precarga ENTERA.
+ok('11h · ⛔ el OCR NO está en el precache del SW', !/'\.\/js\/vendor\/tesseract/.test(SW));
+// ⚠️ Un worker sin cerrar deja el hilo y su memoria vivos hasta recargar.
+ok('11h · el worker del OCR se cierra siempre (finally)',
+   /finally\s*\{[\s\S]{0,200}worker\.terminate\(\)/.test(TEMP));
+ok('11h · el modelo de idioma se sirve sin comprimir',
+   /gzip:\s*false/.test(TEMP));
+
+// ── 11i · 🔴🔴 v657 · EL WORKER NO PUEDE NACER DE UN blob: ───────────
+//  Lo reportó el autor con una captura: soltaba el PNG y salía «⚠️ No se ha
+//  podido leer la imagen:» — con la frase cortada ahí, sin causa. La
+//  biblioteca, por su cuenta, arranca su worker desde un `blob:`, y la CSP
+//  que esta app sirve desde firebase.json NO declara `worker-src`, así que
+//  esa regla cae en `default-src 'self'` y un `blob:` está prohibido.
+//
+//  🔑 LA PRUEBA DE QUE ÉSTE ES EL EJE, y está dentro del propio proyecto:
+//  pdf.js SÍ funciona aquí, y funciona porque su worker se carga por URL
+//  (`workerSrc`), nunca por blob. Mismo navegador, misma CSP, dos workers,
+//  y el que va por blob es el único que se cae.
+//
+//  ⚠️ Se arregla en el CLIENTE, no abriendo `worker-src blob:` en la CSP:
+//  relajar la política de toda la app para arreglar una pantalla sale
+//  carísimo. Estas dos aserciones fijan las dos mitades de esa decisión.
+ok('11i · 🔴 el worker del OCR NO se crea desde un blob',
+   /workerBlobURL:\s*false/.test(TEMP));
+ok('11i · ⚠️ y la CSP NO se ha abierto a workers blob: para lograrlo',
+   !/worker-src[^"]*blob:/i.test(leer('firebase.json')));
+// 🚨 Y un error de worker llega SIN mensaje: si la pantalla no lo suple, el
+//    usuario ve una frase cortada y manda a arreglar otra cosa. Pasó.
+ok('11i · 🚨 un error sin mensaje no deja el aviso a medias',
+   /_calErrorLegible/.test(TEMP) &&
+   /no ha arrancado y no ha dicho por qu/.test(TEMP));
+ok('11i · y se dice CUÁL de las piezas no llega',
+   /_calDiagnosticoOCR/.test(TEMP) && /method:\s*'HEAD'/.test(TEMP));
+// La imagen entra por el MISMO camino que el PDF a partir de las palabras.
+ok('11h · la imagen desemboca en lineasDeOCR', /lineasDeOCR\(/.test(TEMP));
+
+// ════════════════════════════════════════════════════════════════════
+console.log('\n12 · VARIAS CAPTURAS PARA UNA MISMA TEMPORADA (v658)');
+// ════════════════════════════════════════════════════════════════════
+//  Encargo del autor (2026-09-02): treinta jornadas no caben en una captura,
+//  así que hay que poder soltar dos o tres y que se SUMEN. Y sus dos capturas
+//  reales SE SOLAPAN —la primera llega a la jornada 22 y la segunda empieza
+//  en la 8—, así que fusionar no es concatenar.
+{
+    const fila = (j, fecha, rival, local, extra) => Object.assign({
+        jornada: j, fecha, hora: '20:30', rival, local, sede: 'X',
+        origen: '', ajeno: false, confianza: 'verde',
+    }, extra || {});
+
+    // Dos tramos que se solapan en las jornadas 3 y 4, como sus capturas.
+    const A = [
+        fila(1, '2026-09-05', 'RIVAL UNO',    false),
+        fila(2, '2026-09-12', 'RIVAL DOS',    true),
+        fila(3, '2026-09-19', 'RIVAL TRES',   false),
+        fila(4, '2026-09-26', 'RIVAL CUATRO', true),
+    ];
+    const B = [
+        fila(3, '2026-09-19', 'RIVAL TRES',   false),
+        fila(4, '2026-09-26', 'RIVAL CUATRO', true),
+        fila(5, '2026-10-03', 'RIVAL CINCO',  false),
+        fila(6, '2026-10-10', 'RIVAL SEIS',   true),
+    ];
+
+    const F = P.fusionarFilas(A, B);
+    ok('12a · la unión no duplica lo solapado', F.filas.length === 6, F.filas.length);
+    ok('12a · y lo dice: 2 nuevas, 2 repetidas', F.anadidas === 2 && F.repetidas === 2, F);
+    ok('12a · queda ordenada por fecha',
+       F.filas.map(f => f.fecha).join() ===
+       '2026-09-05,2026-09-12,2026-09-19,2026-09-26,2026-10-03,2026-10-10',
+       F.filas.map(f => f.fecha));
+    ok('12a · con las jornadas de 1 a 6', F.filas.map(f => f.jornada).join() === '1,2,3,4,5,6',
+       F.filas.map(f => f.jornada));
+
+    // 🔑 EL ORDEN DE SUBIDA NO PUEDE CAMBIAR EL RESULTADO.
+    const G = P.fusionarFilas(B, A);
+    ok('12b · 🔑 da igual cuál se suelte primero',
+       JSON.stringify(G.filas.map(f => f.fecha + '|' + f.rival)) ===
+       JSON.stringify(F.filas.map(f => f.fecha + '|' + f.rival)),
+       G.filas.map(f => f.fecha));
+
+    // ⚠️ LO CORREGIDO A MANO NO SE PISA NUNCA.
+    const editada = [fila(3, '2026-09-19', 'NOMBRE QUE PUSE YO', true, { editada: true })];
+    const H = P.fusionarFilas(editada, B);
+    const suya = H.filas.find(f => f.fecha === '2026-09-19');
+    ok('12c · ⚠️ una fila corregida a mano sobrevive a la siguiente captura',
+       suya.rival === 'NOMBRE QUE PUSE YO' && suya.local === true, suya);
+    ok('12c · y su jornada tampoco se recalcula por debajo',
+       suya.jornada === 3 && !suya.jornadaSupuesta, suya);
+
+    // 🔑 Entre dos lecturas de la misma fecha, gana la que se leyó MEJOR: en
+    //    el borde de una captura una fila sale recortada y en la otra entera.
+    const floja  = [fila(2, '2026-09-12', 'RIVAL DOS', null, { confianza: 'rojo' })];
+    const buena  = [fila(2, '2026-09-12', 'RIVAL DOS', true)];
+    const I = P.fusionarFilas(floja, buena);
+    ok('12d · la lectura mejor sustituye a la peor',
+       I.filas[0].local === true && I.mejoradas === 1, I);
+    const J = P.fusionarFilas(buena, floja);
+    ok('12d · pero una peor NO pisa a una buena',
+       J.filas[0].local === true && J.mejoradas === 0, J);
+
+    // 🔑🔑 Y LA COHERENCIA SE RECALCULA SOBRE EL TOTAL: es lo que hace que al
+    //  unir las mitades las jornadas cuadren aunque en cada trozo por
+    //  separado no hubiera datos para decidirlo.
+    const rotoA = [fila(1, '2026-09-05', 'UNO', false), fila(2, '2026-09-12', 'DOS', true),
+                   fila(3, '2026-09-19', 'TRES', false)];
+    const rotoB = [fila(4, '2026-09-26', 'CUATRO', true), fila(5, '2026-10-03', 'CINCO', false),
+                   fila(1, '2026-10-10', 'SEIS', true)];   // ← el OCR leyó «6» como «1»
+    const K = P.fusionarFilas(rotoA, rotoB);
+    const ult = K.filas[K.filas.length - 1];
+    ok('12e · 🔑🔑 la jornada mal leída se arregla AL UNIR los dos trozos',
+       ult.jornada === 6, K.filas.map(f => f.jornada));
+    ok('12e · y se marca para revisar, no se corrige en silencio',
+       ult.confianza === 'amarillo' && ult.jornadaSupuesta === true, ult);
+}
+
+// ── 12f · La pantalla acumula, no pisa ───────────────────────────────
+ok('12f · se pueden soltar varios archivos a la vez',
+   /id="cal-file" multiple/.test(TEMP) && /_calProcesarVarios/.test(TEMP));
+// ⚠️ En SERIE: cada OCR levanta un motor de ~4 MB y tres a la vez tumban un móvil.
+ok('12f · ⚠️ y se procesan de uno en uno, no a la vez',
+   /for \(let i = 0; i < files\.length; i\+\+\)[\s\S]{0,300}await _calProcesarArchivo/.test(TEMP));
+// 🔑 El tercer argumento es lo único que distingue «sumar» de «volver a empezar».
+//  ⚠️ Anclado en la LLAMADA con su tercer argumento, no en un `,true)` suelto
+//  que casaría con cualquier cosa del fichero.
+ok('12f · 🔑 «añadir otra» vuelve al paso 1 SIN tirar lo acumulado',
+   /calAbrirImportador\([\s\S]{0,140},true\)/.test(TEMP) &&
+   /function \(filaId, label, seguir\)/.test(TEMP) &&
+   /seguir && previa/.test(TEMP));
+ok('12f · y existe una salida explícita para descartarlo todo',
+   /calEmpezarDeCero/.test(TEMP));
+// 🔴 Lo que arreglaba su pérdida de datos: reimportar parte de lo guardado.
+ok('12f · 🔴 reimportar arranca de lo que ya había guardado',
+   /_calPrecargarGuardado/.test(TEMP));
+ok('12f · una corrección a mano queda marcada para que la fusión la respete',
+   /f\.editada = true/.test(TEMP));
+// ⚠️ Fijar quién soy afecta a TODOS los archivos, no sólo al último.
+ok('12f · ⚠️ recalcular «quién soy» rehace todas las fuentes',
+   /fuentes\.forEach\([\s\S]{0,400}reinterpretarCon/.test(TEMP));
+
+// ════════════════════════════════════════════════════════════════════
 console.log('\n9 · CODIFICACIÓN Y SINTAXIS');
 // ════════════════════════════════════════════════════════════════════
 //  Este proyecto ya perdió un fichero entero por una trampa de codificación.

@@ -62,6 +62,15 @@ const CAL_MESES_TEMPORADA = [8, 9, 10, 11, 12, 1, 2, 3, 4, 5, 6];
 const CAL_PDFJS     = 'js/vendor/pdfjs/pdf.min.js';
 const CAL_PDFJS_WRK = 'js/vendor/pdfjs/pdf.worker.min.js';
 
+// ⛔ EL OCR VA ALOJADO AQUÍ, NO EN UN CDN — igual que pdf.js, y por lo mismo
+//    (v543 se revirtió entera por traer una biblioteca de fuera). Y TAMPOCO
+//    entra en el precache del Service Worker: son ~4 MB por descarga y
+//    `cache.addAll` es ATÓMICO.
+const CAL_OCR_DIR  = 'js/vendor/tesseract/';
+const CAL_OCR_LIB  = CAL_OCR_DIR + 'tesseract.min.js';
+const CAL_OCR_WRK  = CAL_OCR_DIR + 'worker.min.js';
+const CAL_OCR_LANG = 'spa';
+
 window._calState = window._calState || {
     cache: {},        // '<clubId>|<mes>' → { partidos, ts }
     indice: null,     // documento índice en memoria
@@ -294,6 +303,204 @@ async function _calLeerPdf(file) {
 }
 
 // ════════════════════════════════════════════════════════════════════
+//  📸 v656 · LEER LA CAPTURA DE PANTALLA (OCR, Y DENTRO DEL APARATO)
+// ════════════════════════════════════════════════════════════════════
+//  Encargo del autor (2026-09-01): que la zona de importación acepte la
+//  captura igual que acepta el PDF. En la v655 se le dijo que copiara el
+//  texto; contestó que lo que necesita es soltar la imagen.
+//
+//  ⚠️⚠️ Y ESTO NO REABRE LO QUE SE CERRÓ EN v647. Allí se borró «Importar con
+//  IA» por protección de datos, y el motivo NO era que hubiera OCR: era que
+//  mandaba una FOTO DE LA LISTA DEL EQUIPO —datos personales de menores— a un
+//  servicio de fuera (Gemini Vision vía un Worker de Cloudflare). Aquí no
+//  sale nada del dispositivo: la biblioteca está alojada en el propio
+//  proyecto, corre en un Web Worker del navegador y la imagen no viaja a
+//  ninguna parte. Un calendario tampoco lleva datos de menores.
+//  ⛔ Si algún día alguien propone «mejorarlo» mandando la imagen a un
+//  servicio de reconocimiento, eso SÍ sería volver a v647.
+// ════════════════════════════════════════════════════════════════════
+let _calOcrPromesa = null;
+
+// Ruta del proyecto → URL absoluta de este mismo origen. Ver el aviso de
+// `_calLeerImagen`: dentro de un worker las relativas no valen.
+function _calAbs(ruta) {
+    try { return new URL(ruta, document.baseURI || location.href).href; }
+    catch (e) { return ruta; }
+}
+
+function _calCargarOCR() {
+    if (window.Tesseract) return Promise.resolve(window.Tesseract);
+    if (_calOcrPromesa) return _calOcrPromesa;
+    _calOcrPromesa = new Promise((resolve, reject) => {
+        const s = document.createElement('script');
+        s.src = CAL_OCR_LIB + '?v=' + (window.CRONOS_VERSION || 'v656');
+        s.onload = () => {
+            if (!window.Tesseract) { reject(new Error('el lector de imágenes cargó pero no se registró')); return; }
+            resolve(window.Tesseract);
+        };
+        s.onerror = () => { _calOcrPromesa = null; reject(new Error('no se pudo cargar el lector de imágenes')); };
+        document.head.appendChild(s);
+    });
+    return _calOcrPromesa;
+}
+
+// ¿Soporta este navegador las instrucciones SIMD de WebAssembly? De eso
+// depende cuál de los dos motores hay que traerse, y son 4 MB: pedir el que
+// no es significa un 404 y quedarse sin nada.
+//
+// ⚠️ SE DECIDE AQUÍ Y SE LE PASA LA RUTA EXACTA. Si a la biblioteca se le da
+// un DIRECTORIO, ella misma compone el nombre y puede pedir una variante que
+// no está alojada (hay cuatro; aquí viven dos, las que usa el motor LSTM).
+const _CAL_WASM_SIMD = new Uint8Array([
+    0, 97, 115, 109, 1, 0, 0, 0, 1, 5, 1, 96, 0, 1, 123,
+    3, 2, 1, 0, 10, 10, 1, 8, 0, 65, 0, 253, 15, 253, 98, 11,
+]);
+function _calNucleoOCR() {
+    let simd = false;
+    try { simd = WebAssembly.validate(_CAL_WASM_SIMD); } catch (e) { simd = false; }
+    return CAL_OCR_DIR + (simd ? 'tesseract-core-simd-lstm.wasm.js' : 'tesseract-core-lstm.wasm.js');
+}
+
+// Prepara la imagen antes de reconocerla.
+//  🔑 Una letra necesita alto para leerse: por debajo de ~20 px el OCR falla
+//  en la columna estrecha (la de la jornada) y confunde 12 con 1. Y por
+//  arriba hay que poner tope: una foto de 12 Mpx tumba un móvil.
+function _calPrepararImagen(file) {
+    return new Promise((resolve, reject) => {
+        const url = URL.createObjectURL(file);
+        const img = new Image();
+        img.onload = () => {
+            try {
+                const mayor = Math.max(img.width, img.height);
+                let escala = 1;
+                if (img.width < 1400) escala = Math.min(2.5, 1400 / Math.max(1, img.width));
+                if (mayor * escala > 3000) escala = 3000 / mayor;
+                const c = document.createElement('canvas');
+                c.width  = Math.max(1, Math.round(img.width  * escala));
+                c.height = Math.max(1, Math.round(img.height * escala));
+                const ctx = c.getContext('2d');
+                // Fondo blanco: un PNG con transparencia se reconoce fatal
+                // sobre negro, y las capturas de pantalla los tienen a veces.
+                ctx.fillStyle = '#ffffff';
+                ctx.fillRect(0, 0, c.width, c.height);
+                ctx.drawImage(img, 0, 0, c.width, c.height);
+                URL.revokeObjectURL(url);
+                c.toBlob(b => resolve(b || file), 'image/png');
+            } catch (e) { URL.revokeObjectURL(url); reject(e); }
+        };
+        img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('no se ha podido abrir la imagen')); };
+        img.src = url;
+    });
+}
+
+// ════════════════════════════════════════════════════════════════════
+//  🚨 v657 · UN ERROR QUE NO DICE NADA MANDA A ARREGLAR OTRA COSA
+// ════════════════════════════════════════════════════════════════════
+//  Lo que vio el autor fue, literalmente, «⚠️ No se ha podido leer la imagen:»
+//  y la frase se acababa ahí. Un fallo de Web Worker no llega como un `Error`
+//  con mensaje: llega como un evento cuyo `.message` está vacío. Y con esa
+//  pantalla delante, la conclusión razonable —la suya— fue que la app estaba
+//  rechazando el PNG, cuando el PNG entraba bien y lo que fallaba era el
+//  arranque del lector.
+//
+//  👉 Así que aquí nunca puede salir un hueco. Si el error no se explica solo,
+//  se le PREGUNTA A LA RED cuál de las tres piezas no está llegando, y se dice
+//  cuál. Esto no es adorno: es lo que evita la siguiente ronda a ciegas.
+function _calErrorLegible(e) {
+    if (!e) return 'el lector no ha arrancado y no ha dicho por qué';
+    if (typeof e === 'string' && e.trim()) return e.trim();
+    const m = (e.message || e.reason || '').toString().trim();
+    if (m) return m;
+    if (e.type) return 'fallo de tipo «' + e.type + '» al arrancar el lector';
+    return 'el lector no ha arrancado y no ha dicho por qué';
+}
+
+// ¿Está cada pieza donde se la espera? Se comprueba SÓLO cuando algo ha ido
+// mal: son megas, y no hay que pedirlos por gusto.
+async function _calDiagnosticoOCR() {
+    const piezas = [
+        ['el lector',       CAL_OCR_LIB],
+        ['su motor',        _calNucleoOCR()],
+        ['el idioma',       CAL_OCR_DIR + CAL_OCR_LANG + '.traineddata'],
+        ['el hilo de apoyo', CAL_OCR_WRK],
+    ];
+    const faltan = [];
+    for (const [nombre, ruta] of piezas) {
+        try {
+            const r = await fetch(_calAbs(ruta), { method: 'HEAD', cache: 'no-store' });
+            if (!r.ok) faltan.push(nombre + ' (' + r.status + ')');
+        } catch (e) { faltan.push(nombre + ' (no se ha podido pedir)'); }
+    }
+    return faltan;
+}
+
+// Devuelve { lineas, palabras, confianza } listo para `CalParser.lineasDeOCR`.
+async function _calLeerImagen(file, avisar) {
+    const T = await _calCargarOCR();
+    const imagen = await _calPrepararImagen(file);
+
+    const worker = await T.createWorker(CAL_OCR_LANG, 1, {
+        // ════════════════════════════════════════════════════════════
+        //  🔴🔴 v657 · ESTA LÍNEA ES LA QUE HACE QUE FUNCIONE EN LA APP
+        // ════════════════════════════════════════════════════════════
+        //  La biblioteca, por su cuenta, se descarga su worker y lo arranca
+        //  desde un `blob:` (`workerBlobURL` viene en TRUE). Y esta app sirve
+        //  una CABECERA CSP desde `firebase.json` que NO declara `worker-src`,
+        //  así que esa regla cae en `default-src 'self'` y un worker `blob:`
+        //  está PROHIBIDO. El navegador lo bloquea antes de ejecutar nada.
+        //
+        //  🚨 Y LO PEOR ES CÓMO SE MANIFIESTA: el fallo llega como un evento
+        //  de error SIN MENSAJE, así que la pantalla decía «No se ha podido
+        //  leer la imagen:» y ahí se acababa la frase. El autor, con razón,
+        //  dedujo que la app rechazaba el PNG y pidió revisar el filtro de
+        //  tipos —y el filtro estaba bien: el fichero llegaba hasta aquí.
+        //
+        //  👉 Se arregla NO usando un blob: el worker se carga desde su propia
+        //  URL, que es del mismo origen y por tanto la CSP la permite. La
+        //  alternativa —abrir `worker-src blob:` en la CSP— relajaría la
+        //  seguridad de toda la app para arreglar una pantalla. No se hace.
+        workerBlobURL: false,
+        // ⚠️⚠️ Y RUTAS ABSOLUTAS, NO RELATIVAS. Quien pide el motor y el
+        // idioma no es esta página, es el worker: una ruta relativa se
+        // resolvería contra la URL de éste y no contra la de la app.
+        workerPath: _calAbs(CAL_OCR_WRK),
+        corePath:   _calAbs(_calNucleoOCR()),
+        // El modelo de idioma vive al lado, SIN comprimir: servido como .gz,
+        // el propio servidor lo descomprime por el camino y la biblioteca
+        // recibe algo que no es lo que espera.
+        langPath:   _calAbs(CAL_OCR_DIR),
+        gzip:       false,
+        legacyCore: false,
+        legacyLang: false,
+        logger: (m) => {
+            if (!m || !avisar) return;
+            const pc = Math.round((m.progress || 0) * 100);
+            if (m.status === 'recognizing text') avisar('🔎 Leyendo la imagen… ' + pc + '%');
+            else if (/traineddata|core/i.test(m.status || '')) avisar('⏳ Preparando el lector de imágenes… ' + pc + '%');
+        },
+    });
+
+    try {
+        const { data } = await worker.recognize(imagen, {}, { blocks: true });
+        const lineas = [];
+        let palabras = 0;
+        (data.blocks || []).forEach(b => (b.paragraphs || []).forEach(p => (p.lines || []).forEach(l => {
+            const pal = (l.words || []).map(w => ({
+                texto: w.text, x0: w.bbox.x0, x1: w.bbox.x1, y0: w.bbox.y0, y1: w.bbox.y1,
+            }));
+            palabras += pal.length;
+            lineas.push({ palabras: pal });
+        })));
+        return { lineas, palabras, confianza: data.confidence || 0 };
+    // ⚠️ Y SE CIERRA SIEMPRE. Un worker que no se termina deja su hilo y sus
+    // ~40 MB vivos hasta que se recargue la app, y esto se usa varias veces
+    // seguidas: una por cada subcategoría del club.
+    } finally {
+        try { await worker.terminate(); } catch (e) { /* ya estaba cerrado */ }
+    }
+}
+
+// ════════════════════════════════════════════════════════════════════
 //  🖥️ PANTALLA · GESTOR DE CALENDARIOS
 // ════════════════════════════════════════════════════════════════════
 function _calOverlay(titulo, cuerpo, botones, ancho) {
@@ -338,8 +545,9 @@ window.calAbrirGestor = async function () {
     const equipos = filas.filter(f => f.tipo === 'equipo');
 
     let html = '<div style="font-size:0.74rem;color:var(--text-muted);line-height:1.6;margin-bottom:0.9rem;">' +
-        'Arrastra aquí el PDF oficial de cada subcategoría. La app lo interpreta, te enseña la tabla para que la ' +
-        'revises y sólo entonces guarda la temporada. Los partidos aparecerán solos en el cuadrante al cambiar de semana.</div>';
+        'Arrastra el PDF oficial de cada subcategoría, una captura de pantalla del Portal del Federado, ' +
+        'o pega su tabla: la app entiende los tres. Lo interpreta, te enseña la tabla para que la revises ' +
+        'y sólo entonces guarda la temporada. Los partidos aparecerán solos en el cuadrante al cambiar de semana.</div>';
 
     if (!equipos.length) {
         html += '<div style="text-align:center;padding:2rem;color:var(--text-muted);">No hay equipos en el cuadrante todavía.</div>';
@@ -382,40 +590,94 @@ window.calAbrirGestor = async function () {
     if (cuerpo) cuerpo.innerHTML = html;
 };
 
-// ── Paso 1 · arrastrar el PDF (o pegar el texto) ─────────────────────
-window.calAbrirImportador = function (filaId, label) {
-    window._calState.imp = { filaId, label, lineas: null, res: null, meta: {}, origen: '' };
+// ── Paso 1 · el PDF, o la tabla del portal ───────────────────────────
+//  🔑 v655 · LAS DOS VÍAS SON DE PRIMERA CLASE. Antes la de pegar texto vivía
+//  dentro de un `<details>` cerrado y rotulado como avería («¿El PDF no se
+//  deja leer?»). Era correcto cuando sólo servía de salida de emergencia para
+//  un PDF escaneado; dejó de serlo cuando el autor pidió (2026-09-01) admitir
+//  la tabla web del Portal del Federado, que NO es un plan B: es el formato
+//  con el que llega la mitad de la gente. Un camino principal escondido
+//  detrás de una pregunta sobre un fallo no lo encuentra nadie.
+window.calAbrirImportador = function (filaId, label, seguir) {
+    // 🧩 v658 · «Añadir otra captura» vuelve AQUÍ, y lo acumulado tiene que
+    //  sobrevivir al viaje. Sin este `seguir`, volver al paso 1 vaciaba la
+    //  importación en curso y la segunda imagen empezaba de cero — que es
+    //  exactamente lo que el autor reportó que le pasaba.
+    const previa = window._calState.imp;
+    if (!(seguir && previa && previa.filaId === filaId && previa.res)) {
+        window._calState.imp = { filaId, label, lineas: null, res: null, meta: {},
+                                 origen: '', fuentes: [] };
+    }
+    const acum = window._calState.imp.res;
 
     const cuerpo =
+        (acum
+            ? '<div style="display:flex;align-items:center;gap:0.6rem;flex-wrap:wrap;margin-bottom:0.8rem;' +
+                     'border:1px solid rgba(63,185,80,0.35);background:rgba(63,185,80,0.08);' +
+                     'border-radius:10px;padding:0.55rem 0.75rem;">' +
+                '<div style="flex:1;min-width:180px;font-size:0.74rem;color:#3fb950;line-height:1.5;">' +
+                    '🧩 Llevas <b>' + acum.filas.length + ' partidos</b> de ' +
+                    (window._calState.imp.fuentes || []).length + ' archivo(s). ' +
+                    'Suelta la siguiente captura y se sumará: lo que ya tienes no se pierde.' +
+                '</div>' +
+                '<button class="btn" onclick="calVolverARevision()" style="padding:0.3rem 0.7rem;font-size:0.68rem;' +
+                       'font-weight:700;background:rgba(88,166,255,0.15);border:1px solid rgba(88,166,255,0.4);' +
+                       'color:#58a6ff;">Ver la tabla</button>' +
+                '<button class="btn" onclick="calEmpezarDeCero()" style="padding:0.3rem 0.7rem;font-size:0.68rem;' +
+                       'background:rgba(248,81,73,0.10);border:1px solid rgba(248,81,73,0.35);color:#f85149;">' +
+                       'Empezar de cero</button>' +
+              '</div>'
+            : '') +
         '<div id="cal-drop" ' +
-            'style="border:2px dashed rgba(88,166,255,0.45);border-radius:14px;padding:2rem 1rem;text-align:center;' +
+            'style="border:2px dashed rgba(88,166,255,0.45);border-radius:14px;padding:1.6rem 1rem;text-align:center;' +
                    'background:rgba(88,166,255,0.05);cursor:pointer;transition:background 0.15s;">' +
-            '<div style="font-size:2.2rem;line-height:1;margin-bottom:0.5rem;">📄</div>' +
-            '<div style="font-size:0.86rem;font-weight:700;color:#58a6ff;">Arrastra aquí el PDF de la federación</div>' +
-            '<div style="font-size:0.72rem;color:var(--text-muted);margin-top:0.35rem;">o pulsa para elegirlo · ' +
+            '<div style="font-size:2.2rem;line-height:1;margin-bottom:0.5rem;">📄🖼️</div>' +
+            '<div style="font-size:0.86rem;font-weight:700;color:#58a6ff;">Arrastra aquí el PDF ' +
+                '<span style="opacity:0.75;">o las capturas de pantalla</span></div>' +
+            '<div style="font-size:0.72rem;color:var(--text-muted);margin-top:0.35rem;">o pulsa para elegirlas · ' +
                 _calE(label) + '</div>' +
-            '<input type="file" id="cal-file" accept="application/pdf,.pdf" style="display:none;">' +
+            '<div style="font-size:0.66rem;color:#8b949e;margin-top:0.5rem;">' +
+                'Puedes soltar <b>varias a la vez</b>: si la temporada no cabe en una captura, se van sumando' +
+            '</div>' +
+            // 🧩 `multiple`: la temporada entera son dos o tres capturas, y
+            //    obligar a soltarlas de una en una es trabajo inventado.
+            '<input type="file" id="cal-file" multiple accept="application/pdf,.pdf,image/*,.png,.jpg,.jpeg,.webp,.txt,.csv,text/plain,text/csv" style="display:none;">' +
         '</div>' +
         '<div id="cal-estado" style="margin-top:0.7rem;font-size:0.74rem;color:var(--text-muted);text-align:center;"></div>' +
-        // ── Plan B ──────────────────────────────────────────────────
-        //  Elección expresa del autor. Un PDF escaneado es una imagen: no
-        //  tiene una sola letra que extraer, y sin esta salida ese día el
-        //  usuario se queda bloqueado sin alternativa ninguna.
-        '<details style="margin-top:1rem;">' +
-            '<summary style="cursor:pointer;font-size:0.75rem;color:#8b949e;">' +
-                '¿El PDF no se deja leer? Pega aquí el calendario copiado de la web</summary>' +
-            '<textarea id="cal-texto" rows="7" placeholder="Pega el calendario tal cual: una línea por partido, o con las jornadas en cabecera." ' +
-                'style="width:100%;margin-top:0.5rem;background:#0d1117;color:white;border:1px solid rgba(255,255,255,0.15);' +
-                       'border-radius:8px;padding:0.6rem;font-size:0.72rem;font-family:monospace;resize:vertical;"></textarea>' +
-            '<button class="btn" onclick="calInterpretarTexto()" style="margin-top:0.4rem;padding:0.35rem 0.8rem;font-size:0.7rem;' +
-                   'font-weight:700;background:rgba(210,168,255,0.12);border:1px solid rgba(210,168,255,0.4);color:#d2a8ff;">' +
-                   '📝 Interpretar el texto</button>' +
-        '</details>';
+
+        '<div style="display:flex;align-items:center;gap:0.6rem;margin:1rem 0 0.8rem;">' +
+            '<div style="flex:1;height:1px;background:rgba(255,255,255,0.10);"></div>' +
+            '<div style="font-size:0.7rem;color:#8b949e;font-weight:700;">o pega la tabla de la web</div>' +
+            '<div style="flex:1;height:1px;background:rgba(255,255,255,0.10);"></div>' +
+        '</div>' +
+
+        '<div style="font-size:0.72rem;color:var(--text-muted);line-height:1.6;margin-bottom:0.45rem;">' +
+            'Vale la tabla del <b>Portal del Federado</b> tal cual: selecciónala en la web, cópiala y pégala aquí. ' +
+            'La app reconoce sus columnas —Jornada, Fecha, Hora, Equipo Casa, Equipo Fuera, Campo— sola.' +
+        '</div>' +
+        '<textarea id="cal-texto" rows="6" placeholder="Jornada  Fecha  Hora  Equipo Casa  Equipo Fuera  Campo&#10;1  25-09-2026  20:30  JOVERO-LAS ROSAS, C.D.  ARINAGA, C.D.  LAS ROSAS" ' +
+            'style="width:100%;background:#0d1117;color:white;border:1px solid rgba(255,255,255,0.15);' +
+                   'border-radius:8px;padding:0.6rem;font-size:0.72rem;font-family:monospace;resize:vertical;"></textarea>' +
+        '<button class="btn" onclick="calInterpretarTexto()" style="margin-top:0.4rem;padding:0.35rem 0.8rem;font-size:0.7rem;' +
+               'font-weight:700;background:rgba(210,168,255,0.12);border:1px solid rgba(210,168,255,0.4);color:#d2a8ff;">' +
+               '📝 Interpretar el texto pegado</button>' +
+        // La captura ya se lee arriba (v656). Aquí sólo se avisa de lo único
+        // que el usuario no puede adivinar: que la primera vez hay descarga.
+        '<div style="font-size:0.68rem;color:#8b949e;margin-top:0.6rem;line-height:1.55;">' +
+            '🖼️ Las <b>capturas de pantalla</b> se leen dentro de tu propio dispositivo: la imagen ' +
+            'no se envía a ningún sitio. La primera vez tarda un poco más porque se descarga el lector.' +
+        '</div>';
 
     _calOverlay('📥 Importar calendario · ' + _calE(label), cuerpo,
         '<button class="btn" onclick="calAbrirGestor()" style="padding:0.4rem 0.9rem;font-size:0.72rem;">← Volver</button>', 620);
 
     _calEngancharArrastre();
+
+    // 🧩 Lo ya guardado entra como base, para que reimportar SUME. Va detrás
+    //    de pintar: son lecturas de red y la pantalla no espera por ellas.
+    if (!seguir && !acum) {
+        _calPrecargarGuardado(filaId, label).catch(() => { /* si no se puede leer, se importa desde cero */ });
+    }
 };
 
 function _calEngancharArrastre() {
@@ -424,7 +686,7 @@ function _calEngancharArrastre() {
     if (!zona || !input) return;
 
     zona.addEventListener('click', () => input.click());
-    input.addEventListener('change', () => { if (input.files && input.files[0]) _calProcesarPdf(input.files[0]); });
+    input.addEventListener('change', () => _calProcesarVarios(input.files));
 
     // ⚠️ HAY QUE CANCELAR dragover Y dragenter. Si sólo se cancela uno, el
     // navegador sigue con su comportamiento por defecto y ABRE EL PDF en la
@@ -440,8 +702,7 @@ function _calEngancharArrastre() {
         zona.style.background = 'rgba(88,166,255,0.05)';
     }));
     zona.addEventListener('drop', e => {
-        const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
-        if (f) _calProcesarPdf(f);
+        _calProcesarVarios(e.dataTransfer && e.dataTransfer.files);
     });
 }
 
@@ -459,10 +720,99 @@ function _calEstado(txt, color) {
     if (el) el.innerHTML = '<span style="color:' + (color || 'var(--text-muted)') + ';">' + txt + '</span>';
 }
 
-async function _calProcesarPdf(file) {
+// ════════════════════════════════════════════════════════════════════
+//  🧩 v658 · VARIOS ARCHIVOS DE UNA VEZ, PERO DE UNO EN UNO
+// ════════════════════════════════════════════════════════════════════
+//  Se pueden soltar las tres capturas juntas. ⚠️ Y SE PROCESAN EN SERIE, no
+//  en paralelo: cada imagen levanta un worker de OCR con su motor de ~4 MB en
+//  memoria, y tres a la vez tumban un móvil. Además el estado de la
+//  importación es uno solo, así que dos lecturas fusionando a la vez se
+//  pisarían.
+//
+//  El ORDEN es el de los ficheros tal como llegan, y da igual: la fusión
+//  ordena por fecha y el resultado no depende de cuál entró primero.
+let _calProcesando = false;
+
+async function _calProcesarVarios(lista) {
+    const files = Array.prototype.slice.call(lista || []);
+    if (!files.length) return;
+    if (_calProcesando) { _calToast('⏳ Espera a que termine el archivo anterior.'); return; }
+    _calProcesando = true;
+    try {
+        for (let i = 0; i < files.length; i++) {
+            if (files.length > 1) {
+                _calEstado('📚 Archivo ' + (i + 1) + ' de ' + files.length + ': ' +
+                           _calE(files[i].name) + '…');
+            }
+            await _calProcesarArchivo(files[i], files.length > 1);
+        }
+        // La tabla de revisión se pinta una sola vez, al final de la tanda.
+        if (files.length > 1 && window._calState.imp && window._calState.imp.res) _calPintarRevision();
+    } finally {
+        _calProcesando = false;
+    }
+}
+
+// 🔑 v655 · UN ARCHIVO, NO UN PDF. Aquí llega lo que el usuario suelte, y
+//  cada cosa que no sea un PDF tiene su propia respuesta: la imagen se
+//  reconoce y se le dice qué hacer con ella —era el «Eso no es un PDF» de su
+//  captura, que no decía nada—, y un .txt o un .csv se leen y entran por el
+//  mismo camino que el texto pegado.
+async function _calProcesarArchivo(file, enTanda) {
     if (!file) return;
-    if (!/pdf$/i.test(file.name) && file.type !== 'application/pdf') {
-        _calEstado('⚠️ Eso no es un PDF. Arrastra el calendario oficial en PDF.', '#f0883e');
+    const nombre = String(file.name || '');
+    const tipo   = String(file.type || '');
+    // En una tanda la tabla se pinta UNA vez al final: repintarla entre
+    // archivo y archivo se lleva por delante el cartel de progreso.
+    if (window._calState.imp) window._calState.imp.enTanda = !!enTanda;
+
+    // ── Una CAPTURA DE PANTALLA ─────────────────────────────────────
+    if (/^image\//i.test(tipo) || /\.(png|jpe?g|gif|webp|heic|bmp)$/i.test(nombre)) {
+        _calEstado('⏳ Preparando el lector de imágenes… (la primera vez tarda: se descarga)');
+        try {
+            const r = await _calLeerImagen(file, (txt) => _calEstado(txt));
+            if (!r.palabras) {
+                _calEstado('⚠️ No se ha reconocido ni una palabra en esa imagen.<br>' +
+                           'Prueba con una captura más grande y sin recortar, o pega el texto aquí abajo.', '#f0883e');
+                return;
+            }
+            _calEstado('✅ ' + r.palabras + ' palabras leídas (fiabilidad ' +
+                       Math.round(r.confianza) + '%). Interpretando…', '#3fb950');
+            window._calState.imp.paginas = 1;
+            window._calState.imp.ocr = { palabras: r.palabras, confianza: r.confianza };
+            _calInterpretarYRevisar(window.CalParser.lineasDeOCR(r.lineas), {}, nombre);
+        } catch (e) {
+            const faltan = await _calDiagnosticoOCR();
+            _calEstado('⚠️ No se ha podido leer la imagen: ' + _calE(_calErrorLegible(e)) +
+                       (faltan.length
+                            ? '<br>No llega ' + _calE(faltan.join(', ')) + '.'
+                            : '<br>Las piezas del lector sí están: el fallo es al arrancarlo.') +
+                       '<br>Mientras tanto, puedes pegar el texto de la tabla aquí abajo.', '#f85149');
+        }
+        return;
+    }
+
+    // ── Un .txt / .csv: la misma tabla, guardada en un fichero ──────
+    if (/^text\//i.test(tipo) || /\.(txt|csv|tsv)$/i.test(nombre)) {
+        _calEstado('⏳ Leyendo el texto…');
+        try {
+            const txt = await file.text();
+            if (!txt.trim()) { _calEstado('⚠️ Ese fichero está vacío.', '#f0883e'); return; }
+            // Se vuelca también en el recuadro: si algo sale torcido, el
+            // usuario tiene delante lo que se ha interpretado y puede tocarlo.
+            const ta = document.getElementById('cal-texto');
+            if (ta) ta.value = txt;
+            _calEstado('✅ Texto leído. Interpretando…', '#3fb950');
+            _calInterpretarYRevisar(window.CalParser.lineasDeTexto(txt), {}, nombre);
+        } catch (e) {
+            _calEstado('⚠️ No se ha podido leer el fichero: ' + _calE(e && e.message ? e.message : e), '#f85149');
+        }
+        return;
+    }
+
+    if (!/pdf$/i.test(nombre) && tipo !== 'application/pdf') {
+        _calEstado('⚠️ Eso no es un PDF ni un texto. Arrastra el calendario oficial en PDF, ' +
+                   'o pega abajo la tabla copiada de la web.', '#f0883e');
         return;
     }
     _calEstado('⏳ Cargando el lector de PDF…');
@@ -514,13 +864,56 @@ function _calInterpretarYRevisar(lineas, meta, origen) {
     const nombres = _calNombresDelClub();
     if (perfil && perfil.nombrePropio) nombres.unshift(perfil.nombrePropio);
 
-    imp.res = window.CalParser.interpretar(lineas, {
+    const res = window.CalParser.interpretar(lineas, {
         misNombres: nombres,
         inicioTemporada: window.CalParser.temporadaDe(new Date()),
     });
     imp.perfilUsado = !!(perfil && perfil.nombrePropio);
-    imp.correcciones = 0;
-    _calPintarRevision();
+
+    // 🧩 v658 · SE SUMA, NO SE PISA. Ver `CalParser.fusionarFilas`: treinta
+    // jornadas no caben en una captura de pantalla, así que el importador
+    // acumula todo lo que se le vaya soltando para un mismo equipo.
+    imp.fuentes = imp.fuentes || [];
+    imp.fuentes.push({ nombre: imp.origen, lineas, meta: imp.meta, res });
+
+    if (!imp.res) {
+        imp.res = res;
+        imp.correcciones = 0;
+        imp.fuentes[imp.fuentes.length - 1].aporte =
+            { anadidas: res.filas.length, mejoradas: 0, repetidas: 0 };
+    } else {
+        const f = window.CalParser.fusionarFilas(imp.res.filas, res.filas);
+        imp.res = _calResFusionado(imp.res, res, f);
+        imp.fuentes[imp.fuentes.length - 1].aporte = f;
+        _calToast('➕ ' + f.anadidas + ' partidos nuevos · ' + f.repetidas + ' que ya tenías' +
+                  (f.mejoradas ? ' · ' + f.mejoradas + ' mejor leídos' : ''), 4500);
+    }
+    if (!imp.enTanda) _calPintarRevision();
+}
+
+// Recompone el resultado tras fusionar: las filas son las unidas, y lo que
+// describe el conjunto —cuántas ajenas, quién soy— se suma o se conserva.
+function _calResFusionado(viejo, nuevo, f) {
+    const filas = f.filas;
+    const r = { total: filas.length, verde: 0, amarillo: 0, rojo: 0, casa: 0, fuera: 0, sinHora: 0 };
+    filas.forEach(x => {
+        r[x.confianza] = (r[x.confianza] || 0) + 1;
+        if (x.local === true) r.casa++; else if (x.local === false) r.fuera++;
+        if (!x.hora) r.sinHora++;
+    });
+    // Las descartadas por ser de otros equipos del grupo se ACUMULAN: son un
+    // recuento de lo leído, no del resultado, y esconder las de la segunda
+    // captura haría creer que esa imagen entró entera.
+    r.ajenas   = (viejo.resumen.ajenas   || 0) + (nuevo.resumen.ajenas   || 0);
+    r.sinFecha = (viejo.resumen.sinFecha || 0) + (nuevo.resumen.sinFecha || 0);
+    r.sinPar   = (viejo.resumen.sinPar   || 0) + (nuevo.resumen.sinPar   || 0);
+    r.porCabecera = !!(viejo.resumen.porCabecera && nuevo.resumen.porCabecera);
+    return {
+        filas, resumen: r,
+        propio: viejo.propio || nuevo.propio,
+        candidatos: (viejo.candidatos && viejo.candidatos.length) ? viejo.candidatos : nuevo.candidatos,
+        cabecera: viejo.cabecera || nuevo.cabecera,
+    };
 }
 
 // ════════════════════════════════════════════════════════════════════
@@ -633,9 +1026,34 @@ function _calPintarRevision() {
         (r.rojo ? ' — las filas con la barra roja no se guardarán hasta que estén completas.' : '.') +
         '</div>';
 
+    // 🧩 v658 · DE DÓNDE SALE CADA COSA. Con dos o tres capturas fusionadas,
+    //  el usuario tiene que poder ver que la segunda entró y CUÁNTO aportó:
+    //  si no, un «30 partidos» a secas no distingue una fusión correcta de
+    //  una imagen que se leyó dos veces.
+    const fuentes = imp.fuentes || [];
+    if (fuentes.length > 1) {
+        html += '<div style="margin-top:0.6rem;padding-top:0.6rem;border-top:1px solid rgba(255,255,255,0.08);' +
+                       'font-size:0.68rem;color:var(--text-muted);line-height:1.7;">' +
+            '<b style="color:white;">🧩 ' + fuentes.length + ' archivos fusionados</b> · ' +
+            'la unión va ordenada por fecha:<br>';
+        fuentes.forEach((fu, k) => {
+            const a = fu.aporte || {};
+            html += '<span style="opacity:0.85;">' + (k + 1) + '. ' + _calE(fu.nombre || 'archivo') + ' → ' +
+                '<b style="color:#3fb950;">' + (a.anadidas || 0) + '</b> nuevos' +
+                (a.repetidas ? ' · ' + a.repetidas + ' repetidos' : '') +
+                (a.mejoradas ? ' · <span style="color:#58a6ff;">' + a.mejoradas + ' mejor leídos</span>' : '') +
+                '</span><br>';
+        });
+        html += '</div>';
+    }
+
     const pie =
-        '<button class="btn" onclick="calAbrirImportador(\'' + _calA(imp.filaId) + '\',\'' + _calA(imp.label) + '\')" ' +
-            'style="padding:0.4rem 0.9rem;font-size:0.72rem;">← Otro archivo</button>' +
+        // 🧩 v658 · «Añadir» lleva el tercer argumento a true: vuelve al paso 1
+        //  SIN tirar lo acumulado. Es la diferencia entre sumar la siguiente
+        //  captura y volver a empezar, y sólo la marca ese `true`.
+        '<button class="btn" onclick="calAbrirImportador(\'' + _calA(imp.filaId) + '\',\'' + _calA(imp.label) + '\',true)" ' +
+            'style="padding:0.4rem 0.9rem;font-size:0.72rem;font-weight:700;background:rgba(88,166,255,0.15);' +
+            'border:1px solid rgba(88,166,255,0.4);color:#58a6ff;">➕ Añadir otra captura</button>' +
         // 🔎 v613 · LA VÍA PARA QUE UN FORMATO DESCONOCIDO SE PUEDA ARREGLAR.
         //  Este motor es heurístico y va a encontrarse maquetados que no
         //  entiende. Sin esto, el único canal para diagnosticarlos es que el
@@ -732,6 +1150,84 @@ function _calCuerpo(html, pie) {
     if (p) p.innerHTML = pie || '';
 }
 
+// ════════════════════════════════════════════════════════════════════
+//  🧩 v658 · REIMPORTAR YA NO EMPIEZA DE CERO
+// ════════════════════════════════════════════════════════════════════
+//  La otra mitad del encargo, y la que de verdad le estaba costando datos:
+//  guardó 22 partidos con la primera captura y, al volver a entrar para
+//  subir la segunda, `calGuardarTemporada` escribe con `merge:false` y
+//  además LIMPIA los meses anteriores (v609, y está bien que lo haga: si no,
+//  una reimportación dejaría restos de la lectura mala conviviendo con la
+//  buena). El resultado era que la segunda captura sustituía a la primera.
+//
+//  🔑 Se arregla ANTES de guardar, no cambiando cómo se guarda: al abrir el
+//  importador de un equipo que ya tiene temporada, lo guardado entra como
+//  BASE de la revisión. Así lo que se escribe sigue siendo «todo lo que hay
+//  en la tabla» —una sola verdad, sin merges a ciegas en Firestore— y lo que
+//  se ve en pantalla antes de guardar es exactamente lo que va a quedar.
+//
+//  ⚠️ Y por eso «Empezar de cero» tiene que existir y decirlo claro: es la
+//  única forma de tirar una importación mala.
+async function _calPrecargarGuardado(filaId, label) {
+    const clubId = _calClubId();
+    if (!clubId) return;
+    const imp = window._calState.imp;
+    if (!imp || imp.filaId !== filaId || imp.res) return;   // ya hay algo en curso
+
+    const idx = await _calLeerIndice(clubId);
+    const info = idx.equipos[filaId];
+    if (!info || !info.jornadas) return;
+
+    const meses = info.meses || _calMesesDe(window.CalParser.temporadaDe(new Date()));
+    const filas = [];
+    for (const mes of meses) {
+        const delMes = await _calLeerMes(clubId, mes);
+        const suyos = (delMes || {})[filaId] || {};
+        Object.keys(suyos).forEach(fecha => {
+            const d = suyos[fecha] || {};
+            filas.push({
+                jornada: d.jornada == null ? null : d.jornada,
+                fecha, hora: d.hora || '', rival: d.rival || '',
+                local: d.local === true ? true : (d.local === false ? false : null),
+                sede: d.sede || '', origen: 'ya guardado', ajeno: false,
+                confianza: (!d.rival || d.local == null) ? 'rojo'
+                         : (!d.hora || d.jornada == null) ? 'amarillo' : 'verde',
+                guardada: true,
+            });
+        });
+    }
+    if (!filas.length) return;
+    // Si mientras se leía el usuario ya soltó un archivo, lo suyo manda: se
+    // fusiona por debajo en vez de pisarlo.
+    const actual = window._calState.imp;
+    if (!actual || actual.filaId !== filaId) return;
+    if (actual.res) {
+        const f = window.CalParser.fusionarFilas(actual.res.filas, filas);
+        actual.res = _calResFusionado(actual.res, { resumen: {} }, f);
+    } else {
+        const f = window.CalParser.fusionarFilas([], filas);
+        actual.res = _calResFusionado({ resumen: {}, filas: [] }, { resumen: {} }, f);
+        actual.fuentes = [{ nombre: 'lo que ya tenías guardado', lineas: [],
+                            aporte: { anadidas: filas.length, mejoradas: 0, repetidas: 0 } }];
+    }
+    // Se repinta el paso 1 para que el cartel diga de cuántos partimos.
+    if (document.getElementById('cal-drop')) window.calAbrirImportador(filaId, label, true);
+}
+
+// 🧩 v658 · Volver a la tabla sin tocar nada, y tirarlo todo a propósito.
+window.calVolverARevision = function () {
+    if (window._calState.imp && window._calState.imp.res) _calPintarRevision();
+};
+
+window.calEmpezarDeCero = function () {
+    const imp = window._calState.imp;
+    if (!imp) return;
+    if (imp.res && imp.res.filas.length &&
+        !confirm('Se descartan los ' + imp.res.filas.length + ' partidos leídos hasta ahora.\n\n' +
+                 'Lo que ya tengas GUARDADO no se toca.\n\n¿Empezar de cero?')) return;
+    window.calAbrirImportador(imp.filaId, imp.label);
+};
+
 window.calEditar = function (i, campo, valor) {
     const res = window._calState.imp && window._calState.imp.res;
     if (!res || !res.filas[i]) return;
@@ -740,6 +1236,10 @@ window.calEditar = function (i, campo, valor) {
     else if (campo === 'jornada') f.jornada = valor === '' ? null : parseInt(valor, 10);
     else f[campo] = valor;
     delete f.jornadaSupuesta;              // si la toca una persona, ya no es una suposición
+    // 🔑 v658 · Y QUEDA MARCADA COMO SUYA. Al soltar la siguiente captura, la
+    // fusión no puede pisar una corrección hecha a mano con una lectura
+    // automática: sería el peor fallo posible de esta pantalla.
+    f.editada = true;
     window._calState.imp.correcciones++;
     // ⚠️ NO se repinta la tabla entera: el usuario está escribiendo dentro de
     // un input y repintar le movería el cursor a otro sitio a mitad de palabra.
@@ -800,12 +1300,37 @@ window._calVolverRevision = _calPintarRevision;
 window.calFijarPropio = function (nombre) {
     const imp = window._calState.imp;
     if (!imp || !imp.lineas) return;
-    imp.res = window.CalParser.reinterpretarCon(imp.lineas, {
-        inicioTemporada: window.CalParser.temporadaDe(new Date()),
-    }, nombre);
+    const ctx = { inicioTemporada: window.CalParser.temporadaDe(new Date()) };
+
+    // 🧩 v658 · SE RECALCULAN TODAS LAS FUENTES, no sólo la última. Decir
+    //  «yo soy este club» cambia quién es el rival y de qué lado juega en
+    //  CADA archivo: recalcular sólo el último dejaba media temporada leída
+    //  con el club equivocado y la otra media bien, sin ninguna señal.
+    const fuentes = (imp.fuentes && imp.fuentes.length)
+        ? imp.fuentes : [{ nombre: imp.origen, lineas: imp.lineas }];
+
+    // Las filas que el usuario ya corrigió a mano son la BASE: así siguen
+    // ganando frente a lo recalculado.
+    const aMano = (imp.res ? imp.res.filas : []).filter(f => f.editada);
+    let acumulado = null;
+    fuentes.forEach(fu => {
+        const r = window.CalParser.reinterpretarCon(fu.lineas, ctx, nombre);
+        fu.res = r;
+        if (!acumulado) {
+            const f = window.CalParser.fusionarFilas(aMano, r.filas);
+            fu.aporte = f;
+            acumulado = _calResFusionado({ resumen: {}, filas: aMano }, r, f);
+        } else {
+            const f = window.CalParser.fusionarFilas(acumulado.filas, r.filas);
+            fu.aporte = f;
+            acumulado = _calResFusionado(acumulado, r, f);
+        }
+    });
+    imp.res = acumulado;
     imp.correcciones++;
     imp.propioElegido = nombre;
-    _calToast('✅ Recalculado con «' + nombre + '».');
+    _calToast('✅ Recalculado con «' + nombre + '»' +
+              (fuentes.length > 1 ? ' en los ' + fuentes.length + ' archivos.' : '.'));
     _calPintarRevision();
 };
 

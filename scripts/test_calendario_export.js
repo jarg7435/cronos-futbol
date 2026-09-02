@@ -89,8 +89,29 @@ ok('2b · la descarga va por rxDescargarCSV', CAL.includes('window.rxDescargarCS
 ok('2c · el PDF va por rxImprimir', CAL.includes('window.rxImprimir('));
 ok('2d · NO se reimplementa la codificacion UTF-16 aqui',
    !/0xFF|0xFE|utf-?16/i.test(CAL), 'el calendario no debe codificar por su cuenta');
+// ⚠️ v656 · ESTA ASERCIÓN SE ACOTÓ, NO SE AFLOJÓ, Y LA RAZÓN IMPORTA.
+//  Prohibía `createObjectURL` en TODO el fichero, porque lo que hay que
+//  impedir es que la EXPORTACIÓN se fabrique su propio enlace de descarga en
+//  vez de pasar por `rxDescargarCSV` —que es quien sabe el truco del iPad—.
+//  Pero al añadir la lectura de capturas de pantalla apareció un
+//  `createObjectURL` que hace lo CONTRARIO de descargar: abre una imagen que
+//  el usuario acaba de soltar, y la revoca acto seguido. El guard lo cazó y
+//  tenía razón en dispararse: su ancla no distinguía los dos usos.
+//
+//  🔑 Así que sigue prohibido en todo el fichero fabricar un `<a download>`,
+//  y `createObjectURL` sigue prohibido en todo el fichero MENOS dentro de
+//  `_calPrepararImagen`. Si mañana alguien lo usa para descargar en otra
+//  función, esto vuelve a saltar.
+const cuerpoImagen = cuerpoFnDe(CAL, '_calPrepararImagen');
+const vecesEn = (s, re) => (s.match(re) || []).length;
 ok('2e · NO se fabrica un <a download> propio en el calendario',
-   !/\.download\s*=/.test(CAL) && !/createObjectURL/.test(CAL));
+   !/\.download\s*=/.test(CAL));
+ok('2e · y createObjectURL sólo se usa para ABRIR la captura, no para descargar',
+   cuerpoImagen.length > 0 &&
+   vecesEn(CAL, /createObjectURL/g) === vecesEn(cuerpoImagen, /createObjectURL/g) &&
+   /revokeObjectURL/.test(cuerpoImagen),
+   vecesEn(CAL, /createObjectURL/g) + ' en el fichero · ' +
+   vecesEn(cuerpoImagen, /createObjectURL/g) + ' en _calPrepararImagen');
 
 // ── PARTE 3 · 🔑🔑 EL GESTO: el paso 2 no espera a nadie ────────────
 console.log('\nPARTE 3 · el gesto del usuario (lo que hace que el iPad guarde)');

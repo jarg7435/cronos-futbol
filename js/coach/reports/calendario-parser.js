@@ -414,7 +414,13 @@ function _quitar(texto, hallazgo) {
 //
 //  Estas palabras son el comienzo de una instalación, no ruido: donde aparece
 //  una, empieza la sede y termina el nombre del equipo.
-const CAL_SEDE_RE = /\b(campo(?:\s+de\s+f[uú]tbol)?|c\.?\s?d\.?\s?m\.?|ciudad\s+deportiva|complejo\s+deportivo|polideportivo|estadio|instalaci[oó]n(?:es)?|terreno\s+de\s+juego|sede|anexo)\b/i;
+//  ➕ v655 · «MUNICIPAL DE ARINAGA» no lo reconocía nadie: el campo se
+//  quedaba pegado al nombre del rival en la tabla del Portal del Federado.
+//  Va DETRÁS de «campo» en la alternancia por claridad —el orden no decide
+//  cuál gana, gana la que aparezca antes en el texto—, y se exige que
+//  «municipal» empiece el nombre o vaya seguido de «de», para no partir un
+//  club que la llevara dentro.
+const CAL_SEDE_RE = /\b(campo(?:\s+de\s+f[uú]tbol)?|municipal\s+de\b|c\.?\s?d\.?\s?m\.?|ciudad\s+deportiva|complejo\s+deportivo|polideportivo|estadio|instalaci[oó]n(?:es)?|terreno\s+de\s+juego|sede|anexo)\b/i;
 
 // Devuelve { texto, sede }: el texto sin la sede, y la sede aparte.
 function _recortarSede(t) {
@@ -573,10 +579,22 @@ const CAL_ETIQUETAS = {
     jornada:   ['JOR', 'JORN', 'JORNADA', 'JDA', 'J'],
     fecha:     ['FECHA', 'DIA', 'DATA', 'DATE', 'FECHA PARTIDO'],
     hora:      ['HORA', 'HORARIO', 'HORAS', 'HORA PARTIDO'],
-    local:     ['LOCAL', 'EQUIPO LOCAL', 'CASA', 'EQUIP LOCAL', 'ETXEA'],
-    visitante: ['VISITANTE', 'EQUIPO VISITANTE', 'VISITANT', 'FUERA', 'KANPOA'],
+    local:     ['LOCAL', 'EQUIPO LOCAL', 'CASA', 'EQUIPO CASA', 'EQUIP LOCAL', 'ETXEA'],
+    visitante: ['VISITANTE', 'EQUIPO VISITANTE', 'VISITANT', 'FUERA', 'EQUIPO FUERA', 'KANPOA'],
     sede:      ['ESTADIO', 'CAMPO', 'INSTALACION', 'INSTALACIONES', 'SEDE',
                 'LUGAR', 'TERRENO', 'TERRENO DE JUEGO', 'CAMP'],
+
+    // 🔑 v655 · COLUMNAS QUE SE RECONOCEN PARA PODER IGNORARLAS.
+    //  No aportan ningún dato, pero SÍ tienen que contar como reconocidas:
+    //  `mapaDeCabecera` exige que la fila sea CASI TODA etiquetas (60 %), y
+    //  la tabla del Portal del Federado trae siete columnas de las que una
+    //  —«Resultado»— no se usa. Sin esta lista: 5 de 7 = 71 %… pero con dos
+    //  columnas más de las que publican otros portales (Acta, Estado) se cae
+    //  por debajo del umbral y la cabecera deja de reconocerse ENTERA. El
+    //  precio de no listarlas no es leer mal una columna: es no leer la tabla.
+    ignora:    ['RESULTADO', 'RESULTAT', 'EMAITZA', 'ACTA', 'ESTADO', 'ESTAT',
+                'OBSERVACIONES', 'GRUPO', 'COMPETICION', 'CATEGORIA', 'TEMPORADA',
+                'ARBITRO', 'ARBITROS', 'DELEGADO', 'ACCIONES', 'DETALLE'],
 };
 
 function _etiquetaDe(txt) {
@@ -598,7 +616,12 @@ function mapaDeCabecera(lineas) {
         let reconocidos = 0;
         campos.forEach((c, k) => {
             const e = _etiquetaDe(c);
-            if (e && idx[e] == null) { idx[e] = k; reconocidos++; }
+            if (!e) return;
+            // Las columnas ignorables cuentan CADA UNA para el umbral, pero no
+            // ocupan ranura: dos «Acta» seguidas siguen siendo dos columnas
+            // entendidas, no una entendida y otra desconocida.
+            if (e === 'ignora') { reconocidos++; return; }
+            if (idx[e] == null) { idx[e] = k; reconocidos++; }
         });
         // 🔑 LOCAL Y VISITANTE SON LA CONDICIÓN. Sin esas dos no hay partido
         // que leer, y una fila con "FECHA" y "HORA" sueltas puede ser
@@ -611,12 +634,444 @@ function mapaDeCabecera(lineas) {
     return null;
 }
 
-// La vía de pegar texto a mano: cada renglón es una línea, sin coordenadas.
+// ════════════════════════════════════════════════════════════════════
+//  🔑🔑 v655 · EL TEXTO PEGADO TAMBIÉN TRAE COLUMNAS. NO SE TIRABAN POR
+//  FALTA DE INFORMACIÓN: SE TIRABAN EN LA PUERTA.
+// ════════════════════════════════════════════════════════════════════
+//  Encargo del autor (implementar.txt, 2026-09-01) + dos capturas: además del
+//  PDF oficial de la FIFLP, muchos usuarios traen la tabla web del Portal del
+//  Federado —Jornada · Fecha · Hora · Equipo Casa · Equipo Fuera · Campo ·
+//  Resultado—, copiada o en captura de pantalla.
+//
+//  🚨 LO QUE PASABA, MEDIDO sobre cinco jornadas reales de sus capturas:
+//
+//      pegadas 5 → interpretadas 2 → rivales correctos 0
+//      rival «1 JOVERO» · rival «13 ARINAGA, C.D. MAJORERAS»
+//      y la jornada 13, que se juega EN CASA, marcada FUERA
+//
+//  Es decir: no fallaba con un error, fallaba PARECIENDO QUE FUNCIONABA, que
+//  es la peor forma de fallar que tiene un importador.
+//
+//  🔑 Y LA CAUSA NO ERA EL MOTOR. Esta función aplanaba los TABULADORES
+//  (`\t` → dos espacios → `\s+` → un espacio) y no construía `campos`. El
+//  navegador, al copiar una tabla HTML, separa las celdas justo con eso: con
+//  tabuladores. O sea que el mapa de la tabla llegaba entero y se destruía en
+//  la primera línea de código, y `mapaDeCabecera` —que existe desde v613 y es
+//  EXACTAMENTE el mecanismo que resuelve esto— devolvía null y no se usaba
+//  nunca por esta vía. Sin él, el número de jornada suelto («1», «13») se
+//  toma por parte del nombre del equipo y el guion pegado de «JOVERO-LAS
+//  ROSAS» parte por donde no es.
+//
+//  Conservar el tabulador es todo lo que hacía falta. Ni un formato nuevo ni
+//  un parser nuevo: el mismo camino de cabecera que ya lee el PDF.
+// ════════════════════════════════════════════════════════════════════
 function lineasDeTexto(txt) {
-    return String(txt || '').split(/\r?\n/)
-        .map(t => t.replace(/\t/g, '  ').replace(/\s+/g, ' ').trim())
-        .filter(Boolean)
-        .map((t, i) => ({ y: -i, pagina: 1, items: null, texto: t }));
+    const lineas = [];
+    String(txt || '').split(/\r?\n/).forEach((cruda, i) => {
+        const texto = cruda.replace(/\t/g, '  ').replace(/\s+/g, ' ').trim();
+        if (!texto) return;
+
+        // ⚠️ CON TABULADOR NO SE FILTRAN LOS CAMPOS VACÍOS. Una celda vacía
+        // ocupa su sitio, y es lo único que mantiene el reparto cuadrado con
+        // la cabecera: quitarla correría una columna y el rival pasaría a
+        // leerse de la casilla del campo. Con blancos anchos no hay celda
+        // vacía que valga —dos columnas vacías son indistinguibles de una—,
+        // así que ahí sí se filtran.
+        const campos = cruda.indexOf('\t') >= 0
+            ? cruda.split('\t').map(c => c.replace(/\s+/g, ' ').trim())
+            : cruda.split(/\s{2,}/).map(c => c.replace(/\s+/g, ' ').trim()).filter(Boolean);
+
+        lineas.push({ y: -i, pagina: 1, items: null, texto,
+                      campos: campos.length > 1 ? campos : [] });
+    });
+    return _reagruparCeldasSueltas(lineas);
+}
+
+// ── El copiado que baja UNA CELDA POR RENGLÓN ────────────────────────
+//  La misma tabla, según de dónde se copie y con qué navegador, puede bajar
+//  con las celdas apiladas en vertical en vez de separadas por tabuladores.
+//  Entonces cada renglón trae un solo dato («1», «25-09-2026», «20:30»…) y
+//  no hay ni una línea que parezca un partido.
+//
+//  🔑 SE RECONOCE PORQUE LA CABECERA VIENE DESPLEGADA: cuatro o más renglones
+//  seguidos que son nombres de columna. Ese número ES el tamaño del ciclo, y
+//  con él las celdas de abajo se vuelven a plegar en filas.
+//
+//  ⚠️ SÓLO SE ACTIVA CON ESA CABECERA, y exige LOCAL y VISITANTE dentro. Sin
+//  ella no hay forma de saber cuántas celdas hacen una fila, y plegar por un
+//  número inventado no daría cero partidos —eso sería inofensivo—: daría una
+//  temporada entera de partidos falsos con pinta de buenos.
+function _reagruparCeldasSueltas(lineas) {
+    if (!lineas || lineas.length < 8) return lineas;
+    // Si ya venía en columnas, aquí no hay nada que hacer.
+    if (lineas.some(l => l.campos && l.campos.length > 1)) return lineas;
+
+    let ini = -1, n = 0, mejorIni = -1, mejorN = 0;
+    lineas.forEach((l, i) => {
+        if (_etiquetaDe(l.texto)) {
+            if (ini < 0) { ini = i; n = 0; }
+            n++;
+            if (n > mejorN) { mejorN = n; mejorIni = ini; }
+        } else { ini = -1; n = 0; }
+    });
+    if (mejorIni < 0 || mejorN < 4) return lineas;
+
+    const cab = lineas.slice(mejorIni, mejorIni + mejorN).map(l => l.texto);
+    const et  = cab.map(_etiquetaDe);
+    if (et.indexOf('local') < 0 || et.indexOf('visitante') < 0) return lineas;
+
+    const salida = lineas.slice(0, mejorIni);
+    salida.push({ y: -mejorIni, pagina: 1, items: null, texto: cab.join('  '), campos: cab });
+
+    const resto = lineas.slice(mejorIni + mejorN);
+    for (let i = 0; i + mejorN <= resto.length; i += mejorN) {
+        const celdas = resto.slice(i, i + mejorN).map(l => l.texto);
+        // ⚠️ EN CUANTO UN BLOQUE NO TRAE FECHA, LA TABLA SE ACABÓ. Lo que
+        // viene detrás (paginación, pies, «Mostrando 30 de 30») no son
+        // celdas, y seguir plegando desplazaría el ciclo y convertiría todo
+        // lo posterior en filas descuadradas.
+        if (!celdas.some(c => _buscarFecha(c))) break;
+        salida.push({ y: -(mejorIni + mejorN + i), pagina: 1, items: null,
+                      texto: celdas.join('  '), campos: celdas });
+    }
+    return salida;
+}
+
+// ════════════════════════════════════════════════════════════════════
+//  🔑🔑 v656 · LA CAPTURA DE PANTALLA · DE PALABRAS SUELTAS A TABLA
+// ════════════════════════════════════════════════════════════════════
+//  Encargo del autor (2026-09-01, tras la v655): que la zona de importación
+//  acepte la captura de pantalla igual que acepta el PDF. El reconocimiento
+//  de la imagen ocurre FUERA de este fichero —aquí no entra ninguna
+//  biblioteca, por eso el guard puede ejecutar todo esto en Node—. Lo que
+//  llega aquí es lo único que un OCR sabe dar: PALABRAS CON SU CAJA.
+//
+//  🔑 Y UNA TABLA NO ES UN TEXTO CON ESPACIOS. Si estas palabras se pegan en
+//  una cadena, se pierde justo lo que distingue «el rival» de «el campo», y
+//  se vuelve al agujero de la v655. Hay que reconstruir las COLUMNAS.
+//
+//  Se hace en dos tiempos, y el segundo es el que salva la temporada:
+//
+//   1ª · Reparto por HUECOS: dentro de una línea, un blanco mucho más ancho
+//        que un espacio normal es un cambio de columna. Sirve para leer la
+//        cabecera, que es corta y va muy separada.
+//   2ª · 🔑🔑 REPARTO POR LAS COLUMNAS DE LA CABECERA. Medido sobre la
+//        captura real del autor: por huecos entraban 18 de 22 jornadas. Las
+//        otras cuatro se caían porque el OCR unía dos celdas o partía una, la
+//        fila dejaba de tener siete campos y `_porCabecera` la descartaba SIN
+//        DECIR NADA. El número de campos de una fila es inestable en un OCR;
+//        la POSICIÓN de cada columna no lo es. Así que la cabecera —que se
+//        lee siempre bien porque sus celdas son cortas y están muy
+//        separadas— dicta dónde empieza cada columna, y cada palabra cae en
+//        la suya por su coordenada. Todas las filas salen con N campos.
+//
+//  ⚠️ SI NO HAY CABECERA (una captura recortada), se queda el reparto por
+//  huecos. Peor, pero es lo que había, y sigue pasando por la tabla de
+//  revisión: nada se guarda sin que una persona lo mire.
+// ════════════════════════════════════════════════════════════════════
+
+// Cuánto de ancho tiene que ser un blanco, comparado con la altura de la
+// letra, para que sea un cambio de columna y no un espacio entre palabras.
+const CAL_OCR_HUECO = 0.9;
+
+// `lineas`: [{ palabras: [{ texto, x0, x1, y0, y1 }] }] tal cual las da el OCR.
+// Devuelve el MISMO contrato que `agruparEnLineas`: { y, pagina, items,
+// campos, texto }, para que de aquí en adelante una captura y un PDF sean
+// exactamente lo mismo para el resto del motor.
+function lineasDeOCR(lineas, opciones) {
+    const o = opciones || {};
+    const factor = o.factorHueco == null ? CAL_OCR_HUECO : o.factorHueco;
+
+    // ── Normalización ───────────────────────────────────────────────
+    const filas = [];
+    (lineas || []).forEach((l, i) => {
+        const pal = (l && l.palabras ? l.palabras : [])
+            .filter(p => p && String(p.texto || '').trim())
+            .map(p => ({ texto: String(p.texto).trim(),
+                         x0: +p.x0 || 0, x1: +p.x1 || 0,
+                         y0: +p.y0 || 0, y1: +p.y1 || 0 }))
+            .sort((a, b) => a.x0 - b.x0);
+        if (!pal.length) return;
+        const alto = pal.reduce((s, p) => s + Math.max(1, p.y1 - p.y0), 0) / pal.length;
+        // ⚠️ EL SIGNO DE LA `y` SE INVIERTE. En una imagen la y crece hacia
+        // ABAJO y en un PDF hacia ARRIBA, y el resto del motor está escrito
+        // para lo segundo. Sin esto la temporada se lee del revés.
+        filas.push({ pal, alto, y: -((pal[0].y0 + pal[0].y1) / 2), orden: i });
+    });
+    if (!filas.length) return [];
+
+    // ── 1ª · por huecos ─────────────────────────────────────────────
+    const porHuecos = (f) => {
+        const campos = [];
+        let act = null;
+        f.pal.forEach((p, k) => {
+            const hueco = k ? p.x0 - f.pal[k - 1].x1 : Infinity;
+            if (!act || hueco >= Math.max(6, f.alto * factor)) {
+                act = { texto: p.texto, x0: p.x0, x1: p.x1 };
+                campos.push(act);
+            } else {
+                act.texto += ' ' + p.texto;
+                act.x1 = p.x1;
+            }
+        });
+        return campos;
+    };
+    filas.forEach(f => { f.campos = porHuecos(f); });
+
+    // ── 2ª · las columnas las dicta la CABECERA ─────────────────────
+    const cab = _cabeceraOCR(filas);
+    if (!cab) {
+        // 🔑 Sin cabecera se usan LAS CALLES de la propia imagen: los huecos
+        // verticales que no pisa NINGUNA fila. Es la maquinaria de v613, que
+        // ya resolvió esto mismo para el PDF, y aquí hace falta por lo mismo:
+        // el reparto por huecos mira una fila suelta y en las filas de nombres
+        // largos no encuentra frontera, así que cada fila sale con un número
+        // de campos distinto y `_porCabecera` las descarta una a una.
+        const provisional = filas.map(f => ({
+            y: f.y, pagina: 1,
+            items: f.pal.map(p => ({ str: p.texto, x: p.x0, w: Math.max(0, p.x1 - p.x0) })),
+            texto: f.pal.map(p => p.texto).join(' '),
+        }));
+        const modelo = modeloDeColumnas(provisional, o.minCalle);
+        const cortes = modelo && modelo[1];
+        if (cortes && cortes.length >= 3) {
+            filas.forEach(f => { f.campos = _repartirEn(f.pal, cortes); });
+        }
+    }
+    if (cab) {
+        // Frontera de cada columna: a mitad de camino entre donde acaba una
+        // etiqueta y donde empieza la siguiente. No en el borde de la
+        // etiqueta: un número de jornada de dos cifras puede empezar un pelo
+        // antes que la palabra «Jornada».
+        const cortes = [];
+        for (let k = 1; k < cab.campos.length; k++) {
+            cortes.push((cab.campos[k - 1].x1 + cab.campos[k].x0) / 2);
+        }
+        filas.forEach(f => {
+            if (f === cab.fila) return;   // la cabecera ya está repartida
+            f.campos = _repartirEn(f.pal, cortes);
+        });
+    }
+
+    // ── Salida, con el contrato de `agruparEnLineas` ────────────────
+    return filas.map(f => ({
+        y: f.y,
+        pagina: 1,
+        items: f.pal.map(p => ({ str: p.texto, x: p.x0, w: Math.max(0, p.x1 - p.x0) })),
+        // ⚠️ Los campos vacíos se conservan: son los que mantienen el reparto
+        // cuadrado con la cabecera. Es la misma razón que en `lineasDeTexto`.
+        campos: f.campos.map(c => c.texto.trim()),
+        texto: f.pal.map(p => p.texto).join(' ').replace(/\s+/g, ' ').trim(),
+    }));
+}
+
+// ════════════════════════════════════════════════════════════════════
+//  🔑🔑 v656 · LA TABLA QUE NO ENSEÑA SU CABECERA
+// ════════════════════════════════════════════════════════════════════
+//  Las dos capturas que mandó el autor son las DOS MITADES de la misma tabla,
+//  y la segunda empieza en la jornada 8: no tiene fila de cabecera. Medido:
+//  por el camino heurístico salían 16 filas de 23, todas en ámbar, con las
+//  localías al revés (12 casa / 4 fuera donde es mitad y mitad), «CASA
+//  PASTORES, C.F.» convertido en «PASTORES, C.F.» —la palabra CASA se leía
+//  como marca de localía— y una fecha en 2020. Inusable.
+//
+//  🔑 PERO UNA COLUMNA SE DELATA POR LO QUE CONTIENE, no por cómo se llama.
+//  La que son todo fechas es la fecha. La que son todo horas, la hora. La de
+//  números cortos, la jornada. Y las DOS en las que aparece el propio club
+//  son los equipos —porque el dueño del calendario juega todas las jornadas,
+//  unas en casa y otras fuera—, con el local a la izquierda del visitante,
+//  que es el orden en el que lo publica todo el mundo. Lo que queda es la
+//  sede.
+//
+//  Es el mismo principio que sostiene el fichero entero: reconocer el DATO y
+//  no el maquetado. Y sirve igual para un PDF sin cabecera que para media
+//  captura de pantalla.
+//
+//  ⚠️ LAS CONDICIONES SON DURAS A PROPÓSITO, porque esto decide la localía de
+//  una temporada entera: hacen falta 4 filas con la misma forma, una columna
+//  de fechas, y que el club salga en EXACTAMENTE DOS columnas. Si el recorte
+//  pillara sólo partidos en casa, el club saldría en una sola columna, esto
+//  devuelve null y se sigue por donde se seguía antes.
+// ════════════════════════════════════════════════════════════════════
+function cabeceraPorContenido(lineas, misNombres, umbral) {
+    const um = umbral == null ? 0.5 : umbral;
+
+    // ── La FORMA de la tabla: el número de campos más repetido ──────
+    const cuenta = {};
+    (lineas || []).forEach(l => {
+        const c = l.campos || [];
+        if (c.length >= 4 && c.some(x => _buscarFecha(x))) cuenta[c.length] = (cuenta[c.length] || 0) + 1;
+    });
+    let n = 0, mejor = 0;
+    Object.keys(cuenta).forEach(k => { if (cuenta[k] > mejor) { mejor = cuenta[k]; n = +k; } });
+    if (!n || mejor < 4) return null;
+
+    const filas = (lineas || []).filter(l => (l.campos || []).length === n
+                                             && l.campos.some(x => _buscarFecha(x)));
+
+    // ── Qué es cada columna, por su contenido ───────────────────────
+    const cols = [];
+    for (let k = 0; k < n; k++) {
+        const celdas = filas.map(f => String(f.campos[k] || '').trim());
+        const llenas = celdas.filter(Boolean);
+        const frac = (test) => llenas.length ? llenas.filter(test).length / llenas.length : 0;
+        cols.push({
+            k,
+            celdas,
+            fecha: frac(c => !!_buscarFecha(c)),
+            hora:  frac(c => !!_buscarHora(c)),
+            num:   frac(c => /^\d{1,3}$/.test(c)),
+            letras: llenas.reduce((s, c) => s + (_sinAcentos(c).match(/[A-Za-z]/g) || []).length, 0)
+                    / (llenas.length || 1),
+        });
+    }
+    const idx = {};
+    const col = (pred) => cols.filter(c => idx.fecha !== c.k && idx.hora !== c.k && idx.jornada !== c.k)
+                              .find(pred);
+    const f = col(c => c.fecha >= 0.7);   if (f) idx.fecha = f.k;
+    const h = col(c => c.hora  >= 0.7);   if (h) idx.hora = h.k;
+    const j = col(c => c.num   >= 0.7);   if (j) idx.jornada = j.k;
+    if (idx.fecha == null) return null;   // sin fecha no hay calendario
+
+    // ── Las dos columnas de equipo: donde sale el club ──────────────
+    //  ⚠️ La COBERTURA es tan necesaria como las letras. Al repartir por las
+    //  calles de una imagen salen columnas de DESBORDE: la que sólo recoge el
+    //  «LAS» que se sale de «MAJORERAS-GUAYADEQUE, C.F. LAS» tiene letras de
+    //  sobra y aparece en dos filas de veintidós. Sin este filtro esa columna
+    //  compite por ser la sede — y se la llevaba.
+    const texto = cols.filter(c => c.k !== idx.fecha && c.k !== idx.hora && c.k !== idx.jornada
+                                   && c.letras >= 3
+                                   && c.celdas.filter(Boolean).length >= filas.length * 0.5);
+    if (texto.length < 2) return null;
+
+    // Quién es el club: lo dice el nombre que más se repite entre todas esas
+    // columnas —es el único equipo que juega TODAS las jornadas—, y si el
+    // usuario tiene un nombre guardado que casa, ese gana.
+    const veces = {};
+    texto.forEach(c => c.celdas.forEach(t => {
+        const kk = normalizarNombre(t);
+        if (!kk) return;
+        if (!veces[kk]) veces[kk] = { nombre: t, n: 0 };
+        veces[kk].n++;
+    }));
+    let propio = null;
+    (misNombres || []).forEach(mio => {
+        if (propio) return;
+        Object.keys(veces).forEach(kk => {
+            if (!propio && parecido(mio, veces[kk].nombre) >= um) propio = veces[kk];
+        });
+    });
+    if (!propio) {
+        propio = Object.keys(veces).map(kk => veces[kk]).sort((a, b) => b.n - a.n)[0];
+    }
+    if (!propio || propio.n < Math.max(3, filas.length * 0.5)) return null;
+
+    // 🔑🔑 Y AQUÍ ESTÁ LA TRAMPA QUE HAY QUE ESQUIVAR, medida en la captura
+    //  real: «MUNICIPAL DE ARINAGA» —el CAMPO— se parece a «ARINAGA, C.D.»
+    //  tanto como la columna del equipo, porque el club se llama como el
+    //  pueblo donde juega. Y aparece en MÁS filas que cualquiera de las dos
+    //  columnas de equipo, así que "la columna donde más salgo" elige la sede.
+    //
+    //  🔑 La propiedad que SÓLO cumplen el local y el visitante: son
+    //  COMPLEMENTARIAS. El dueño del calendario juega todas las jornadas y
+    //  ninguna contra sí mismo, así que entre esas dos columnas está en TODAS
+    //  las filas y en NINGUNA en las dos a la vez. La sede no cumple eso: en
+    //  los partidos de casa coincide con el local, y ahí se delata.
+    const donde = texto.map(c => ({
+        c,
+        set: new Set(c.celdas.map((t, i) => (t && parecido(propio.nombre, t) >= um) ? i : -1)
+                             .filter(i => i >= 0)),
+    }));
+    //  ⚠️ Y COMPLEMENTARIAS LO SON DOS PARES, no uno. Medido en la segunda
+    //  captura: cuando el club juega en casa su nombre está en la columna del
+    //  local Y la sede es su campo; cuando juega fuera, está en la del
+    //  visitante y la sede es otra. Así que «visitante + sede» sale tan
+    //  complementaria como «local + visitante», y una errata del OCR
+    //  («AKINAGA») bastó para que ganara la pareja equivocada: rivales que
+    //  eran campos, sedes que eran equipos, y la localía justo al revés — todo
+    //  ello marcado en VERDE, que es lo peor que puede pasar aquí.
+    //
+    //  🔑 Se desempata con dos rasgos que separan un equipo de una
+    //  instalación:
+    //   1. LAS DOS COLUMNAS DE EQUIPO COMPARTEN VOCABULARIO. En una liga
+    //      todos juegan contra todos: el que hoy es local mañana es
+    //      visitante, así que los mismos nombres salen en las dos. Los
+    //      nombres de los campos no se repiten en la columna de un equipo.
+    //   2. Y UNA SEDE SE LLAMA COMO UNA SEDE («Campo Municipal…»), que es lo
+    //      que `CAL_SEDE_RE` sabe reconocer desde el primer día.
+    const nombres = (c) => new Set(c.celdas.filter(Boolean).map(normalizarNombre).filter(Boolean));
+    const pintaDeSede = (c) => {
+        const ll = c.celdas.filter(Boolean);
+        return ll.length ? ll.filter(t => CAL_SEDE_RE.test(t)).length / ll.length : 0;
+    };
+    let par = null;
+    for (let a = 0; a < donde.length; a++) {
+        for (let b = a + 1; b < donde.length; b++) {
+            let comunes = 0;
+            donde[a].set.forEach(i => { if (donde[b].set.has(i)) comunes++; });
+            const union = donde[a].set.size + donde[b].set.size - comunes;
+            if (union < filas.length * 0.9) continue;      // no cubren la temporada
+            if (comunes > filas.length * 0.05) continue;   // se solapan: una es la sede
+            if (!donde[a].set.size || !donde[b].set.size) continue;
+
+            const na = nombres(donde[a].c), nb = nombres(donde[b].c);
+            let compartidos = 0;
+            na.forEach(t => { if (nb.has(t)) compartidos++; });
+            const vocab = compartidos / Math.max(1, Math.min(na.size, nb.size));
+            const nota = vocab - pintaDeSede(donde[a].c) - pintaDeSede(donde[b].c);
+            if (!par || nota > par.nota + 1e-9) {
+                par = { a: donde[a].c, b: donde[b].c, union, nota };
+            }
+        }
+    }
+    if (!par) return null;
+
+    idx.local = Math.min(par.a.k, par.b.k);
+    idx.visitante = Math.max(par.a.k, par.b.k);
+
+    // La sede es la que queda; si quedan varias, la que MÁS se parece a una:
+    // más nombre de instalación y más texto en más filas.
+    const resto = texto.filter(c => c.k !== idx.local && c.k !== idx.visitante)
+        .sort((x, y) => (pintaDeSede(y) - pintaDeSede(x)) || (y.letras - x.letras));
+    if (resto.length) idx.sede = resto[0].k;
+
+    return { idx, n, i: -1, porContenido: true };
+}
+
+// Reparte las palabras de una fila entre columnas ya conocidas.
+//  ⚠️ Por el CENTRO de la palabra, no por su borde izquierdo: una celda ancha
+//  que asome un poco por la izquierda de su columna se iría a la anterior.
+//  Y las columnas vacías se devuelven vacías, no se saltan: es lo que
+//  mantiene todas las filas con el mismo número de campos, que es justo lo
+//  que faltaba cuando se repartía por huecos.
+function _repartirEn(palabras, cortes) {
+    const cajas = [];
+    for (let k = 0; k <= cortes.length; k++) cajas.push(null);
+    palabras.forEach(p => {
+        const c = (p.x0 + p.x1) / 2;
+        let k = 0;
+        while (k < cortes.length && c >= cortes[k]) k++;
+        if (!cajas[k]) cajas[k] = { texto: p.texto, x0: p.x0, x1: p.x1 };
+        else { cajas[k].texto += ' ' + p.texto; cajas[k].x1 = p.x1; }
+    });
+    return cajas.map(c => c || { texto: '', x0: 0, x1: 0 });
+}
+
+// La fila que nombra las columnas, buscada sobre el reparto por huecos.
+// 🔑 Se exige LOCAL y VISITANTE, igual que `mapaDeCabecera`: sin esas dos no
+// hay partido que leer, y repartir el documento entero por las columnas de un
+// membrete cualquiera sería mucho peor que no repartirlo.
+function _cabeceraOCR(filas) {
+    for (let i = 0; i < filas.length; i++) {
+        const c = filas[i].campos;
+        if (!c || c.length < 3) continue;
+        const et = c.map(x => _etiquetaDe(x.texto));
+        if (et.indexOf('local') < 0 || et.indexOf('visitante') < 0) continue;
+        const reconocidos = et.filter(Boolean).length;
+        if (reconocidos < Math.max(3, Math.ceil(c.length * 0.6))) continue;
+        return { fila: filas[i], campos: c, i };
+    }
+    return null;
 }
 
 // ════════════════════════════════════════════════════════════════════
@@ -650,6 +1105,19 @@ function interpretar(lineas, ctx) {
     if (cab) {
         const r = _porCabecera(lineas, cab, misNombres, umbral, inicioTemporada);
         if (r) return r;
+    }
+
+    // 🔑🔑 v656 · Y SI NO HAY FILA DE CABECERA, se deduce por el CONTENIDO de
+    // las columnas. Es lo que salva media captura de pantalla —la segunda
+    // mitad de una tabla no repite los rótulos— y cualquier PDF que empiece
+    // en la jornada 8. Ver `cabeceraPorContenido`: sus condiciones son duras,
+    // y cuando no se cumplen esto devuelve null y no cambia nada.
+    if (!cab && !o.sinCabecera) {
+        const cc = cabeceraPorContenido(lineas, misNombres, umbral);
+        if (cc) {
+            const r = _porCabecera(lineas, cc, misNombres, umbral, inicioTemporada);
+            if (r) return r;
+        }
     }
 
     // ── 1ª pasada ───────────────────────────────────────────────────
@@ -793,6 +1261,7 @@ function interpretar(lineas, ctx) {
 
     _ordenar(filas);
     _numerarJornadas(filas);
+    _coherenciaJornadas(filas);
     filas.forEach(f => { f.confianza = _confianza(f); });
 
     const resumen = _resumen(filas);
@@ -898,6 +1367,7 @@ function _porCabecera(lineas, cab, misNombres, umbral, inicioTemporada) {
 
     _ordenar(filas);
     _numerarJornadas(filas);
+    _coherenciaJornadas(filas);
     filas.forEach(f => { f.confianza = _confianza(f); });
 
     const resumen = _resumen(filas);
@@ -1007,6 +1477,57 @@ function _numerarJornadas(filas) {
     filas.forEach((f, i) => { f.jornada = i + 1; f.jornadaSupuesta = true; });
 }
 
+// ════════════════════════════════════════════════════════════════════
+//  🚨 v656 · UNA JORNADA QUE NO CUADRA NO PUEDE SALIR EN VERDE
+// ════════════════════════════════════════════════════════════════════
+//  Medido al leer las capturas del autor con el modelo de OCR ligero: la
+//  columna de la jornada es la más estrecha de la tabla y es donde más se
+//  equivoca —«12» leído como «1», «22» como «2», «27» como «21»—. Y como
+//  `_confianza` sólo miraba que hubiera UN número, esas filas salían en
+//  VERDE, que en esta pantalla significa «puedes pasar de largo». Un número
+//  de jornada inventado en verde es peor que no leer la fila.
+//
+//  🔑 PERO LA JORNADA NO ES UN DATO SUELTO: ordenadas por fecha, las jornadas
+//  van de una en una. Así que se comprueba si la mayoría encaja en esa
+//  progresión y, si encaja, las que se salen ESTÁN MAL — y su valor correcto
+//  no hay que adivinarlo, está determinado por su posición.
+//
+//  ⚠️ Se exige que encaje el 70 % para no tocar nada en los calendarios que
+//  legítimamente no van en orden (un extracto, o una jornada aplazada), y lo
+//  corregido se marca SUPUESTO: baja a ámbar y el usuario lo mira. Corregir
+//  en silencio sería repetir el defecto con otro signo.
+// ════════════════════════════════════════════════════════════════════
+function _coherenciaJornadas(filas) {
+    if (!filas || filas.length < 5) return;
+    const conJ = filas.filter(f => f.jornada != null);
+    if (conJ.length < 4) return;
+
+    // El desplazamiento entre la posición y el número de jornada, por mayoría:
+    // una captura que empieza en la jornada 8 tiene desplazamiento 8.
+    const votos = {};
+    filas.forEach((f, i) => {
+        if (f.jornada == null) return;
+        const d = f.jornada - i;
+        votos[d] = (votos[d] || 0) + 1;
+    });
+    let off = null, mejor = 0;
+    Object.keys(votos).forEach(d => { if (votos[d] > mejor) { mejor = votos[d]; off = +d; } });
+    if (off == null || mejor < filas.length * 0.7) return;
+
+    filas.forEach((f, i) => {
+        const debe = i + off;
+        if (debe < 1) return;
+        if (f.jornada === debe) return;
+        // ⛔ Lo que el usuario ha corregido a mano NO se toca. Al fusionar
+        // varias capturas esto se recalcula sobre el total, y sin este guard
+        // una corrección suya de hace dos minutos se perdería al soltar la
+        // siguiente imagen.
+        if (f.editada) return;
+        f.jornada = debe;
+        f.jornadaSupuesta = true;   // → ámbar en `_confianza`
+    });
+}
+
 // ── La nota de confianza ─────────────────────────────────────────────
 //  Es el corazón del trato con el usuario: verde = puedes pasar de largo,
 //  amarillo = mírala, rojo = tienes que tocarla. Si esto miente, la tabla de
@@ -1015,6 +1536,65 @@ function _confianza(f) {
     if (!f.fecha || !f.rival || f.local == null) return 'rojo';
     if (!f.hora || !f.jornada || f.jornadaSupuesta) return 'amarillo';
     return 'verde';
+}
+
+// ════════════════════════════════════════════════════════════════════
+//  🧩 v658 · UNA TEMPORADA REPARTIDA EN VARIAS CAPTURAS
+// ════════════════════════════════════════════════════════════════════
+//  Encargo del autor (2026-09-02): treinta jornadas no caben en una captura
+//  de pantalla, así que hay que poder soltar dos o tres seguidas y que se
+//  vayan SUMANDO, no pisando. Y sus propias capturas se SOLAPAN —la 9809
+//  llega a la jornada 22 y la 9810 empieza en la 8—, así que fusionar es
+//  algo más que concatenar.
+//
+//  🔑 LA CLAVE DE FUSIÓN ES LA FECHA, no el número de jornada. Un equipo
+//  juega un partido por fecha, y la fecha es el dato que mejor lee un OCR
+//  (formato fijo, dos separadores). El número de jornada es justo el que peor
+//  se lee —es la columna más estrecha, ver `_coherenciaJornadas`—, así que
+//  usarlo de clave uniría por error dos partidos distintos.
+//
+//  Y CUANDO LA MISMA FECHA VIENE DOS VECES, manda:
+//   1. Lo que el usuario haya TOCADO A MANO. Nunca se pisa una corrección
+//      suya con una lectura automática; sería el peor fallo posible aquí.
+//   2. Si no, la lectura con MEJOR NOTA. Dos capturas de la misma tabla no
+//      se leen igual de bien: en el borde de la imagen una fila sale
+//      recortada y en la otra entera. Quedarse siempre con la primera
+//      desperdiciaría la buena.
+// ════════════════════════════════════════════════════════════════════
+const CAL_NOTA = { verde: 3, amarillo: 2, rojo: 1 };
+
+function fusionarFilas(base, nuevas) {
+    const salida = (base || []).slice();
+    const porFecha = {};
+    salida.forEach((f, i) => { if (f.fecha) porFecha[f.fecha] = i; });
+
+    let anadidas = 0, mejoradas = 0, repetidas = 0;
+    (nuevas || []).forEach(nf => {
+        // Sin fecha no hay con qué casarla: entra y se queda en rojo, que es
+        // lo que ya dice de ella su nota de confianza.
+        if (!nf.fecha || porFecha[nf.fecha] == null) {
+            if (nf.fecha) porFecha[nf.fecha] = salida.length;
+            salida.push(nf);
+            anadidas++;
+            return;
+        }
+        const i = porFecha[nf.fecha];
+        const vieja = salida[i];
+        if (!vieja || vieja.editada) { repetidas++; return; }
+        const notaV = CAL_NOTA[vieja && vieja.confianza] || 0;
+        const notaN = CAL_NOTA[nf.confianza] || 0;
+        if (notaN > notaV) { salida[i] = nf; mejoradas++; }
+        else repetidas++;
+    });
+
+    _ordenar(salida);
+    // ⚠️ Y LA COHERENCIA SE RECALCULA SOBRE EL TOTAL, no sobre cada captura.
+    // Es lo que hace que al unir las dos mitades las jornadas cuadren de 1 a
+    // 30 aunque en cada trozo por separado no hubiera datos para decidirlo.
+    _coherenciaJornadas(salida);
+    salida.forEach(f => { if (!f.editada) f.confianza = _confianza(f); });
+
+    return { filas: salida, anadidas, mejoradas, repetidas };
 }
 
 function _resumen(filas) {
@@ -1085,6 +1665,10 @@ const API = {
     huellaDe, perfilDesde,
     // columnas de la tabla
     modeloDeColumnas, partirPorModelo, mapaDeCabecera,
+    // captura de pantalla (las palabras las trae el OCR, que vive fuera)
+    lineasDeOCR, cabeceraPorContenido,
+    // varias capturas para una misma temporada
+    fusionarFilas,
     // internos expuestos sólo para el guard
     _buscarFecha, _buscarHora, _buscarJornada, _partirEnDos, _partirPorColumnas, _callesDe,
 };

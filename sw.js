@@ -2640,7 +2640,7 @@
 //          las ramas de director y coordinador que anadio v610/v611 se AVERIABAN
 //          en el simulador y nadie las probaba. 8 casos nuevos -> 46/46.
 const VERSION = 'v399';
-const CACHE_NAME = 'cronos-cache-v654';
+const CACHE_NAME = 'cronos-cache-v658';
 
 const ASSETS = [
     './',
@@ -2741,6 +2741,14 @@ const ASSETS = [
     // de PDF que solo usa el director dos veces al ano. Al ir por
     // `_networkFirst`, el Service Worker lo guarda igual despues de la primera
     // descarga: se cachea, pero sin poder romper nada.
+    //
+    // ⛔ v656 · LO MISMO, Y CON MAS MOTIVO, PARA js/vendor/tesseract/*: el
+    // lector de capturas de pantalla son ~4 MB de motor mas 2,2 MB de modelo
+    // de idioma. Meterlos aqui pondria SEIS MEGAS en una precarga atomica que
+    // hoy ocupa unos pocos cientos de kilobytes, y una descarga fallida en un
+    // movil con datos justos dejaria la app entera sin shell offline. Va por
+    // `_networkFirst` igual que pdf.js, y ademas la biblioteca guarda el
+    // modelo de idioma en IndexedDB por su cuenta.
     './js/coach/reports/calendario-parser.js',
     './js/coach/reports/calendario-temporada.js',
     './js/coach/reports/finished-matches-tab.js',
