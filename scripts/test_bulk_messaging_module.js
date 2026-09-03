@@ -225,12 +225,27 @@ const pchk = (d, checked = true) => { const e = mkEl(); e.checked = checked; e.d
             JSON.stringify(used) === JSON.stringify(['_cFS', 'openCoachMessaging']), used);
     }
     {
+        // ⚠️ v669 · EL CENSO VA SOBRE EL FUENTE SIN COMENTARIOS.
+        //    Tal cual estaba, este guard se puso rojo porque un módulo nuevo
+        //    (js/shared/multi-select.js) NOMBRABA `updateBulkCount` en un
+        //    comentario, para señalar de dónde venía el patrón de "leer la
+        //    selección del DOM". Ni una llamada: una cita. Un guard que se
+        //    dispara con la explicación empuja a borrar la explicación, que es
+        //    justo lo contrario de lo que debería conseguir. Mismo helper y
+        //    misma lección que en test_extras_lock_and_messaging.js.
+        //    (El `split(/\r?\n/)` importa: con CRLF, `//.*$` no llega al final
+        //    de línea y el helper no borraría ni un comentario.)
+        const _sinComs = (src) => src
+            .replace(/\/\*[\s\S]*?\*\//g, '')
+            .replace(/<!--[\s\S]*?-->/g, '')
+            .split(/\r?\n/).map(l => l.replace(/(^|\s)\/\/.*$/, '$1')).join('\n');
+
         const refs = {};
         for (const f of walk(ROOT, [])) {
             const rel = path.relative(ROOT, f).replace(/\\/g, '/');
             if (rel.startsWith('scripts/') || rel === 'sw.js') continue;
             if (rel === 'js/coach/comms/panel.js' || rel === 'js/coach/comms/bulk-messaging.js') continue;
-            const txt = fs.readFileSync(f, 'utf8');
+            const txt = _sinComs(fs.readFileSync(f, 'utf8'));
             for (const n of MOVED) if (new RegExp('\\b' + n + '\\b').test(txt)) (refs[n] = refs[n] || []).push(rel);
         }
         ok('1e · ⚠️ fan-in externo = CERO para las ocho', Object.keys(refs).length === 0, refs);

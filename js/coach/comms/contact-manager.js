@@ -336,6 +336,8 @@ async function openContactManager() {
                         </button>
                     </div>
 
+                    <div style="padding:0.5rem 0.5rem 0;">${_cmBarra('ctstaff')}</div>
+
                     <!-- Tabla con scroll horizontal solo si es necesario -->
                     <div style="overflow-x:auto;-webkit-overflow-scrolling:touch;padding:0.5rem;">
                         <table style="width:100%;min-width:560px;font-size:0.75rem;border-collapse:collapse;"
@@ -392,6 +394,8 @@ async function openContactManager() {
                             ➕ AÑADIR FAMILIAR / JUGADOR
                         </button>
                     </div>
+
+                    <div style="padding:0.5rem 0.5rem 0;">${_cmBarra('ctfam')}</div>
 
                     <!-- Tabla con scroll horizontal solo si es necesario -->
                     <div style="overflow-x:auto;-webkit-overflow-scrolling:touch;padding:0.5rem;">
@@ -738,6 +742,66 @@ async function saveContactManagerData() {
 // ── FUNCIONES AUXILIARES PARA EL GESTOR DE CONTACTOS ──────────────────
 
 // Fila de STAFF (tabla azul)
+// ══════════════════════════════════════════════════════════════════════
+//  🗂️ v669 · SELECCIÓN MÚLTIPLE EN LAS DOS TABLAS (multi-select.js)
+//
+//  ⚠️⚠️ AQUÍ "BORRAR" NO TOCA LA BASE DE DATOS. El 🗑️ de una fila hace
+//  `this.closest('tr').remove()`: quita la fila de la TABLA, y el cambio
+//  sólo se guarda cuando el entrenador pulsa Guardar. El borrado múltiple
+//  hace exactamente eso mismo, N veces — y la confirmación lo dice, porque
+//  prometer una purga que no ocurre es peor que no ofrecerla.
+//
+//  ⚠️⚠️ LA CASILLA VA DENTRO DE LA CELDA DE LA PAPELERA, no en una columna
+//  nueva. Estas tablas tienen un número de columnas FIJADO POR UN GUARD
+//  (scripts/test_parent_table_columns.js, "las 10 columnas") porque las
+//  filas vinculadas y las manuales comparten el mismo <tbody>: una celda de
+//  más en un tipo de fila desalinea la tabla entera a partir de ahí. Meter
+//  una columna habría obligado a tocar los dos marcados y la cabecera.
+//
+//  🔑 Y SÓLO LAS FILAS MANUALES LLEVAN CASILLA, porque sólo ellas llevan
+//  papelera: la fila de un familiar VINCULADO por plantilla no se puede
+//  borrar desde aquí. Ofrecer marcarla sería ofrecer algo que no existe.
+// ══════════════════════════════════════════════════════════════════════
+function _cmHayMS() {
+    return !!(window.cronosMS && typeof window.cronosMS.chk === 'function');
+}
+function _cmChk(grupo, id) {
+    return _cmHayMS()
+        ? window.cronosMS.chk(grupo, id, { titulo: 'Seleccionar esta fila para quitarla en bloque' })
+        : '';
+}
+function _cmBarra(grupo) {
+    if (!_cmHayMS()) return '';
+    const queEs = grupo === 'ctstaff' ? 'contacto de staff' : 'familiar / jugador';
+    window.cronosMS.registrar(grupo, [{
+        id: 'quitar',
+        icono: '🗑️',
+        etiqueta: 'Quitar seleccionados',
+        titulo: 'Quitar de la tabla las filas marcadas (se guarda al pulsar Guardar)',
+        confirmar: (ks) =>
+            '🗑️ QUITAR DE LA TABLA\n\n' +
+            'Vas a quitar ' + ks.length + ' ' + queEs + (ks.length === 1 ? '' : 's') + '.\n\n' +
+            'Se quitan de la tabla ahora; el cambio queda registrado cuando pulses\n' +
+            'GUARDAR. Si sales sin guardar, no se pierde nada.\n\n¿Continuar?',
+        ejecutar: async (ks) => {
+            // Se trabaja sobre el DOM directamente: la fila ES el dato hasta
+            // que se guarda, así que no hay índice que consultar.
+            let n = 0;
+            document.querySelectorAll('.cms-chk-' + grupo + ':checked').forEach((c) => {
+                const tr = c.closest('tr');
+                if (tr) { tr.remove(); n++; }
+            });
+            return { ok: n, fallos: 0,
+                resumen: n
+                    ? ('🗑️ ' + n + ' fila' + (n === 1 ? '' : 's') + ' quitada' + (n === 1 ? '' : 's') +
+                       ' · pulsa GUARDAR para que el cambio quede registrado')
+                    : '⚠️ No se quitó ninguna fila' };
+        },
+        alTerminar: () => { window.cronosMS.sync(grupo); },
+    }]);
+    return window.cronosMS.barra(grupo);
+}
+
 function renderContactRowMarkup(c = {}) {
     const isCv  = (c.tags || []).includes('cv');
     const isTr  = (c.tags || []).includes('tr');
@@ -785,8 +849,11 @@ function renderContactRowMarkup(c = {}) {
                 title="Puede ver los partidos en vivo">
         </td>
         <td style="padding:0.4rem;text-align:center;">
-            ${isCoach ? '<span title="Tú" style="font-size:1rem; cursor:help;">👤</span>' : 
-            `<button onclick="this.closest('tr').remove()" style="background:none;border:none;color:#ff5858;cursor:pointer;font-size:1rem;" title="Eliminar">🗑️</button>`}
+            ${isCoach ? '<span title="Tú" style="font-size:1rem; cursor:help;">👤</span>' :
+            `<span style="display:inline-flex;align-items:center;gap:5px;">
+                ${_cmChk('ctstaff', id)}
+                <button onclick="this.closest('tr').remove()" style="background:none;border:none;color:#ff5858;cursor:pointer;font-size:1rem;" title="Eliminar">🗑️</button>
+            </span>`}
         </td>
     </tr>`;
 }
@@ -850,7 +917,10 @@ function renderParentRowMarkup(c = {}) {
                 style="width:15px;height:15px;accent-color:#ff5858;">
         </td>
         <td style="padding:0.4rem;text-align:center;">
-            <button onclick="this.closest('tr').remove()" style="background:none;border:none;color:#ff5858;cursor:pointer;font-size:1rem;" title="Eliminar">🗑️</button>
+            <span style="display:inline-flex;align-items:center;gap:5px;">
+                ${_cmChk('ctfam', id)}
+                <button onclick="this.closest('tr').remove()" style="background:none;border:none;color:#ff5858;cursor:pointer;font-size:1rem;" title="Eliminar">🗑️</button>
+            </span>
         </td>
     </tr>`;
 }

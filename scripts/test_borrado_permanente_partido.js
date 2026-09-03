@@ -224,7 +224,18 @@ function montar(opts) {
 {
     ok('F1 · 🔑 sdDeleteReport (ocultar) sigue existiendo y es otra función',
        /window\.sdDeleteReport = async/.test(SRC_TAB) && /window\.sdPurgeMatch = async/.test(SRC_TAB));
-    const bloqueOcultar = SRC_TAB.slice(SRC_TAB.indexOf('window.sdDeleteReport = async'));
+    // ⚠️ v669 · EL BLOQUE SE RECORTA DESDE `_sdOcultarUno`, NO DESDE
+    //    `window.sdDeleteReport`. Al añadir el borrado múltiple, la función se
+    //    partió en dos: `sdDeleteReport` PREGUNTA y `_sdOcultarUno` HACE (un
+    //    bucle no puede abrir una ventana de confirmación por informe). La
+    //    escritura de `dismissedBy` se fue con la segunda mitad, que está
+    //    ANTES en el fichero, así que el recorte viejo se quedaba sin ella y
+    //    este guard cantaba un borrado físico que no existe.
+    //    Lo que vigila NO ha cambiado: que ocultar escriba `dismissedBy` con
+    //    la clave por rol y que no haya ni un `deleteDoc` en ese camino.
+    const bloqueOcultar = SRC_TAB.slice(SRC_TAB.indexOf('const _sdOcultarUno = async'));
+    ok('F1b · 🔑 la mitad que HACE existe y es la que escribe',
+       SRC_TAB.indexOf('const _sdOcultarUno = async') !== -1);
     ok('F2 · ⚠️ y NO borra: sigue con arrayUnion sobre dismissedBy',
        /dismissedBy: arrayUnion\(dismissKey\)/.test(bloqueOcultar) &&
        bloqueOcultar.indexOf('deleteDoc') === -1);

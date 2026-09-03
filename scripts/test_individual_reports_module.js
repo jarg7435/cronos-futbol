@@ -642,9 +642,34 @@ const inCol = (written, col) => written.filter(w => w.col === col);
             t.blobs.length === 0 && t.toasts.some(x => x.includes('No se encontró')),
             { blobs: t.blobs.length, toasts: t.toasts });
     }
-    ok('3i · ⚠️ realDelete se declara y NUNCA se lee: el borrado es SIEMPRE logico',
-        /miEliminarInforme = async \(key64, realDelete = false\)/.test(BLOCK)
-        && (BLOCK.match(/\brealDelete\b/g) || []).length === 1);
+    // ⚠️ v669 · ESTA ASERCION VIGILABA UN PARAMETRO QUE SOLO SERVIA PARA
+    //    MENTIR. Exigia la firma `(key64, realDelete = false)` y que
+    //    `realDelete` apareciera una sola vez — o sea, que se declarara y no
+    //    se leyera nunca. Describia el defecto en lugar de la garantia: el
+    //    boton se llamaba "Borrar Permanente", pasaba `true`, y el borrado
+    //    seguia siendo logico. Al retirar el parametro, el guard se puso rojo
+    //    por una limpieza correcta.
+    //    Ahora fija LA PROPIEDAD, que es lo que de verdad no puede cambiar sin
+    //    que alguien lo decida: en esta pantalla no se destruye ningun
+    //    documento. La purga fisica es del Director Deportivo y va por
+    //    match-purge.js. Lo demuestra ademas 3j, ejecutando de verdad.
+    //    ⚠️⚠️ Y SE MIDE SIN COMENTARIOS, como 3h dos lineas mas arriba. La
+    //    primera version de esta asercion buscaba `realDelete` en el fuente
+    //    crudo y se puso roja por la NOTA que explica que ese parametro se
+    //    retiro. Cuarta vez en el mismo fichero: aqui el fuente crudo no vale
+    //    para prohibir un identificador, porque los comentarios lo nombran
+    //    justamente para decir que no vuelva.
+    {
+        const _codigo3i = BLOCK
+            .replace(/\/\*[\s\S]*?\*\//g, '')
+            .replace(/<!--[\s\S]*?-->/g, '')
+            .split(/\r?\n/).map(l => l.replace(/(^|\s)\/\/.*$/, '$1')).join('\n');
+        ok('3i · ⚠️ el borrado de esta pantalla es SIEMPRE logico: ni un deleteDoc',
+            /miEliminarInforme = async \(key64\)/.test(_codigo3i)
+            && !/\bdeleteDoc\b/.test(_codigo3i)
+            && !/\brealDelete\b/.test(_codigo3i),
+            { firma: (_codigo3i.match(/miEliminarInforme = async \([^)]*\)/) || [])[0] });
+    }
     {
         const t = buildSandbox({ reports: [rep({ _id: 'DOC_REAL', playerNumber: '7' })] });
         await t.w.openMisInformes();

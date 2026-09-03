@@ -2117,7 +2117,78 @@ async function _loadUnifiedThreadMessages(threadId, contact) {
         }
 
         const messages = snap.data().messages || [];
-        container.innerHTML = messages.map(m => {
+
+        // ══════════════════════════════════════════════════════════════
+        //  🗂️ v669 · SELECCIÓN MÚLTIPLE DE MENSAJES (multi-select.js)
+        //
+        //  🔑🔑 AQUÍ EL BORRADO MASIVO **NO** ES EL INDIVIDUAL EN BUCLE, y
+        //  esta es la diferencia importante con los otros listados. Un hilo
+        //  entero vive en UN SOLO documento, dentro del array `messages`:
+        //  borrar un mensaje es leer el documento, filtrar el array y
+        //  reescribirlo. Llamar N veces a esa secuencia sobre el MISMO
+        //  documento es la carrera clásica de actualización perdida — cada
+        //  escritura parte de una lectura anterior y la última gana, así que
+        //  de N mensajes marcados desaparecería sólo uno, sin ningún error.
+        //
+        //  Por eso: UNA lectura, se filtran TODOS los sellos marcados de
+        //  golpe, UNA escritura. Y de paso es una operación en vez de N.
+        //
+        //  ⚠️ La clave de cada casilla es el `timestamp`, que es lo mismo que
+        //  identifica al mensaje en el borrado individual. Si algún día dos
+        //  mensajes del mismo hilo compartieran sello, los dos caminos
+        //  borrarían los dos: el defecto ya existiría hoy, no lo trae esto.
+        // ══════════════════════════════════════════════════════════════
+        const _umHayMS = !!(window.cronosMS && typeof window.cronosMS.chk === 'function');
+        let _umBarraSel = '';
+        if (_umHayMS && messages.length > 1) {
+            const _hiloId = snap.id;
+            window.cronosMS.registrar('ummsg', [{
+                id: 'borrar',
+                icono: '🗑️',
+                etiqueta: 'Eliminar seleccionados',
+                tono: 'peligro',
+                titulo: 'Eliminar del hilo los mensajes marcados',
+                confirmar: (ks) =>
+                    '🗑️ ELIMINAR MENSAJES\n\n' +
+                    'Vas a eliminar ' + ks.length + ' mensaje' + (ks.length === 1 ? '' : 's') +
+                    ' de esta conversación.\n\n' +
+                    'Desaparecen para las DOS partes del hilo y no se pueden recuperar.\n\n' +
+                    '¿Continuar?',
+                ejecutar: async (ks) => {
+                    const marcados = new Set(ks.map(String));
+                    const { db: db2, doc: doc2, getDoc: get2, updateDoc: upd2, setDoc: set2 } = await _cFS();
+                    const ref = doc2(db2, 'cronos_messages', _hiloId);
+                    const s = await get2(ref);
+                    if (!s.exists()) return { ok: 0, fallos: ks.length, resumen: '⚠️ No se encontró la conversación' };
+
+                    const antes = (s.data().messages || []);
+                    const quedan = antes.filter(m => !marcados.has(String(m.timestamp)));
+                    const idos = antes.length - quedan.length;
+                    if (!idos) return { ok: 0, fallos: 0, resumen: '⚠️ No se eliminó ningún mensaje' };
+
+                    const ultimo = quedan.length ? (quedan[quedan.length - 1].text || '') : '';
+                    const ultimoT = quedan.length ? (quedan[quedan.length - 1].timestamp || '') : '';
+                    const datos = {
+                        messages: quedan,
+                        lastMessage: ultimo.length > 60 ? ultimo.substring(0, 60) + '…' : ultimo,
+                        lastMessageAt: ultimoT,
+                    };
+                    // Mismo respaldo que el borrado individual: si el update
+                    // falla, setDoc con merge.
+                    try { await upd2(ref, datos); }
+                    catch (_) { await set2(ref, datos, { merge: true }); }
+
+                    return { ok: idos, fallos: 0,
+                        resumen: '🗑️ ' + idos + ' mensaje' + (idos === 1 ? '' : 's') + ' eliminado' +
+                                 (idos === 1 ? '' : 's') + ' de la conversación' };
+                },
+                alTerminar: () => { _loadUnifiedThreadMessages(_hiloId, contact); },
+            }]);
+            _umBarraSel = `<div style="position:sticky;top:0;z-index:2;background:#0d1117;padding-bottom:0.3rem;">` +
+                          window.cronosMS.barra('ummsg') + `</div>`;
+        }
+
+        container.innerHTML = _umBarraSel + messages.map(m => {
             // FIX (cuentas multi-rol, mismo uid físico p.ej. Entrenador=Padre):
             // comparar solo por uid marca TODOS los mensajes del hilo como "míos",
             // porque el uid coincide en ambos roles. Si el mensaje trae senderRole,
@@ -2140,6 +2211,11 @@ async function _loadUnifiedThreadMessages(threadId, contact) {
                     </div>
                     <div style="font-size:0.64rem;color:var(--text-muted);text-align:right;margin-top:0.3rem;display:flex;align-items:center;justify-content:flex-end;gap:0.4rem;">
                         <span>${date} ${time} · ${isMine ? 'Tú' : (m.senderRole || contact.name)}</span>
+                        ${_umHayMS && messages.length > 1
+                            ? window.cronosMS.chk('ummsg', m.timestamp, {
+                                titulo: 'Seleccionar este mensaje',
+                                estilo: 'width:14px;height:14px;' })
+                            : ''}
                         <button onclick="_deleteUnifiedMessage('${snap.id}', '${m.timestamp}')"
                             style="background:none;border:none;color:#ff5858;cursor:pointer;font-size:0.7rem;padding:0;opacity:0.6;"
                             title="Borrar mensaje">🗑️</button>

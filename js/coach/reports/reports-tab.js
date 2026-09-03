@@ -518,6 +518,137 @@ async function _sdLoadReports() {
         // abierto ante un botón irreversible es peor que no tener el botón.
         const _sdMuestraPurga = (typeof window._sdPuedePurgar === 'function')
                                 && window._sdPuedePurgar(me);
+
+        // ══════════════════════════════════════════════════════════════
+        //  🗂️ v669 · SELECCIÓN MÚLTIPLE (js/shared/multi-select.js)
+        //
+        //  Las mismas dos acciones que ya tenía cada tarjeta (🗑️ ocultar y
+        //  💣 purgar), aplicadas a lo marcado. La purga sigue condicionada a
+        //  `_sdMuestraPurga`: es EL MISMO predicado que decide el botón de la
+        //  fila, no una copia — un permiso escrito dos veces acaba diciendo
+        //  dos cosas.
+        //
+        //  ⚠️ "Seleccionar todos" marca lo que está PINTADO. En esta pestaña
+        //  eso importa de verdad: el árbol filtra por modalidad para el
+        //  coordinador, así que lo pintado ya es lo que le corresponde ver.
+        // ══════════════════════════════════════════════════════════════
+        const _sdHayMS = !!(window.cronosMS && typeof window.cronosMS.chk === 'function');
+
+        const _sdCuenta = (ks) => {
+            const ms = ks.map(k => window._sdMatchData[k]).filter(Boolean);
+            return { partidos: ms.length,
+                     docs: ms.reduce((s, m) => s + (m.players ? m.players.length : 0), 0),
+                     lista: ms };
+        };
+        const _sdRotulo = (m) => '   · ' + (m.matchDate || 'sin fecha') + ' · vs ' + (m.rival || 'rival');
+
+        let _sdBarraSel = '';
+        if (_sdHayMS) {
+            const _accs = [{
+                id: 'ocultar',
+                icono: '🗑️',
+                etiqueta: 'Ocultar seleccionados',
+                titulo: 'Quitar de MI panel los informes marcados (los demás roles los siguen viendo)',
+                confirmar: (ks) => {
+                    const c = _sdCuenta(ks);
+                    return '🗑️ OCULTAR DE TU PANEL\n\n' +
+                        'Vas a ocultar ' + c.partidos + ' informe' + (c.partidos === 1 ? '' : 's') +
+                        ' de partido (' + c.docs + ' informe' + (c.docs === 1 ? '' : 's') + ' de jugador).\n\n' +
+                        'Se ocultan SÓLO PARA TI y para tu rol actual: los demás roles los\n' +
+                        'seguirán viendo y no se borra nada de la base de datos.\n\n¿Continuar?';
+                },
+                ejecutar: async (ks, prog) => {
+                    let ok = 0, fallos = 0;
+                    await window.cronosMS.enTandas(ks, 3, async (k) => {
+                        try { (await _sdOcultarUno(k)) ? ok++ : fallos++; }
+                        catch (e) { fallos++; console.warn('[StaffDashboard] no se pudo ocultar', k, e); }
+                    }, prog);
+                    return { ok, fallos,
+                        resumen: ok
+                            ? ('✅ ' + ok + ' informe' + (ok === 1 ? '' : 's') + ' ocultado' +
+                               (ok === 1 ? '' : 's') + ' de tu panel' +
+                               (fallos ? ' · ⚠️ ' + fallos + ' sin poder ocultar' : ''))
+                            : '⚠️ No se pudo ocultar ninguno' };
+                },
+                alTerminar: () => { if (typeof _sdLoadReports === 'function') _sdLoadReports(); },
+            }];
+
+            if (_sdMuestraPurga) {
+                _accs.push({
+                    id: 'purgar',
+                    icono: '💣',
+                    etiqueta: 'Purgar seleccionados',
+                    tono: 'peligro',
+                    titulo: 'BORRADO PERMANENTE (sólo Director Deportivo): elimina los partidos de la base de datos para todo el mundo y los descuenta del acumulado. No se puede deshacer.',
+                    confirmar: (ks) => {
+                        // 🔑 La puerta, también aquí: ocultar el botón no es un
+                        // permiso — esto es window.* y se invoca desde consola.
+                        if (typeof window._sdPuedePurgar !== 'function' || !window._sdPuedePurgar(me)) {
+                            const aviso = '⛔ El borrado permanente es exclusivo del Director Deportivo.';
+                            if (typeof showToast === 'function') showToast(aviso, 5000); else alert(aviso);
+                            return null;
+                        }
+                        const c = _sdCuenta(ks);
+                        const muestra = c.lista.slice(0, 8).map(_sdRotulo).join('\n') +
+                                        (c.lista.length > 8 ? '\n   · …y ' + (c.lista.length - 8) + ' más' : '');
+                        if (!confirm(
+                            '⚠️ BORRADO PERMANENTE\n\n' +
+                            'Vas a eliminar de la base de datos ' + c.partidos + ' partido' +
+                            (c.partidos === 1 ? '' : 's') + ' (' + c.docs + ' informe' +
+                            (c.docs === 1 ? '' : 's') + ' de jugador):\n\n' + muestra + '\n\n' +
+                            'Se borrarán TODOS sus informes (entrenador, dirección y familiares/jugadores).\n' +
+                            'Desaparecerán para todo el mundo y del acumulado de temporada.\n\n' +
+                            'ESTO NO SE PUEDE DESHACER. ¿Continuar?')) return null;
+                        // El ritual de teclear BORRAR se mantiene, y con más
+                        // razón: aquí no se va un partido, se van varios.
+                        const t = prompt('Confirmación final.\n\nVas a borrar ' + c.partidos +
+                                         ' partido' + (c.partidos === 1 ? '' : 's') +
+                                         ' PARA SIEMPRE.\nEscribe la palabra BORRAR para continuar:');
+                        if (String(t || '').trim().toUpperCase() !== 'BORRAR') {
+                            if (typeof showToast === 'function') showToast('Cancelado · no se ha borrado nada', 2500);
+                            return null;
+                        }
+                        return true;
+                    },
+                    ejecutar: async (ks, prog) => {
+                        let borrados = 0, denegados = 0, partidos = 0;
+                        await window.cronosMS.enTandas(ks, 2, async (k) => {
+                            const m = window._sdMatchData[k];
+                            if (!m) return;
+                            try {
+                                const r = await window.cronosPurgarPartido({
+                                    matchId: m.matchId,
+                                    docIds: (m.players || []).map(p => p._id).filter(Boolean),
+                                    borrarPartidoEnVivo: true,
+                                });
+                                borrados  += r.borrados || 0;
+                                denegados += r.denegados || 0;
+                                if (r.borrados || r.partidoBorrado) { partidos++; delete window._sdMatchData[k]; }
+                            } catch (e) {
+                                console.error('[Purga] error borrando', k, e);
+                                denegados++;
+                            }
+                        }, prog);
+                        return { ok: partidos, fallos: denegados,
+                            resumen: (borrados || partidos)
+                                ? ('🗑️ Purgados ' + partidos + ' partido' + (partidos === 1 ? '' : 's') +
+                                   ' · ' + borrados + ' informe' + (borrados === 1 ? '' : 's') +
+                                   (denegados ? ' · ⚠️ ' + denegados + ' sin permiso (de otro entrenador)' : '') +
+                                   ' · el acumulado queda descontado')
+                                : (denegados
+                                    ? '⛔ No se ha borrado nada: sólo el entrenador que creó el partido (o el SuperAdmin) puede eliminarlo.'
+                                    : '⚠️ No se encontró ningún documento que borrar.') };
+                    },
+                    alTerminar: () => { if (typeof _sdLoadReports === 'function') _sdLoadReports(); },
+                });
+            }
+            window.cronosMS.registrar('sdinf', _accs);
+            _sdBarraSel = window.cronosMS.barra('sdinf');
+        }
+        // La barra va ARRIBA DEL TODO, antes de la descarga global y del
+        // árbol: manda sobre todas las ramas a la vez, así que ponerla dentro
+        // de una sugeriría que sólo alcanza a ese equipo.
+        html += _sdBarraSel;
         // Partidos de cada rama del árbol, indexados por 'categoria|SUB'. Se
         // rellena al pintar cada cabecera de subcategoría y se consume al
         // pulsar un botón de descarga.
@@ -544,6 +675,9 @@ async function _sdLoadReports() {
             return `
             <div class="sd-report-card" id="rcard-${key64}" onclick="sdToggleReport('${key64}')">
                 <div style="display:flex;justify-content:space-between;align-items:start;gap:0.5rem;">
+                    ${_sdHayMS ? window.cronosMS.chk('sdinf', key64, {
+                        titulo: 'Seleccionar este informe para el borrado múltiple',
+                        estilo: 'margin-top:0.15rem;' }) : ''}
                     <div style="flex:1;min-width:0;">
                         <div style="font-weight:700;font-size:1rem;display:flex;align-items:center;gap:0.5rem;flex-wrap:wrap;">
                             🆚 vs <span style="color:var(--primary);">${escapeHtml(m.rival||'Sin rival')}</span>
@@ -921,66 +1055,80 @@ async function _sdLoadReports() {
         // Así cada rol (Director/Coordinador) borra independientemente.
         // El documento no se elimina físicamente, solo se oculta para este usuario.
         // Solo el coach autor (coachUid) puede eliminar físicamente.
-        window.sdDeleteReport = async (key64) => {
-            if (!confirm('¿Deseas ocultar este informe de tu panel? Solo se eliminará para ti; los demás roles seguirán viéndolo.')) return;
-            
-            // 🔴 v637 · GEMELA DE LA CLAVE DE _sdLoadReports: si estas dos no
-            //    calculan el rol IGUAL, se oculta con una clave y se lee con
-            //    otra, y el informe reaparece. La explicación de por qué NO es
-            //    `me.currentRole` está allí arriba, en el punto de lectura.
+        //  ⚠️ v669 · PARTIDA EN DOS: `_sdOcultarUno` HACE y `sdDeleteReport`
+        //  PREGUNTA. El borrado masivo llama a la primera en bucle; si llamara
+        //  a la segunda, abriría una ventana de confirmación por informe.
+        //  🔴 v637 · LA CLAVE DE OCULTACIÓN VIVE AQUÍ Y EN NINGÚN OTRO SITIO.
+        //     Es GEMELA de la de _sdLoadReports: si las dos no calculan el rol
+        //     IGUAL, se oculta con una clave y se lee con otra, y el informe
+        //     reaparece sin que salte ningún error. La explicación de por qué
+        //     NO es `me.currentRole` está allí arriba, en el punto de lectura.
+        //     ⚠️ Y por eso el motor de selección múltiple NO borra: si el
+        //     borrado se hubiera "unificado" allí, esta clave y la de "Mis
+        //     Informes" —que es `me.uid` a secas— tendrían que ser la misma.
+        const _sdOcultarUno = async (key64) => {
+            const match = window._sdMatchData[key64];
+            if (!match) return false;
+
             const currentRole = me._activeRole || me.role || 'staff';
             const dismissKey = `${me.uid}_${currentRole}`;
 
-            const match = window._sdMatchData[key64];
-            if (!match) return;
-            
-            try {
-                const { db, doc, updateDoc, arrayUnion } = await _sdFS();
-                if (typeof showSpinner === 'function') showSpinner('Ocultando informe…');
-                
-                // Añadir mi UID a dismissedBy en cada documento de jugador
-                // Usar SIEMPRE el ID real del documento (p._id), no construir IDs
-                // con matchId que puede ser undefined
-                const updatePromises = match.players.flatMap(p => {
-                    const docIds = [];
-                    // Prioridad 1: ID real del documento
-                    if (p._id || p.id) docIds.push(p._id || p.id);
-                    // Prioridad 2: IDs derivados si matchId es válido
-                    const mid = match.matchId;
-                    if (mid && mid !== 'undefined' && mid !== '') {
-                        const pNum = p.playerNumber || p.number || '';
-                        if (pNum) {
-                            docIds.push(`${mid}_coach_p${pNum}`);
-                            docIds.push(`${mid}_staff_p${pNum}`);
-                            docIds.push(`${mid}_p${pNum}`);
-                        }
+            const { db, doc, updateDoc, arrayUnion } = await _sdFS();
+
+            // Añadir mi UID a dismissedBy en cada documento de jugador
+            // Usar SIEMPRE el ID real del documento (p._id), no construir IDs
+            // con matchId que puede ser undefined
+            const updatePromises = match.players.flatMap(p => {
+                const docIds = [];
+                // Prioridad 1: ID real del documento
+                if (p._id || p.id) docIds.push(p._id || p.id);
+                // Prioridad 2: IDs derivados si matchId es válido
+                const mid = match.matchId;
+                if (mid && mid !== 'undefined' && mid !== '') {
+                    const pNum = p.playerNumber || p.number || '';
+                    if (pNum) {
+                        docIds.push(`${mid}_coach_p${pNum}`);
+                        docIds.push(`${mid}_staff_p${pNum}`);
+                        docIds.push(`${mid}_p${pNum}`);
                     }
-                    const uniqueIds = [...new Set(docIds)];
-                    return uniqueIds.map(docId =>
-                        updateDoc(doc(db, 'cronos_player_reports', docId), {
-                            dismissedBy: arrayUnion(dismissKey)
-                        }).catch(err => {
-                            console.warn(`[StaffDashboard] No se pudo ocultar ${docId}:`, err.message);
-                        })
-                    );
-                });
-                
-                await Promise.all(updatePromises);
-                
+                }
+                const uniqueIds = [...new Set(docIds)];
+                return uniqueIds.map(docId =>
+                    updateDoc(doc(db, 'cronos_player_reports', docId), {
+                        dismissedBy: arrayUnion(dismissKey)
+                    }).catch(err => {
+                        console.warn(`[StaffDashboard] No se pudo ocultar ${docId}:`, err.message);
+                    })
+                );
+            });
+
+            await Promise.all(updatePromises);
+            delete window._sdMatchData[key64];
+            return true;
+        };
+
+        window.sdDeleteReport = async (key64) => {
+            if (!confirm('¿Deseas ocultar este informe de tu panel? Solo se eliminará para ti; los demás roles seguirán viéndolo.')) return;
+            if (!window._sdMatchData[key64]) return;
+
+            try {
+                if (typeof showSpinner === 'function') showSpinner('Ocultando informe…');
+                await _sdOcultarUno(key64);
+
                 if (typeof hideSpinner === 'function') hideSpinner();
                 if (typeof showToast === 'function') showToast('✅ Informe ocultado de tu panel', 3000);
-                
+
                 // Quitar de la UI
                 const card = document.getElementById(`rcard-${key64}`);
                 if (card) card.remove();
-                
-                // Actualizar contador
-                const currentCount = Object.keys(window._sdMatchData).length - 1;
+
+                // Actualizar contador. Sin el «- 1» de antes: `_sdOcultarUno`
+                // ya lo ha quitado del mapa, así que restarlo otra vez dejaría
+                // el rótulo un encuentro por debajo de lo que hay en pantalla.
+                const currentCount = Object.keys(window._sdMatchData).length;
                 const title = container.querySelector('h3');
                 if (title) title.innerHTML = `📊 Informes — ${currentCount} encuentro${currentCount !== 1 ? 's' : ''}`;
-                
-                delete window._sdMatchData[key64];
-                
+
             } catch (err) {
                 if (typeof hideSpinner === 'function') hideSpinner();
                 console.error('[StaffDashboard] Error al ocultar:', err);

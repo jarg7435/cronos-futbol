@@ -587,6 +587,24 @@ async function _renderFinishedMatchesTab() {
             return;
         }
 
+        // ══════════════════════════════════════════════════════════════
+        //  🗂️ v669 · SELECCIÓN MÚLTIPLE (js/shared/multi-select.js)
+        //
+        //  ⚠️⚠️ LA CASILLA SÓLO SE PINTA DONDE HAY 🗑️, y eso NO es en todas
+        //  las filas. Un partido CONGELADO (pasadas las 2 h de la ventana de
+        //  incidencias, v434) no admite borrado: su botón no existe. Si la
+        //  casilla apareciera igual, "seleccionar todos" marcaría filas
+        //  intocables y el resumen final tendría que informar de fallos que
+        //  no son fallos — el usuario habría pedido algo que la pantalla
+        //  nunca debió ofrecerle. La condición es LA MISMA expresión que
+        //  gobierna el botón, no una copia parecida.
+        //
+        //  El índice guarda lo que el borrado necesita (id + docId + si es
+        //  informe), porque la clave de la casilla es sólo el id.
+        // ══════════════════════════════════════════════════════════════
+        const _fmHayMS = !!(window.cronosMS && typeof window.cronosMS.chk === 'function');
+        window._fmSelData = {};
+
         // Helper renderizado de tarjeta de partido
         const _renderMatchItem = (m) => {
             const homeName = m.homeTeam?.name || m.homeName || (typeof m.homeTeam === 'string' ? m.homeTeam : 'LOCAL');
@@ -619,9 +637,20 @@ async function _renderFinishedMatchesTab() {
                 ? `<span title="Cerrado definitivamente: no admite cambios" style="background:rgba(125,133,144,0.15); border:1px solid rgba(125,133,144,0.35); color:#7d8590; font-size:0.62rem; font-weight:800; padding:2px 6px; border-radius:5px;">🔒 CERRADO</span>`
                 : `<span title="Admite incidencias durante ${escapeHtml(_restante)} más" style="background:rgba(240,136,62,0.12); border:1px solid rgba(240,136,62,0.35); color:#f0883e; font-size:0.62rem; font-weight:800; padding:2px 6px; border-radius:5px;">✏️ ${escapeHtml(_restante)}</span>`;
 
+            // Sólo entran en la selección múltiple las filas que el borrado
+            // individual puede tocar: misma condición que el botón 🗑️.
+            const _fmSelec = _fmHayMS && !_congelado;
+            if (_fmSelec) {
+                window._fmSelData[m.id] = { id: m.id, docId: m.docId || '',
+                                            esInforme: _esInforme,
+                                            rotulo: homeName + ' vs ' + awayName + ' · ' + dateStr };
+            }
+
             return `
                 <div style="background:rgba(255,255,255,0.03); border:1px solid rgba(121,192,255,0.2); border-radius:12px; padding:0.9rem 1.1rem; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:1rem; margin-bottom:0.7rem; transition:border-color 0.2s;"
                      onmouseover="this.style.borderColor='rgba(121,192,255,0.45)'" onmouseout="this.style.borderColor='rgba(121,192,255,0.2)'">
+                    ${_fmSelec ? window.cronosMS.chk('fmatch', m.id, {
+                        titulo: 'Seleccionar para el borrado múltiple' }) : ''}
                     <div>
                         <div style="display:flex; align-items:center; gap:0.6rem; margin-bottom:0.3rem;">
                             <span style="font-size:0.92rem; font-weight:800; color:white;">${escapeHtml(homeName)} vs ${escapeHtml(awayName)}</span>
@@ -657,6 +686,117 @@ async function _renderFinishedMatchesTab() {
                 </div>`;
         };
 
+        // ── Borrado múltiple ──────────────────────────────────────────
+        //  🔑 NO SE REUTILIZA `deleteFinishedMatchFromCloud`: esa función es
+        //  un guion completo —cuenta, gradúa el aviso según el rol, pide
+        //  teclear BORRAR y repinta— y llamarla en bucle encadenaría tres
+        //  ventanas por fila. Se usan las MISMAS PRIMITIVAS que ella usa
+        //  (match-purge.js), que es donde vive la definición única de "purga
+        //  total", así que el resultado es el mismo por los dos caminos.
+        //  ⚠️ Y por eso aquel bloque se queda intacto: lo fijan dos guards
+        //  (test_borrado_permanente_partido.js y test_finished_matches_module.js)
+        //  que lo recortan del fuente por su nombre.
+        const _fmEsDirector = (typeof window._sdPuedePurgar === 'function')
+                              && window._sdPuedePurgar(me);
+
+        let _fmBarraSel = '';
+        if (_fmHayMS && typeof window.cronosPurgarInformes === 'function') {
+            window.cronosMS.registrar('fmatch', [{
+                id: 'borrar',
+                icono: '🗑️',
+                etiqueta: 'Eliminar seleccionados',
+                tono: 'peligro',
+                titulo: 'Eliminar del historial los partidos marcados',
+                confirmar: (ks) => {
+                    const filas = ks.map(k => window._fmSelData[k]).filter(Boolean);
+                    const informes = filas.filter(f => f.esInforme).length;
+
+                    // ⚠️ MISMA REGLA QUE EN LA FILA: quien no es director no
+                    //    puede tocar informes. Si lo único marcado son
+                    //    informes, no hay nada que hacer; si son mezcla, se
+                    //    dice cuántos se van a QUEDAR en vez de borrarlos a
+                    //    escondidas o fingir que se han ido.
+                    if (!_fmEsDirector && informes) {
+                        if (informes === filas.length) {
+                            const av = '⛔ El borrado permanente de informes es exclusivo del Director Deportivo.\n\n' +
+                                       'Desde el panel de Informes puedes OCULTARLOS de tu panel con 🗑️.';
+                            if (typeof showToast === 'function') showToast(av, 6000); else alert(av);
+                            return null;
+                        }
+                    }
+                    const aBorrar = _fmEsDirector ? filas : filas.filter(f => !f.esInforme);
+                    const muestra = aBorrar.slice(0, 8).map(f => '   · ' + f.rotulo).join('\n') +
+                                    (aBorrar.length > 8 ? '\n   · …y ' + (aBorrar.length - 8) + ' más' : '');
+
+                    if (_fmEsDirector) {
+                        if (!confirm(
+                            '⚠️ BORRADO PERMANENTE\n\n' +
+                            'Vas a eliminar ' + aBorrar.length + ' ficha' + (aBorrar.length === 1 ? '' : 's') +
+                            ' del historial:\n\n' + muestra + '\n\n' +
+                            'Se borrarán TAMBIÉN sus informes (entrenador, dirección y familiares/jugadores)\n' +
+                            'y sus datos se DESCONTARÁN del acumulado de temporada.\n\n' +
+                            'ESTO NO SE PUEDE DESHACER. ¿Continuar?')) return null;
+                        const t = prompt('Confirmación final.\n\nEscribe la palabra BORRAR para purgar ' +
+                                         aBorrar.length + ' ficha' + (aBorrar.length === 1 ? '' : 's') + ':');
+                        if (String(t || '').trim().toUpperCase() !== 'BORRAR') {
+                            if (typeof showToast === 'function') showToast('Cancelado · no se ha borrado nada', 2500);
+                            return null;
+                        }
+                        return true;
+                    }
+                    return '🗑️ ELIMINAR DEL HISTORIAL\n\n' +
+                           'Vas a retirar ' + aBorrar.length + ' partido' + (aBorrar.length === 1 ? '' : 's') +
+                           ' de tu historial:\n\n' + muestra + '\n\n' +
+                           (informes ? 'Se dejan fuera ' + informes + ' informe' + (informes === 1 ? '' : 's') +
+                                       ': sólo el Director Deportivo puede eliminarlos.\n\n' : '') +
+                           'Se retira el registro temporal del partido. Los informes colectivos NO se tocan.\n\n' +
+                           '¿Continuar?';
+                },
+                ejecutar: async (ks, prog) => {
+                    const filas = ks.map(k => window._fmSelData[k]).filter(Boolean)
+                                    .filter(f => _fmEsDirector || !f.esInforme);
+                    let borrados = 0, denegados = 0, fichas = 0;
+                    await window.cronosMS.enTandas(filas, 2, async (f) => {
+                        try {
+                            let ids = [];
+                            if (_fmEsDirector && typeof window.cronosRecogerInformesDePartido === 'function') {
+                                ids = await window.cronosRecogerInformesDePartido(f.id, f.docId ? [f.docId] : []);
+                            }
+                            let hecho = false;
+                            if (ids.length) {
+                                const r = await window.cronosPurgarInformes(ids);
+                                borrados  += r.borrados  || 0;
+                                denegados += r.denegados || 0;
+                                if (r.borrados) hecho = true;
+                            }
+                            // La ficha de INFORME no tiene registro en vivo que
+                            // borrar; la de partido sí.
+                            if (!f.esInforme && typeof window.cronosBorrarPartidoEnVivo === 'function') {
+                                if (await window.cronosBorrarPartidoEnVivo(f.id)) hecho = true;
+                            }
+                            if (hecho) fichas++;
+                        } catch (e) {
+                            console.error('[FinishedMatches] error borrando', f.id, e);
+                            denegados++;
+                        }
+                    }, prog);
+                    return { ok: fichas, fallos: denegados,
+                        resumen: fichas
+                            ? ('🗑️ Eliminadas ' + fichas + ' ficha' + (fichas === 1 ? '' : 's') +
+                               (borrados ? ' · ' + borrados + ' informe' + (borrados === 1 ? '' : 's') +
+                                           ' purgado' + (borrados === 1 ? '' : 's') : '') +
+                               (denegados ? ' · ⚠️ ' + denegados + ' sin permiso' : ''))
+                            : (denegados
+                                ? '⛔ No se ha borrado nada: sin permiso sobre esas fichas.'
+                                : '⚠️ No se encontró nada que borrar.') };
+                },
+                alTerminar: () => {
+                    if (typeof _renderFinishedMatchesTab === 'function') _renderFinishedMatchesTab();
+                },
+            }]);
+            _fmBarraSel = window.cronosMS.barra('fmatch');
+        }
+
         // Si es ENTRENADOR: mostrar la lista filtrada de su propia categoría
         if (isCoach) {
             let html = `
@@ -667,6 +807,7 @@ async function _renderFinishedMatchesTab() {
                             Revive los encuentros finalizados de tu categoría asignada.
                         </div>
                     </div>
+                    ${_fmBarraSel}
                     <div style="display:flex; flex-direction:column; gap:0.3rem;">
                         ${finishedMatches.map(_renderMatchItem).join('')}
                     </div>
@@ -714,6 +855,7 @@ async function _renderFinishedMatchesTab() {
                         Organizados jerárquicamente por Categoría y Subcategoría. Haz clic en cualquier grupo para desplegar sus partidos.
                     </div>
                 </div>
+                ${_fmBarraSel}
                 <div style="display:flex; flex-direction:column; gap:0.8rem;">
         `;
 

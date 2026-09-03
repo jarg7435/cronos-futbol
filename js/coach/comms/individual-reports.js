@@ -393,10 +393,217 @@ window.openMisInformes = async function openMisInformes() {
             );
         }
 
+        // ══════════════════════════════════════════════════════════════
+        //  🗂️ v669 · SELECCIÓN MÚLTIPLE (js/shared/multi-select.js)
+        //
+        //  Dos acciones, y la segunda sólo para quien pueda:
+        //   · Ocultar  → lo mismo que el 🗑️ de cada fila, en bucle.
+        //   · Purgar   → borrado real, EXCLUSIVO del Director Deportivo.
+        //
+        //  🔑 EL PERMISO SE PIDE CON EL MISMO PREDICADO QUE EL PANEL DE
+        //  DIRECCIÓN (`_sdPuedePurgar`), no con una copia: si "esto es cosa
+        //  del director" se decidiera en dos sitios, acabarían discrepando.
+        //  Y si el módulo no ha cargado, se responde NO — un permiso que
+        //  falla abierto delante de un botón irreversible es peor que no
+        //  tener el botón (v617).
+        //
+        //  ⚠️ La barra sólo se pinta si el motor cargó. Sin él, la pantalla
+        //  se queda exactamente como estaba: casillas fuera y el 🗑️ de
+        //  siempre. Nunca a medias.
+        // ══════════════════════════════════════════════════════════════
+        // ── El partido que hay detrás de una clave de la lista ────────
+        const _miPartidoDe = (key64) => {
+            try { return window._misInformesData?.[decodeURIComponent(escape(atob(key64)))] || null; }
+            catch (_) { return null; }
+        };
+        // Cuántos DOCUMENTOS hay detrás de N tarjetas. La ventana de
+        // confirmación tiene que decir esto y no sólo "3 elementos": una
+        // tarjeta de partido son ~14 informes de jugador.
+        const _miCuenta = (ks) => {
+            const ms = ks.map(_miPartidoDe).filter(Boolean);
+            return { partidos: ms.length,
+                     docs: ms.reduce((s, m) => s + (m.players ? m.players.length : 0), 0),
+                     lista: ms };
+        };
+        const _miRotulo = (m) => {
+            const f = m.matchDate
+                ? new Date(m.matchDate + 'T12:00:00').toLocaleDateString('es-ES')
+                : 'sin fecha';
+            return '   · ' + f + ' · vs ' + (m.rival || 'rival');
+        };
+
+        // ── OCULTAR: un partido, sin preguntar ni avisar ──────────────
+        //  Es el cuerpo que ya tenía miEliminarInforme, partido en dos para
+        //  poder llamarlo en bucle. El botón de la fila sigue preguntando;
+        //  esta mitad no, porque el bucle pregunta UNA vez por todos.
+        //  🔑 La clave que se escribe es `me.uid` A SECAS, que es con la que
+        //  ESTA pantalla lee (el panel de Dirección usa `uid_rol` y lee con
+        //  la suya). Cambiar una sin la otra hace reaparecer el informe sin
+        //  ningún error: la lección de v637.
+        const _miOcultarUno = async (key64) => {
+            const key = decodeURIComponent(escape(atob(key64)));
+            const m = window._misInformesData?.[key];
+            if (!m) return false;
+            const { db, doc, updateDoc, arrayUnion } = await _cFS();
+            const updates = m.players.flatMap(p => {
+                const docIds = [];
+                if (p._id || p.id) docIds.push(p._id || p.id);
+                const mid = m.matchId;
+                if (mid && mid !== 'undefined' && mid !== '') {
+                    const pNum = p.playerNumber || p.number || '';
+                    if (pNum) {
+                        docIds.push(`${mid}_coach_p${pNum}`);
+                        docIds.push(`${mid}_staff_p${pNum}`);
+                        docIds.push(`${mid}_p${pNum}`);
+                    }
+                }
+                return [...new Set(docIds)].map(docId =>
+                    updateDoc(doc(db, 'cronos_player_reports', docId), {
+                        dismissedBy: arrayUnion(me.uid)
+                    }).catch(err => {
+                        console.warn(`[MisInformes] No se pudo ocultar ${docId}:`, err.message);
+                    })
+                );
+            });
+            await Promise.all(updates);
+            delete window._misInformesData[key];
+            return true;
+        };
+
+        const _miTextoConfirmOcultar = (ks) => {
+            const c = _miCuenta(ks);
+            return '🗑️ OCULTAR DE TU PANEL\n\n' +
+                'Vas a ocultar ' + c.partidos + ' partido' + (c.partidos === 1 ? '' : 's') +
+                ' (' + c.docs + ' informe' + (c.docs === 1 ? '' : 's') + ' de jugador).\n\n' +
+                'Se ocultan SÓLO PARA TI: los demás roles los seguirán viendo y no se\n' +
+                'borra nada de la base de datos.\n\n¿Continuar?';
+        };
+
+        const _miOcultarVarios = async (ks, progreso) => {
+            let ok = 0, fallos = 0;
+            await window.cronosMS.enTandas(ks, 3, async (k) => {
+                try { (await _miOcultarUno(k)) ? ok++ : fallos++; }
+                catch (e) { fallos++; console.warn('[MisInformes] no se pudo ocultar', k, e); }
+            }, progreso);
+            return {
+                ok, fallos,
+                // El resumen cuenta lo que REALMENTE salió bien. Anunciar los
+                // seleccionados sería mentir en cuanto uno fallara.
+                resumen: ok
+                    ? ('✅ ' + ok + ' partido' + (ok === 1 ? '' : 's') + ' ocultado' +
+                       (ok === 1 ? '' : 's') + ' de tu panel' +
+                       (fallos ? ' · ⚠️ ' + fallos + ' sin poder ocultar' : ''))
+                    : '⚠️ No se pudo ocultar ninguno',
+            };
+        };
+
+        // ── PURGAR: borrado real, sólo Director Deportivo ─────────────
+        const _miTextoConfirmPurga = (ks) => {
+            // 🔑 LA PUERTA, OTRA VEZ AQUÍ. Que el botón no se pinte no es un
+            // permiso: esto se puede invocar desde la consola. Mismo
+            // razonamiento que sdPurgeMatch. La barrera real son las reglas.
+            if (typeof window._sdPuedePurgar !== 'function' || !window._sdPuedePurgar(me)) {
+                const aviso = '⛔ El borrado permanente es exclusivo del Director Deportivo. ' +
+                              'Usa 🗑️ para ocultar los informes de tu panel.';
+                if (typeof showToast === 'function') showToast(aviso, 5000); else alert(aviso);
+                return null;
+            }
+            const c = _miCuenta(ks);
+            const muestra = c.lista.slice(0, 8).map(_miRotulo).join('\n') +
+                            (c.lista.length > 8 ? '\n   · …y ' + (c.lista.length - 8) + ' más' : '');
+            if (!confirm(
+                '⚠️ BORRADO PERMANENTE\n\n' +
+                'Vas a eliminar de la base de datos ' + c.partidos + ' partido' +
+                (c.partidos === 1 ? '' : 's') + ' (' + c.docs + ' informe' +
+                (c.docs === 1 ? '' : 's') + ' de jugador):\n\n' + muestra + '\n\n' +
+                'Se borrarán TODOS sus informes (entrenador, dirección y familiares/jugadores).\n' +
+                'Desaparecerán para todo el mundo y del acumulado de temporada.\n\n' +
+                'ESTO NO SE PUEDE DESHACER. ¿Continuar?')) return null;
+
+            // ⚠️ EL RITUAL DE TECLEAR "BORRAR" SE MANTIENE EN EL MASIVO, y con
+            // más razón: aquí no se va un partido, se van varios de una vez.
+            const t = prompt('Confirmación final.\n\nVas a borrar ' + c.partidos +
+                             ' partido' + (c.partidos === 1 ? '' : 's') +
+                             ' PARA SIEMPRE.\nEscribe la palabra BORRAR para continuar:');
+            if (String(t || '').trim().toUpperCase() !== 'BORRAR') {
+                if (typeof showToast === 'function') showToast('Cancelado · no se ha borrado nada', 2500);
+                return null;
+            }
+            return true;   // ya preguntado: que el motor no abra otra ventana
+        };
+
+        const _miPurgarVarios = async (ks, progreso) => {
+            let borrados = 0, denegados = 0, partidos = 0;
+            await window.cronosMS.enTandas(ks, 2, async (k) => {
+                const m = _miPartidoDe(k);
+                if (!m) return;
+                try {
+                    // 🔑 LA PURGA VIVE EN match-purge.js. Es la misma que usan
+                    // el panel de Dirección y Partidos Terminados: con una
+                    // copia aquí, "purga total" significaría dos cosas según
+                    // por dónde entres y el acumulado quedaría sucio en una.
+                    const r = await window.cronosPurgarPartido({
+                        matchId: m.matchId,
+                        docIds: (m.players || []).map(p => p._id).filter(Boolean),
+                        borrarPartidoEnVivo: true,
+                    });
+                    borrados  += r.borrados || 0;
+                    denegados += r.denegados || 0;
+                    if (r.borrados || r.partidoBorrado) partidos++;
+                } catch (e) {
+                    console.error('[MisInformes] error purgando', k, e);
+                    denegados++;
+                }
+            }, progreso);
+            return {
+                ok: partidos, fallos: denegados,
+                resumen: (borrados || partidos)
+                    ? ('🗑️ Purgados ' + partidos + ' partido' + (partidos === 1 ? '' : 's') +
+                       ' · ' + borrados + ' informe' + (borrados === 1 ? '' : 's') +
+                       (denegados ? ' · ⚠️ ' + denegados + ' sin permiso (de otro entrenador)' : '') +
+                       ' · el acumulado queda descontado')
+                    : (denegados
+                        ? '⛔ No se ha borrado nada: sólo el entrenador que creó el partido (o el SuperAdmin) puede eliminarlo.'
+                        : '⚠️ No se encontró ningún documento que borrar.'),
+            };
+        };
+
+        const _miHayMS = !!(window.cronosMS && typeof window.cronosMS.chk === 'function');
+        const _miPuedePurgar = _miHayMS
+            && typeof window._sdPuedePurgar === 'function' && window._sdPuedePurgar(me)
+            && typeof window.cronosPurgarPartido === 'function';
+
+        let _miBarraSel = '';
+        if (_miHayMS) {
+            const _acciones = [{
+                id: 'ocultar',
+                icono: '🗑️',
+                etiqueta: 'Ocultar seleccionados',
+                titulo: 'Quitar de MI panel los informes marcados (los demás roles los siguen viendo)',
+                confirmar: (ks) => _miTextoConfirmOcultar(ks),
+                ejecutar: (ks, prog) => _miOcultarVarios(ks, prog),
+                alTerminar: () => { window.openMisInformes(); },
+            }];
+            if (_miPuedePurgar) {
+                _acciones.push({
+                    id: 'purgar',
+                    icono: '💣',
+                    etiqueta: 'Purgar seleccionados',
+                    tono: 'peligro',
+                    titulo: 'BORRADO PERMANENTE (sólo Director Deportivo): elimina los partidos de la base de datos para todo el mundo y los descuenta del acumulado. No se puede deshacer.',
+                    confirmar: (ks) => _miTextoConfirmPurga(ks),
+                    ejecutar: (ks, prog) => _miPurgarVarios(ks, prog),
+                    alTerminar: () => { window.openMisInformes(); },
+                });
+            }
+            window.cronosMS.registrar('misinf', _acciones);
+            _miBarraSel = window.cronosMS.barra('misinf');
+        }
+
         const body = document.getElementById('mis-informes-body');
-        body.innerHTML = _miResumenHtml + `<div style="font-size:0.74rem;color:var(--text-muted);margin:0.9rem 0 0.8rem;">
+        body.innerHTML = _miResumenHtml + `<div id="mi-contador-lista" style="font-size:0.74rem;color:var(--text-muted);margin:0.9rem 0 0.8rem;">
             ${sorted.length} partido${sorted.length!==1?'s':''} · ${reports.length} informes de jugadores
-        </div>` + sorted.map(m => {
+        </div>` + _miBarraSel + sorted.map(m => {
             const sh=m.scoreHome, sa=m.scoreAway;
             const score=(sh!=null&&sa!=null)?`${sh}–${sa}`:'—';
             // Resultado segun myTeamRole; sin el campo (informes antiguos) -> fallback 'home', comportamiento previo.
@@ -415,6 +622,9 @@ window.openMisInformes = async function openMisInformes() {
                  onmouseout="this.style.borderColor='rgba(63,185,80,0.15)'"
                  onclick="miToggleInforme('${key64}')">
                 <div style="display:flex;justify-content:space-between;align-items:center;gap:0.5rem;flex-wrap:wrap;">
+                    ${_miHayMS ? window.cronosMS.chk('misinf', key64, {
+                        titulo: 'Seleccionar este partido para el borrado múltiple',
+                        estilo: 'margin-right:0.15rem;' }) : ''}
                     <div style="flex:1;min-width:0;">
                         <div style="font-weight:700;font-size:0.95rem;display:flex;align-items:center;gap:0.4rem;flex-wrap:wrap;">
                             🆚 vs <span style="color:#3fb950;">${typeof escapeHtml==='function'?escapeHtml(m.rival||'Sin rival'):m.rival||'Sin rival'}</span>
@@ -431,8 +641,8 @@ window.openMisInformes = async function openMisInformes() {
                         ${m.players.length} jugadores<br>▼ Ver Gantt
                     </div>
                     <div style="display:flex;align-items:center;padding-left:0.5rem;border-left:1px solid rgba(255,255,255,0.08);">
-                        <button onclick="event.stopPropagation(); miEliminarInforme('${key64}', true)" 
-                                title="Eliminar informe definitivamente"
+                        <button onclick="event.stopPropagation(); miEliminarInforme('${key64}')"
+                                title="Ocultar este informe de MI panel (los demás roles lo siguen viendo)"
                                 style="background:rgba(255,88,88,0.1);border:1px solid rgba(255,88,88,0.3);
                                        color:#ff5858;padding:0.4rem;border-radius:6px;cursor:pointer;
                                        display:flex;align-items:center;justify-content:center;transition:all 0.2s;">
@@ -467,9 +677,21 @@ window.openMisInformes = async function openMisInformes() {
                                 <button onclick="miDescargarInforme('${key64}')"
                                     style="padding:0.5rem 1rem;background:rgba(88,166,255,0.1);border:1px solid rgba(88,166,255,0.3);border-radius:8px;color:#58a6ff;font-size:0.75rem;font-weight:700;cursor:pointer;display:flex;align-items:center;gap:5px;">
                                     📥 Descargar TXT</button>
-                                <button onclick="miEliminarInforme('${key64}', true)"
+                                <!-- ⚠️ v669 · ANTES PONÍA "Borrar Permanente" Y ERA MENTIRA.
+                                     Esta función SIEMPRE hizo un borrado lógico
+                                     (dismissedBy); su segundo parámetro se recibía
+                                     y no se leía nunca. El rótulo prometía destruir datos
+                                     y sólo los ocultaba de este panel: quien quisiera
+                                     borrar de verdad se iba convencido de haberlo hecho.
+                                     El borrado permanente es del Director Deportivo y
+                                     tiene su propio botón.
+                                     ⚠️⚠️ SIN ACENTOS GRAVES AQUÍ DENTRO: este comentario
+                                     vive dentro de una plantilla de JavaScript y uno solo
+                                     la cerraría, partiendo el fichero entero. Ya pasó al
+                                     escribir esta misma nota. -->
+                                <button onclick="miEliminarInforme('${key64}')"
                                     style="padding:0.5rem 1rem;background:rgba(255,88,88,0.1);border:1px solid rgba(255,88,88,0.3);border-radius:8px;color:#ff5858;font-size:0.75rem;font-weight:700;cursor:pointer;display:flex;align-items:center;gap:5px;">
-                                    🗑️ Borrar Permanente</button>
+                                    🗑️ Ocultar de mi panel</button>
                             </div>`;
                             
                             detail.innerHTML = fullReportHtml + btns;
@@ -581,44 +803,24 @@ window.openMisInformes = async function openMisInformes() {
         // El borrado físico eliminaba el documento para TODOS los roles (Director y
         // Coordinador lo perdían). Ahora se añade el UID del usuario al array
         // `dismissedBy` en Firestore. Así cada rol borra independientemente.
-        window.miEliminarInforme = async (key64, realDelete = false) => {
+        //  ⚠️ v669 · PARTIDA EN DOS: esta mitad PREGUNTA, `_miOcultarUno`
+        //  (arriba) HACE. El borrado masivo llama a la segunda en bucle, para
+        //  no encadenar una ventana de confirmación por cada informe.
+        //  🗑️ El segundo parámetro `realDelete` se ha RETIRADO: se recibía y
+        //  no se leía nunca, así que quien lo pasaba en `true` creía estar
+        //  pidiendo un borrado permanente y obtenía el lógico de siempre. El
+        //  borrado real es del Director Deportivo y tiene su propio camino.
+        window.miEliminarInforme = async (key64) => {
             const key = decodeURIComponent(escape(atob(key64)));
             const m   = window._misInformesData?.[key];
             if (!m) return;
-            const me = window._cronosCurrentUser;
 
             // Soft delete: ocultar SOLO para este usuario
             if (!confirm('¿Deseas ocultar este informe de tu panel? Solo se eliminará para ti; los demás roles seguirán viéndolo.')) return;
 
             try {
-                const { db, doc, updateDoc, arrayUnion } = await _cFS();
                 if (typeof showSpinner === 'function') showSpinner('Ocultando informe…');
-
-                const updatePromises = m.players.flatMap(p => {
-                    const docIds = [];
-                    // Prioridad 1: ID real del documento
-                    if (p._id || p.id) docIds.push(p._id || p.id);
-                    // Prioridad 2: IDs derivados si matchId es válido
-                    const mid = m.matchId;
-                    if (mid && mid !== 'undefined' && mid !== '') {
-                        const pNum = p.playerNumber || p.number || '';
-                        if (pNum) {
-                            docIds.push(`${mid}_coach_p${pNum}`);
-                            docIds.push(`${mid}_staff_p${pNum}`);
-                            docIds.push(`${mid}_p${pNum}`);
-                        }
-                    }
-                    const uniqueIds = [...new Set(docIds)];
-                    return uniqueIds.map(docId =>
-                        updateDoc(doc(db, 'cronos_player_reports', docId), {
-                            dismissedBy: arrayUnion(me.uid)
-                        }).catch(err => {
-                            console.warn(`[MisInformes] No se pudo ocultar ${docId}:`, err.message);
-                        })
-                    );
-                });
-                await Promise.all(updatePromises);
-
+                await _miOcultarUno(key64);
                 if (typeof hideSpinner === 'function') hideSpinner();
                 if (typeof showToast === 'function') showToast('✅ Informe ocultado de tu panel', 3000);
             } catch (err) {
@@ -634,16 +836,22 @@ window.openMisInformes = async function openMisInformes() {
             // Quitar de la UI
             const card = document.getElementById(`mi-rp-${key64}`);
             if (card) card.remove();
-            
-            // Actualizar contador
-            const currentCount = Object.keys(window._misInformesData).length - 1;
-            const body = document.getElementById('mis-informes-body');
-            if (body) {
-                const title = body.querySelector('div');
-                if (title) title.innerHTML = `${currentCount} partido${currentCount!==1?'s':''} · Informes actualizados`;
-            }
-            
+
+            // ⚠️ `_miOcultarUno` YA lo quitó del índice si fue bien; si falló,
+            //    sigue ahí y hay que quitarlo igual (la tarjeta ya no está).
+            //    Antes se restaba 1 al total DESPUÉS de haberlo borrado: con
+            //    la función partida en dos eso descontaría el mismo partido
+            //    dos veces y el contador iría por detrás de la lista.
             delete window._misInformesData[key];
+
+            // Actualizar contador. Se apunta al rótulo POR SU id: el
+            // `querySelector('div')` de antes cogía el primer div del cuerpo,
+            // que desde que hay tabla de resumen arriba no es este.
+            const currentCount = Object.keys(window._misInformesData).length;
+            const title = document.getElementById('mi-contador-lista');
+            if (title) {
+                title.innerHTML = `${currentCount} partido${currentCount!==1?'s':''} · Informes actualizados`;
+            }
         };
 
         // ── DESCARGA DEL RESUMEN ACUMULADO (PDF / CSV) ────────────────

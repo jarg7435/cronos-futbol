@@ -64,6 +64,9 @@ const COBERTURA_DECLARADA = [
   'js/services/auth/role-launch.js',
   // v596 · El que faltaba y costó una ronda: ver la nota de arriba.
   'js/core/setup-modal.js',
+  // v669 · Selección múltiple reutilizable. Lo consumen seis listados de tres
+  // áreas, así que se declara igual que el resto de módulos compartidos.
+  'js/shared/multi-select.js',
 ];
 
 const files = (argFiles.length

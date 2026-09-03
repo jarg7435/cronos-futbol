@@ -741,9 +741,24 @@ function walk(dir, out) {
             updated.length === 0 && toasts.some(t => t.includes('Error: segundo fallo')),
             { updated, toasts });
     }
-    ok('6i · el toast va guardado con typeof en las 3 salidas',
-        (BLOCK.match(/if \(typeof showToast === 'function'\) showToast/g) || []).length === 3,
-        (BLOCK.match(/if \(typeof showToast === 'function'\) showToast/g) || []).length);
+    // ⚠️ v669 · ANTES EXIGIA EXACTAMENTE 3, Y ESE 3 NO ERA LA REGLA.
+    //    Lo que importa es que NINGUN toast quede sin guarda; cuantas salidas
+    //    haya es cosa del código. Al partir sdDeleteNotif en dos —una mitad
+    //    que pregunta y otra que hace, para que el borrado múltiple no abra
+    //    una ventana por aviso— las salidas pasaron de 3 a 2 y el guard cantó
+    //    una regresión donde sólo había menos duplicado. 6a-6h, que ejecutan
+    //    de verdad, siguieron todas en verde: la señal estaba sólo aquí.
+    //    Ahora se compara CALL SITES contra CALL SITES GUARDADOS, así que
+    //    aguanta cualquier número y sigue cazando el descuido real.
+    {
+        const _cod6i = BLOCK
+            .replace(/\/\*[\s\S]*?\*\//g, '')
+            .split(/\r?\n/).map(l => l.replace(/(^|\s)\/\/.*$/, '$1')).join('\n');
+        const llamadas = (_cod6i.match(/showToast\(/g) || []).length;
+        const guardadas = (_cod6i.match(/if \(typeof showToast === 'function'\) showToast\(/g) || []).length;
+        ok('6i · ⚠️ NINGUN toast sin guarda typeof (sea cual sea el nº de salidas)',
+            llamadas > 0 && llamadas === guardadas, { llamadas, guardadas });
+    }
 
     console.log('\n────────────────────────────────────────────');
     console.log('Resultado: ' + pass + '/' + (pass + fail) + (fail ? '  ❌ ' + fail + ' FALLOS' : '  ✅'));

@@ -276,9 +276,46 @@ async function _sdLoadEvents(type) {
             // Sin el módulo del árbol no se clasifica y, por tanto, no se purga.
             _sdCabecera += ' · sin clasificar por subcategoría (no se elimina nada)';
         }
+        // ══════════════════════════════════════════════════════════════
+        //  🗂️ v669 · SELECCIÓN MÚLTIPLE (js/shared/multi-select.js)
+        //  Aquí "borrar" es SIEMPRE quitar de tu panel (dismissedBy con
+        //  `me.uid`): un aviso no se destruye para los demás roles. No hay,
+        //  por tanto, una segunda acción de purga — y no conviene inventarla.
+        // ══════════════════════════════════════════════════════════════
+        const _svHayMS = !!(window.cronosMS && typeof window.cronosMS.chk === 'function');
+        let _svBarraSel = '';
+        if (_svHayMS) {
+            window.cronosMS.registrar('sdavisos', [{
+                id: 'ocultar',
+                icono: '🗑️',
+                etiqueta: 'Quitar seleccionados',
+                titulo: 'Quitar de MI panel los avisos marcados (los demás roles los siguen viendo)',
+                confirmar: (ks) =>
+                    '🗑️ QUITAR DE TU PANEL\n\n' +
+                    'Vas a quitar ' + ks.length + ' aviso' + (ks.length === 1 ? '' : 's') + '.\n\n' +
+                    'Se quitan SÓLO PARA TI: los demás roles los seguirán viendo y no se\n' +
+                    'borra nada de la base de datos.\n\n¿Continuar?',
+                ejecutar: async (ks, prog) => {
+                    let ok = 0, fallos = 0;
+                    await window.cronosMS.enTandas(ks, 4, async (id) => {
+                        try { await _svOcultarUno(id); ok++; }
+                        catch (e) { fallos++; console.warn('[Sucesos] no se pudo quitar', id, e); }
+                    }, prog);
+                    return { ok, fallos,
+                        resumen: ok
+                            ? ('✅ ' + ok + ' aviso' + (ok === 1 ? '' : 's') + ' quitado' +
+                               (ok === 1 ? '' : 's') + ' de tu panel' +
+                               (fallos ? ' · ⚠️ ' + fallos + ' sin poder quitar' : ''))
+                            : '⚠️ No se pudo quitar ninguno' };
+                },
+                alTerminar: async () => { await _sdLoadEvents(type); },
+            }]);
+            _svBarraSel = window.cronosMS.barra('sdavisos');
+        }
+
         let html = `<div style="font-size:0.73rem;color:var(--text-muted);margin-bottom:0.8rem;text-align:right;line-height:1.5;">
             ${_sdCabecera}
-        </div>`;
+        </div>` + _svBarraSel;
 
         // ⚠️ LA TARJETA DE UN AVISO, EN UN SOLO SITIO (fase 3 del árbol del panel
         // de Dirección, 2026-07-30). Antes este marcado estaba dentro del
@@ -305,6 +342,9 @@ async function _sdLoadEvents(type) {
 
             return `
             <div class="sd-card" style="position:relative;border-left:3px solid ${accent};">
+                ${_svHayMS ? `<div style="position:absolute;top:0.62rem;right:2.5rem;">` +
+                    window.cronosMS.chk('sdavisos', d._id, {
+                        titulo: 'Seleccionar este aviso para quitarlo en bloque' }) + `</div>` : ''}
                 <!-- Botón eliminar -->
                 <button onclick="sdDeleteNotif('${escapeAttr(d._id)}')"
                     title="Eliminar" 
@@ -590,30 +630,36 @@ async function _sdLoadEvents(type) {
             document.body.appendChild(overlay);
         };
 
+        // ── Quitar un aviso: la parte que HACE ───────────────────────────
+        //  ⚠️ v669 · Partida en dos para que el borrado múltiple la llame en
+        //  bucle sin abrir una ventana por aviso. Ni pregunta, ni repinta, ni
+        //  avisa: de eso se encarga quien la llama.
+        //  🔑 SE CONSERVA EL RESPALDO con import directo del SDK: el `_sdFS()`
+        //  de arriba puede no traer `updateDoc`/`arrayUnion` en documentos que
+        //  no tengan aún el campo, y ese segundo intento es el que salvaba el
+        //  caso. Quitarlo "por limpiar" reintroduciría el fallo original.
+        const _svOcultarUno = async (id) => {
+            try {
+                const { db: db2, doc: dRef, updateDoc: upd, arrayUnion: au } = await _sdFS();
+                await upd(dRef(db2, 'cronos_notifications', id), { dismissedBy: au(me.uid) });
+            } catch (e) {
+                const { db: db3, doc: dRef3 } = await _sdFS();
+                const { updateDoc, arrayUnion } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
+                await updateDoc(dRef3(db3, 'cronos_notifications', id), { dismissedBy: arrayUnion(me.uid) });
+            }
+            items = items.filter(it => it._id !== id);
+        };
+
         // ── Eliminar notificación ────────────────────────────────────────
         // FIX: "borrar" = marcar como descartado por este usuario (no borra para los demás)
         window.sdDeleteNotif = async (id) => {
             if (!confirm('¿Quitar este aviso de tu panel? Los demás roles seguirán viéndolo.')) return;
             try {
-                const { db: db2, doc: dRef, updateDoc: upd, arrayUnion: au } = await _sdFS();
-                await upd(dRef(db2, 'cronos_notifications', id), {
-                    dismissedBy: au(me.uid)
-                });
-                items = items.filter(it => it._id !== id);
+                await _svOcultarUno(id);
                 await _sdLoadEvents(type);
                 if (typeof showToast === 'function') showToast('🗑️ Quitado de tu panel', 2000);
-            } catch(e) {
-                // Fallback: si el campo arrayUnion falla (doc sin el campo), intentar con set merge
-                try {
-                    const { db: db3, doc: dRef3 } = await _sdFS();
-                    const { updateDoc, arrayUnion } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
-                    await updateDoc(dRef3(db3, 'cronos_notifications', id), { dismissedBy: arrayUnion(me.uid) });
-                    items = items.filter(it => it._id !== id);
-                    await _sdLoadEvents(type);
-                    if (typeof showToast === 'function') showToast('🗑️ Quitado de tu panel', 2000);
-                } catch(e2) {
-                    if (typeof showToast === 'function') showToast('⚠️ Error: ' + e2.message, 3000);
-                }
+            } catch(e2) {
+                if (typeof showToast === 'function') showToast('⚠️ Error: ' + e2.message, 3000);
             }
         };
 
