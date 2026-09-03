@@ -367,7 +367,7 @@
                     return;
                 }
 
-                var RLABELS = { club_admin: 'Administrador de Club', director: 'Director Deportivo', coordinator: 'Coordinador', user: 'Entrenador', parent: 'Padre/Madre/Tutor', individual: 'Usuario Individual' };
+                var RLABELS = { club_admin: 'Administrador de Club', director: 'Director Deportivo', coordinator: 'Coordinador', user: 'Entrenador', parent: 'Familiar / Jugador', individual: 'Usuario Individual' };
                 var RICONS  = { club_admin: '🏛️', director: '📋', coordinator: '🎯', user: '⚽', parent: '👨‍👩‍👧', individual: '👤' };
                 var CATS    = { prebenjamin: 'Prebenjamín', benjamin: 'Benjamín', alevin: 'Alevín', infantil: 'Infantil', cadete: 'Cadete', juvenil: 'Juvenil', femenino: 'Femenino', regional: 'Regional', regional_fem: 'Regional FEM', futurefem: 'FUTureFEM' };
 

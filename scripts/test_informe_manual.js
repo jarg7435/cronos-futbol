@@ -1114,8 +1114,14 @@ ok('4d · index.html carga el módulo',
    /<script[^>]+src="js\/coach\/comms\/manual-report\.js/.test(index));
 ok('4e · el Service Worker lo precachea',
    /'\.\/js\/coach\/comms\/manual-report\.js'/.test(sw));
-ok('4f · el CACHE_NAME subió (si no, nadie recibe el código nuevo)',
-   /const\s+CACHE_NAME\s*=\s*'cronos-cache-v667'/.test(sw));
+// ⚠️ SE COMPARA, NO SE FIJA. Esta guarda nació clavada en 'cronos-cache-v667'
+//    y se puso en rojo con el PRIMER bump posterior (v668), acusando de una
+//    regresión a un despliegue perfectamente correcto. Lo que tiene que vigilar
+//    es que el CACHE_NAME esté en v667 O MÁS ALTO —que fue la versión en la que
+//    entró este módulo al precacheo—, no que se quede congelado en ella.
+const _swCache = (sw.match(/const\s+CACHE_NAME\s*=\s*'cronos-cache-v(\d+)'/) || [])[1];
+ok('4f · el CACHE_NAME subió a v667 o más (si no, nadie recibe el código nuevo)',
+   _swCache !== undefined && Number(_swCache) >= 667, 'CACHE_NAME = v' + _swCache);
 
 // 🔑 EL CALENDARIO SE LEE POR SU FUNCIÓN, NO COPIANDO SU ALMACÉN.
 ok('4g · calendario-temporada.js exporta calPartidosDeEquipo',

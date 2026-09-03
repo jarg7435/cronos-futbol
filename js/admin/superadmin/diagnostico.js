@@ -575,9 +575,9 @@
         club_admin:            { label: 'Administrador de Club',         abrir: function (u) { window.openClubAdminPanel(u.clubId); } },
         individual:            { label: 'Entrenador Admin. Individual',  abrir: function () { window.cronosAbrirPanelIndividual(); } },
         admin_individual:      { label: 'Entrenador Admin. Individual',  abrir: function () { window.cronosAbrirPanelIndividual(); } },
-        parent:                { label: 'Padre / Madre / Tutor',         abrir: function () { window.openParentPanel(); } },
-        parent_individual:     { label: 'Padre / Tutor (bajo ente)',     abrir: function () { window.openParentPanel(); } },
-        padre_individual:      { label: 'Padre / Tutor (bajo ente)',     abrir: function () { window.openParentPanel(); } },
+        parent:                { label: 'Familiar / Jugador',            abrir: function () { window.openParentPanel(); } },
+        parent_individual:     { label: 'Familiar / Jugador (bajo ente)', abrir: function () { window.openParentPanel(); } },
+        padre_individual:      { label: 'Familiar / Jugador (bajo ente)', abrir: function () { window.openParentPanel(); } },
     };
 
     // ════════════════════════════════════════════════════════════════

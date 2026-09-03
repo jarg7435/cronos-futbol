@@ -848,7 +848,7 @@ const inCol = (written, col) => written.filter(w => w.col === col);
         ok('5k · lista por nombre a los jugadores sin ningun contacto',
             t.toasts.some(x => x.includes('Sin contacto: Sin')), t.toasts);
         ok('5l · y el contador refleja solo los enviados',
-            t.toasts.some(x => x.includes('1 padre(s)')), t.toasts);
+            t.toasts.some(x => x.includes('1 familiar(es) / jugador(es)')), t.toasts);
     }
     {
         // Telefono SIN uid: WhatsApp + email. Con uid: WhatsApp pero NO email.

@@ -685,7 +685,7 @@ window.openIndividualReports = async function openIndividualReports() {
         <div style="padding:1rem 1.2rem;border-bottom:1px solid var(--glass-border);
                     display:flex;justify-content:space-between;align-items:center;flex-shrink:0;">
             <h3 style="margin:0;font-size:1rem;color:#ffa500;">
-                👤 Informes Individuales → Padres
+                👤 Informes Individuales → Familiares / Jugadores
             </h3>
             <button onclick="openUnifiedCommsMenu()"
                 style="background:none;border:none;color:var(--text-muted);font-size:1.3rem;cursor:pointer;">✕</button>
@@ -700,7 +700,7 @@ window.openIndividualReports = async function openIndividualReports() {
                 style="flex:1;padding:0.5rem;background:rgba(255,165,0,0.15);
                        border:1px solid rgba(255,165,0,0.4);border-radius:7px;
                        color:#ffa500;font-weight:700;cursor:pointer;font-size:0.85rem;">
-                📤 Enviar todos los informes a padres
+                📤 Enviar todos los informes a familiares / jugadores
             </button>
         </div>
     </div>`;
@@ -957,7 +957,7 @@ window._sendAllIndividualReports = async function() {
         }
 
         if (typeof hideSpinner==='function') hideSpinner();
-        let msg = `✅ Informes enviados a ${sent} padre(s).`;
+        let msg = `✅ Informes enviados a ${sent} familiar(es) / jugador(es).`;
         if (noLinkList.length > 0) msg += ` · Sin contacto: ${noLinkList.join(', ')}.`;
         if (typeof showToast==='function') showToast(msg, 6000);
         openUnifiedCommsMenu();

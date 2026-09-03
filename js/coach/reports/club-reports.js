@@ -460,7 +460,7 @@ window.switchStaffTab = async (tab) => {
                 onclick: "switchStaffTab('secretaria')",
                 bloqueado: _secMotivo });
             _opciones.push({ icono: '⚙️', titulo: 'Configuración', color: '#8b949e',
-                desc: 'Semáforos e informes a padres, por grupo de edad.',
+                desc: 'Semáforos e informes a familiares / jugadores, por grupo de edad.',
                 onclick: "switchStaffTab('config')" });
         }
         container.innerHTML = (typeof window.cronosTableroHtml === 'function')

@@ -122,7 +122,7 @@ async function autoDispatchMatchReports() {
                           `━━━━━━━━━━━━━━━━\n` +
                           `📅 ${matchDate}\n` +
                           `⚽ ${TEAM_NAMES.home} ${scoreHome} - ${scoreAway} ${rivalName}\n\n` +
-                          `Informes individuales generados y enviados a padres autorizados.\n` +
+                          `Informes individuales generados y enviados a familiares / jugadores autorizados.\n` +
                           `_Cronos Fútbol_`;
 
         // ── Generar un matchId DETERMINISTA para este partido ────────────────

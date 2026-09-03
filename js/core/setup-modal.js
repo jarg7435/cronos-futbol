@@ -2283,7 +2283,7 @@ window._openCoachCommsMenu = function() {
                     <span style="font-size:1.5rem;">${window._cronosExtraEnabled('mensajeria') ? '💬' : '🔒'}</span>
                     <div>
                         <div style="font-weight:700;font-size:0.9rem;">Mensajes</div>
-                        <div style="font-size:0.72rem;color:var(--text-muted);">Chat con padres · dirección · coordinación</div>
+                        <div style="font-size:0.72rem;color:var(--text-muted);">Chat con familiares / jugadores · dirección · coordinación</div>
                     </div>
                 </button>
 

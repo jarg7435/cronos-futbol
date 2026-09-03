@@ -403,9 +403,9 @@ console.log('\n── PARTE 10 · v602 · una sola sección, y el título comple
        /_misEquiposNorm\.map\(_fichaEquipo\)/.test(IND));
 
     // 10d · 🔑 dentro de cada equipo, el entrenador Y las familias.
-    ok('10d · 🔑🔑 cada equipo lista su entrenador y sus padres/tutores por separado',
+    ok('10d · 🔑🔑 cada equipo lista su entrenador y sus familiares/jugadores por separado',
        /bloque\('⚽ Entrenador', entrenadores/.test(IND) &&
-       /bloque\('👨‍👩‍👧 Padres \/ Madres \/ Tutores', familias/.test(IND));
+       /bloque\('👨‍👩‍👧 Familiares \/ Jugadores', familias/.test(IND));
 
     // 10e · 🔑 el dueño ES el entrenador de su equipo: si no, saldría vacío.
     ok('10e · 🔑 el dueño del ente cuenta como entrenador y se añade aunque falte en la lista',

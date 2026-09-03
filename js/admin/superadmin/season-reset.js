@@ -38,8 +38,8 @@ window._SA_SEASON_COLS = [
     { col: 'cronos_player_reports',  etiqueta: 'Informes',                  porDefecto: true },
     { col: 'cronos_notifications',   etiqueta: 'Avisos y convocatorias',    porDefecto: true },
     { col: 'cronos_messages',        etiqueta: 'Conversaciones',            porDefecto: false },
-    { col: 'cronos_player_links',    etiqueta: 'Vínculos jugador-padre',    porDefecto: false,
-      aviso: 'Los padres dejarán de ver a sus hijos hasta que se rehagan las vinculaciones.' },
+    { col: 'cronos_player_links',    etiqueta: 'Vínculos jugador-familiar', porDefecto: false,
+      aviso: 'Los familiares y jugadores dejarán de ver al jugador vinculado hasta que se rehagan las vinculaciones.' },
 ];
 
 // Cuenta lo que hay, por colección, para que la confirmación diga la verdad y

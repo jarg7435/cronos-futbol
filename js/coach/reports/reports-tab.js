@@ -862,7 +862,7 @@ async function _sdLoadReports() {
                 '⚠️ BORRADO PERMANENTE\n\n' +
                 'Vas a eliminar de la base de datos el partido:\n' +
                 '   ' + _fecha + ' · vs ' + _rival + '\n\n' +
-                'Se borrarán TODOS sus informes (entrenador, dirección y padres).\n' +
+                'Se borrarán TODOS sus informes (entrenador, dirección y familiares/jugadores).\n' +
                 'Desaparecerá para todo el mundo y del acumulado de temporada.\n\n' +
                 'ESTO NO SE PUEDE DESHACER. ¿Continuar?')) return;
 

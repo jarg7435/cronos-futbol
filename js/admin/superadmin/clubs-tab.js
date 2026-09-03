@@ -346,7 +346,7 @@ window.saClubs = async function saClubs() {
                     ${slotBar('director',    '📋', 'Directores Deportivos',   '#f0883e')}
                     ${slotBar('coordinator', '🎯', 'Coordinadores',           '#d2a8ff')}
                     ${slotBar('user',        '⚙️', 'Entrenadores',            '#58a6ff')}
-                    ${slotBar('parent',      '👨‍👩‍👧', 'Padres / Madres / Tutores','#79c0ff')}
+                    ${slotBar('parent',      '👨‍👩‍👧', 'Familiares / Jugadores','#79c0ff')}
                 </div>
                 <!-- Detalle usuarios (colapsable) -->
                 <details>

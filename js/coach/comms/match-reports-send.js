@@ -188,7 +188,7 @@ async function sendMatchReportsToParents() {
                             📊 Informes de Rendimiento
                         </h3>
                         <p style="margin:0;font-size:0.75rem;color:var(--text-muted);margin-top:0.3rem;">
-                            ${isSetupMode ? 'Selección previa para el despacho automático' : 'Envía el reporte del partido a los padres autorizados'}
+                            ${isSetupMode ? 'Selección previa para el despacho automático' : 'Envía el reporte del partido a los familiares / jugadores autorizados'}
                         </p>
                     </div>
                     <button onclick="${isSetupMode ? 'openConvocationModal()' : "document.getElementById('setup-modal').style.display='none'"}"
@@ -226,7 +226,7 @@ async function sendMatchReportsToParents() {
                             border-radius:10px;padding:0.8rem;display:flex;gap:0.7rem;align-items:center;">
                     <span style="font-size:1.2rem;">💡</span>
                     <p style="margin:0;font-size:0.72rem;color:#ffb74d;line-height:1.4;">
-                        El <strong>Staff Directivo</strong> recibirá un resumen global del partido. Los <strong>Padres</strong> recibirán el informe individual detallado de su hijo/a.
+                        El <strong>Staff Directivo</strong> recibirá un resumen global del partido. Los <strong>Familiares / Jugadores</strong> recibirán el informe individual detallado del jugador.
                     </p>
                 </div>
             </div>
@@ -316,7 +316,7 @@ function buildConvocationRecipientsHTML(filterCriteria, prefix = 'rpt', allConta
             ? idsDeLaLinea.some(id => savedIds.includes(id))
             : (c.tags || []).includes(prefix);
         const typeIcon = c.type === 'staff' ? '🏢' : '👨‍👩‍👧';
-        const typeLabel = c.type === 'staff' ? 'Staff' : 'Padre/Madre';
+        const typeLabel = c.type === 'staff' ? 'Staff' : 'Familiar / Jugador';
         const accent = c.type === 'staff' ? 'var(--primary)' : '#f0883e';
 
         return `
@@ -343,7 +343,7 @@ function buildConvocationRecipientsHTML(filterCriteria, prefix = 'rpt', allConta
                     </span>
                 </div>
                 <div style="font-size:0.72rem;color:var(--text-muted);display:flex;align-items:center;gap:0.4rem;">
-                    ${typeIcon} ${c.type === 'staff' ? 'Personal del club' : `Tutor de ${typeof escapeHtml==='function'?escapeHtml(c.player||'Jugador'):c.player||'Jugador'}`}
+                    ${typeIcon} ${c.type === 'staff' ? 'Personal del club' : `Familiar / Jugador · ${typeof escapeHtml==='function'?escapeHtml(c.player||'Jugador'):c.player||'Jugador'}`}
                     ${c.playerNumber && c.playerNumber !== '—' ? `<span style="color:${accent};font-weight:700;">#${typeof escapeAttr==='function'?escapeAttr(c.playerNumber):c.playerNumber}</span>` : ''}
                 </div>
             </div>

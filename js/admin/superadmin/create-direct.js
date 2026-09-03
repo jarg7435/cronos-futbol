@@ -66,7 +66,7 @@ window.saShowCreateClub = function() {
                                    color:white;font-size:0.9rem;box-sizing:border-box;">
                     </div>
                     <div>
-                        <label style="font-size:0.78rem;color:#8b949e;display:block;margin-bottom:4px;">Slots Padres/Tutores</label>
+                        <label style="font-size:0.78rem;color:#8b949e;display:block;margin-bottom:4px;">Slots Familiares/Jugadores</label>
                         <input id="cc-parents" type="number" value="50" min="0" max="500"
                             style="width:100%;padding:0.7rem;background:rgba(255,255,255,0.05);
                                    border:1px solid rgba(255,255,255,0.15);border-radius:8px;
@@ -175,7 +175,7 @@ window.saShowCreateIndividual = function() {
                         <option value="admin_individual">⚙️ Administrador Individual</option>
                         <option value="individual">⚙️ Administrador Individual (auth.js)</option>
                         <option value="user">👤 Entrenador Individual</option>
-                        <option value="parent">👨‍👩‍👧 Padre/Madre/Tutor Individual</option>
+                        <option value="parent">👨‍👩‍👧 Familiar / Jugador Individual</option>
                     </select>
                 </div>
                 <div>

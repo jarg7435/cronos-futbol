@@ -11,11 +11,11 @@ window.ROLE_META = {
     director:    { label:'Director Deportivo',     icon:'📋', color:'#f0883e' },
     coordinator: { label:'Coordinador',            icon:'🎯', color:'#d2a8ff' },
     user:        { label:'Entrenador',             icon:'⚽', color:'#3fb950' },
-    parent:      { label:'Padre / Madre / Tutor',  icon:'👨‍👩‍👧', color:'#79c0ff' },
+    parent:      { label:'Familiar / Jugador',     icon:'👨‍👩‍👧', color:'#79c0ff' },
     individual:  { label:'Administrador Individual',  icon:'⚙️', color:'#58a6ff' },  // auth.js uses 'individual' for admin individual
     'admin_individual':  { label:'Administrador Individual',  icon:'⚙️', color:'#58a6ff' },
     'entrenador_individual': { label:'Entrenador Individual', icon:'⚽', color:'#3fb950' },
-    'parent_individual': { label:'Padre/Madre/Tutor Individual', icon:'👨‍👩‍👧', color:'#79c0ff' },
+    'parent_individual': { label:'Familiar / Jugador Individual', icon:'👨‍👩‍👧', color:'#79c0ff' },
 };
 
 

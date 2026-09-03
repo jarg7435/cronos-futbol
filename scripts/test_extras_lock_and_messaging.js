@@ -236,8 +236,8 @@ console.log('\n── PARTE 4 · quien puede ENVIAR ──');
        /where\(\s*'parentUid'\s*,\s*'=='/.test(PANEL),
        'el padre no puede leer la lista de contactos del entrenador');
 
-    ok('4e · las filas de padres MANUALES tienen su celda (o se desalinea la tabla)',
-       /Solo aplica a padres vinculados/.test(CONTACT),
+    ok('4e · las filas de familiares MANUALES tienen su celda (o se desalinea la tabla)',
+       /Solo aplica a familiares y jugadores vinculados/.test(CONTACT),
        'las dos clases de fila comparten el mismo tbody');
 
     // C · las DOS vias de envio. Se mira el CUERPO de cada funcion, sobre el

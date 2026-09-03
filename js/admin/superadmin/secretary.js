@@ -77,7 +77,7 @@ window.CRONOS_SECRETARIA_ROLES = {
     individual:       '⚽ Entrenador - Administrador Individual',
     club_admin:       '🏟️ Administrador de Club',
     user:             '⚽ Entrenador',
-    parent:           '👨‍👩‍👧 Padre/Madre/Tutor',
+    parent:           '👨‍👩‍👧 Familiar / Jugador',
     director:         '📋 Director Deportivo',
     coordinator:      '🎯 Coordinador',
 };
@@ -108,7 +108,7 @@ window.saSecretary = async function saSecretary(opciones) {
         individual:       '⚽ Entrenador - Administrador Individual',
         club_admin:       '🏟️ Administrador de Club',
         user:             '⚽ Entrenador',
-        parent:           '👨‍👩‍👧 Padre/Madre/Tutor',
+        parent:           '👨‍👩‍👧 Familiar / Jugador',
         director:         '📋 Director Deportivo',
         coordinator:      '🎯 Coordinador',
     };
@@ -395,7 +395,7 @@ function _secDatosActuales() {
         individual_admin: 'Entrenador - Administrador Individual',
         club_admin: 'Administrador de Club',
         user: 'Entrenador',
-        parent: 'Padre/Madre/Tutor',
+        parent: 'Familiar / Jugador',
         director: 'Director Deportivo',
         coordinator: 'Coordinador',
     };

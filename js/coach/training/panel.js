@@ -273,7 +273,7 @@ function openTrainingSendPanel(target) {
     const greeting = hour < 14 ? 'Buenos días' : hour < 21 ? 'Buenas tardes' : 'Buenas noches';
 
     let title;
-    if (isParents) title = '\u{1F468}\u200D\u{1F469}\u200D\u{1F467} Enviar Entrenamiento a Padres';
+    if (isParents) title = '\u{1F468}\u200D\u{1F469}\u200D\u{1F467} Enviar Entrenamiento a Familiares / Jugadores';
     else if (isCoordinators) title = '\u{1F3AF} Enviar Entrenamiento a Coordinadores';
     else title = '\u{1F4CB} Enviar Entrenamiento a Directores';
 

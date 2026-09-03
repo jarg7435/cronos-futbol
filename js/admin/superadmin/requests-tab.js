@@ -213,7 +213,7 @@ window.saRequests = async function saRequests() {
                     q.directors    ? `${q.directors} Dir.`    : '',
                     q.coordinators ? `${q.coordinators} Coord.` : '',
                     q.coaches      ? `${q.coaches} Entr.`     : '',
-                    q.parents      ? `${q.parents} Padres`    : '',
+                    q.parents      ? `${q.parents} Fam.`      : '',
                 ].filter(Boolean).join(' · ');
                 extraRows += `<div style="grid-column:1/-1;"><div style="color:#8b949e;font-size:0.67rem;">Cuotas pedidas</div><div style="color:white;font-size:0.8rem;">${parts||'–'}</div></div>`;
             }
@@ -813,7 +813,7 @@ window.saApproveRequest = async function saApproveRequest(id, type, approve) {
                     _saHideSpinner();
                     const roleLabels = {
                         user:'Entrenador', coordinator:'Coordinador',
-                        director:'Director Deportivo', parent:'Padre/Madre/Tutor'
+                        director:'Director Deportivo', parent:'Familiar / Jugador'
                     };
                     _saToast(`✅ ${r.requestedEmail} activado como ${roleLabels[r.requestedRole]||r.requestedRole}.`, 5000);
 

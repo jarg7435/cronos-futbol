@@ -9,7 +9,7 @@ async function openParentPanel(initialTab) {
     const isSA = me?.role === 'superadmin' || me?.role === 'admin';
 
     if (!me || (!isSA && activeRole !== 'parent')) {
-        showToast("⛔ Acceso restringido a padres/tutores", 3000);
+        showToast("⛔ Acceso restringido a familiares / jugadores", 3000);
         return;
     }
 
@@ -280,10 +280,10 @@ async function openParentPanel(initialTab) {
             bloqueado: _libre(extraKey) ? '' : 'Tu club no tiene activada esta opción.',
         });
         const opciones = [
-            _op('📋', 'Convocatorias', 'Las convocatorias que recibe tu hijo o hija.',            'conv',   'convocatorias',    '#3fb950'),
+            _op('📋', 'Convocatorias', 'Las convocatorias que recibe el jugador.',                'conv',   'convocatorias',    '#3fb950'),
             _op('📅', 'Entrenamientos', 'La planificación semanal que envía el entrenador.',      'train',  'entrenamientos',   '#f0883e'),
             _op('✅', 'Asistencia',    'Si ha asistido a los entrenamientos de la semana.',       'asist',  'entrenamientos',   '#58a6ff'),
-            _op('📊', 'Informes',      'Los informes de partido de tu hijo o hija.',              'player', 'informes',         '#ffd700'),
+            _op('📊', 'Informes',      'Los informes de partido del jugador.',                    'player', 'informes',         '#ffd700'),
             _op('💬', 'Mensajes',      'Habla directamente con el entrenador.',                   'chat',   'mensajeria',       '#b478c8'),
             _op('🔴', 'En Vivo',       'Sigue el partido mientras se está jugando.',              'live',   'partidos_en_vivo', '#ff5858'),
         ];
@@ -1902,7 +1902,7 @@ function openWeeklyPlanModal() {
             <div>
                 <h2 style="margin:0;font-size:1.1rem;line-height:1.2;">📅 Planificación Semanal</h2>
                 <p style="margin:0;font-size:0.75rem;color:var(--text-muted);display:none;">
-                    Informa a los padres del horario de toda la semana
+                    Informa a los familiares / jugadores del horario de toda la semana
                 </p>
             </div>
             <button onclick="openConvocationModal()"

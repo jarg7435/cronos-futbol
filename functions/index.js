@@ -1666,7 +1666,7 @@ exports.sendInviteEmail = functions
     director: 'Director Deportivo',
     coordinator: 'Coordinador',
     user: 'Entrenador',
-    parent: 'Padre/Madre/Tutor',
+    parent: 'Familiar / Jugador',
     spectator: 'Espectador',
   };
   const roleLabel = roleLabels[role] || role || 'Usuario';

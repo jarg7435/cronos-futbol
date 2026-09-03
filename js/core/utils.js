@@ -1913,7 +1913,11 @@ if (typeof window._cronosGenericRecipientName !== 'function') {
     window._cronosGenericRecipientName = function(n) {
         const s = String(n == null ? '' : n).trim().toLowerCase().replace(/\s+/g, ' ');
         if (!s) return true;
-        return /^(padre|madre|tutor|tutora|familiar|padre\/tutor|padre\/madre|padre\/madre\/tutor|padre o madre|sin nombre|staff|entrenador)$/.test(s);
+        // ⚠️ Los rótulos NUEVOS del rol ("Familiar / Jugador") entran aquí
+        //    igual que los antiguos: si no, dos contactos rellenados con el
+        //    mismo rótulo se fundirían como si fueran la misma persona.
+        //    Los antiguos se conservan porque siguen vivos en los datos.
+        return /^(padre|madre|tutor|tutora|familiar|jugador|padre\/tutor|padre\/madre|padre\/madre\/tutor|padre o madre|familiar \/ jugador|familiar\/jugador|sin nombre|staff|entrenador)$/.test(s);
     };
 }
 

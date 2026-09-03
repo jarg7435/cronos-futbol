@@ -468,7 +468,7 @@ const lastWrite = (writes, col, id) => wrote(writes, col, id).slice(-1)[0];
         await sandbox.window.saRequests();
         const h = body.innerHTML;
         ok('3f · club_admin -> "Aprobación directa SA"', /Aprobación directa SA/.test(h));
-        ok('3g · muestra las cuotas pedidas', /2 Dir\. · 3 Coord\. · 8 Entr\. · 40 Padres/.test(h));
+        ok('3g · muestra las cuotas pedidas', /2 Dir\. · 3 Coord\. · 8 Entr\. · 40 Fam\./.test(h));
     }
     {
         const { sandbox, body } = buildSandbox({

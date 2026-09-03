@@ -132,8 +132,8 @@ window._cronosOpenRoleSelector = function(context) {
                            border-radius:10px;cursor:pointer;color:var(--text);text-align:left;transition:all 0.15s;">
                     <span style="font-size:1.5rem;">👨‍👩‍👧</span>
                     <div>
-                        <div style="font-weight:700;font-size:0.9rem;">Solo Padres</div>
-                        <div style="font-size:0.72rem;color:var(--text-muted);">Enviar únicamente a padres/tutores</div>
+                        <div style="font-weight:700;font-size:0.9rem;">Solo Familiares / Jugadores</div>
+                        <div style="font-size:0.72rem;color:var(--text-muted);">Enviar únicamente a familiares y jugadores</div>
                     </div>
                 </button>
 
@@ -154,8 +154,8 @@ window._cronosOpenRoleSelector = function(context) {
                            border-radius:10px;cursor:pointer;color:var(--text);text-align:left;transition:all 0.15s;">
                     <span style="font-size:1.5rem;">📋👨‍👩‍👧</span>
                     <div>
-                        <div style="font-weight:700;font-size:0.9rem;">Directores + Padres</div>
-                        <div style="font-size:0.72rem;color:var(--text-muted);">Enviar a directores y padres</div>
+                        <div style="font-weight:700;font-size:0.9rem;">Directores + Familiares / Jugadores</div>
+                        <div style="font-size:0.72rem;color:var(--text-muted);">Enviar a directores, familiares y jugadores</div>
                     </div>
                 </button>
 
@@ -165,8 +165,8 @@ window._cronosOpenRoleSelector = function(context) {
                            border-radius:10px;cursor:pointer;color:var(--text);text-align:left;transition:all 0.15s;">
                     <span style="font-size:1.5rem;">🎯👨‍👩‍👧</span>
                     <div>
-                        <div style="font-weight:700;font-size:0.9rem;">Coordinadores + Padres</div>
-                        <div style="font-size:0.72rem;color:var(--text-muted);">Enviar a coordinadores y padres</div>
+                        <div style="font-weight:700;font-size:0.9rem;">Coordinadores + Familiares / Jugadores</div>
+                        <div style="font-size:0.72rem;color:var(--text-muted);">Enviar a coordinadores, familiares y jugadores</div>
                     </div>
                 </button>
 
@@ -176,8 +176,8 @@ window._cronosOpenRoleSelector = function(context) {
                            border-radius:10px;cursor:pointer;color:var(--text);text-align:left;transition:all 0.15s;">
                     <span style="font-size:1.5rem;">📋🎯👨‍👩‍👧</span>
                     <div>
-                        <div style="font-weight:700;font-size:0.9rem;">Directores + Coordinadores + Padres</div>
-                        <div style="font-size:0.72rem;color:var(--text-muted);">Enviar a todos (staff + padres)</div>
+                        <div style="font-weight:700;font-size:0.9rem;">Directores + Coordinadores + Familiares / Jugadores</div>
+                        <div style="font-size:0.72rem;color:var(--text-muted);">Enviar a todos (staff + familiares y jugadores)</div>
                     </div>
                 </button>
             </div>
@@ -349,11 +349,11 @@ window._cronosOpenRecipientPicker = async function(role, context) {
 
     const roleLabel = role === 'directores' ? 'Directores Deportivos'
         : role === 'coordinadores' ? 'Coordinadores'
-        : role === 'padres' ? 'Padres/Tutores'
+        : role === 'padres' ? 'Familiares / Jugadores'
         : role === 'directores_coordinadores' ? 'Directores + Coordinadores'
-        : role === 'directores_padres' ? 'Directores + Padres'
-        : role === 'coordinadores_padres' ? 'Coordinadores + Padres'
-        : role === 'todos' ? 'Directores + Coordinadores + Padres'
+        : role === 'directores_padres' ? 'Directores + Familiares / Jugadores'
+        : role === 'coordinadores_padres' ? 'Coordinadores + Familiares / Jugadores'
+        : role === 'todos' ? 'Directores + Coordinadores + Familiares / Jugadores'
         : 'Destinatarios';
 
     const isConv = context === 'convocatoria';
@@ -385,7 +385,7 @@ window._cronosOpenRecipientPicker = async function(role, context) {
                 ? (roleLabel === 'director' ? 'Director Deportivo'
                 : roleLabel === 'coordinator' ? 'Coordinador'
                 : roleLabel === 'coach' || roleLabel === 'user' ? 'Entrenador'
-                : roleLabel === 'parent' ? 'Padre/Tutor'
+                : roleLabel === 'parent' ? 'Familiar / Jugador'
                 : roleLabel === 'club_admin' ? 'Admin Club'
                 : roleLabel.charAt(0).toUpperCase() + roleLabel.slice(1))
                 : '';
@@ -496,7 +496,7 @@ function openConvocationMessage(target) {
 
     // Título dinámico según target (v76: antes en convocation.js)
     let title;
-    if (target === 'parents')      title = '\u{1F468}\u200D\u{1F469}\u200D\u{1F467} Enviar Convocatoria a Padres';
+    if (target === 'parents')      title = '\u{1F468}\u200D\u{1F469}\u200D\u{1F467} Enviar Convocatoria a Familiares / Jugadores';
     else if (target === 'coordinators') title = '\u{1F3AF} Enviar Convocatoria a Coordinadores';
     else if (target === 'directors')    title = '\u{1F4CB} Enviar Convocatoria a Directores';
     else                                 title = '\u{1F4F2} Enviar Convocatoria';
@@ -721,7 +721,7 @@ window.sharedBuildRecipientsHTML = function(savedRecipients, prefix = 'cv') {
             id:     c.id || ('p_' + Math.random().toString(36).substr(2,5)),
             type:   'parent',
             uid:    c.uid || '',
-            label:  c.player ? `${c.name || 'Padre'} (${c.player})` : (c.name || 'Padre'),
+            label:  c.player ? `${c.name || 'Familiar / Jugador'} (${c.player})` : (c.name || 'Familiar / Jugador'),
             sublabel: c.email || '',
             phone:  c.phone || '',
             email:  c.email || '',

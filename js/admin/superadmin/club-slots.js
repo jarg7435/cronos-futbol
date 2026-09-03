@@ -103,7 +103,7 @@ window.saEditClubSlots = async function(clubId, clubName) {
                         <div style="font-size:0.68rem;color:#8b949e;margin-top:2px;">Usados: ${_usadas('user','users')}</div>
                     </div>
                     <div>
-                        <label style="font-size:0.78rem;color:#8b949e;display:block;margin-bottom:4px;">👨‍👩‍👧 Padres/Tutores</label>
+                        <label style="font-size:0.78rem;color:#8b949e;display:block;margin-bottom:4px;">👨‍👩‍👧 Familiares / Jugadores</label>
                         <input id="es-parents" type="number" value="${c.slots?.parents??50}" min="0"
                             style="width:100%;padding:0.7rem;background:rgba(255,255,255,0.05);
                                    border:1px solid rgba(255,255,255,0.15);border-radius:8px;

@@ -188,15 +188,15 @@ function cargarShared() {
         '(function(r){ var l = ROLE_META[r]?.label || r || "Usuario"; var i = ROLE_META[r]?.icon || "\\u{1F464}"; return i + " " + l; })(' + JSON.stringify(r) + ')', sb);
 
     ok('3a · rol "user" no duplica emoji', etiqueta('user') === '⚽ Entrenador', etiqueta('user'));
-    ok('3b · rol "parent" se traduce (no sale el codigo crudo)', etiqueta('parent') === '👨‍👩‍👧 Padre / Madre / Tutor', etiqueta('parent'));
+    ok('3b · rol "parent" se traduce (no sale el codigo crudo)', etiqueta('parent') === '👨‍👩‍👧 Familiar / Jugador', etiqueta('parent'));
     ok('3c · rol "coordinator" no duplica emoji', etiqueta('coordinator') === '🎯 Coordinador', etiqueta('coordinator'));
     ok('3d · rol "director" muestra el nombre completo', etiqueta('director') === '📋 Director Deportivo', etiqueta('director'));
-    ok('3e · rol "parent_individual" se traduce', etiqueta('parent_individual') === '👨‍👩‍👧 Padre/Madre/Tutor Individual', etiqueta('parent_individual'));
+    ok('3e · rol "parent_individual" se traduce', etiqueta('parent_individual') === '👨‍👩‍👧 Familiar / Jugador Individual', etiqueta('parent_individual'));
 
     // L890: ROLE_META[u.requestedRole || 'user']?.label || 'Usuario'
     const solicitado = vm.runInContext(
         '(function(r){ return ROLE_META[r || "user"]?.label || "Usuario"; })("parent")', sb);
-    ok('3f · L890 no degrada una solicitud de padre a "Usuario"', solicitado === 'Padre / Madre / Tutor', solicitado);
+    ok('3f · L890 no degrada una solicitud de familiar/jugador a "Usuario"', solicitado === 'Familiar / Jugador', solicitado);
 
     // L1035 + L1044: const meta = ROLE_META[u.role] || {...}; '<span>'+meta.icon+'</span>'
     const sinIcono = ['superadmin', 'club_admin', 'director', 'coordinator', 'user', 'parent', 'individual']

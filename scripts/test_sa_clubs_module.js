@@ -307,7 +307,7 @@ const makeSnap = (changes, size) => ({
         ok('4b · Administradores de Club: 1 / 1', /Administradores de Club[\s\S]{0,220}>1<[\s\S]{0,80}\/ 1/.test(html));
         ok('4c · Entrenadores 2/2 (el "removed" NO cuenta) y marca slot lleno', /Entrenadores[\s\S]{0,200}>2<[\s\S]{0,150}\/ 2/.test(html) && /#ff5858/.test(html));
         ok('4d · Directores Deportivos 1 / 2', /Directores Deportivos[\s\S]{0,220}>1<[\s\S]{0,150}\/ 2/.test(html));
-        ok('4e · Padres 2 / 10', /Padres \/ Madres \/ Tutores[\s\S]{0,220}>2<[\s\S]{0,150}\/ 10/.test(html));
+        ok('4e · Familiares / Jugadores 2 / 10', /Familiares \/ Jugadores[\s\S]{0,220}>2<[\s\S]{0,150}\/ 10/.test(html));
         ok('4f · botón editar slots con el id del club', /saEditClubSlots\('c1'/.test(html));
         ok('4g · botón borrar club completo con el id del club', /saDeleteClubComplete\('c1'/.test(html));
     }

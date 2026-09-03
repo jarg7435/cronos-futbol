@@ -22,7 +22,7 @@ window.saDeleteClubComplete = async function(clubId, clubName) {
         '\u2022 Borrar\u00e1 todas sus platform_requests\n' +
         // v435: el borrado se lleva tambien lo deportivo. Antes quedaba
         // huerfano y sin nadie que pudiera verlo ni limpiarlo.
-        '\u2022 Borrar\u00e1 TODOS sus informes, partidos y v\u00ednculos jugador-padre\n' +
+        '\u2022 Borrar\u00e1 TODOS sus informes, partidos y v\u00ednculos jugador-familiar\n' +
         '\u2022 Los usuarios quedar\u00e1n libres para re-registrarse con el mismo email\n\n' +
         '\u00bfConfirmas el borrado completo?'
     )) return;

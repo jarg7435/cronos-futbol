@@ -871,7 +871,7 @@ async function _renderUnifiedMessagingView(role, tab, targetContainerId) {
             (Array.isArray(me.allRoles) && me.allRoles.some(r => r &&
                 (r.role === 'entrenador_individual' || r.role === 'padre_individual')));
         tabs = [
-            { id: 'parents', label: 'Padres', icon: '👨‍👩‍👧' },
+            { id: 'parents', label: 'Familiares', icon: '👨‍👩‍👧' },
             { id: 'director',
               label: _esEnteIndividual ? 'Admin. Individual' : 'Director',
               icon:  _esEnteIndividual ? '👤' : '📋' },
@@ -1308,7 +1308,7 @@ async function _loadUnifiedContactList(tabId) {
                     return {
                         id: resolvedUid,
                         uid: resolvedUid,
-                        name: l.playerAlias || l.playerName || l.parentEmail || 'Padre/Tutor',
+                        name: l.playerAlias || l.playerName || l.parentEmail || 'Familiar / Jugador',
                         subtitle: `${l.parentEmail || 'Sin email'} ${l.playerNumber && l.playerNumber !== '—' ? '· #' + l.playerNumber : ''}`,
                         email: l.parentEmail || '',
                         phone: l.parentPhone || l.parentWA || '',
@@ -2592,7 +2592,7 @@ async function openUnifiedCommsMenu() {
                 <span class="icon">${_umCardIcon('mensajeria', '💬')}</span>
                 <div class="content">
                     <div class="title">Mensajes</div>
-                    <div class="desc">Chat con padres · dirección · coordinación</div>
+                    <div class="desc">Chat con familiares / jugadores · dirección · coordinación</div>
                 </div>
             </button>
 

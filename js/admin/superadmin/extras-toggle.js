@@ -20,7 +20,7 @@ window._CRONOS_EXTRAS_DEF = [
     // podía apagarlo: el botón de Contactos quedaba siempre activo porque
     // `extras['contactos']` era undefined y la regla es `!== false`. No era
     // un extra "desactivado por defecto", era uno INALCANZABLE.
-    { key: 'contactos',      icon: '📱', label: 'Gestionar Contactos',      desc: 'Teléfonos, emails y permisos de padres y staff' },
+    { key: 'contactos',      icon: '📱', label: 'Gestionar Contactos',      desc: 'Teléfonos, emails y permisos de familiares, jugadores y staff' },
     { key: 'convocatorias',  icon: '📋', label: 'Crear Convocatorias',      desc: 'Enviar convocatorias a destinatarios' },
     { key: 'entrenamientos', icon: '🏃', label: 'Crear Entrenamientos',     desc: 'Planificación semanal de entrenamientos' },
     { key: 'informes',       icon: '📊', label: 'Recibir Informes',         desc: 'Informes colectivos y de partido' },
@@ -32,10 +32,10 @@ window._CRONOS_EXTRAS_DEF = [
     { key: 'mensajeria',     icon: '✉️', label: 'Mensajería',               desc: 'Chat interno entre roles del club y con las familias' },
     { key: 'comunicaciones', icon: '💬', label: 'Comunicaciones',           desc: 'Menú del área: partidos terminados, retransmisión y sucesos offline' },
     { key: 'semaforo',       icon: '🚦', label: 'Semáforo con Porcentajes', desc: 'Sistema de colores y umbrales de tiempos' },
-    { key: 'informes_padres',icon: '📧', label: 'Enviar Informes a Padres', desc: 'Informes individuales por jugador enviados a padres' },
+    { key: 'informes_padres',icon: '📧', label: 'Enviar Informes a Familiares / Jugadores', desc: 'Informes individuales por jugador enviados a familiares y jugadores' },
     { key: 'actualizaciones', icon: '🔄', label: 'Actualizaciones de la App', desc: 'Permitir recibir actualizaciones automáticas' },
     { key: 'partidos_terminados', icon: '🎬', label: 'Partidos Terminados', desc: 'Ver y reproducir el historial de partidos finalizados (director, coordinador, entrenador)' },
-    { key: 'partidos_en_vivo', icon: '🔴', label: 'Partidos en Vivo', desc: 'Ver partidos en vivo del club (director, coordinador, padres, entrenador)' },
+    { key: 'partidos_en_vivo', icon: '🔴', label: 'Partidos en Vivo', desc: 'Ver partidos en vivo del club (director, coordinador, familiares/jugadores, entrenador)' },
     // ════════════════════════════════════════════════════════════════
     //  v596 · LOS ROLES TAMBIÉN SE CONTRATAN
     //
@@ -54,7 +54,7 @@ window._CRONOS_EXTRAS_DEF = [
     //  la capacidad de invitar. Apagar 'rol_director' la deja
     //  inalcanzable de todas formas — el panel entero se cierra.
     // ════════════════════════════════════════════════════════════════
-    { key: 'rol_padres',      icon: '👨‍👩‍👧', label: 'Rol: Padres / Madres',    desc: 'Permitir el acceso al panel de Familias (padres, madres y tutores)' },
+    { key: 'rol_padres',      icon: '👨‍👩‍👧', label: 'Rol: Familiar / Jugador', desc: 'Permitir el acceso al panel de Familias (familiares, tutores y jugadores)' },
     { key: 'rol_coordinador', icon: '🎯', label: 'Rol: Coordinador',         desc: 'Permitir el acceso al panel de Coordinación' },
     { key: 'rol_director',    icon: '📋', label: 'Rol: Director Deportivo',  desc: 'Permitir el acceso al panel de Dirección' },
     { key: 'secretaria',      icon: '✉️', label: '↳ Secretaría del Director', desc: 'Sub-opción de Dirección: invitar por correo o WhatsApp a entrenadores, coordinadores y familias' },

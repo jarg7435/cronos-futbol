@@ -35,7 +35,7 @@ window.saShowCreateIndividualEntity = function() {
             </div>
             <p style="font-size:0.8rem;color:#8b949e;margin-bottom:1.2rem;">
                 Un ente individual es una entidad independiente (sin club fisico) donde se registran
-                administradores individuales, entrenadores individuales y padres/madres/tutores individuales.
+                administradores individuales, entrenadores individuales y familiares/jugadores individuales.
                 Es necesario crear al menos un ente individual antes de poder registrar usuarios individuales.
             </p>
             <div style="display:flex;flex-direction:column;gap:0.8rem;">
@@ -62,7 +62,7 @@ window.saShowCreateIndividualEntity = function() {
                                    color:white;font-size:0.9rem;box-sizing:border-box;">
                     </div>
                     <div>
-                        <label style="font-size:0.78rem;color:#8b949e;display:block;margin-bottom:4px;">Slots Padres Ind.</label>
+                        <label style="font-size:0.78rem;color:#8b949e;display:block;margin-bottom:4px;">Slots Familiares Ind.</label>
                         <input id="cie-parents" type="number" value="100" min="0" max="1000"
                             style="width:100%;padding:0.7rem;background:rgba(255,255,255,0.05);
                                    border:1px solid rgba(255,255,255,0.15);border-radius:8px;
@@ -172,7 +172,7 @@ window.saEditIndividualEntity = async function(entityId) {
                                    color:white;font-size:0.9rem;box-sizing:border-box;">
                     </div>
                     <div>
-                        <label style="font-size:0.78rem;color:#8b949e;display:block;margin-bottom:4px;">Slots Padres Ind.</label>
+                        <label style="font-size:0.78rem;color:#8b949e;display:block;margin-bottom:4px;">Slots Familiares Ind.</label>
                         <input id="eie-parents" type="number" value="${c.slots?.parents ?? 100}" min="0" max="1000"
                             style="width:100%;padding:0.7rem;background:rgba(255,255,255,0.05);
                                    border:1px solid rgba(255,255,255,0.15);border-radius:8px;
@@ -556,7 +556,7 @@ window.saShowCreateIndividualForEntity = function(entityId) {
                         <option value="individual">⚙️ Administrador Individual (registro auth.js)</option>
                         <option value="user">⚽ Entrenador Individual</option>
                         <option value="entrenador_individual">⚽ Entrenador Individual (alternativo)</option>
-                        <option value="parent_individual">👨‍👩‍👧 Padre/Madre/Tutor Individual</option>
+                        <option value="parent_individual">👨‍👩‍👧 Familiar / Jugador Individual</option>
                     </select>
                 </div>
                 <div style="display:flex;align-items:center;gap:0.5rem;">

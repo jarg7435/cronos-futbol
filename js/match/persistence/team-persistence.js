@@ -447,7 +447,7 @@ window._showPostMatchOptions = function _showPostMatchOptions() {
                 onmouseout="this.style.background='rgba(63,185,80,0.12)'">
                 <span style="font-size:1.4rem;">📊</span>
                 <div style="text-align:left;">
-                    <div style="color:#3fb950;">Enviar Informes a Padres</div>
+                    <div style="color:#3fb950;">Enviar Informes a Familiares / Jugadores</div>
                     <div style="font-size:0.72rem;color:var(--text-muted);
                                 font-weight:400;">WhatsApp · Email · App interna</div>
                 </div>

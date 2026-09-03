@@ -1204,7 +1204,7 @@ async function openClubAdminPanel(preClubId = null) {
         <div class="sa-stats" style="margin-bottom:1.4rem;">
           ${['director','coordinator','user','parent'].map(role => {
               const si    = slotOf(role);
-              const label = role==='director'?'Directores':role==='coordinator'?'Coordinadores':role==='parent'?'Padres':'Entrenadores';
+              const label = role==='director'?'Directores':role==='coordinator'?'Coordinadores':role==='parent'?'Familiares / Jugadores':'Entrenadores';
               return `<div class="sa-stat">
                 <div class="sa-stat-n" style="color:${si.full?'#ff5858':'#3fb950'};">
                   ${si.used}${si.unlimited ? '' : '/' + si.max}</div>
@@ -1337,7 +1337,7 @@ async function openClubAdminPanel(preClubId = null) {
             case 'padre_individual':
                 if (_caExtraOn('convocatorias')) add('📋', 'Convocatorias');
                 if (_caExtraOn('mensajeria'))    add('💬', 'Mensajes');
-                if (features.sendIndividualReports) add('📊', 'Informe de su hijo/a');
+                if (features.sendIndividualReports) add('📊', 'Informe del jugador');
                 if (_caExtraOn('partidos_en_vivo')) add('🔴', 'En Vivo');
                 break;
             default:
@@ -1891,7 +1891,7 @@ async function openClubAdminPanel(preClubId = null) {
 
     // ── Rechazar rol pendiente de un usuario multi-rol ─────────────
     window.caRejectMultiRole = async (uid, role, email) => {
-        const ROLE_LABELS = { user:'Entrenador', parent:'Padre/Madre/Tutor', coordinator:'Coordinador', director:'Director Deportivo' };
+        const ROLE_LABELS = { user:'Entrenador', parent:'Familiar / Jugador', coordinator:'Coordinador', director:'Director Deportivo' };
         if (!confirm('¿Rechazar rol de ' + (ROLE_LABELS[role]||role) + ' para ' + email + '?')) return;
         try {
             const { db: fDb, doc: fDoc, updateDoc: fUpdateDoc, getDoc: fGetDoc } = await saFS();
@@ -1932,7 +1932,7 @@ async function openClubAdminPanel(preClubId = null) {
     // ⚠️ v540 · `cat`/`sub` opcionales: identifican QUÉ equipo se reenvía
     // cuando el entrenador tiene dos en el mismo club.
     window.caForwardToSA = async (uid, role, email, cid, cat, sub) => {
-        const ROLE_LABELS = { user:'Entrenador', parent:'Padre/Madre/Tutor', coordinator:'Coordinador', director:'Director Deportivo' };
+        const ROLE_LABELS = { user:'Entrenador', parent:'Familiar / Jugador', coordinator:'Coordinador', director:'Director Deportivo' };
         if (!confirm(`¿Reenviar solicitud de ${email} como ${ROLE_LABELS[role]||role} al SuperAdmin?`)) return;
         try {
             const { db: fDb, doc: fDoc, updateDoc: fUpdateDoc, setDoc: fSetDoc, getDoc: fGetDoc, deleteDoc: fDeleteDoc } = await saFS();
@@ -2111,7 +2111,7 @@ async function openClubAdminPanel(preClubId = null) {
             }
         } catch (_) { /* si falla, se avisa en genérico y decide el servidor */ }
 
-        const _rotulo = { user: 'Entrenador', parent: 'Padre/Madre/Tutor', director: 'Director Deportivo',
+        const _rotulo = { user: 'Entrenador', parent: 'Familiar / Jugador', director: 'Director Deportivo',
                           coordinator: 'Coordinador', club_admin: 'Administrador' }[targetRole] || targetRole;
         const esUltimo = (quedanOtros === 0);
 
@@ -2342,7 +2342,7 @@ async function openClubAdminPanel(preClubId = null) {
             // identificador crudo del rol ('user') y ni mencionaba el equipo:
             // quien lo lee no puede saber si va a perder una plaza o todas, y
             // ése es exactamente el susto que se llevó el autor.
-            var _rl = { user:'Entrenador', parent:'Padre/Madre/Tutor', coordinator:'Coordinador',
+            var _rl = { user:'Entrenador', parent:'Familiar / Jugador', coordinator:'Coordinador',
                         director:'Director Deportivo', club_admin:'Administrador de Club' };
             var _eq = (plaza && plaza.category)
                 ? ((typeof window.cronosNombreCategoria === 'function')

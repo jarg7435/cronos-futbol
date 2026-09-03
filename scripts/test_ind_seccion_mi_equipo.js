@@ -129,7 +129,7 @@ console.log('── v602 · la sección "Mi Equipo", ejecutada ──');
         html.indexOf('<!--STATS-->') === 0
         && html.includes('<!--GESTION-->')
         && html.includes('⚽ Entrenador')
-        && html.includes('Padres / Madres / Tutores'));
+        && html.includes('Familiares / Jugadores'));
 
     // 4 · 🔑🔑 EL DUEÑO APARECE COMO ENTRENADOR DE SUS DOS EQUIPOS. Ninguna
     //     de las filas de entrada era suya: si no se inyectara, sus dos equipos

@@ -193,7 +193,7 @@ async function openContactManager() {
                 if (!exists) {
                     emailConfig.contacts.push({
                         id: pUid,
-                        name: l.parentName || l.parentEmail || 'Padre/Tutor',
+                        name: l.parentName || l.parentEmail || 'Familiar / Jugador',
                         player: l.playerAlias || l.playerName || 'Jugador',
                         playerId: l.playerId || ('J' + (l.playerNumber || '')),
                         playerNumber: l.playerNumber || '',
@@ -226,7 +226,7 @@ async function openContactManager() {
                     if (!exists) {
                         emailConfig.contacts.push({
                             id: uUid,
-                            name: u.displayName || u.name || u.email || 'Padre/Tutor',
+                            name: u.displayName || u.name || u.email || 'Familiar / Jugador',
                             player: u.playerAlias || u.playerName || u.childName || 'Jugador',
                             playerId: u.playerId || '',
                             playerNumber: u.playerNumber || '',
@@ -379,7 +379,7 @@ async function openContactManager() {
                                 border-radius:12px 12px 0 0;">
                         <div>
                             <h3 style="font-size:0.88rem;color:var(--secondary);margin:0;font-weight:700;">
-                                👨‍👩‍👧‍👦 Padres / Tutores
+                                👨‍👩‍👧‍👦 Familiares / Jugadores
                             </h3>
                             <p style="font-size:0.67rem;color:var(--text-muted);margin:0.1rem 0 0;">
                                 Los vinculados por plantilla aparecen automáticamente. Puedes añadir más.
@@ -389,7 +389,7 @@ async function openContactManager() {
                             style="padding:0.35rem 0.9rem;font-size:0.72rem;
                                    background:var(--secondary);color:#0a0e14;border:none;
                                    border-radius:6px;font-weight:700;white-space:nowrap;flex-shrink:0;">
-                            ➕ AÑADIR PADRE/TUTOR
+                            ➕ AÑADIR FAMILIAR / JUGADOR
                         </button>
                     </div>
 
@@ -428,7 +428,7 @@ async function openContactManager() {
                                          cosas distintas: TODOS los padres reciben siempre; poder
                                          escribir lo autoriza el entrenador uno a uno. -->
                                     <th style="padding:0.45rem;text-align:center;color:#3fb950;"
-                                        title="Permitir enviar mensajes al entrenador. Si se desmarca, ese padre solo puede RECIBIR.">ENVIAR ✍️</th>
+                                        title="Permitir enviar mensajes al entrenador. Si se desmarca, ese familiar o jugador solo puede RECIBIR.">ENVIAR ✍️</th>
                                     <th style="padding:0.45rem;text-align:center;" title="Recibir los informes individuales del jugador">INF.</th>
                                     <th style="padding:0.45rem;text-align:center;color:#ff5858;" title="Ver los partidos en vivo">EN VIVO 📡</th>
                                     <th style="padding:0.45rem;"></th>
@@ -448,7 +448,7 @@ async function openContactManager() {
                                     <td style="padding:0.45rem;">
                                         <input type="text" class="contact-parent-name" data-linkid="${typeof escapeAttr==='function'?escapeAttr(link._id):link._id}"
                                             value="${typeof escapeAttr==='function'?escapeAttr(link.parentName||''):link.parentName||''}"
-                                            placeholder="Nombre del padre/madre"
+                                            placeholder="Nombre del familiar / jugador"
                                             style="width:100%;padding:0.32rem;background:rgba(255,255,255,0.05);
                                                    border:1px solid rgba(255,255,255,0.1);border-radius:6px;
                                                    color:white;font-size:0.72rem;box-sizing:border-box;">
@@ -459,7 +459,7 @@ async function openContactManager() {
                                          este familiar. Antes iban en dos celdas y esa era la
                                          causa del descuadre de la tabla. -->
                                     <td style="padding:0.45rem;white-space:nowrap;">
-                                        <span style="background:rgba(240,136,62,0.12);color:#f0883e;font-size:0.7rem;font-weight:700;padding:1px 6px;border-radius:4px;cursor:help;" title="Código que el padre introduce al registrarse">
+                                        <span style="background:rgba(240,136,62,0.12);color:#f0883e;font-size:0.7rem;font-weight:700;padding:1px 6px;border-radius:4px;cursor:help;" title="Código que el familiar o el jugador introduce al registrarse">
                                             🔑 ${typeof escapeHtml==='function'?escapeHtml(link.inviteCode || ('J'+link.playerNumber)):link.inviteCode || ('J'+link.playerNumber)}
                                         </span>
                                         <span style="font-size:0.66rem;color:var(--text-muted);margin-left:4px;"
@@ -477,7 +477,7 @@ async function openContactManager() {
                                     </td>
                                     <td style="padding:0.45rem;">
                                         <input type="email" class="contact-parent-email" data-linkid="${typeof escapeAttr==='function'?escapeAttr(link._id):link._id}"
-                                            value="${typeof escapeAttr==='function'?escapeAttr(link.parentEmail||''):link.parentEmail||''}" placeholder="padre@email.com"
+                                            value="${typeof escapeAttr==='function'?escapeAttr(link.parentEmail||''):link.parentEmail||''}" placeholder="familiar@email.com"
                                             style="width:100%;padding:0.32rem;background:rgba(255,255,255,0.05);
                                                    border:1px solid rgba(255,255,255,0.1);border-radius:6px;
                                                    color:white;font-size:0.72rem;box-sizing:border-box;">
@@ -509,7 +509,7 @@ async function openContactManager() {
                                     <td style="padding:0.45rem;text-align:center;">
                                         <input type="checkbox" class="contact-cansend" data-linkid="${link._id}"
                                             ${link.canSendMsg !== false ? 'checked' : ''}
-                                            title="Si se desmarca, este padre solo podrá RECIBIR mensajes"
+                                            title="Si se desmarca, este familiar o jugador solo podrá RECIBIR mensajes"
                                             style="width:16px;height:16px;accent-color:#3fb950;">
                                     </td>
                                     <td style="padding:0.45rem;text-align:center;">
@@ -804,7 +804,7 @@ function renderParentRowMarkup(c = {}) {
     <tr class="parent-contact-row manual-parent" data-id="${typeof escapeAttr==='function'?escapeAttr(id):id}"
         style="border-bottom:1px solid rgba(255,255,255,0.05);">
         <td style="padding:0.4rem;">
-            <input type="text" class="p-name" value="${typeof escapeAttr==='function'?escapeAttr(c.name||''):c.name||''}" placeholder="Nombre padre/madre"
+            <input type="text" class="p-name" value="${typeof escapeAttr==='function'?escapeAttr(c.name||''):c.name||''}" placeholder="Nombre familiar / jugador"
                 style="width:100%;padding:0.32rem;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:6px;color:white;font-size:0.73rem;">
         </td>
         <td style="padding:0.4rem;">
@@ -822,7 +822,7 @@ function renderParentRowMarkup(c = {}) {
                 style="width:100%;padding:0.32rem;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:6px;color:white;font-size:0.73rem;">
         </td>
         <td style="padding:0.4rem;">
-            <input type="email" class="p-email" value="${typeof escapeAttr==='function'?escapeAttr(c.email||''):c.email||''}" placeholder="padre@email.com"
+            <input type="email" class="p-email" value="${typeof escapeAttr==='function'?escapeAttr(c.email||''):c.email||''}" placeholder="familiar@email.com"
                 style="width:100%;padding:0.32rem;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:6px;color:white;font-size:0.73rem;">
         </td>
         <td style="padding:0.4rem;text-align:center;">
@@ -841,7 +841,7 @@ function renderParentRowMarkup(c = {}) {
              padres vinculados, y sin ella la tabla se desalinearía una columna
              entera a partir de aquí. -->
         <td style="padding:0.4rem;text-align:center;color:var(--text-muted);font-size:0.68rem;"
-            title="Solo aplica a padres vinculados con cuenta en la app">—</td>
+            title="Solo aplica a familiares y jugadores vinculados con cuenta en la app">—</td>
         <td style="padding:0.4rem;text-align:center;">
             <input type="checkbox" class="p-rpt" ${isRpt ? 'checked' : ''} style="width:15px;height:15px;">
         </td>

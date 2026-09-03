@@ -1317,7 +1317,7 @@ window.deleteFinishedMatchFromCloud = async function(matchId, docId, e) {
         if (!confirm(
             '⚠️ BORRADO PERMANENTE\n\n' +
             'Se eliminarán ' + _ids.length + ' informe' + (_ids.length === 1 ? '' : 's') +
-            ' de este partido (entrenador, dirección y padres)' +
+            ' de este partido (entrenador, dirección y familiares/jugadores)' +
             (_borrarPartido ? ',\ny también su registro de partido terminado' : '') + '.\n\n' +
             'Sus datos se DESCONTARÁN del acumulado de temporada del equipo.\n' +
             'Desaparecerá para todos los roles.\n\n' +

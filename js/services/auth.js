@@ -2061,7 +2061,7 @@ function _showMultiRolePicker(user, roles) {
         coordinator: '🎯  Coordinador',
         user:        '⚽  Entrenador',
         coach:       '⚽  Entrenador',
-        parent:      '👨‍👧  Padre / Madre / Tutor',
+        parent:      '👨‍👧  Familiar / Jugador',
         individual:  '👤  Administrador Individual',
     };
 
@@ -2420,7 +2420,7 @@ export async function doAuth() {
                         // un fallo, es cómo se detecta el caso.
                         showAuthError(
                             '⚠️ Este correo ya tiene cuenta en Chronos. No pasa nada: ' +
-                            'para añadirle el rol de "' + (requestedRole === 'user' ? 'entrenador' : requestedRole === 'parent' ? 'padre/madre/tutor' : requestedRole === 'director' ? 'director deportivo' : requestedRole === 'coordinator' ? 'coordinador' : requestedRole) +
+                            'para añadirle el rol de "' + (requestedRole === 'user' ? 'entrenador' : requestedRole === 'parent' ? 'familiar / jugador' : requestedRole === 'director' ? 'director deportivo' : requestedRole === 'coordinator' ? 'coordinador' : requestedRole) +
                             '" hay que rellenar este mismo formulario escribiendo LA CONTRASEÑA ' +
                             'QUE YA USA esa cuenta (no una nueva). ' +
                             'Si no la recuerda, use "¿Olvidaste tu contraseña?" en la pestaña ' +
@@ -2736,7 +2736,7 @@ export async function doAuth() {
                         registerUnderIndividual = false; // No es sub-usuario
                     } else if (!_entityHasAdmin && requestedRole !== 'individual') {
                         // IMPOSIBLE registrarse como entrenador/padre si no hay admin individual
-                        showAuthError('⚠️ No puedes registrarte como ' + (requestedRole === 'user' ? 'Entrenador' : 'Padre/Madre') + ' porque este ente individual aún no tiene Administrador Individual. El Administrador Individual debe registrarse primero.');
+                        showAuthError('⚠️ No puedes registrarte como ' + (requestedRole === 'user' ? 'Entrenador' : 'Familiar / Jugador') + ' porque este ente individual aún no tiene Administrador Individual. El Administrador Individual debe registrarse primero.');
                         await fa.signOut(fa.auth).catch(()=>{});
                         return;
                     }
@@ -2883,7 +2883,7 @@ export async function doAuth() {
                     individualOwnerId: _entityId, individualOwnerEmail: _ownerEmail,
                     userUid: cred.user.uid, userEmail: email, userName: _disp,
                     requestedRole: _finalSubRole,
-                    requestedRoleLabel: _finalSubRole === 'user' ? 'Entrenador Individual' : 'Padre/Madre/Tutor Individual',
+                    requestedRoleLabel: _finalSubRole === 'user' ? 'Entrenador Individual' : 'Familiar / Jugador Individual',
                     category: _cat, subcategory: _sub, categoryLabel: _catLabel,
                     playerAlias: playerName || null,
                     createdAt: new Date().toISOString(),
@@ -2892,7 +2892,7 @@ export async function doAuth() {
                 await fa.signOut(fa.auth).catch(()=>{});
                 window._addingRole = false; window._loginThisSession = false;
                 switchTab('login');
-                const _subRoleLabel = _finalSubRole === 'user' ? 'Entrenador' : 'Padre/Madre/Tutor';
+                const _subRoleLabel = _finalSubRole === 'user' ? 'Entrenador' : 'Familiar / Jugador';
                 showAuthError('✅ Solicitud de "' + _subRoleLabel + '" enviada. ⏳ Pendiente de aprobación — el Administrador Individual la revisará y la reenviará al SuperAdmin. Una vez aprobada, podrás entrar con ese rol automáticamente.');
             } catch(_err) {
                 await fa.signOut(fa.auth).catch(()=>{});
@@ -3013,7 +3013,7 @@ export async function doAuth() {
                 // Create platform_request according to context
                 if (isUnderIndiv && needsApproval) {
                     // Sub-usuario bajo entidad individual → Administrador Individual
-                    const ROLE_LABELS = { user:'Entrenador Individual', parent:'Padre/Madre/Tutor Individual', coordinator:'Coordinador', director:'Director Deportivo' };
+                    const ROLE_LABELS = { user:'Entrenador Individual', parent:'Familiar / Jugador Individual', coordinator:'Coordinador', director:'Director Deportivo' };
                     const reqId = 'ind_reg_' + selectedIndivId + '_' + cred.user.uid + '_' + Date.now().toString(36);
                     await fa.setDoc(fa.doc(fa.db, 'platform_requests', reqId), {
                         type: 'ind_sub_registration',
@@ -3029,7 +3029,7 @@ export async function doAuth() {
                         createdAt: new Date().toISOString(),
                     });
                 } else if (needsApproval && clubId) {
-                    const ROLE_LABELS = { user:'Entrenador', parent:'Padre/Madre/Tutor', coordinator:'Coordinador', director:'Director Deportivo' };
+                    const ROLE_LABELS = { user:'Entrenador', parent:'Familiar / Jugador', coordinator:'Coordinador', director:'Director Deportivo' };
                     const reqId = 'self_reg_' + cred.user.uid;
                     await fa.setDoc(fa.doc(fa.db, 'platform_requests', reqId), {
                         type: 'self_registration',
@@ -3084,7 +3084,7 @@ export async function doAuth() {
                     await fa.signOut(fa.auth);  // _addingRole sigue true durante signOut
                     window._addingRole = false;
                     window._loginThisSession = false;
-                    const rl = { director:'Director Deportivo', coordinator:'Coordinador', user:'Entrenador', parent:'Padre/Madre/Tutor', club_admin:'Administrador de Club', individual:'Administrador Individual' };
+                    const rl = { director:'Director Deportivo', coordinator:'Coordinador', user:'Entrenador', parent:'Familiar / Jugador', club_admin:'Administrador de Club', individual:'Administrador Individual' };
                     switchTab('login');
                     if (isUnderIndiv && needsApproval) {
                         showAuthError(
@@ -3243,7 +3243,7 @@ export async function doAuth() {
 
                 // Create platform_request according to context
                 if (freshIsUnderIndiv && freshNeedsApproval) {
-                    const RL_IND = { user:'Entrenador Individual', parent:'Padre/Madre/Tutor Individual', coordinator:'Coordinador', director:'Director Deportivo' };
+                    const RL_IND = { user:'Entrenador Individual', parent:'Familiar / Jugador Individual', coordinator:'Coordinador', director:'Director Deportivo' };
                     await fa.setDoc(fa.doc(fa.db, 'platform_requests', 'ind_reg_' + selectedIndivId + '_' + cred.user.uid + '_' + Date.now().toString(36)), {
                         type: 'ind_sub_registration', individualOwnerId: selectedIndivId, individualOwnerEmail: individualOwnerEmail || null,
                         inviteCode: (requestedRole === 'parent' && inviteCode) ? inviteCode : null,
@@ -3252,7 +3252,7 @@ export async function doAuth() {
                         userUid: cred.user.uid, status: 'pending_individual', createdAt: new Date().toISOString(),
                     }).catch(function(e) { console.warn('[Chronos] Error creating platform_request:', e); });
                 } else if (freshNeedsApproval && clubId) {
-                    const RL2 = { user:'Entrenador', parent:'Padre/Madre/Tutor', coordinator:'Coordinador', director:'Director Deportivo' };
+                    const RL2 = { user:'Entrenador', parent:'Familiar / Jugador', coordinator:'Coordinador', director:'Director Deportivo' };
                     await fa.setDoc(fa.doc(fa.db, 'platform_requests', 'self_reg_' + cred.user.uid), {
                         type: 'self_registration', clubId, clubName: clubName || '', 
                         inviteCode: (requestedRole === 'parent' && inviteCode) ? inviteCode : null,
@@ -3302,7 +3302,7 @@ export async function doAuth() {
                     }
                 }
 
-                const rl3 = { director:'Director Deportivo', coordinator:'Coordinador', user:'Entrenador', parent:'Padre/Madre/Tutor', club_admin:'Administrador de Club', individual:'Administrador Individual' };
+                const rl3 = { director:'Director Deportivo', coordinator:'Coordinador', user:'Entrenador', parent:'Familiar / Jugador', club_admin:'Administrador de Club', individual:'Administrador Individual' };
                 if (!isAuthorized) {
                     // Mantener _addingRole=true durante signOut para bloquear onAuthStateChanged
                     await fa.signOut(fa.auth);
@@ -3424,7 +3424,7 @@ export async function doAuth() {
             if (duplicate) {
                 // NO limpiar _addingRole aquí — hacerlo después del signOut
                 const ROLE_LABELS = {
-                    user: 'entrenador', parent: 'padre/madre/tutor',
+                    user: 'entrenador', parent: 'familiar / jugador',
                     coordinator: 'coordinador', director: 'director deportivo',
                     club_admin: 'administrador de club', individual: 'administrador individual',
                 };
@@ -3588,7 +3588,7 @@ export async function doAuth() {
             if (isAddingUnderIndiv) {
                 // Sub-usuario bajo entidad individual → Administrador Individual primero
                 try {
-                    const ROLE_LABELS = { user:'Entrenador Individual', parent:'Padre/Madre/Tutor Individual', coordinator:'Coordinador', director:'Director Deportivo' };
+                    const ROLE_LABELS = { user:'Entrenador Individual', parent:'Familiar / Jugador Individual', coordinator:'Coordinador', director:'Director Deportivo' };
                     const reqId = 'ind_reg_' + selectedIndivId + '_' + cred.user.uid + '_' + Date.now().toString(36);
                     await fa.setDoc(fa.doc(fa.db, 'platform_requests', reqId), {
                         type: 'ind_sub_registration',
@@ -3642,7 +3642,7 @@ export async function doAuth() {
             } else if (needsApproval && clubId) {
                 // Entrenador, coordinador, director, padre: al Admin del Club primero
                 try {
-                    const ROLE_LABELS = { user:'Entrenador', parent:'Padre/Madre/Tutor', coordinator:'Coordinador', director:'Director Deportivo' };
+                    const ROLE_LABELS = { user:'Entrenador', parent:'Familiar / Jugador', coordinator:'Coordinador', director:'Director Deportivo' };
                     const reqId = 'self_reg_' + cred.user.uid + '_' + requestedRole + '_' + (clubId || '') + _sufijoPlaza;
                     await fa.setDoc(fa.doc(fa.db, 'platform_requests', reqId), {
                         type: 'self_registration',
@@ -3672,7 +3672,7 @@ export async function doAuth() {
                 director: 'Director Deportivo',
                 coordinator: 'Coordinador',
                 user: 'Entrenador',
-                parent: 'Padre/Madre/Tutor',
+                parent: 'Familiar / Jugador',
                 individual: 'Administrador Individual',
             };
 
@@ -3865,7 +3865,7 @@ export async function doAuth() {
             if (_newUserUnderIndiv) {
                 // Sub-usuario bajo entidad individual → Administrador Individual primero
                 const reqId = 'ind_reg_' + selectedIndivId + '_' + cred.user.uid + '_' + Date.now().toString(36);
-                const RLABELS_IND = { user:'Entrenador Individual', parent:'Padre/Madre/Tutor Individual', coordinator:'Coordinador', director:'Director Deportivo' };
+                const RLABELS_IND = { user:'Entrenador Individual', parent:'Familiar / Jugador Individual', coordinator:'Coordinador', director:'Director Deportivo' };
                 await fa.setDoc(fa.doc(fa.db, 'platform_requests', reqId), {
                     type:              'ind_sub_registration',
                     individualOwnerId: selectedIndivId,
@@ -3883,7 +3883,7 @@ export async function doAuth() {
             } else if (needsClubApproval && clubId) {
                 // Entrenador, coordinador, director, padre → Admin Club primero
                 const reqId = 'self_reg_' + cred.user.uid;
-                const RLABELS = { user:'Entrenador', parent:'Padre/Madre/Tutor', coordinator:'Coordinador', director:'Director Deportivo' };
+                const RLABELS = { user:'Entrenador', parent:'Familiar / Jugador', coordinator:'Coordinador', director:'Director Deportivo' };
                 await fa.setDoc(fa.doc(fa.db, 'platform_requests', reqId), {
                     type:              'self_registration',
                     clubId:            clubId,
@@ -3913,7 +3913,7 @@ export async function doAuth() {
                     individual: '✅ Solicitud enviada al SuperAdmin. Pendiente de aprobación.',
                 };
                 const rl = { director:'Director Deportivo', coordinator:'Coordinador',
-                              user:'Entrenador', parent:'Padre/Madre/Tutor' };
+                              user:'Entrenador', parent:'Familiar / Jugador' };
                 switchTab('login');
                 if (_newUserUnderIndiv) {
                     showAuthError(

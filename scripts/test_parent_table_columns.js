@@ -123,7 +123,7 @@ console.log('\n── PARTE 3 · el orden real de los controles ──');
     // El manual no tiene casilla de ENVIAR (no tiene cuenta en la app), pero
     // SI tiene que ocupar su hueco o descuadra la tabla entera.
     ok('3c · el manual reserva el hueco de ENVIAR aunque no le aplique',
-       /Solo aplica a padres vinculados/.test(filaMan),
+       /Solo aplica a familiares y jugadores vinculados/.test(filaMan),
        'sin esa celda, la tabla se desalinea de ENVIAR en adelante');
 }
 

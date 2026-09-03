@@ -674,7 +674,7 @@ async function openIndividualAdminPanel(mantenerSeccion = false) {
         </div>
         <div style="background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.1);border-radius:9px;padding:0.7rem;text-align:center;">
             <div style="font-size:1.3rem;font-weight:800;color:#79c0ff;">${parentCount}</div>
-            <div style="font-size:0.65rem;color:#8b949e;margin-top:0.1rem;">👨‍👩‍👧 Padres / Madres</div>
+            <div style="font-size:0.65rem;color:#8b949e;margin-top:0.1rem;">👨‍👩‍👧 Familiares / Jugadores</div>
         </div>
         <div style="background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.1);border-radius:9px;padding:0.7rem;text-align:center;">
             <div style="font-size:1.3rem;font-weight:800;color:#ffa500;">${totalPending}</div>
@@ -697,7 +697,7 @@ async function openIndividualAdminPanel(mantenerSeccion = false) {
             </h3>
             ${pendingSAForward.map(u => {
                 const role = u.requestedRole || 'parent';
-                const roleLabel = (window.ROLE_META[role] || {}).label || (role === 'user' ? 'Entrenador' : 'Padre/Madre/Tutor');
+                const roleLabel = (window.ROLE_META[role] || {}).label || (role === 'user' ? 'Entrenador' : 'Familiar / Jugador');
                 return `<div style="font-size:0.8rem;color:white;padding:5px 0;border-bottom:1px solid rgba(255,255,255,0.05);">
                     • <strong>${_eH(u.userEmail || u.requestedEmail || '')}</strong> solicitó ser <strong>${roleLabel}</strong>.
                     <span style="color:#8b949e;font-size:0.72rem;display:block;margin-top:2px;">⏳ Esperando que el SuperAdmin apruebe la solicitud.</span>
@@ -720,7 +720,7 @@ async function openIndividualAdminPanel(mantenerSeccion = false) {
             ${pendingAutoReg.map(u => {
                 const role = u.requestedRole || 'parent';
                 // Use requestedRoleLabel if available (from auth.js ind_sub_registration), fallback to ROLE_META
-                const roleLabel = u.requestedRoleLabel || (window.ROLE_META[role] || {}).label || (role === 'user' ? 'Entrenador' : 'Padre/Madre/Tutor');
+                const roleLabel = u.requestedRoleLabel || (window.ROLE_META[role] || {}).label || (role === 'user' ? 'Entrenador' : 'Familiar / Jugador');
                 const roleIcon = role === 'user' ? '⚽' : '👨‍👩‍👧';
                 const catBadge = u.categoryLabel || u.requestedCategoryLabel
                     ? `<span style="font-size:0.68rem;color:#d2a8ff;background:rgba(210,168,255,0.1);border:1px solid rgba(210,168,255,0.2);border-radius:4px;padding:1px 6px;margin-left:0.3rem;">${_eH(u.categoryLabel || u.requestedCategoryLabel || '')}</span>`
@@ -747,7 +747,7 @@ async function openIndividualAdminPanel(mantenerSeccion = false) {
     <div style="background:rgba(121,192,255,0.05);border:1px solid rgba(121,192,255,0.15);border-radius:8px;padding:0.7rem;font-size:0.75rem;color:#8b949e;line-height:1.5;margin-bottom:1rem;">
         ℹ️ <strong style="color:#79c0ff;">Flujo de registro del Ente Individual:</strong><br>
         1️⃣ El <strong>Administrador Individual</strong> se registra → solicitud va <strong>directamente al SuperAdmin</strong> → SA confirma → queda registrado.<br>
-        2️⃣ El <strong>Entrenador/Padre</strong> se registra eligiendo tu entidad individual del desplegable → su solicitud aparece aquí en <strong>📨 Solicitudes</strong>.<br>
+        2️⃣ El <strong>Entrenador o el Familiar / Jugador</strong> se registra eligiendo tu entidad individual del desplegable → su solicitud aparece aquí en <strong>📨 Solicitudes</strong>.<br>
         3️⃣ Tú reenvías la solicitud al <strong>SuperAdmin</strong> → SA aprueba → el usuario queda <strong>registrado y activo</strong>.<br>
         4️⃣ Los iconos de rol solo aparecen <strong>después de estar registrados y confirmados</strong>.
     </div>`;
@@ -968,7 +968,7 @@ async function openIndividualAdminPanel(mantenerSeccion = false) {
               </div>
               <div class="sa-card-body">
                 ${bloque('⚽ Entrenador', entrenadores, 'Este equipo no tiene entrenador asignado.')}
-                ${bloque('👨‍👩‍👧 Padres / Madres / Tutores', familias, 'Todavía no hay familias vinculadas a este equipo.')}
+                ${bloque('👨‍👩‍👧 Familiares / Jugadores', familias, 'Todavía no hay familias vinculadas a este equipo.')}
               </div>
             </div>`;
     };
@@ -1335,7 +1335,7 @@ window.indForwardToSA = async function indForwardToSA(prId, userUid, role, email
 
     const isIndSub = role === 'user' || role === 'parent';
     const roleLabel = isIndSub
-        ? (role === 'user' ? 'Entrenador Individual' : 'Padre/Madre/Tutor Individual')
+        ? (role === 'user' ? 'Entrenador Individual' : 'Familiar / Jugador Individual')
         : (window.ROLE_META[role] || {}).label || role;
     if (!confirm('¿Enviar solicitud al SuperAdmin para ' + email + '?\n\nRol: ' + roleLabel + (categoryLabel ? ' · ' + categoryLabel : '') + '\n\nEl SuperAdmin deberá aprobarla.')) return;
     if (typeof _saShowSpinner === 'function') _saShowSpinner('Enviando al SuperAdmin…');
@@ -1355,7 +1355,7 @@ window.indForwardToSA = async function indForwardToSA(prId, userUid, role, email
         // This prevents the SA from seeing "Administrador Individual" instead of "Entrenador/Padre"
         if (isIndSub && existingData.requestedRole !== role) {
             updateData.requestedRole = role;
-            updateData.requestedRoleLabel = role === 'user' ? 'Entrenador Individual' : 'Padre/Madre/Tutor Individual';
+            updateData.requestedRoleLabel = role === 'user' ? 'Entrenador Individual' : 'Familiar / Jugador Individual';
         }
         // Ensure the type is preserved as ind_sub_registration
         if (isIndSub && existingData.type !== 'ind_sub_registration') {

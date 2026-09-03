@@ -117,7 +117,7 @@ window.saIndividuals = async function saIndividuals() {
             </button>
         </div>
         <p style="font-size:0.78rem;color:#8b949e;margin:0 0 1rem;">
-            Los entes individuales son entidades independientes (sin club) donde se registran administradores individuales, entrenadores individuales y padres/madres individuales.
+            Los entes individuales son entidades independientes (sin club) donde se registran administradores individuales, entrenadores individuales y familiares/jugadores individuales.
         </p>`;
 
         // ── Sección: Entes Individuales ──
@@ -144,8 +144,8 @@ window.saIndividuals = async function saIndividuals() {
                     individual:       { icon:'⚽', label:'Entrenador Administrador Individual', slot:'admins' },
                     user:             { icon:'🕰️', label:'Entrenadores Individuales (legado)',  slot:'coaches' },
                     entrenador_individual: { icon:'🕰️', label:'Entrenadores Individuales (legado)', slot:'coaches' },
-                    parent_individual:{ icon:'👨‍👩‍👧', label:'Padres/Madres Individuales',   slot:'parents' },
-                    parent:           { icon:'👨‍👩‍👧', label:'Padres/Madres Individuales',   slot:'parents' },
+                    parent_individual:{ icon:'👨‍👩‍👧', label:'Familiares / Jugadores Individuales',   slot:'parents' },
+                    parent:           { icon:'👨‍👩‍👧', label:'Familiares / Jugadores Individuales',   slot:'parents' },
                 };
                 // ══════════════════════════════════════════════════════════
                 //  🔴🔴🔴 v583 · ESTOS CONTADORES CRUZABAN CLUB Y ENTE

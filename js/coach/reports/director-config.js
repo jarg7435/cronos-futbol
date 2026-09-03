@@ -124,7 +124,7 @@ async function _renderDirectorConfig() {
         <div>
           <h3 style="margin:0; font-size:1.1rem; color:white;">⚙️ Configuración de Semáforos e Informes</h3>
           <div style="font-size:0.75rem; color:#7d8590; margin-top:3px;">
-            Ajusta los límites del semáforo y los permisos de informes a padres según las exigencias de cada grupo de edad.
+            Ajusta los límites del semáforo y los permisos de informes a familiares / jugadores según las exigencias de cada grupo de edad.
           </div>
         </div>
         <button onclick="window._dirSaveCategoryConfigs('${clubId}')"
@@ -203,15 +203,15 @@ async function _renderDirectorConfig() {
               <div>En Juvenil, Regional y Regional FEM no se aplica semáforo. Las tarjetas de cronómetro se muestran en <strong>celeste</strong>.</div>
             </div>`}
 
-            <!-- Bloque Informes a Padres -->
+            <!-- Bloque Informes a Familiares / Jugadores -->
             <div style="background:rgba(210,168,255,0.05); border:1px solid rgba(210,168,255,0.15); border-radius:10px; padding:0.8rem; ${informesPadresEnabled ? '' : 'opacity:0.5;pointer-events:none;'}">
-              <div style="font-size:0.75rem; font-weight:700; color:#d2a8ff; margin-bottom:0.4rem;">👨‍👩‍👧 Informes a Padres</div>
+              <div style="font-size:0.75rem; font-weight:700; color:#d2a8ff; margin-bottom:0.4rem;">👨‍👩‍👧 Informes a Familiares / Jugadores</div>
               <label style="display:flex; align-items:center; gap:0.6rem; cursor:pointer;">
                 <input type="checkbox" id="parent-rep-${g.key}" ${parentActive ? 'checked' : ''} style="width:18px; height:18px; accent-color:#d2a8ff;">
-                <span style="font-size:0.78rem; font-weight:700; color:white;">Activar informes individualizados a padres</span>
+                <span style="font-size:0.78rem; font-weight:700; color:white;">Activar informes individualizados a familiares / jugadores</span>
               </label>
               <div style="font-size:0.68rem; color:#7d8590; margin-top:0.3rem;">
-                Permite enviar el informe individual del jugador al padre/madre vinculado en esta categoría.
+                Permite enviar el informe individual del jugador al familiar / jugador vinculado en esta categoría.
               </div>
             </div>
           </div>
