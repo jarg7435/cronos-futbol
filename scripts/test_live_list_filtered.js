@@ -325,5 +325,137 @@ console.log('\n── PARTE 4 · un solo criterio, un solo punto de cancelacion 
        'sin importarlos la consulta lanza ReferenceError y el respaldo tapa el fallo SIN sintoma');
 }
 
-console.log('\n' + pass + ' PASS / ' + fail + ' FAIL');
-process.exit(fail ? 1 : 0);
+// ═══════════════════════════════════════════════════════════════════════
+// PARTE 5 · v674 · EL HISTORIAL TAMPOCO PIDE LA COLECCION ENTERA
+// ═══════════════════════════════════════════════════════════════════════
+//  Reporte del autor (captura 10002, produccion v673): Director Deportivo y
+//  Coordinador pulsan «Historial» y sale «Missing or insufficient permissions».
+//
+//  La lista en vivo se acoto en v433 (todo lo de arriba) y el HISTORIAL se
+//  quedo con `getDocs(collection(db,'live_matches'))` sin un solo `where`. Con
+//  la regla por documento de SEC-A2 (2026-08-25) eso es un 403 completo: en
+//  Firestore una consulta se deniega entera si la regla no puede demostrar,
+//  solo con los filtros, que todo lo que devuelve es legible.
+//
+//  🔑 Y SOLO LO SUFRE UN ROL ACOTADO: la regla tiene rama `isSuperAdmin()`, que
+//  vale para cualquier documento, asi que al SuperAdmin la consulta sin filtros
+//  SI le funciona. Por eso paso desapercibido. Es el patron de v635.
+//
+//  ⚠️ ESTE BLOQUE EJECUTA EL CODIGO. Un regex que buscara `where(` habria dado
+//  verde con el filtro puesto en el campo equivocado, o con el `status` de la
+//  lista en vivo copiado por error —que dejaria el Historial sin terminados,
+//  un fallo mas silencioso que el 403 que se venia a arreglar—.
+console.log('\n── PARTE 5 · el Historial, acotado igual que la lista (v674) ──');
+{
+    const iniH = LIVE.indexOf('function _historyQueries()');
+    const finH = LIVE.indexOf('function _vigilaConRespaldo(');
+    ok('5a · _historyQueries y _fetchHistoryMatches existen en live.html',
+       iniH !== -1 && finH > iniH,
+       'el Historial volveria a pedir la coleccion entera');
+
+    if (iniH !== -1 && finH > iniH) {
+        const SRC_H = LIVE.slice(iniH, finH);
+
+        // Entorno con `getDocs` de mentira: recuerda por que se pregunto y
+        // permite hacer fallar ramas concretas.
+        function entornoHist(userData, saFilter, fallan) {
+            const pedidas = [];
+            const env = {
+                userData,
+                window: { _saClubFilter: saFilter || null },
+                db: {},
+                collection: (_db, nombre) => ({ __col: nombre }),
+                where: (campo, op, valor) => ({ campo, op, valor }),
+                query: (col, ...conds) => ({ __col: col.__col, conds }),
+                getDocs: async (q) => {
+                    const clave = q.conds && q.conds.length
+                        ? q.conds.map(c => c.campo).sort().join('+')
+                        : '__COLECCION_ENTERA__';
+                    pedidas.push({ col: q.__col, clave, conds: q.conds || [] });
+                    if (fallan && fallan.indexOf(clave) >= 0) {
+                        const e = new Error('Missing or insufficient permissions.');
+                        e.code = 'permission-denied';
+                        throw e;
+                    }
+                    const docs = (q.conds || []).map((c, i) => ({
+                        id: clave + '_' + i,
+                        data: () => ({ clubId: 'C1' }),
+                    }));
+                    return { forEach: (fn) => docs.forEach(fn), empty: !docs.length };
+                },
+                console: { warn: () => {}, log: () => {} },
+                Map, Array, Object, String, Number, Error, Promise,
+            };
+            vm.createContext(env);
+            vm.runInContext(SRC_H, env);
+            return { env, pedidas };
+        }
+
+        // ── Director Deportivo: el rol del reporte ──
+        const dir = { uid: 'U1', role: 'director_deportivo', clubId: 'C1', email: 'd@x.com' };
+        const h1 = entornoHist(dir);
+        const q1 = vm.runInContext('_historyQueries()', h1.env);
+        const claves1 = q1.map(q => q.conds.map(c => c.campo).sort().join('+')).sort();
+
+        ok('5b · 🔴🔴 EL DEFECTO DEL REPORTE: NINGUNA consulta va sin filtros',
+           q1.length > 0 && q1.every(q => q.conds && q.conds.length > 0),
+           JSON.stringify(claves1));
+
+        ok('5c · son las TRES ramas que autoriza la regla: club, creador y correo',
+           claves1.join(' | ') === 'clubId | coachEmail | createdBy',
+           claves1.join(' | '));
+
+        ok('5d · y preguntan a live_matches, que es donde vive el historial',
+           q1.every(q => q.__col === 'live_matches'),
+           q1.map(q => q.__col).join(','));
+
+        // 🔑 La diferencia deliberada con la lista en vivo. Si alguien copia
+        //    `_followableQueries` tal cual, el Historial deja de traer los
+        //    partidos TERMINADOS —que son su unica razon de ser—.
+        ok('5e · ⚠️ NO filtra por `status`: el Historial trae tambien terminados',
+           q1.every(q => q.conds.every(c => c.campo !== 'status')),
+           'con status==active el Historial solo enseñaria lo que ya se ve en vivo');
+
+        ok('5f · el filtro del club sale de users/{uid}, no del token',
+           q1.some(q => q.conds.some(c => c.campo === 'clubId' && c.valor === 'C1')),
+           'un director puede no llevar el claim clubId; la regla lo cubre con userDocClubId');
+
+        // ── SuperAdmin: su rama de la regla vale para todo ──
+        const sa = { uid: 'S1', role: 'superadmin', clubId: null, email: 's@x.com' };
+        const q2 = vm.runInContext('_historyQueries()', entornoHist(sa).env);
+        ok('5g · el SuperAdmin sigue viendo la plataforma entera',
+           q2.length === 1 && q2[0].conds.length === 0);
+        const q3 = vm.runInContext('_historyQueries()', entornoHist(sa, 'C9').env);
+        ok('5h · …y su filtro de club se respeta si lo tiene puesto',
+           q3.length === 1 && q3[0].conds.length === 1 &&
+           q3[0].conds[0].campo === 'clubId' && q3[0].conds[0].valor === 'C9',
+           JSON.stringify(q3));
+
+        // ── Una rama denegada no puede tumbar a las demas ──
+        (async () => {
+            const hFallo = entornoHist(dir, null, ['coachEmail']);
+            const res = await vm.runInContext('_fetchHistoryMatches()', hFallo.env);
+            ok('5i · 🔑 si una rama se deniega, las otras SI pintan (no Promise.all)',
+               Array.isArray(res) && res.length > 0,
+               'con Promise.all el primer rechazo devuelve el mismo error rojo');
+
+            const hTodas = entornoHist(dir, null, ['clubId', 'createdBy', 'coachEmail']);
+            let lanzo = false;
+            try { await vm.runInContext('_fetchHistoryMatches()', hTodas.env); }
+            catch (e) { lanzo = true; }
+            ok('5j · ⚠️ pero si fallan TODAS, se lanza: no se finge "no hay partidos"',
+               lanzo, 'un historial vacio por permisos es peor que un error visible');
+
+            const hSin = entornoHist({ uid: null, role: 'x', clubId: null, email: null });
+            const vacio = await vm.runInContext('_fetchHistoryMatches()', hSin.env);
+            ok('5k · sin datos de usuario no se pregunta nada (ni se lanza)',
+               Array.isArray(vacio) && vacio.length === 0);
+
+            console.log('\n' + pass + ' PASS / ' + fail + ' FAIL');
+            process.exit(fail ? 1 : 0);
+        })();
+    } else {
+        console.log('\n' + pass + ' PASS / ' + fail + ' FAIL');
+        process.exit(fail ? 1 : 0);
+    }
+}

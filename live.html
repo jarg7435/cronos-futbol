@@ -4625,6 +4625,95 @@ async function _fetchFollowableMatches() {
 }
 
 // ══════════════════════════════════════════════════════════════════
+//  🔴 v674 · EL HISTORIAL PEDIA LA COLECCION ENTERA Y LO DENEGABAN
+// ══════════════════════════════════════════════════════════════════
+//  Reporte del autor (captura 10002, produccion v673): el Director Deportivo
+//  y el Coordinador pulsan «Historial» y sale
+//  «Error: Missing or insufficient permissions.» en rojo.
+//
+//  🔑 LA REGLA DE live_matches ES POR DOCUMENTO (SEC-A2, 2026-08-25): mira
+//  `resource.data.clubId`, `createdBy` o `coachEmail` de CADA documento. Y en
+//  Firestore una consulta se DENIEGA ENTERA si la regla no puede demostrar,
+//  SOLO CON LOS FILTROS DE LA CONSULTA, que todo lo que va a devolver es
+//  legible. `showHistory` pedia `collection(db,'live_matches')` a secas, sin un
+//  solo `where`: imposible de demostrar, luego 403 completo.
+//
+//  🔑🔑 Y POR ESO NADIE LO VIO ANTES: la regla tiene una rama `isSuperAdmin()`
+//  que vale para cualquier documento, asi que la consulta sin filtros SI le
+//  funciona al SuperAdmin. El defecto solo aparece con un rol acotado — que es
+//  justo el del reporte. Es el mismo patron de v635 con los informes
+//  colectivos: consulta sin `where` contra regla por documento.
+//
+//  🔑 LA FORMA CORRECTA YA ESTABA ESCRITA AL LADO. `_followableQueries()` hace
+//  exactamente esto para la lista en vivo: tres consultas acotadas (club,
+//  creador, correo) fusionadas por id, porque Firestore no tiene OR entre
+//  campos distintos. Es literalmente lo que documenta el comentario de la
+//  regla: «LAS TRES RAMAS SON LAS TRES CONSULTAS QUE YA HACE EL VISOR».
+//
+//  ⚠️ AQUI NO SE FILTRA POR `status`. Esa es la unica diferencia con la lista
+//  en vivo, y es la razon de ser de esta funcion: el Historial tiene que traer
+//  TAMBIEN los terminados. Copiar `_followableQueries()` tal cual habria
+//  cambiado el 403 por una lista que solo enseña los partidos en curso —un
+//  fallo mas silencioso que el que se venia a arreglar.
+//
+//  ⚠️ `userData.clubId` SALE DE users/{uid}, no del token (ver la asignacion de
+//  `userData` tras el login). Es deliberado: un Director o Coordinador puede no
+//  llevar el claim `clubId` en el token, y la regla lo contempla con la rama
+//  `userDocClubId`. Filtrar por el documento es lo que hace que el arreglo
+//  funcione precisamente para el rol que lo reporto.
+// ══════════════════════════════════════════════════════════════════
+function _historyQueries() {
+    const col  = collection(db, 'live_matches');
+    const esSA = (userData.role === "superadmin" || userData.role === "admin");
+
+    if (esSA) {
+        // El SuperAdmin pasa la rama `isSuperAdmin()` de la regla con cualquier
+        // documento, asi que su consulta puede ir sin acotar — como hasta ahora.
+        // Con filtro de club puesto, se respeta.
+        return window._saClubFilter
+            ? [query(col, where("clubId", "==", window._saClubFilter))]
+            : [query(col)];
+    }
+
+    const consultas = [];
+    if (userData.clubId) consultas.push(query(col, where("clubId", "==", userData.clubId)));
+    if (userData.uid)    consultas.push(query(col, where("createdBy", "==", userData.uid)));
+    // ⚠️ Firestore compara el correo EXACTO, sin ignorar mayusculas: las
+    // variantes de capitalizacion las recoge la rama del club o la del creador.
+    // Mismo criterio —y misma limitacion— que `_followableQueries()`.
+    if (userData.email)  consultas.push(query(col, where("coachEmail", "==", userData.email)));
+    return consultas;
+}
+
+async function _fetchHistoryMatches() {
+    const consultas = _historyQueries();
+    if (!consultas.length) return [];
+
+    const vistos = new Map();
+    // ⚠️ SIN `Promise.all`. Un usuario puede casar por club y NO por correo, y
+    // una rama denegada no puede llevarse por delante a las demas: con
+    // `Promise.all` el primer rechazo tira la lista entera y volveriamos al
+    // mismo mensaje rojo que se viene a quitar. Se recoge lo que cada consulta
+    // consiga y solo se falla si NO llega ninguna.
+    const resultados = await Promise.allSettled(consultas.map(q => getDocs(q)));
+
+    let algunaOk = false, ultimoError = null;
+    resultados.forEach(r => {
+        if (r.status === 'fulfilled') {
+            algunaOk = true;
+            r.value.forEach(d => vistos.set(d.id, { id: d.id, ...d.data() }));
+        } else {
+            ultimoError = r.reason;
+            console.warn('[Historial] una de las consultas no pudo leerse:',
+                         (r.reason && r.reason.message) || r.reason);
+        }
+    });
+
+    if (!algunaOk) throw (ultimoError || new Error('No se pudo leer el historial.'));
+    return Array.from(vistos.values());
+}
+
+// ══════════════════════════════════════════════════════════════════
 //  v572 · P2 · VIGILANCIA CON RESPALDO, PARTIDO A PARTIDO
 // ══════════════════════════════════════════════════════════════════
 //  Se suscribe al índice ligero y, SÓLO si ese partido no lo tiene, se pasa al
@@ -6573,10 +6662,12 @@ window.showHistory = async function() {
     listEl.innerHTML = '<p style="color:var(--muted);text-align:center;margin-top:2rem;">⏳ Cargando…</p>';
 
     try {
-        const q    = collection(db, 'live_matches');  // Sin orderBy
-        const snap = await getDocs(q);
+        // 🔴 v674 · Tres consultas ACOTADAS y fusionadas por id, no la
+        // coleccion entera: la regla de live_matches es por documento y un
+        // `list` sin `where` se deniega completo (ver `_historyQueries`).
+        const _historial = await _fetchHistoryMatches();
 
-        if (snap.empty) {
+        if (!_historial.length) {
             listEl.innerHTML = '<p style="color:var(--muted);text-align:center;margin-top:2rem;">No hay partidos registrados aún.</p>';
             return;
         }
@@ -6596,8 +6687,7 @@ window.showHistory = async function() {
 
         // Separar: en vivo vs finalizados dentro de la ventana de retención
         const liveMatches = [], finishedMatches = [];
-        let allDocs2 = [];
-        snap.forEach(d => { allDocs2.push({ id: d.id, ...d.data() }); });
+        let allDocs2 = _historial;
 
         // v589 · La misma lápida que la lista en vivo: el Historial tampoco
         // puede repintar un partido que el usuario acaba de eliminar.
@@ -7044,9 +7134,9 @@ setInterval(function() {
 }
 </style>
 <!-- v434 · Inmutabilidad: antes de retroactive-modal.js, que la consulta. -->
-<script src="js/match/immutability.js?v=v673"></script>
-<script src="js/match/replay/replay-player.js?v=v673"></script>
-<script src="js/match/events/retroactive-modal.js?v=v673"></script>
+<script src="js/match/immutability.js?v=v674"></script>
+<script src="js/match/replay/replay-player.js?v=v674"></script>
+<script src="js/match/events/retroactive-modal.js?v=v674"></script>
 
 <!-- ══════════════════════════════════════════════════════════════════
      🟩 v577 · FRANJA DE VERSIÓN TAMBIÉN EN EL VISOR
@@ -7059,7 +7149,7 @@ setInterval(function() {
      El sello lo escribe `scripts/cache-bust.js` a partir del CACHE_NAME de
      sw.js, nunca a mano: un número puesto a mano miente en cuanto alguien
      olvida cambiarlo (v527 lo encontró mintiendo 185 versiones seguidas). -->
-<div id="cronos-version-badge" data-version="v673" style="position:fixed;bottom:calc(4px + env(safe-area-inset-bottom, 0px));right:6px;z-index:2147483000;pointer-events:none;background:rgba(0,0,0,0.55);color:#2ea043;font-family:monospace;font-size:0.6rem;font-weight:700;letter-spacing:0.5px;padding:2px 6px;border-radius:4px;">CHRONOS v673</div>
+<div id="cronos-version-badge" data-version="v674" style="position:fixed;bottom:calc(4px + env(safe-area-inset-bottom, 0px));right:6px;z-index:2147483000;pointer-events:none;background:rgba(0,0,0,0.55);color:#2ea043;font-family:monospace;font-size:0.6rem;font-weight:700;letter-spacing:0.5px;padding:2px 6px;border-radius:4px;">CHRONOS v674</div>
 <script>
 /* 🧪 v577 · Y DE QUÉ ENTORNO ES ESA VERSIÓN.
    El problema real del autor no era no ver la versión: era no saber si la
