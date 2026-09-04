@@ -20,13 +20,8 @@ function initEmailJS() {
 }
 
 
-function testWhatsApp() {
-    loadEmailConfig();
-    const num = (document.getElementById('cfg-whatsapp')?.value || emailConfig.whatsappNumber || '').replace(/[^0-9]/g,'');
-    if (!num) { alert('Introduce primero el número de WhatsApp.'); return; }
-    const msg = encodeURIComponent('✅ Prueba Chronos Fútbol\nSi recibes esto, el envío automático está listo. ⚽');
-    window.open('https://wa.me/' + num + '?text=' + msg, '_blank');
-}
+// v671 · `testWhatsApp` retirada (no la llamaba nadie ya) con el resto del
+// canal. El campo `cfg-whatsapp` que leía tampoco se pinta en ningún sitio.
 
 
 async function sendReportByEmail(matchInfo, reportHtml) {

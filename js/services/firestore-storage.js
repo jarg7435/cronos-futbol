@@ -431,26 +431,22 @@ function initEmailJS() {
 }
 
 function saveEmailSettings() {
-    emailConfig.whatsappNumber  = (document.getElementById('cfg-whatsapp')?.value  || '').replace(/[^0-9]/g,'');
-    emailConfig.whatsappNumber2 = (document.getElementById('cfg-whatsapp2')?.value || '').replace(/[^0-9]/g,'');
+    // v671 · Ya no se guardan números de WhatsApp. ⚠️ Los campos
+    // `whatsappNumber`/`whatsappNumber2` del objeto NO se ponen a '' a
+    // propósito: no se tocan. Escribirlos vacíos borraría del documento del
+    // club un dato que ya estaba guardado, y esto es una función de GUARDAR
+    // ajustes de correo, no de purgar.
     emailConfig.directorEmail   = (document.getElementById('cfg-director-email')?.value  || '').trim();
     emailConfig.directorEmail2  = (document.getElementById('cfg-director-email2')?.value || '').trim();
     cloudSet('cronos_email_config', JSON.stringify(emailConfig));
     const parts = [];
-    if (emailConfig.whatsappNumber)  parts.push('📱 WA');
-    if (emailConfig.whatsappNumber2) parts.push('📱 WA 2');
-    if (emailConfig.directorEmail)   parts.push('📧 Email');
+    if (emailConfig.directorEmail)  parts.push('📧 Email');
+    if (emailConfig.directorEmail2) parts.push('📧 Email 2');
     showToast('✅ ' + (parts.length ? parts.join(' + ') : 'Sin destinatarios configurados'));
     openSetupModal();
 }
 
-function testWhatsApp() {
-    loadEmailConfig();
-    const num = (document.getElementById('cfg-whatsapp')?.value || emailConfig.whatsappNumber || '').replace(/[^0-9]/g,'');
-    if (!num) { alert('Introduce primero el número de WhatsApp.'); return; }
-    const msg = encodeURIComponent('✅ Prueba Chronos Fútbol\nSi recibes esto, el envío automático está listo. ⚽');
-    window.open('https://wa.me/' + num + '?text=' + msg, '_blank');
-}
+// v671 · `testWhatsApp` retirada con el resto del canal.
 
 async function sendReportByEmail(matchInfo, reportHtml) {
     if (!emailConfig.contacts || emailConfig.contacts.length === 0) {

@@ -526,14 +526,44 @@
             // Verificar autorización
             await checkAuthorization(user);
         } else {
-            // Mostrar pantalla de login de forma robusta
-            if (typeof showScreen === 'function') {
-                showScreen('auth-screen');
-            } else {
-                const el = document.getElementById('auth-screen');
-                if (el) {
-                    document.body.classList.remove('locked');
-                    el.style.display = 'flex';
+            // ══════════════════════════════════════════════════════════
+            //  🔴 v670 · NO ARRANCAR AL USUARIO DEL ASISTENTE DE BIENVENIDA
+            //
+            //  "No hay usuario" es EXACTAMENTE el estado de quien acaba de
+            //  llegar y está leyendo la bienvenida. Esta rama mostraba
+            //  `auth-screen` sin preguntar, y como el estado de sesión lo
+            //  resuelve Firebase DESPUÉS de que el asistente se haya
+            //  pintado, al usuario nuevo se le caía la pantalla encima a
+            //  media lectura y aparecía en el registro.
+            //
+            //  🔑 Y NO PASABA UNA SOLA VEZ: la revalidación al recuperar
+            //  cobertura (unas líneas más abajo) vuelve a pasar por aquí.
+            //  De ahí los saltos repetidos que reportó el autor.
+            //
+            //  El asistente tiene su propia salida —`goToAuth()`, que es
+            //  quien apaga el interruptor— así que ceder aquí no deja a
+            //  nadie encerrado: en cuanto termine o pulse "Saltar", esta
+            //  pantalla aparece por su camino normal.
+            //
+            //  ⚠️ FALLA HACIA MOSTRAR EL LOGIN: si el interruptor no
+            //  existe (index.html viejo en caché, guard sin ese trozo),
+            //  `typeof` da 'undefined' y se sigue como siempre. Quedarse
+            //  sin pantalla de acceso sería mucho peor que un salto.
+            // ══════════════════════════════════════════════════════════
+            const _asistenteAbierto =
+                typeof window._cronosOnboardingAbierto === 'function' &&
+                window._cronosOnboardingAbierto() === true;
+
+            if (!_asistenteAbierto) {
+                // Mostrar pantalla de login de forma robusta
+                if (typeof showScreen === 'function') {
+                    showScreen('auth-screen');
+                } else {
+                    const el = document.getElementById('auth-screen');
+                    if (el) {
+                        document.body.classList.remove('locked');
+                        el.style.display = 'flex';
+                    }
                 }
             }
         }

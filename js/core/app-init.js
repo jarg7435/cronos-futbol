@@ -138,8 +138,9 @@ let emailConfig = {
     directorEmail: '',     // correo del director deportivo (destino principal)
     emailjsServiceId: '',  // ID del servicio EmailJS
     emailjsTemplateId: '', // ID de la plantilla EmailJS
-    emailjsPublicKey: '',  // Clave pública EmailJS
-    whatsappNumber: ''     // número del director deportivo con prefijo país (ej: 34612345678)
+    emailjsPublicKey: ''   // Clave pública EmailJS
+    // v671 · se retira `whatsappNumber` de los valores por defecto. Los
+    // documentos ya guardados que lo lleven no se tocan: nadie lo lee.
 };
 
 var COLORS = {
@@ -1473,8 +1474,8 @@ const TUTORIAL_STEPS = [
         position: 'center'
     },
     {
-        title: '📧 Configurar email y WhatsApp',
-        text:  'En el botón EMAIL (pantalla de configuración) introduces el correo del Director Deportivo y su WhatsApp. Cada informe llegará automáticamente al exportar.',
+        title: '📧 Configurar el email',
+        text:  'En el botón EMAIL (pantalla de configuración) introduces el correo del Director Deportivo. Cada informe llegará automáticamente al exportar.',
         target: null,
         position: 'center'
     },

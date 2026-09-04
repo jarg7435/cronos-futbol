@@ -539,44 +539,11 @@ async function exportData() {
     link.click();
     document.body.removeChild(link);
 
-    // ── WHATSAPP: automático, principal ────────────────────────────
-    const waNumbers = [emailConfig.whatsappNumber, emailConfig.whatsappNumber2]
-        .filter(n => n && n.length > 5);
-
-    const waLines = sortedPlayers.filter(p => p.team === 'home').map(p => {
-        const card    = p.cards === 'amarilla' ? ' 🟨' : p.cards === 'roja' ? ' 🟥' : '';
-        const goals   = p.goals > 0 ? ' ⚽×' + p.goals : '';
-        const injured = p.injured ? ' 🚑' : '';
-        const evts    = (p.events||[]).map(e =>
-            e.time + '(' + e.half + ')' +
-            // v218: etiqueta en MAYÚSCULAS junto al emoji.
-            (e.type==='GOL'?' ⚽GOL':e.type==='AMARILLA'?' 🟨TARJETA':e.type==='ROJA'?' 🟥TARJETA':' 🚑LESIÓN')
-        ).join(' ');
-        return p.name + ' — ' + formatTime(p.time) +
-               goals + card + injured + (evts ? ' [' + evts + ']' : '');
-    });
-
-    const waMsg = '📊 *INFORME — Chronos Fútbol*\n' +
-        '━━━━━━━━━━━━━━━━━━\n' +
-        '📅 ' + date + '  |  ' + mode + '\n' +
-        '⚽ *' + homeName + ' ' + scoreHome + ' - ' + scoreAway + ' ' + awayName + '*\n' +
-        '⏱️ ' + formatTime(totalElapsed) + '\n' +
-        '━━━━━━━━━━━━━━━━━━\n' +
-        waLines.join('\n') + '\n' +
-        '━━━━━━━━━━━━━━━━━━\n' +
-        '_Chronos Fútbol_';
-
-    if (waNumbers.length > 0) {
-        const encoded = encodeURIComponent(waMsg);
-        waNumbers.forEach((num, i) => {
-            setTimeout(() => {
-                window.open('https://wa.me/' + num + '?text=' + encoded, '_blank');
-            }, i * 1200);
-        });
-        showToast('📱 WhatsApp abierto — pulsa Enviar para confirmar');
-    } else {
-        showToast('✅ Informe descargado');
-    }
+    // ── v671 · AQUÍ SE ABRÍA WHATSAPP AUTOMÁTICAMENTE AL DESCARGAR ──
+    //  Se componía un resumen del partido y se abría una ventana de wa.me
+    //  por cada número configurado. Retirado con el resto del canal: la
+    //  descarga del informe ya no dispara ningún envío.
+    showToast('✅ Informe descargado');
 
     // ── EMAIL: alternativo con mailto (correo personal, sin cuentas extra) ──
     const emailRecipients = [emailConfig.directorEmail, emailConfig.directorEmail2]

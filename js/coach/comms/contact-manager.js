@@ -101,7 +101,7 @@ async function openContactManager() {
                     id: 'dir_' + Math.random().toString(36).substr(2, 4),
                     name: 'Director Deportivo',
                     email: emailConfig.directorEmail,
-                    phone: emailConfig.whatsappNumber || '',
+                    phone: '',   // v671 · ya no se arrastra el número de WhatsApp
                     tags: ['reports', 'notifs']
                 });
             }
@@ -111,7 +111,7 @@ async function openContactManager() {
                     id: 'coord_' + Math.random().toString(36).substr(2, 4),
                     name: 'Coordinador',
                     email: emailConfig.directorEmail2,
-                    phone: emailConfig.whatsappNumber2 || '',
+                    phone: '',   // v671 · ídem
                     tags: ['reports', 'notifs']
                 });
             }
@@ -347,7 +347,7 @@ async function openContactManager() {
                                            text-align:left;">
                                     <th style="padding:0.45rem;min-width:120px;">NOMBRE / CARGO</th>
                                     <th style="padding:0.45rem;min-width:130px;">EMAIL</th>
-                                    <th style="padding:0.45rem;min-width:110px;">WHATSAPP</th>
+                                    <!-- v671 · fuera la columna WHATSAPP -->
                                     <th style="padding:0.45rem;min-width:100px;">UID (APP)</th>
                                     <th style="padding:0.45rem;text-align:center;" title="Convocatorias">CONV.</th>
                                     <th style="padding:0.45rem;text-align:center;" title="Entrenamientos">ENTR.</th>
@@ -423,7 +423,10 @@ async function openContactManager() {
                                     <th style="padding:0.45rem;text-align:left;min-width:130px;">FAMILIAR</th>
                                     <th style="padding:0.45rem;text-align:left;min-width:120px;"
                                         title="Codigo del jugador asociado a este familiar">CODIGO JUGADOR</th>
-                                    <th style="padding:0.45rem;text-align:left;min-width:110px;">WHATSAPP</th>
+                                    <!-- v671 · fuera la columna WHATSAPP. Se retira el canal
+                                         y, con él, la recogida de números de teléfono. Van
+                                         LAS TRES filas a la vez (cabecera, vinculada y
+                                         manual), que es lo que avisa la nota de arriba. -->
                                     <th style="padding:0.45rem;text-align:left;min-width:130px;">EMAIL</th>
                                     <th style="padding:0.45rem;text-align:center;" title="Recibir convocatorias">CONV.</th>
                                     <th style="padding:0.45rem;text-align:center;" title="Recibir entrenamientos">ENTR.</th>
@@ -471,13 +474,6 @@ async function openContactManager() {
                                             #${typeof escapeHtml==='function'?escapeHtml(String(link.playerNumber||'')):String(link.playerNumber||'')}
                                             ${typeof escapeHtml==='function'?escapeHtml(link.playerAlias || link.playerName || 'Jugador'):link.playerAlias || link.playerName || 'Jugador'}
                                         </span>
-                                    </td>
-                                    <td style="padding:0.45rem;">
-                                        <input type="text" class="contact-phone" data-linkid="${typeof escapeAttr==='function'?escapeAttr(link._id):link._id}"
-                                            value="${typeof escapeAttr==='function'?escapeAttr(link.parentPhone||''):link.parentPhone||''}" placeholder="34600112233"
-                                            style="width:100%;padding:0.32rem;background:rgba(255,255,255,0.05);
-                                                   border:1px solid rgba(255,255,255,0.1);border-radius:6px;
-                                                   color:white;font-size:0.72rem;box-sizing:border-box;">
                                     </td>
                                     <td style="padding:0.45rem;">
                                         <input type="email" class="contact-parent-email" data-linkid="${typeof escapeAttr==='function'?escapeAttr(link._id):link._id}"
@@ -595,7 +591,26 @@ window.cmVolverAlMenu = function cmVolverAlMenu() {
 };
 
 async function saveContactManagerData() {
-    const parentInputs = document.querySelectorAll('.contact-phone');
+    // ══════════════════════════════════════════════════════════════════
+    //  🚨🚨 v671 · ESTE BUCLE SE RECORRÍA POR `.contact-phone`, Y ESE CAMPO
+    //  YA NO EXISTE.
+    //
+    //  El input del teléfono hacía DOS trabajos: era un dato y era el
+    //  ENUMERADOR de las filas de familias vinculadas. Al retirar la
+    //  columna de WhatsApp, `querySelectorAll('.contact-phone')` habría
+    //  devuelto una lista VACÍA y este bucle no habría dado ni una vuelta:
+    //  ni nombres, ni correos, ni ninguno de los siete permisos
+    //  (convocatorias, entrenamientos, mensajes, enviar, informes, en
+    //  vivo) se habrían guardado nunca más. Sin excepción, sin aviso y sin
+    //  que la pantalla cambiara: el botón Guardar habría seguido diciendo
+    //  que todo fue bien.
+    //
+    //  🔑 Ahora enumera por `.contact-parent-email`, que se pinta SIEMPRE
+    //  en cada fila vinculada y lleva el mismo `data-linkid`. Lección para
+    //  la próxima: antes de borrar un campo de un formulario, mirar si
+    //  alguien lo usa para CONTAR filas y no sólo para leer su valor.
+    // ══════════════════════════════════════════════════════════════════
+    const parentInputs = document.querySelectorAll('.contact-parent-email');
     const customRows   = document.querySelectorAll('.custom-contact-row');
     const db = window._cronos_auth.db;
     showSpinner('Sincronizando Fuente de la Verdad…');
@@ -609,7 +624,6 @@ async function saveContactManagerData() {
         // para que el padre pueda auto-registrarse con ese código.
         for (const input of parentInputs) {
             const linkId      = input.dataset.linkid;
-            const phone       = input.value.trim().replace(/\s/g, '');
             const nameEl      = document.querySelector(`.contact-parent-name[data-linkid="${linkId}"]`);
             const emailEl     = document.querySelector(`.contact-parent-email[data-linkid="${linkId}"]`);
             const cvEl        = document.querySelector(`.contact-cv[data-linkid="${linkId}"]`);
@@ -625,7 +639,11 @@ async function saveContactManagerData() {
             const inviteCode = playerNum ? `J${playerNum}` : null;
 
             const updateData = {
-                parentPhone:        phone,
+                // v671 · `parentPhone` deja de escribirse: ya no se recoge.
+                //   ⚠️ NO se pone a '' a propósito. Escribir vacío BORRARÍA
+                //   el número que un club pudiera tener ya guardado; omitir
+                //   el campo en un `updateDoc` lo deja como está. Si algún
+                //   día se recupera el canal, el dato sigue ahí.
                 canWatchLive:       liveEl    ? liveEl.checked          : false,
                 canReceiveReports:  rptEl     ? rptEl.checked           : false,
                 canReceiveConv:     cvEl      ? cvEl.checked            : true,
@@ -682,7 +700,12 @@ async function saveContactManagerData() {
                 type:  row.dataset.type || 'staff',
                 name:  row.querySelector('.c-name').value.trim(),
                 email: row.querySelector('.c-email').value.trim(),
-                phone: row.querySelector('.c-phone').value.trim().replace(/\s/g, ''),
+                // v671 · el campo de teléfono ya no se pinta, así que no se
+                // puede LEER: `querySelector('.c-phone').value` reventaría
+                // sobre null y se llevaría por delante el guardado entero de
+                // Contactos. Se conserva la clave con cadena vacía para no
+                // cambiar la forma del contacto que espera el resto de la app.
+                phone: '',
                 uid:   row.querySelector('.c-uid').value.trim(),
                 tags
             });
@@ -707,7 +730,7 @@ async function saveContactManagerData() {
                 name:   row.querySelector('.p-name').value.trim(),
                 player: playerName,   // Para visualización legacy
                 playerId: playerId,   // El vínculo inequivoco
-                phone:  row.querySelector('.p-phone').value.trim().replace(/\s/g, ''),
+                phone:  '',   // v671 · ver la nota del `.c-phone` de arriba
                 email:  row.querySelector('.p-email').value.trim(),
                 tags
             });
@@ -720,7 +743,8 @@ async function saveContactManagerData() {
             const firstReport = updatedContacts.find(c => c.tags.includes('reports'));
             if (firstReport) {
                 emailConfig.directorEmail = firstReport.email;
-                emailConfig.whatsappNumber = firstReport.phone;
+                // v671 · ya no se escribe `whatsappNumber`. Y NO se pone a ''
+                // a propósito: omitirlo deja intacto lo que hubiera guardado.
             }
 
             if (typeof cloudSet === 'function') {
@@ -823,10 +847,6 @@ function renderContactRowMarkup(c = {}) {
                 style="width:100%;padding:0.35rem;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:6px;color:white;font-size:0.75rem;">
         </td>
         <td style="padding:0.4rem;">
-            <input type="tel" class="c-phone" value="${typeof escapeAttr==='function'?escapeAttr(c.phone||''):c.phone||''}" placeholder="34600000000"
-                style="width:100%;padding:0.35rem;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:6px;color:white;font-size:0.75rem;">
-        </td>
-        <td style="padding:0.4rem;">
             <input type="text" class="c-uid" value="${typeof escapeAttr==='function'?escapeAttr(c.uid||''):c.uid||''}" placeholder="ID App (opcional)"
                 style="width:100%;padding:0.35rem;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:6px;color:var(--text-muted);font-size:0.7rem;"
                 ${isCoach ? 'readonly' : ''}>
@@ -883,10 +903,6 @@ function renderParentRowMarkup(c = {}) {
                     </option>
                 `).join('')}
             </select>
-        </td>
-        <td style="padding:0.4rem;">
-            <input type="tel" class="p-phone" value="${typeof escapeAttr==='function'?escapeAttr(c.phone||''):c.phone||''}" placeholder="34600000000"
-                style="width:100%;padding:0.32rem;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:6px;color:white;font-size:0.73rem;">
         </td>
         <td style="padding:0.4rem;">
             <input type="email" class="p-email" value="${typeof escapeAttr==='function'?escapeAttr(c.email||''):c.email||''}" placeholder="familiar@email.com"

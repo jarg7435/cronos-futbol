@@ -141,9 +141,10 @@ function buildSandbox({ elements = {}, secMethod = 'email', hasFunctions = true,
     ok('1d · saResetInviteTemplate existe', /window\.saResetInviteTemplate\s*=\s*function/.test(rawSrc));
     ok('1e · saSendInvite existe', /window\.saSendInvite\s*=\s*async function/.test(rawSrc));
     ok('1f · saSendInviteEmail existe', /window\.saSendInviteEmail\s*=\s*async function/.test(rawSrc));
-    // ⚠️ v633 · pasó a `async`: ahora acuña el token de la invitación antes de
-    // componer el mensaje. En WhatsApp el enlace es el ÚNICO camino.
-    ok('1g · saSendInviteWhatsApp existe', /window\.saSendInviteWhatsApp\s*=\s*async function/.test(rawSrc));
+    // v671 · ANTES: "saSendInviteWhatsApp existe". Ese canal se ha retirado
+    // de toda la app; la aserción pasa a exigir su ausencia.
+    ok('1g · ⚠️ saSendInviteWhatsApp ya NO existe',
+        !/window\.saSendInviteWhatsApp\s*=\s*async function/.test(rawSrc));
     ok('1h · _limpiarFormularioSecretaria existe (helper interno)', /function _limpiarFormularioSecretaria\s*\(/.test(rawSrc));
 
     console.log('\n── PARTE 2 · saSecretary (render) ──');
@@ -153,17 +154,33 @@ function buildSandbox({ elements = {}, secMethod = 'email', hasFunctions = true,
         ok('2a · renderiza formulario con campos esperados', /Secretaría/.test(els['sa-body'].innerHTML) && /sec-name/.test(els['sa-body'].innerHTML) && /sec-body/.test(els['sa-body'].innerHTML));
     }
 
-    console.log('\n── PARTE 3 · saToggleMethod ──');
+    // ══════════════════════════════════════════════════════════════════
+    //  PARTE 3 · v671 · YA NO HAY MÉTODO QUE ALTERNAR
+    //
+    //  El selector Correo/WhatsApp y el campo de teléfono se han retirado.
+    //  `saToggleMethod` se conserva porque es `window.*` y puede quedar
+    //  alguna llamada suelta, pero ahora deja la pantalla SIEMPRE en modo
+    //  correo. 🔑 Se prueba con el argumento viejo ('whatsapp') a propósito:
+    //  una llamada rezagada no puede esconder el bloque del email y dejar
+    //  la pantalla sin ningún destino donde escribir.
+    // ══════════════════════════════════════════════════════════════════
+    console.log('\n── PARTE 3 · saToggleMethod (v671: sólo correo) ──');
     {
         const { sandbox, els } = buildSandbox({ elements: { 'sec-body': { classList: makeClassList() } } });
         sandbox.window.saToggleMethod('whatsapp');
-        ok('3a · whatsapp -> muestra bloque teléfono, oculta email/asunto', els['sec-phone-block'].style.display === 'block' && els['sec-email-block'].style.display === 'none' && els['sec-subject-block'].style.display === 'none');
-        ok('3b · whatsapp -> texto de botón actualizado', /WhatsApp/.test(els['sec-btn-text'].innerHTML));
+        ok('3a · ⚠️ ni con el argumento viejo esconde el bloque del email',
+            els['sec-email-block'].style.display === 'block'
+            && els['sec-subject-block'].style.display === 'block');
+        ok('3b · y el botón siempre ofrece el envío por Email',
+            /Email/.test(els['sec-btn-text'].innerHTML)
+            && !/WhatsApp/.test(els['sec-btn-text'].innerHTML), els['sec-btn-text'].innerHTML);
     }
     {
         const { sandbox, els } = buildSandbox({ elements: { 'sec-body': { classList: makeClassList() } } });
         sandbox.window.saToggleMethod('email');
-        ok('3c · email -> muestra bloque email/asunto, oculta teléfono', els['sec-email-block'].style.display === 'block' && els['sec-subject-block'].style.display === 'block' && els['sec-phone-block'].style.display === 'none');
+        ok('3c · email -> muestra bloque email/asunto',
+            els['sec-email-block'].style.display === 'block'
+            && els['sec-subject-block'].style.display === 'block');
     }
 
     console.log('\n── PARTE 4 · saUpdateInviteTemplate ──');
@@ -188,10 +205,17 @@ function buildSandbox({ elements = {}, secMethod = 'email', hasFunctions = true,
         ok('4b · plantilla email NO usa formato markdown de WhatsApp', !els['sec-body'].value.includes('*Invitación'));
     }
     {
+        // v671 · ANTES: "plantilla whatsapp usa formato markdown". Esa
+        //   plantilla se ha retirado. 🔑 Se sigue pidiendo el método viejo a
+        //   propósito: el usuario no puede quedarse sin plantilla porque una
+        //   llamada rezagada pase 'whatsapp'; tiene que caer en la del correo.
         const { sandbox, els } = buildSandbox({ secMethod: 'whatsapp', elements: { 'sec-name': { value: 'Luis' }, 'sec-role': { value: 'user' } } });
         sandbox.window.saUpdateInviteTemplate();
-        ok('4c · plantilla whatsapp usa formato markdown, y la vista previa trae el nombre',
-           /Invitación a Chronos/.test(els['sec-body'].value) && /\*Luis\*/.test(els['sec-preview'].textContent));
+        ok('4c · ⚠️ con el método viejo cae en la plantilla de CORREO, no en una vacía',
+           els['sec-body'].value.length > 0
+           && !els['sec-body'].value.includes('*Invitación')
+           && /Luis/.test(els['sec-preview'].textContent),
+           els['sec-body'].value.slice(0, 70));
     }
     {
         const cl = makeClassList(); cl.add('user-edited');
@@ -230,11 +254,22 @@ function buildSandbox({ elements = {}, secMethod = 'email', hasFunctions = true,
         ok('6c · método email -> enruta a saSendInviteEmail (Cloud Function invocada)', httpsCallableCalls.some(c => c.name === 'sendInviteEmail'));
     }
     {
-        const { sandbox, openCalls } = buildSandbox({
-            secMethod: 'whatsapp', elements: { 'sec-name': { value: 'Ana' }, 'sec-phone': { value: '34600112233' } },
+        // v671 · ANTES: "método whatsapp -> enruta a saSendInviteWhatsApp".
+        //   🔑 Ahora el enrutador tiene un solo camino. Se le pasa el método
+        //   viejo Y un teléfono para comprobar las DOS cosas que importan:
+        //   que no abre wa.me, y que no se queda mudo — sigue enrutando al
+        //   correo, que es el único envío que queda.
+        const { sandbox, openCalls, httpsCallableCalls } = buildSandbox({
+            secMethod: 'whatsapp',
+            elements: { 'sec-name': { value: 'Ana' }, 'sec-email': { value: 'ana@x.com' },
+                        'sec-phone': { value: '34600112233' } },
         });
         await sandbox.window.saSendInvite();
-        ok('6d · método whatsapp -> enruta a saSendInviteWhatsApp (abre wa.me)', openCalls.some(u => u.startsWith('https://wa.me/')));
+        ok('6d · ⚠️ el método viejo NO abre wa.me',
+            !openCalls.some(u => u.startsWith('https://wa.me/')), openCalls);
+        ok('6d2 · 🔑 y no se queda mudo: enruta al correo',
+            httpsCallableCalls.some(c => c.name === 'sendInviteEmail'),
+            httpsCallableCalls.map(c => c.name));
     }
 
     console.log('\n── PARTE 7 · saSendInviteEmail — validación ──');
@@ -314,25 +349,30 @@ function buildSandbox({ elements = {}, secMethod = 'email', hasFunctions = true,
         ok('11a · fa.functions ausente -> cae al mismo fallback mailto', openCalls.some(u => u.startsWith('mailto:nofn@x.com')));
     }
 
-    console.log('\n── PARTE 12 · saSendInviteWhatsApp ──');
+    // ══════════════════════════════════════════════════════════════════
+    //  PARTE 12 · v671 · `saSendInviteWhatsApp` RETIRADA
+    //
+    //  Aquí se probaba el envío por WhatsApp: validación del teléfono,
+    //  limpieza del número y apertura de wa.me. Ese canal ya no existe.
+    //
+    //  🔑 LA PARTE NO SE BORRA, SE DA LA VUELTA: lo que antes fijaba el
+    //  comportamiento ahora fija que no vuelve. Y se mira el FUENTE además
+    //  del objeto: alguien podría recuperar una URL de wa.me sin devolver
+    //  la función.
+    // ══════════════════════════════════════════════════════════════════
+    console.log('\n── PARTE 12 · WhatsApp retirado (v671) ──');
     {
-        const { sandbox, openCalls, toasts } = buildSandbox({ elements: { 'sec-phone': { value: '' } } });
-        await sandbox.window.saSendInviteWhatsApp();
-        ok('12a · sin teléfono -> ningún window.open', openCalls.length === 0);
-        ok('12b · sin teléfono -> toast de aviso', toasts.some(t => /teléfono.*obligatorio/i.test(t)));
-    }
-    {
-        const { sandbox, openCalls, toasts } = buildSandbox({ elements: { 'sec-phone': { value: '12345' } } });
-        await sandbox.window.saSendInviteWhatsApp();
-        ok('12c · teléfono demasiado corto -> ningún window.open', openCalls.length === 0);
-        ok('12d · teléfono demasiado corto -> toast de aviso', toasts.some(t => /no parece ser válido/i.test(t)));
-    }
-    {
-        const { sandbox, openCalls, toasts, els } = buildSandbox({ elements: { 'sec-phone': { value: '+34 600 11 22 33' }, 'sec-name': { value: 'Ana' }, 'sec-body': { value: 'hola' } } });
-        await sandbox.window.saSendInviteWhatsApp();
-        ok('12e · limpia caracteres no numéricos del teléfono y abre wa.me', openCalls.some(u => u === 'https://wa.me/34600112233?text=hola'));
-        ok('12f · toast de confirmación', toasts.some(t => /Abriendo WhatsApp/i.test(t)));
-        ok('12g · limpia los campos del formulario', els['sec-phone'].value === '' && els['sec-name'].value === '');
+        const { sandbox } = buildSandbox({ elements: { 'sec-phone': { value: '34600112233' } } });
+        ok('12a · ⚠️ `saSendInviteWhatsApp` ya no existe',
+            typeof sandbox.window.saSendInviteWhatsApp !== 'function');
+        // Sin comentarios: la nota que explica la retirada nombra wa.me.
+        const cod = rawSrc
+            .replace(/\/\*[\s\S]*?\*\//g, '')
+            .split(/\r?\n/).map(l => l.replace(/(^|\s)\/\/.*$/, '$1')).join('\n');
+        ok('12b · 🔑 y el módulo no conserva ninguna URL de wa.me',
+            !/wa\.me/.test(cod), (cod.match(/wa\.me/g) || []).length);
+        ok('12c · ⚠️ ni el campo de teléfono ni el selector de método',
+            !/id="sec-phone"/.test(cod) && !/name="sec-method"/.test(cod));
     }
 
     // ═══════════════════════════════════════════════════════════════════
@@ -388,22 +428,9 @@ function buildSandbox({ elements = {}, secMethod = 'email', hasFunctions = true,
            !els['sec-preview'].textContent.includes(url),
            'lo llevan el botón y la frase de respaldo del HTML (functions/index.js)');
     }
-    {
-        const { sandbox, els } = buildSandbox({
-            secMethod: 'whatsapp',
-            elements: { 'sec-email': { value: 'ana@x.com' }, 'sec-role': { value: 'coordinator' }, 'sec-club': { value: 'CD Prueba' } },
-        });
-        sandbox.window.saUpdateInviteTemplate();
-        // ⚠️ v633 · Se acuña ANTES de mirar. Sin esto, campo y vista previa
-        // enseñarían los dos el aviso de «pendiente» y el `includes` daría
-        // verdadero sin comprobar nada: el guard pasaría midiendo la nada.
-        await sandbox.window._secEnlaceReal();
-        sandbox.window.saUpdateInvitePreview();
-        const url = els['sec-link'].value;
-        ok('13d-wa · 🔑 en WhatsApp el enlace del MENSAJE sigue siendo el de pantalla',
-           !!url && /\?invite=/.test(url) && els['sec-preview'].textContent.includes(url),
-           'ahí es el ÚNICO camino: no hay botón ni frase de respaldo · ' + url);
-    }
+    // v671 · aquí iba «13d-wa», que comprobaba lo mismo pero en la plantilla
+    //   de WhatsApp, donde el enlace era el único camino. Ese canal se ha
+    //   retirado y sólo queda el correo, que ya lo cubre 13d.
     {
         // Cambiar un dato del formulario tiene que mover el enlace: enseñar
         // uno viejo sería peor que no enseñar ninguno, porque se copia y se
@@ -486,14 +513,18 @@ function buildSandbox({ elements = {}, secMethod = 'email', hasFunctions = true,
         ok('14h · un mensaje vacío no se guarda', toasts.some(t => /vacío/i.test(t)));
     }
     {
-        // Guardar la de correo NO puede borrar la de WhatsApp.
-        const { sandbox } = buildSandbox({ secMethod: 'whatsapp', elements: { 'sec-body': { value: 'wa nueva' } } });
+        // v671 · ANTES: "guardar una modalidad conserva la otra" (correo y
+        //   WhatsApp). Ya sólo hay una plantilla. 🔑 Lo que sigue importando
+        //   es que guardar NO pise una plantilla ajena que estuviera en el
+        //   almacén: se guarda bajo `email` y lo demás se respeta.
+        const { sandbox } = buildSandbox({ elements: { 'sec-body': { value: 'correo nuevo' } } });
         sandbox.window._secCtx = { clubId: '', clubName: '', clubFijo: false };
-        sandbox.window._secGuardadas = { email: 'la de correo' };
+        sandbox.window._secGuardadas = { otra: 'no se toca' };
         await sandbox.window.saGuardarPlantilla();
-        ok('14i · guardar una modalidad conserva la otra',
-           sandbox.window._secGuardadas.email === 'la de correo' &&
-           sandbox.window._secGuardadas.whatsapp === 'wa nueva');
+        ok('14i · guarda la del correo sin pisar lo demás del almacén',
+           sandbox.window._secGuardadas.email === 'correo nuevo' &&
+           sandbox.window._secGuardadas.otra === 'no se toca',
+           JSON.stringify(sandbox.window._secGuardadas));
     }
 
     // ═══════════════════════════════════════════════════════════════════
@@ -520,15 +551,9 @@ function buildSandbox({ elements = {}, secMethod = 'email', hasFunctions = true,
            /^[A-Za-z0-9_-]{8,64}$/.test(enviado.inviteToken || '') &&
            !('inviteUrl' in enviado), JSON.stringify(Object.keys(enviado)));
     }
-    {
-        const { sandbox, openCalls } = buildSandbox({
-            secMethod: 'whatsapp',
-            elements: { 'sec-phone': { value: '34600112233' }, 'sec-name': { value: 'Luis' }, 'sec-body': { value: 'Hola {nombre}' } },
-        });
-        await sandbox.window.saSendInviteWhatsApp();
-        ok('15c · WhatsApp también manda el texto sustituido',
-           openCalls.some(u => u.includes('Hola%20Luis') || u.includes('Hola+Luis')), openCalls[0]);
-    }
+    // v671 · aquí se comprobaba que WhatsApp también sustituía {nombre}.
+    //   Retirado con el canal; la sustitución la sigue cubriendo el caso del
+    //   correo, justo encima, que es el único envío que queda.
 
     // ═══════════════════════════════════════════════════════════════════
     console.log('\n── PARTE 16 · v594 · el constructor CANÓNICO (js/core/utils.js) ──');

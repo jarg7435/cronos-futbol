@@ -2026,12 +2026,6 @@ async function _selectUnifiedContact(uid) {
                        border-radius:6px;color:#ff5858;font-size:0.72rem;font-weight:700;">
                 🗑️ Vaciar
             </button>
-            ${contact.phone ? `
-            <a href="https://wa.me/${contact.phone}" target="_blank"
-                style="padding:0.32rem 0.65rem;background:rgba(37,211,102,0.12);border:1px solid rgba(37,211,102,0.4);
-                       border-radius:6px;color:#25d366;font-size:0.72rem;text-decoration:none;font-weight:700;">
-                📱 WA
-            </a>` : ''}
             ${contact.email ? `
             <a href="mailto:${contact.email}"
                 style="padding:0.32rem 0.65rem;background:rgba(88,166,255,0.1);border:1px solid rgba(88,166,255,0.3);

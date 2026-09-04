@@ -218,7 +218,7 @@ function clearTrainingWeek() {
 }
 
 // ══════════════════════════════════════════════════════════════════
-//  ENVIAR ENTRENAMIENTO POR WHATSAPP / EMAIL
+//  ENVIAR ENTRENAMIENTO POR EMAIL
 // ══════════════════════════════════════════════════════════════════
 
 function _getTrainingWeekText() {
@@ -326,17 +326,13 @@ function openTrainingSendPanel(target) {
             <div style="background:rgba(255,255,255,0.03);border:1px solid var(--glass-border);
                         border-radius:10px;padding:0.9rem 1rem;margin-bottom:0.9rem;">
                 <div style="font-size:0.78rem;font-weight:700;color:var(--text-muted);margin-bottom:0.5rem;">📤 ENVIAR A</div>
-                <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.55rem;">
-                    <div>
-                        <label style="font-size:0.72rem;color:var(--text-muted);display:block;margin-bottom:0.2rem;">📱 WhatsApp</label>
-                        <input id="tr-wa" type="tel" class="conv-input" placeholder="34612345678"
-                            value="${saved.wa || emailConfig?.whatsappNumber || ''}">
-                    </div>
-                    <div>
-                        <label style="font-size:0.72rem;color:var(--text-muted);display:block;margin-bottom:0.2rem;">📧 Email</label>
-                        <input id="tr-email" type="email" class="conv-input" placeholder="directores@club.com"
-                            value="${saved.email || emailConfig?.directorEmail || ''}">
-                    </div>
+                <!-- v671 · Se retira el campo del número de WhatsApp (era el
+                     único sitio de esta pantalla que pedía un teléfono) y el
+                     email pasa a ocupar la fila entera. -->
+                <div>
+                    <label style="font-size:0.72rem;color:var(--text-muted);display:block;margin-bottom:0.2rem;">📧 Email</label>
+                    <input id="tr-email" type="email" class="conv-input" placeholder="directores@club.com"
+                        value="${saved.email || emailConfig?.directorEmail || ''}">
                 </div>
             </div>
 
@@ -344,9 +340,6 @@ function openTrainingSendPanel(target) {
             <div style="display:flex;gap:0.5rem;flex-wrap:wrap;padding-top:0.8rem;
                         border-top:1px solid var(--glass-border);">
                 <button onclick="renderTrainingWeek()" class="btn" style="color:var(--text-muted);">← Volver</button>
-                <button onclick="sendTrainingWA()" class="btn"
-                    style="background:rgba(63,185,80,0.15);border-color:rgba(63,185,80,0.4);
-                           color:#3fb950;font-weight:700;flex:1;">📱 WhatsApp</button>
                 <button onclick="sendTrainingEmail()" class="btn"
                     style="background:rgba(88,166,255,0.12);border-color:rgba(88,166,255,0.4);
                            color:var(--primary);font-weight:700;flex:1;">📧 Email</button>
@@ -379,17 +372,7 @@ function updateTrainingPreview() {
     preview.textContent = msg;
 }
 
-function sendTrainingWA() {
-    const preview = document.getElementById('tr-preview');
-    const wa = document.getElementById('tr-wa')?.value.trim();
-    if (!preview || !wa) {
-        if (typeof showToast === 'function') showToast('⚠️ Introduce un número de WhatsApp', 3000);
-        return;
-    }
-    const text = encodeURIComponent(preview.textContent);
-    window.open('https://wa.me/' + wa.replace(/[^0-9]/g, '') + '?text=' + text, '_blank');
-}
-
+// v671 · `sendTrainingWA` retirada con su botón y su campo `tr-wa`.
 function sendTrainingEmail() {
     const preview = document.getElementById('tr-preview');
     const email = document.getElementById('tr-email')?.value.trim();

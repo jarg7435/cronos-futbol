@@ -132,23 +132,13 @@ window.saSecretary = async function saSecretary(opciones) {
     <div style="max-width:600px;">
         <h3 style="margin:0 0 1rem;font-size:1rem;color:white;">✉️ Secretaría</h3>
         <p style="font-size:0.8rem;color:#8b949e;margin:0 0 1.2rem;">
-            Envía invitaciones personalizadas a futuros usuarios para registrarse en la plataforma mediante Correo o WhatsApp.
+            Envía invitaciones personalizadas por correo a futuros usuarios para registrarse en la plataforma.
         </p>
         <div style="display:flex;flex-direction:column;gap:0.8rem;">
-            <!-- Método de envío -->
-            <div>
-                <label style="font-size:0.78rem;color:#8b949e;display:block;margin-bottom:6px;">Método de envío</label>
-                <div style="display:flex;gap:1.5rem;margin-bottom:4px;">
-                    <label style="display:flex;align-items:center;gap:0.45rem;color:white;font-size:0.85rem;cursor:pointer;font-weight:600;">
-                        <input type="radio" name="sec-method" value="email" checked onchange="window.saToggleMethod('email')" style="cursor:pointer;width:16px;height:16px;">
-                        ✉️ Correo electrónico
-                    </label>
-                    <label style="display:flex;align-items:center;gap:0.45rem;color:white;font-size:0.85rem;cursor:pointer;font-weight:600;">
-                        <input type="radio" name="sec-method" value="whatsapp" onchange="window.saToggleMethod('whatsapp')" style="cursor:pointer;width:16px;height:16px;">
-                        💬 WhatsApp
-                    </label>
-                </div>
-            </div>
+            <!-- v671 · AQUÍ ESTABA EL SELECTOR "Método de envío" (Correo /
+                 WhatsApp). Con WhatsApp retirado de toda la app queda un solo
+                 método, y un selector de una opción sólo estorba: se envía
+                 por correo y punto. -->
 
             <!-- Nombre del destinatario -->
             <div>
@@ -168,15 +158,8 @@ window.saSecretary = async function saSecretary(opciones) {
                            color:white;font-size:0.9rem;box-sizing:border-box;">
             </div>
 
-            <!-- Teléfono de destino (WhatsApp) -->
-            <div id="sec-phone-block" style="display:none;">
-                <label style="font-size:0.78rem;color:#8b949e;display:block;margin-bottom:4px;">Teléfono de destino *</label>
-                <input id="sec-phone" type="tel" placeholder="Ej: 34600112233" oninput="window.saUpdateInviteTemplate()"
-                    style="width:100%;padding:0.7rem;background:rgba(255,255,255,0.05);
-                           border:1px solid rgba(255,255,255,0.15);border-radius:8px;
-                           color:white;font-size:0.9rem;box-sizing:border-box;">
-                <span style="font-size:0.68rem;color:#8b949e;margin-top:2px;display:block;">Incluye el código de país (ej. 34 para España) sin el signo + ni espacios.</span>
-            </div>
+            <!-- v671 · fuera el campo "Teléfono de destino": era exclusivo del
+                 envío por WhatsApp y ya no se recogen números. -->
 
             <div>
                 <label style="font-size:0.78rem;color:#8b949e;display:block;margin-bottom:4px;">Rol asignado</label>
@@ -440,13 +423,8 @@ window.secPlantillaFabrica = function(metodo, clubName) {
     const firma = club
         ? ('Un saludo,\nLa Dirección Deportiva de ' + club)
         : 'Atentamente,\nEl Equipo de Chronos Fútbol';
-    if (metodo === 'whatsapp') {
-        return '⚽ *Invitación a Chronos Fútbol* ⚽\n\n' +
-               '¡Hola, *{nombre}*! Te invito a unirte a Chronos Fútbol como *{rol}*' +
-               (club ? ' del club *' + club + '*' : '') + '.\n\n' +
-               'Completa tu registro y accede a la app aquí:\n{enlace}\n\n' +
-               '¡Un saludo!';
-    }
+    // v671 · aquí vivía la plantilla de WhatsApp. Retirada con el canal;
+    // queda una sola plantilla, la del correo.
     // ══════════════════════════════════════════════════════════════════
     //  ✉️ v630 · EL CUERPO DEL CORREO YA NO REPITE EL ENLACE
     //
@@ -539,24 +517,19 @@ window.saCargarPlantillaGuardada = async function() {
     }
 };
 
-// Alternar entre Email y WhatsApp en la interfaz
-window.saToggleMethod = function(method) {
-    const emailBlock = document.getElementById('sec-email-block');
-    const phoneBlock = document.getElementById('sec-phone-block');
+// v671 · Ya no hay nada que alternar: el único método es el correo.
+//   La función SE CONSERVA porque es `window.*` y puede quedar alguna
+//   llamada suelta; ahora deja la pantalla siempre en modo correo en vez de
+//   esconder el bloque del email, que es lo que haría su rama antigua si
+//   alguien la invocara con 'whatsapp'.
+window.saToggleMethod = function() {
+    const emailBlock   = document.getElementById('sec-email-block');
     const subjectBlock = document.getElementById('sec-subject-block');
-    const btnText = document.getElementById('sec-btn-text');
+    const btnText      = document.getElementById('sec-btn-text');
 
-    if (method === 'email') {
-        if (emailBlock) emailBlock.style.display = 'block';
-        if (phoneBlock) phoneBlock.style.display = 'none';
-        if (subjectBlock) subjectBlock.style.display = 'block';
-        if (btnText) btnText.innerHTML = '✉️ Enviar Invitación por Email';
-    } else {
-        if (emailBlock) emailBlock.style.display = 'none';
-        if (phoneBlock) phoneBlock.style.display = 'block';
-        if (subjectBlock) subjectBlock.style.display = 'none';
-        if (btnText) btnText.innerHTML = '💬 Enviar Invitación por WhatsApp';
-    }
+    if (emailBlock) emailBlock.style.display = 'block';
+    if (subjectBlock) subjectBlock.style.display = 'block';
+    if (btnText) btnText.innerHTML = '✉️ Enviar Invitación por Email';
 
     const secBody = document.getElementById('sec-body');
     if (secBody && !secBody.classList.contains('user-edited')) {
@@ -568,7 +541,7 @@ window.saToggleMethod = function(method) {
 
 // Actualizar la PLANTILLA (sólo si el usuario no la ha tocado) y la vista previa.
 window.saUpdateInviteTemplate = function() {
-    const method = document.querySelector('input[name="sec-method"]:checked')?.value || 'email';
+    const method = 'email'   /* v671 · ya no hay selector de método: el correo es el único */;
     const club   = document.getElementById('sec-club')?.value.trim() || '';
     const secBody = document.getElementById('sec-body');
 
@@ -607,7 +580,7 @@ window.saUpdateInvitePreview = function() {
 
 // El cuerpo tal y como va a salir: en EMAIL, sin el enlace repetido.
 function _secCuerpoParaEnviar(texto) {
-    const metodo = document.querySelector('input[name="sec-method"]:checked')?.value || 'email';
+    const metodo = 'email'   /* v671 · ya no hay selector de método: el correo es el único */;
     if (metodo !== 'email' || typeof window.secQuitarEnlaceRepetido !== 'function') return texto;
     return window.secQuitarEnlaceRepetido(texto);
 }
@@ -620,7 +593,7 @@ window.saResetInviteTemplate = function() {
     const secBody = document.getElementById('sec-body');
     if (secBody) {
         secBody.classList.remove('user-edited');
-        const method = document.querySelector('input[name="sec-method"]:checked')?.value || 'email';
+        const method = 'email'   /* v671 · ya no hay selector de método: el correo es el único */;
         const club   = document.getElementById('sec-club')?.value.trim() || '';
         secBody.value = window.secPlantillaFabrica(method, club);
         window.saUpdateInvitePreview();
@@ -634,7 +607,7 @@ window.saGuardarPlantilla = async function() {
     const texto = secBody?.value.trim() || '';
     if (!texto) { _saToast('⚠️ El mensaje está vacío: no hay nada que guardar', 3000); return; }
 
-    const method = document.querySelector('input[name="sec-method"]:checked')?.value || 'email';
+    const method = 'email'   /* v671 · ya no hay selector de método: el correo es el único */;
     const ctx = window._secCtx || {};
     // Se conservan las DOS plantillas (correo y WhatsApp): guardar la de
     // correo no puede borrar la de WhatsApp.
@@ -702,17 +675,11 @@ window.saCopiarEnlace = async function() {
 
 // Enrutador de envío
 window.saSendInvite = async function() {
-    const method = document.querySelector('input[name="sec-method"]:checked')?.value || 'email';
     const name = document.getElementById('sec-name')?.value.trim();
     if (!name) { _saToast('⚠️ El nombre del destinatario es obligatorio', 3000); return; }
-
-    if (method === 'email') {
-        await window.saSendInviteEmail();
-    } else {
-        // 🎟️ v633 · Ahora es async (acuña el token): sin el await, el
-        // formulario se limpiaría antes de que se abriera WhatsApp.
-        await window.saSendInviteWhatsApp();
-    }
+    // v671 · Un solo camino: el correo. Ya no hay selector de método ni
+    // rama de WhatsApp que enrutar.
+    await window.saSendInviteEmail();
 };
 
 // ── Traducir el fallo REAL del servidor ─────────────────────────────
@@ -807,7 +774,7 @@ window.saSendInviteEmail = async function() {
 // tiene que seguir ahí para la siguiente invitación. Sólo se van los datos
 // del destinatario, que son los que cambian.
 function _limpiarFormularioSecretaria() {
-    const fields = ['sec-email', 'sec-name', 'sec-phone'];
+    const fields = ['sec-email', 'sec-name'];   // v671 · sin 'sec-phone'
     fields.forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
     // 🎟️ v633 · Se suelta el token ya usado. Sin esto, la siguiente invitación
     // reutilizaría el enlace de la anterior si el formulario volviera a quedar
@@ -818,26 +785,6 @@ function _limpiarFormularioSecretaria() {
 }
 
 
-// Enviar invitación vía WhatsApp Web/App
-window.saSendInviteWhatsApp = async function() {
-    const phone = document.getElementById('sec-phone')?.value.trim();
-
-    // Se valida el teléfono ANTES de acuñar: si el número está mal, no tiene
-    // sentido dejar una invitación viva que nadie va a recibir.
-    if (!phone) { _saToast('⚠️ El teléfono de destino es obligatorio', 3000); return; }
-    const cleanPhone = phone.replace(/[^0-9]/g, '');
-    if (cleanPhone.length < 7) { _saToast('⚠️ El número de teléfono no parece ser válido', 3000); return; }
-
-    // 🎟️ v633 · En WhatsApp `{enlace}` es el ÚNICO camino: no hay botón ni
-    // frase de respaldo como en el correo. Acuñar aquí no es opcional.
-    await _secEnlaceReal();
-    const datos = _secDatosActuales();
-    const body  = window.secRenderPlantilla(
-        document.getElementById('sec-body')?.value || '', datos).trim();
-
-    const waUrl = `https://wa.me/${cleanPhone}?text=${encodeURIComponent(body)}`;
-    window.open(waUrl, '_blank');
-    _saToast('✅ Abriendo WhatsApp...', 3000);
-
-    _limpiarFormularioSecretaria();
-};
+// v671 · AQUÍ VIVÍA `saSendInviteWhatsApp`, Y SE HA RETIRADO con su botón,
+//   su campo de teléfono y su plantilla. La invitación va por correo, que
+//   además es el único camino que lleva botón de acción y frase de respaldo.

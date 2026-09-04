@@ -288,13 +288,21 @@ console.log('\n4) 📤 Los tres caminos de salida acuñan');
        /saSendInviteEmail = async function[\s\S]*?await _secEnlaceReal\(\)[\s\S]*?const datos   = _secDatosActuales\(\)/.test(SEC),
        'si no, el cuerpo saldría con el aviso de "pendiente" dentro');
 
-    ok('4c · 🔑 WhatsApp también, que allí el enlace es el ÚNICO camino',
-       /saSendInviteWhatsApp = async function[\s\S]*?await _secEnlaceReal\(\)/.test(SEC),
-       'en WhatsApp no hay botón ni frase de respaldo como en el correo');
+    // v671 · ANTES aquí se exigía que `saSendInviteWhatsApp` acuñara el token
+    //   y que el enrutador la esperara. Ese canal se ha retirado de toda la
+    //   app; las dos aserciones pasan a exigir su AUSENCIA, que es lo que hay
+    //   que vigilar ahora: si alguien lo reintrodujera sin acuñar, mandaría
+    //   invitaciones con el enlace "pendiente" dentro.
+    const _secCod = SEC
+        .replace(/\/\*[\s\S]*?\*\//g, '')
+        .split(/\r?\n/).map(l => l.replace(/(^|\s)\/\/.*$/, '$1')).join('\n');
 
-    ok('4d · ⚠️ y el enrutador lo ESPERA, ahora que es async',
-       /await window\.saSendInviteWhatsApp\(\)/.test(SEC),
-       'sin el await, el formulario se limpiaría antes de abrir WhatsApp');
+    ok('4c · ⚠️ ya no existe `saSendInviteWhatsApp`',
+       !/saSendInviteWhatsApp\s*=\s*async function/.test(_secCod));
+
+    ok('4d · 🔑 y el enrutador tiene UN solo camino, el del correo',
+       /await window\.saSendInviteEmail\(\)/.test(_secCod)
+       && !/saSendInviteWhatsApp\(\)/.test(_secCod));
 
     ok('4e · 🔑 al limpiar el formulario se SUELTA el token usado',
        /_limpiarFormularioSecretaria[\s\S]*?window\._secTokenActual = null/.test(SEC),

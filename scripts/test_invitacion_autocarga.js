@@ -104,8 +104,13 @@ console.log('\n1) ✉️ El correo deja de repetir el enlace');
        !/🔗 \{enlace\}/.test(SEC.replace(/^\s*\/\/.*$/gm, '')),
        'era la tercera copia del mismo enlace en el mismo correo');
 
-    ok('1b · ⚠️ pero WhatsApp lo CONSERVA: allí no hay botón ni respaldo',
-       /'Completa tu registro y accede a la app aquí:\\n\{enlace\}/.test(SEC));
+    // v671 · ANTES: "pero WhatsApp lo CONSERVA: allí no hay botón ni respaldo".
+    //   Ese canal se ha retirado de toda la app, así que ya no hay una
+    //   segunda plantilla que conservar nada. Lo que queda por vigilar es
+    //   justamente lo contrario: que NO reaparezca.
+    ok('1b · ⚠️ y ya no queda plantilla de WhatsApp que la duplique',
+       !/Completa tu registro y accede a la app aquí/.test(SEC)
+       && !/metodo === 'whatsapp'/.test(SEC.replace(/^\s*\/\/.*$/gm, '')));
 
     ok('1c · el HTML del correo sigue teniendo botón y frase de respaldo',
        /Completar Registro \/ Acceder/.test(FUNCS) &&

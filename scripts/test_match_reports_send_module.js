@@ -472,33 +472,40 @@ const inCol = (written, col) => written.filter(w => w.col === col);
         await t.w._executeReportsSend('wa');
         ok('5b · sin sesion sale en silencio', t.toasts.length === 0 && t.opened.length === 0);
     }
+    // ══════════════════════════════════════════════════════════════════
+    //  v671 · EL MODO 'wa' SE HA RETIRADO (WhatsApp fuera de toda la app).
+    //
+    //  🔑 SE COMPRUEBA QUE NO ENVIA **Y QUE LO DICE**. Lo peligroso de
+    //  retirar un canal no es que deje de funcionar: es que se caiga en
+    //  silencio, o —peor— que reencamine por correo algo que alguien pidio
+    //  mandar por WhatsApp. Por eso la rama sigue existiendo en el codigo,
+    //  avisando y parando.
+    // ══════════════════════════════════════════════════════════════════
     {
         const t = buildSandbox({
             recipients: [{ id: 's1', type: 'staff', phone: '600111', label: 'Dir' },
-                         { id: 's2', type: 'staff', phone: '600222', label: 'Coord' }],
+                         { id: 's2', type: 'staff', phone: '600222', email: 'c@x.com', label: 'Coord' }],
         });
         await t.w._executeReportsSend('wa');
-        ok('5c · abre un WhatsApp por destinatario con telefono',
-            t.opened.length === 2 && t.opened[0].startsWith('https://wa.me/600111?text='), t.opened.length);
-        ok('5d · al staff le manda el resumen GLOBAL',
-            decodeURIComponent(t.opened[0]).includes('RESUMEN GLOBAL'));
-        ok('5e · no escribe nada en Firestore', t.written.length === 0);
+        ok('5c · ⚠️ el modo WhatsApp NO abre nada, aunque haya telefonos',
+            t.opened.length === 0, t.opened);
+        ok('5d · 🔑 y avisa de que ese envio ya no existe (no falla en silencio)',
+            t.toasts.some(x => /WhatsApp/i.test(x) && /(no est|retirad)/i.test(x)), t.toasts);
+        ok('5e · ⚠️ ni lo reencamina por correo sin permiso',
+            !t.opened.some(u => u.startsWith('mailto:')), t.opened);
+        ok('5f · no escribe nada en Firestore', t.written.length === 0);
     }
     {
-        const t = buildSandbox({
-            recipients: [{ id: 'p7', type: 'parent', phone: '600777', label: 'Madre' }],
-            links: [{ _id: 'L1', parentUid: 'p7', parentPhone: '600777', playerNumber: '7' }],
-        });
-        await t.w._executeReportsSend('wa');
-        ok('5f · al padre emparejado por el vinculo le manda el informe INDIVIDUAL',
-            decodeURIComponent(t.opened[0]).includes('INFORME INDIVIDUAL')
-            && decodeURIComponent(t.opened[0]).includes('Ana'), t.opened[0].slice(0, 60));
-    }
-    {
-        const t = buildSandbox({ recipients: [{ id: 'x', type: 'staff', label: 'D' }] });   // sin telefono
-        await t.w._executeReportsSend('wa');
-        ok('5g · sin ningun telefono avisa y no abre nada',
-            t.opened.length === 0 && t.toasts.some(x => x.includes('WA configurado')));
+        // Y el CODIGO no puede conservar ni una URL de wa.me.
+        // ⚠️ SIN COMENTARIOS. La nota que explica que ese envio se retiro
+        //    nombra "wa.me", y sobre el fuente crudo esta asercion se
+        //    dispara sola. Es la regla de este repo para cualquier
+        //    comprobacion del tipo "esta cadena ya no puede estar".
+        const _cod5g = BLOCK
+            .replace(/\/\*[\s\S]*?\*\//g, '')
+            .split(/\r?\n/).map(l => l.replace(/(^|\s)\/\/.*$/, '$1')).join('\n');
+        ok('5g · 🔑 el modulo no contiene ninguna llamada a wa.me',
+            !/wa\.me/.test(_cod5g), (_cod5g.match(/wa\.me/g) || []).length);
     }
     {
         const t = buildSandbox({ recipients: [{ id: 'x', type: 'staff', email: 'a@x.com', label: 'D' }] });

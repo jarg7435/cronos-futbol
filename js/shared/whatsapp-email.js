@@ -1,5 +1,11 @@
 // ══════════════════════════════════════════════════════════════════
-//  CHRONOS FÚTBOL — Envío de convocatoria por WhatsApp / Email
+//  CHRONOS FÚTBOL — Envío de convocatoria por Email / App interna
+//
+//  ⚠️ v671 · EL NOMBRE DEL FICHERO YA NO DESCRIBE LO QUE HACE. Se conserva
+//  a propósito: renombrarlo arrastra index.html, el precache de sw.js, la
+//  cobertura de _check_syntax y una docena de comentarios y guards que lo
+//  citan por su ruta, con riesgo real y cero beneficio para quien usa la
+//  app. Aquí ya NO se envía nada por WhatsApp.
 //  v76: Fusión de whatsapp-email.js + convocation.js.
 //       convocation.js eliminado — todas sus funciones viven aquí.
 //       Añadido parámetro `target` en openConvocationMessage():
@@ -669,10 +675,6 @@ function openConvocationMessage(target) {
                     style="background:rgba(88,166,255,0.15);border-color:rgba(88,166,255,0.4);
                            color:var(--primary);font-weight:700;">
                     📱 Envío Interno</button>
-                <button onclick="sendConvocationWA()" class="btn"
-                    style="background:rgba(63,185,80,0.15);border-color:rgba(63,185,80,0.4);
-                           color:#3fb950;font-weight:700;">
-                    📱 WhatsApp</button>
                 <button onclick="sendConvocationEmail()" class="btn"
                     style="background:rgba(88,166,255,0.12);border-color:rgba(88,166,255,0.4);
                            color:var(--primary);font-weight:700;">
@@ -789,9 +791,9 @@ window.sharedBuildRecipientsHTML = function(savedRecipients, prefix = 'cv') {
                 </div>
             </div>
             <div style="display:flex;gap:0.3rem;flex-shrink:0;">
-                ${c.phone ? `<span style="font-size:0.58rem;background:rgba(37,211,102,0.15);
-                    border:1px solid rgba(37,211,102,0.3);border-radius:4px;
-                    padding:1px 5px;color:#3fb950;">WA</span>` : ''}
+                <!-- v671 · fuera la etiqueta "WA": ya no hay envío por WhatsApp
+                     al que se refiera. La de "Email" sí se queda: marca por
+                     dónde puede llegarle el mensaje a ese contacto. -->
                 ${c.email ? `<span style="font-size:0.58rem;background:rgba(88,166,255,0.12);
                     border:1px solid rgba(88,166,255,0.25);border-radius:4px;
                     padding:1px 5px;color:var(--primary);">Email</span>` : ''}
@@ -927,10 +929,6 @@ ${(typeof escapeHtml==='function'?escapeHtml(msg):msg.replace(/</g,'&lt;').repla
             <div style="display:flex;gap:0.5rem;margin-top:0.8rem;flex-shrink:0;">
                 <button onclick="openConvocationMessage()" class="btn"
                     style="color:var(--text-muted);flex:1;">← Editar</button>
-                <button onclick="sendConvocationWA()" class="btn"
-                    style="background:rgba(63,185,80,0.15);border-color:rgba(63,185,80,0.4);
-                           color:#3fb950;font-weight:700;flex:1;">
-                    📱 WhatsApp</button>
                 <button onclick="sendConvocationEmail()" class="btn"
                     style="background:rgba(88,166,255,0.12);border-color:rgba(88,166,255,0.4);
                            color:var(--primary);font-weight:700;flex:1;">
@@ -981,28 +979,16 @@ async function saveConvocationToFirestore() {
     }
 }
 
-// ── Enviar por WhatsApp ─────────────────────────────────────────────
-function sendConvocationWA() {
-    saveConvConfig();
-    const recipients = sharedGetSelectedRecipients('cv').filter(r => r.phone);
-    const msg = buildConvocationText();
-    const encoded = encodeURIComponent(msg);
-
-    if (!recipients.length) {
-        window.open(`https://wa.me/?text=${encoded}`, '_blank');
-        showToast('📱 WhatsApp abierto — ningún contacto con teléfono seleccionado', 4000);
-        return;
-    }
-
-    recipients.forEach((r, i) => {
-        setTimeout(() => {
-            window.open(`https://wa.me/${r.phone}?text=${encoded}`, '_blank');
-        }, i * 800);
-    });
-    saveConvocationToFirestore();
-    showToast(`📱 Enviando a ${recipients.length} contacto${recipients.length > 1 ? 's' : ''} por WhatsApp`, 4000);
-    setTimeout(() => openConvocationModal(), 1500);
-}
+// ── v671 · AQUÍ VIVÍA `sendConvocationWA`, Y SE HA RETIRADO ─────────
+//  Encargo del autor: fuera WhatsApp de toda la app. Se va la función
+//  entera, no sólo su botón.
+//
+//  ⚠️ COMPROBADO ANTES DE BORRAR: aquella función no sólo abría wa.me,
+//  también llamaba a `saveConvocationToFirestore()`. Si hubiera sido el
+//  único camino que guardaba, quitarla habría dejado convocatorias sin
+//  registrar y sin ningún error a la vista. NO lo era:
+//  `sendConvocationEmail` guarda igual, unas líneas más abajo. Los otros
+//  dos caminos —"Envío Interno" y el email— siguen intactos.
 
 // ── Enviar por Email ────────────────────────────────────────────────
 function sendConvocationEmail() {

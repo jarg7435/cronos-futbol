@@ -1144,13 +1144,8 @@ window._sendAllIndividualReports = async function() {
                 });
             }
 
-            // ── Envío por WhatsApp si tiene teléfono (con/sin uid en app) ──
-            if (link.parentPhone) {
-                const waNum = link.parentPhone.replace(/\s/g,'');
-                setTimeout(() => {
-                    window.open(`https://wa.me/${waNum}?text=${encodeURIComponent(text)}`, '_blank');
-                }, sent * 800);
-            }
+            // v671 · aquí iba el envío por WhatsApp al teléfono del familiar.
+            // Retirado: el informe individual va por la app y por correo.
 
             // ── Envío por Email si tiene email y NO tiene uid (si tiene uid, ya llegó in-app) ──
             if (link.parentEmail && !link.parentUid) {

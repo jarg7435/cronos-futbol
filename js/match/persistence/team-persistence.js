@@ -449,7 +449,7 @@ window._showPostMatchOptions = function _showPostMatchOptions() {
                 <div style="text-align:left;">
                     <div style="color:#3fb950;">Enviar Informes a Familiares / Jugadores</div>
                     <div style="font-size:0.72rem;color:var(--text-muted);
-                                font-weight:400;">WhatsApp · Email · App interna</div>
+                                font-weight:400;">Email · App interna</div>
                 </div>
             </button>` : ''}
 

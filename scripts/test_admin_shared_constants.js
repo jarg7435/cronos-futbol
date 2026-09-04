@@ -246,7 +246,8 @@ function cargarShared() {
     // un ReferenceError que aborte el resto del archivo.
     const ev = expr => { try { return vm.runInContext(expr, sb); } catch (_) { return null; } };
     const claves = ev('Object.keys(SA_CONFIG).sort().join(",")');
-    ok('5d · SA_CONFIG conserva sus 6 campos', claves === 'appUrl,bizum,email,iban,nombre,whatsapp', claves);
+    // v671 · eran 6; sale `whatsapp` al retirar ese canal de toda la app.
+    ok('5d · SA_CONFIG conserva sus 5 campos', claves === 'appUrl,bizum,email,iban,nombre', claves);
     ok('5e · PLAN_META conserva los 8 planes', ev('Object.keys(PLAN_META).length') === 8);
     ok('5f · STATUS_META conserva los 4 estados', ev('Object.keys(STATUS_META).length') === 4);
 

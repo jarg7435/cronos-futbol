@@ -68,15 +68,22 @@ const textoTh = (cabecera.match(/<th[^>]*>([\s\S]*?)<\/th>/g) || [])
 // ═══════════ PARTE 1 · las columnas pedidas, en orden ═══════════
 console.log('── PARTE 1 · la cabecera ──');
 {
-    const ESPERADAS = ['FAMILIAR', 'CODIGO JUGADOR', 'WHATSAPP', 'EMAIL',
+    // v671 · eran DIEZ; sale WHATSAPP al retirar ese canal de toda la app y
+    // dejar de recoger telefonos. Lo que este guard vigila no cambia: que las
+    // TRES formas de fila (cabecera, vinculada y manual) tengan el MISMO
+    // numero de celdas, porque comparten <tbody> y una de mas desplaza las
+    // palomillas bajo el rotulo de al lado.
+    const ESPERADAS = ['FAMILIAR', 'CODIGO JUGADOR', 'EMAIL',
                        'CONV.', 'ENTR.', 'MSJ.', 'ENVIAR ✍️', 'INF.', 'EN VIVO 📡'];
     ESPERADAS.forEach((esp, i) => {
         ok('1.' + (i + 1) + ' · columna ' + (i + 1) + ' es "' + esp + '"',
            textoTh[i] === esp, 'encontrada: "' + (textoTh[i] || '(nada)') + '"');
     });
     ok('1z · y solo hay una columna mas, la de acciones (sin titulo)',
-       textoTh.length === 11 && textoTh[10] === '',
+       textoTh.length === 10 && textoTh[9] === '',
        'cabeceras: ' + JSON.stringify(textoTh));
+    ok('1w · ⚠️ no vuelve a aparecer una columna de WhatsApp ni de telefono',
+       !textoTh.some(t => /WHATSAPP|TEL[EÉ]FONO/i.test(t)), textoTh);
 }
 
 // ═══════════ PARTE 2 · EL RECUENTO (el defecto que nadie veia) ═══════════
@@ -86,7 +93,7 @@ console.log('\n── PARTE 2 · las tres formas de fila cuadran ──');
     const nVinc = cuenta(filaVinc, 'td');
     const nMan  = cuenta(filaMan,  'td');
 
-    ok('2a · la cabecera declara 11 columnas (10 + acciones)', nTh === 11, 'th=' + nTh);
+    ok('2a · la cabecera declara 10 columnas (9 + acciones)', nTh === 10, 'th=' + nTh);
     ok('2b · [EL DEFECTO] la fila del padre VINCULADO tiene esas mismas 11',
        nVinc === nTh, 'th=' + nTh + ' vs td=' + nVinc + ' — las palomillas salen bajo el rotulo equivocado');
     ok('2c · y la del padre MANUAL tambien',
@@ -106,9 +113,15 @@ console.log('\n── PARTE 3 · el orden real de los controles ──');
     };
 
     const vinc = clasesEn(filaVinc, 'contact-');
+    // v671 · sale `contact-phone` (columna WhatsApp retirada).
+    // 🚨 OJO AL BORRARLO: ese input no era solo un dato, era el ENUMERADOR
+    //    de filas de `saveContactManagerData` (`querySelectorAll('.contact-phone')`).
+    //    Quitarlo sin cambiar el bucle habria dejado de guardar nombres,
+    //    correos y los siete permisos, en silencio. El bucle pasa a
+    //    enumerar por `.contact-parent-email`.
     ok('3a · vinculado · el orden de controles es el pedido',
        JSON.stringify(vinc) === JSON.stringify([
-           'contact-parent-name', 'contact-phone', 'contact-parent-email',
+           'contact-parent-name', 'contact-parent-email',
            'contact-cv', 'contact-tr', 'contact-msg', 'contact-cansend',
            'contact-rpt', 'contact-live']),
        JSON.stringify(vinc));
@@ -116,7 +129,7 @@ console.log('\n── PARTE 3 · el orden real de los controles ──');
     const man = clasesEn(filaMan, 'p-');
     ok('3b · manual · el orden de controles es el mismo',
        JSON.stringify(man) === JSON.stringify([
-           'p-name', 'p-player', 'p-phone', 'p-email',
+           'p-name', 'p-player', 'p-email',
            'p-cv', 'p-tr', 'p-msg', 'p-rpt', 'p-live']),
        JSON.stringify(man));
 

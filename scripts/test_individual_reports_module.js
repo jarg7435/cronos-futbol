@@ -876,16 +876,19 @@ const inCol = (written, col) => written.filter(w => w.col === col);
             t.toasts.some(x => x.includes('1 familiar(es) / jugador(es)')), t.toasts);
     }
     {
-        // Telefono SIN uid: WhatsApp + email. Con uid: WhatsApp pero NO email.
+        // v671 · ANTES: "sin uid abre WhatsApp + mailto". WhatsApp se ha
+        // retirado de toda la app, asi que el telefono ya NO abre nada. El
+        // caso se conserva CON telefono a proposito: es la unica forma de
+        // demostrar que tenerlo no dispara ninguna ventana.
         const t = buildSandbox({
             players: [{ name: 'Ana', number: '7', team: 'home', history: [] }],
             linkDocs: [{ playerNumber: '7', parentPhone: '600 11 22 33', parentEmail: 'p@x.com' }],
         });
         await t.w.openIndividualReports();
         await t.w._sendAllIndividualReports();
-        ok('5m · sin uid abre WhatsApp (telefono sin espacios) y mailto',
-            t.opened.some(u => u.startsWith('https://wa.me/600112233?text='))
-            && t.opened.some(u => u.startsWith('mailto:p@x.com')), t.opened);
+        ok('5m · sin uid abre SOLO el mailto, y el telefono no abre nada',
+            t.opened.some(u => u.startsWith('mailto:p@x.com'))
+            && !t.opened.some(u => u.includes('wa.me')), t.opened);
         ok('5n · y no escribe nada en Firestore (no hay uid al que notificar)',
             t.written.length === 0, t.written);
     }
@@ -896,9 +899,11 @@ const inCol = (written, col) => written.filter(w => w.col === col);
         });
         await t.w.openIndividualReports();
         await t.w._sendAllIndividualReports();
-        ok('5o · con uid manda in-app + WhatsApp pero NO email (ya le llego por la app)',
-            t.opened.some(u => u.startsWith('https://wa.me/600'))
-            && !t.opened.some(u => u.startsWith('mailto:')), t.opened);
+        // v671 · con uid el informe llega POR LA APP: ni email (ya lo tiene)
+        // ni WhatsApp (retirado). O sea, no se abre ninguna ventana.
+        ok('5o · con uid manda in-app y NO abre nada: ni mailto ni WhatsApp',
+            !t.opened.some(u => u.startsWith('mailto:'))
+            && !t.opened.some(u => u.includes('wa.me')), t.opened);
     }
     {
         const t = buildSandbox({

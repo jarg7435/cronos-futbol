@@ -580,13 +580,8 @@ window._sendCollectiveReportNow = async function() {
                 }, staff.indexOf(s) * 800);
             }
 
-            // Envío por WhatsApp si tiene teléfono
-            if (s.phone) {
-                const waNum = s.phone.replace(/\s/g,'');
-                setTimeout(() => {
-                    window.open(`https://wa.me/${waNum}?text=${encodeURIComponent(text)}`, '_blank');
-                }, staff.indexOf(s) * 800 + 400);
-            }
+            // v671 · aquí iba una segunda ventana a wa.me con el mismo texto.
+            // Retirado: el informe colectivo va por correo y por la app.
         }
 
         // ── 3. Auto-notificación para el entrenador (para que "le llegue" también) ──

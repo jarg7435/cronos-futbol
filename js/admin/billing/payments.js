@@ -49,9 +49,7 @@ Te contacto en relación a tu plan de Chronos Fútbol para el club "${name}".
   📱 Bizum:          ${SA_CONFIG.bizum}
   🏦 Transferencia:  ${SA_CONFIG.iban}
 
-Una vez realizado el pago, envíame el justificante:
-  • Respondiendo a este email, o
-  • Por WhatsApp al ${SA_CONFIG.whatsapp}
+Una vez realizado el pago, envíame el justificante respondiendo a este email.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━
   CONDICIONES
@@ -69,24 +67,6 @@ ${SA_CONFIG.email}
     );
 
     // ── Contenido de WhatsApp ────────────────────────────────────
-    const waText = encodeURIComponent(
-`Hola 👋 te escribo desde Chronos Fútbol.
-
-📋 *Aviso de renovación — ${name}*
-• Plan: ${plan.label}
-• Importe: ${price}
-• Vencimiento: ${expires}
-
-💳 *Formas de pago:*
-📱 Bizum: ${SA_CONFIG.bizum}
-🏦 Transferencia: ${SA_CONFIG.iban}
-
-Tras el pago, envíame el justificante por aquí o a ${SA_CONFIG.email} ✅
-
-Gracias! ${SA_CONFIG.nombre}`
-    );
-
-    const waUrl    = `https://wa.me/${SA_CONFIG.whatsapp}?text=${waText}`;
     const emailUrl = `mailto:${adminEmail}?subject=${subject}&body=${body}`;
 
     // ── Modal de envío ───────────────────────────────────────────
@@ -112,7 +92,6 @@ Destinatario: ${adminEmail || '⚠️ Sin email de admin definido'}
 
 📱 Bizum: ${SA_CONFIG.bizum}
 🏦 IBAN: ${SA_CONFIG.iban}
-📞 WhatsApp: ${SA_CONFIG.whatsapp}
             </div>
 
             ${SA_CONFIG.bizum === 'TU_NUMERO_BIZUM' ? `
@@ -144,17 +123,7 @@ Destinatario: ${adminEmail || '⚠️ Sin email de admin definido'}
                     Edita el club y añade el email del admin.
                 </div>`}
 
-                <a href="${waUrl}" target="_blank" style="text-decoration:none;">
-                    <button class="sa-btn" style="width:100%;padding:0.7rem;
-                        color:#3fb950;border-color:rgba(63,185,80,0.4);
-                        background:rgba(63,185,80,0.1);font-weight:700;font-size:0.9rem;
-                        cursor:pointer;">
-                        📱 Enviar por WhatsApp
-                        <div style="font-size:0.72rem;font-weight:400;color:var(--text-muted);margin-top:0.2rem;">
-                            Se abre WhatsApp con el mensaje listo para enviar
-                        </div>
-                    </button>
-                </a>
+<!-- v671 · fuera el botón "Enviar por WhatsApp" del aviso de pago -->
 
                 <!-- Registrar aviso enviado -->
                 <button onclick="saMarkNoticeSent('${id}','${type}')" class="sa-btn"
@@ -163,7 +132,7 @@ Destinatario: ${adminEmail || '⚠️ Sin email de admin definido'}
                     ✅ Marcar como "Aviso enviado"
                 </button>
                 <div style="font-size:0.74rem;color:var(--text-muted);text-align:center;">
-                    Pulsa esto después de enviar el email o WhatsApp para registrar la fecha del aviso.
+                    Pulsa esto después de enviar el email para registrar la fecha del aviso.
                 </div>
             </div>
         </div>`;

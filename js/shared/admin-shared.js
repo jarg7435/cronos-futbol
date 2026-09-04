@@ -42,7 +42,7 @@ window.SA_CONFIG = {
     nombre:      'TU_NOMBRE_O_NOMBRE_COMERCIAL',   // ej: "José · Chronos Fútbol"
     bizum:       'TU_NUMERO_BIZUM',                // ej: "612 345 678"
     iban:        'TU_IBAN',                        // ej: "ES12 3456 7890 1234 5678 9012"
-    whatsapp:    'TU_NUMERO_WHATSAPP',             // ej: "34612345678" (sin + ni espacios)
+    // v671 · fuera `whatsapp`: el aviso de pago va sólo por correo.
     email:       'TU_EMAIL_COMERCIAL',             // ej: "cronos@tudominio.com"
     appUrl:      'https://jarg7435.github.io/cronos-futbol/',
 };

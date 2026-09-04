@@ -58,7 +58,8 @@ const BORRADAS = {
         'cancelPendingSubstitution'],
     'js/coach/training/panel.js': [              // §8 entrenamiento semanal (Fase A)
         '_getWeekMonday', 'renderTrainingWeek', 'saveTrainingWeek', 'clearTrainingWeek',
-        '_getTrainingWeekText', 'updateTrainingPreview', 'sendTrainingWA', 'sendTrainingEmail'],
+        // v671 · sale `sendTrainingWA` (WhatsApp fuera de la app)
+        '_getTrainingWeekText', 'updateTrainingPreview', 'sendTrainingEmail'],
     'js/core/staff-and-comms.js': [              // §9 cuerpo tecnico (Fase A) + Fase B
         'loadStaffConfig', 'saveStaffConfig', 'renderStaffInBench', 'openRosterManager',
         'clearMasterRoster'],
@@ -78,18 +79,20 @@ const BORRADAS = {
         'saveConvData', 'saveConvPlayers', 'goToTitularSelection', 'startMatchWithConvocation'],
     'js/shared/whatsapp-email.js': [             // §15 envio de convocatoria (Fase A)
         'openConvocationMessage', 'buildConvocationText', 'saveConvConfig',
-        'previewConvocationMsg', 'sendConvocationWA', 'sendConvocationEmail'],
+        // v671 · sale `sendConvocationWA` (WhatsApp fuera de la app)
+        'previewConvocationMsg', 'sendConvocationEmail'],
     'js/services/firestore-storage.js': [        // §7 nube + emailjs + SW (Fase B)
         'cloudSet', 'cloudGet', 'syncFromCloud', 'startRealtimeSync', 'migrateLocalToCloud',
         'loadEmailConfig', 'initEmailJS', 'sendReportByEmail', 'registerServiceWorker', 'forceUpdate'],
     'js/match/live/sync.js': [                   // §7 transmision en vivo (Fase B)
         'cleanupStaleMatches', 'updateLiveButton', 'openLiveView', 'showLiveShareModal',
-        'copyLiveUrl', 'shareLiveWhatsApp', 'shareLiveEmail', 'confirmStopLive', 'liveSyncOnAction',
-        // ⚠️ este se publicaba como `window.X = function` en columna 0, no como
-        // `function X(`, y el inventario inicial —que solo buscaba la segunda
-        // forma— no lo vio. Lo destapo la asercion 4b al detectar que un archivo
-        // duenyo ya declaraba un nombre de la lista de estado compartido.
-        'notifyAllLiveContacts'],
+        'copyLiveUrl', 'shareLiveEmail', 'confirmStopLive', 'liveSyncOnAction'],
+        // ⚠️ v671 · SALEN DE LA LISTA `shareLiveWhatsApp` y `notifyAllLiveContacts`,
+        // retiradas al quitar WhatsApp de toda la app. La segunda se publicaba
+        // como `window.X = function` en columna 0, no como `function X(`, y el
+        // inventario inicial —que solo buscaba la segunda forma— no la vio: la
+        // destapo la asercion 4b. Se deja escrito por si alguien la echa de
+        // menos buscandola aqui.
     'js/match/demo-tutorial.js': [               // §7 tutorial (Fase B)
         'renderTutorialStep', 'tutorialNext', 'tutorialPrev', 'closeTutorial'],
 
@@ -186,8 +189,11 @@ ORDER.forEach(f => { decl[f] = declaraciones(rd(f)); });
     // BORRADAS_MULTI a BORRADAS el 2026-07-29 ya se contaban en la Fase C.
     // v647 · 101 → 91: las diez de «importar con IA» ya no existen en ningun
     // archivo, asi que no pueden pedirse con duenyo unico. Ver la nota del mapa.
-    ok('1d · el recuento cuadra: 91 funciones con duenyo unico',
-        TODAS.length === 91, TODAS.length);
+    // v671 · 91 → 87: se van las CUATRO de WhatsApp (sendConvocationWA,
+    // sendTrainingWA, shareLiveWhatsApp y notifyAllLiveContacts) al retirar
+    // ese canal de toda la app.
+    ok('1d · el recuento cuadra: 87 funciones con duenyo unico',
+        TODAS.length === 87, TODAS.length);
 
     // ── las 5 multi-declaradas de la Fase C: se fija QUIEN gana, no que sea unica
     const malGanador = [], malConjunto = [];

@@ -105,9 +105,11 @@ function walk(dir, out) {
     return out;
 }
 
+// v671 · sale `_sendBulkMsgWA`: WhatsApp se ha retirado de toda la app.
+// Eran ocho piezas, ahora son siete.
 const MOVED = ['toggleSelectAllParents', 'updateBulkCount', 'openBulkMessageComposer',
                '_msgSavePreselection', '_msgGetSelected', '_sendBulkMsgFirestore',
-               '_sendBulkMsgWA', '_sendBulkMsgEmail'];
+               '_sendBulkMsgEmail'];
 
 // ── Sandbox ──────────────────────────────────────────────────────────────
 const mkEl = () => ({ innerHTML: '', value: '', textContent: '', checked: false,
@@ -324,9 +326,12 @@ const pchk = (d, checked = true) => { const e = mkEl(); e.checked = checked; e.d
         ok('3d · la etiqueta combina jugador y dorsal', h.includes('Ana #7'));
         ok('3e · marca las insignias WA y Email segun los datos de contacto',
             h.includes('>WA<') && h.includes('>Email<'));
-        ok('3f · los cuatro botones de accion apuntan a las funciones del bloque',
-            /onclick="_sendBulkMsgFirestore\(\)"/.test(h) && /onclick="_sendBulkMsgWA\(\)"/.test(h)
+        // v671 · eran cuatro botones; el de WhatsApp se retiro con el canal.
+        ok('3f · los tres botones de accion apuntan a las funciones del bloque',
+            /onclick="_sendBulkMsgFirestore\(\)"/.test(h)
             && /onclick="_sendBulkMsgEmail\(\)"/.test(h) && /onclick="_msgSavePreselection\(\)"/.test(h));
+        ok('3f2 · ⚠️ y NO queda ningun boton de WhatsApp',
+            !/_sendBulkMsgWA/.test(h) && !/wa\.me/.test(h));
         ok('3g · la X y Volver llaman a openCoachMessaging, que se queda en panel.js',
             (h.match(/onclick="openCoachMessaging\(\)"/g) || []).length === 2);
     }
@@ -440,27 +445,30 @@ const pchk = (d, checked = true) => { const e = mkEl(); e.checked = checked; e.d
     }
 
     // ═════════════════════════════════════════════════════════════════════
-    console.log('\n── PARTE 5 · _sendBulkMsgWA ──');
+    // ══════════════════════════════════════════════════════════════════
+    //  PARTE 5 · v671 · WHATSAPP RETIRADO DE TODA LA APP
+    //
+    //  Aqui se probaba `_sendBulkMsgWA`: que abriera una ventana de wa.me
+    //  por destinatario con telefono. La funcion ya no existe.
+    //
+    //  🔑 LA PARTE NO SE BORRA, SE DA LA VUELTA. Un guard que desaparece
+    //  no impide que alguien reintroduzca el canal el mes que viene sin
+    //  darse cuenta; uno que exige su AUSENCIA, si. Lo que antes fijaba el
+    //  comportamiento ahora fija que ese comportamiento no vuelve.
+    // ══════════════════════════════════════════════════════════════════
+    console.log('\n── PARTE 5 · WhatsApp retirado (v671) ──');
     {
-        const t = buildSandbox({ msgChks: [pchk({ uid: 'a', wa: '600111222' }), pchk({ uid: 'b', wa: '600333444' })] });
-        t.w._sendBulkMsgWA();
-        ok('5a · abre un WhatsApp por destinatario con telefono',
-            t.opened.length === 2 && t.opened[0].startsWith('https://wa.me/600111222?text='), t.opened);
-        ok('5b · el texto va codificado en la URL',
-            t.opened[0].includes(encodeURIComponent('Hola equipo')));
-        ok('5c · confirma con un toast', t.toasts.some(x => x.includes('2 destinatarios')), t.toasts);
-    }
-    {
-        const t = buildSandbox({ msgChks: [pchk({ uid: 'a' })] });   // sin wa
-        t.w._sendBulkMsgWA();
-        ok('5d · sin ningun telefono avisa y no abre nada',
-            t.opened.length === 0 && t.toasts.some(x => x.includes('WhatsApp configurado')));
-    }
-    {
-        const t = buildSandbox({ msgChks: [pchk({ wa: '600' })], noTextarea: true });
-        t.w._sendBulkMsgWA();
-        ok('5e · sin texto avisa y no abre nada',
-            t.opened.length === 0 && t.toasts.some(x => x.includes('Escribe un mensaje')));
+        // El destinatario lleva telefono Y email a proposito: con el canal
+        // retirado, tener telefono no puede abrir nada.
+        const t = buildSandbox({ msgChks: [pchk({ uid: 'a', wa: '600111222', email: 'a@x.com' })] });
+        ok('5a · ⚠️ `_sendBulkMsgWA` ya no existe',
+            typeof t.w._sendBulkMsgWA !== 'function');
+        ok('5b · 🔑 el bloque no contiene ni una URL de wa.me',
+            !/wa\.me/.test(BLOCK), (BLOCK.match(/wa\.me/g) || []).length);
+        // El envio que SI queda no puede haberse llevado nada por delante.
+        t.w._sendBulkMsgEmail();
+        ok('5c · y el envio por email sigue funcionando',
+            t.opened.length === 1 && t.opened[0].startsWith('mailto:'), t.opened);
     }
 
     // ═════════════════════════════════════════════════════════════════════

@@ -1203,10 +1203,8 @@ function showLiveShareModal() {
                                font-size:0.75rem;color:var(--text-muted);">
                        <span>✅ ${c.name || c.email}</span>
                        <span style="display:flex;gap:0.3rem;">
-                           ${c.phone ? `<a href="https://wa.me/${c.phone}?text=${encodeURIComponent('⚽ Partido en vivo: ' + liveUrl)}" target="_blank"
-                               style="padding:2px 8px;background:rgba(37,211,102,0.15);border:1px solid rgba(37,211,102,0.4);
-                                      border-radius:5px;color:#25d366;text-decoration:none;font-size:0.68rem;font-weight:700;">
-                               📱 WA</a>` : ''}
+<!-- v671 · fuera el enlace "📱 WA" de cada contacto -->
+
                            ${c.email ? `<a href="mailto:${c.email}?subject=${encodeURIComponent('⚽ Partido en Vivo — ' + TEAM_NAMES.home + ' vs ' + TEAM_NAMES.away)}&body=${encodeURIComponent('Sigue el partido en tiempo real:\n' + liveUrl)}" target="_blank"
                                style="padding:2px 8px;background:rgba(88,166,255,0.1);border:1px solid rgba(88,166,255,0.3);
                                       border-radius:5px;color:#58a6ff;text-decoration:none;font-size:0.68rem;font-weight:700;">
@@ -1214,13 +1212,6 @@ function showLiveShareModal() {
                        </span>
                    </div>`).join('')}
                </div>
-               <button onclick="notifyAllLiveContacts('${liveUrl}')"
-                   style="margin-top:0.7rem;width:100%;padding:0.55rem;
-                          background:rgba(255,88,88,0.2);border:1px solid rgba(255,88,88,0.5);
-                          border-radius:7px;color:#ff5858;font-weight:700;
-                          font-size:0.8rem;cursor:pointer;">
-                   📡 Notificar a todos por WhatsApp
-               </button>
            </div>`
         : `<div style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08);
                         border-radius:8px;padding:0.6rem 0.9rem;margin-bottom:1rem;
@@ -1262,13 +1253,9 @@ function showLiveShareModal() {
             ${liveContactsHtml}
 
             <!-- Botones de compartir -->
-            <div style="display:grid; grid-template-columns:1fr 1fr; gap:0.6rem; margin-bottom:1rem;">
-                <button onclick="shareLiveWhatsApp('${liveUrl}')"
-                    style="padding:0.7rem; background:rgba(37,211,102,0.12);
-                           border:1px solid rgba(37,211,102,0.4); border-radius:8px;
-                           color:#25d366; font-weight:700; font-size:0.85rem; cursor:pointer;">
-                    📱 WhatsApp
-                </button>
+            <!-- v671 · Queda un solo botón de compartir (email), así que la
+                 rejilla pasa de dos columnas a una. -->
+            <div style="display:grid; grid-template-columns:1fr; gap:0.6rem; margin-bottom:1rem;">
                 <button onclick="shareLiveEmail('${liveUrl}')"
                     style="padding:0.7rem; background:rgba(88,166,255,0.1);
                            border:1px solid rgba(88,166,255,0.3); border-radius:8px;
@@ -1299,17 +1286,7 @@ function copyLiveUrl() {
     }).catch(() => { input.select(); document.execCommand('copy'); });
 }
 
-function shareLiveWhatsApp(url) {
-    const date = new Date().toLocaleDateString('es-ES');
-    const msg  = encodeURIComponent(
-        `⚽ *CHRONOS FÚTBOL — Partido en Vivo*\n` +
-        `${TEAM_NAMES.home} vs ${TEAM_NAMES.away} · ${date}\n\n` +
-        `Sigue el partido en tiempo real:\n${url}\n\n` +
-        `_(Necesitas estar registrado en la app para verlo)_`);
-    const num = emailConfig?.whatsappNumber;
-    window.open(num ? `https://wa.me/${num}?text=${msg}` : `https://wa.me/?text=${msg}`, '_blank');
-}
-
+// v671 · `shareLiveWhatsApp` retirada con su botón.
 function shareLiveEmail(url) {
     const date    = new Date().toLocaleDateString('es-ES');
     const subject = encodeURIComponent(`⚽ Partido en Vivo — ${TEAM_NAMES.home} vs ${TEAM_NAMES.away}`);
@@ -1323,29 +1300,14 @@ function shareLiveEmail(url) {
     window.open(`mailto:${to}?subject=${subject}&body=${body}`);
 }
 
-// ── Notificar a todos los contactos con acceso EN VIVO ──────────────
-window.notifyAllLiveContacts = function(url) {
-    const liveContacts = (emailConfig.contacts || []).filter(c => c.tags && c.tags.includes('live') && c.phone);
-    if (!liveContacts.length) {
-        showToast('⚠️ Ningún contacto tiene WhatsApp configurado para EN VIVO', 4000);
-        return;
-    }
-    const date    = new Date().toLocaleDateString('es-ES');
-    const msg     = encodeURIComponent(
-        `⚽ *PARTIDO EN VIVO — ${TEAM_NAMES.home} vs ${TEAM_NAMES.away}*\n` +
-        `📅 ${date}\n\n` +
-        `Sigue el partido en tiempo real aquí:\n${url}\n\n` +
-        `_Chronos Fútbol_`);
-    let opened = 0;
-    liveContacts.forEach((c, i) => {
-        // Abrimos ventanas escalonadas para no bloquear pop-ups
-        setTimeout(() => {
-            window.open(`https://wa.me/${c.phone}?text=${msg}`, '_blank');
-        }, i * 600);
-        opened++;
-    });
-    showToast(`📡 WhatsApp abierto para ${opened} contacto${opened > 1 ? 's' : ''} con acceso EN VIVO`, 4000);
-};
+// ── v671 · AQUÍ VIVÍA `notifyAllLiveContacts`, Y SE HA RETIRADO ─────
+//  Abría una ventana de wa.me por cada contacto con acceso EN VIVO. Se va
+//  con `shareLiveWhatsApp` y con el enlace "📱 WA" de cada fila: el enlace
+//  del directo se comparte por correo o copiándolo.
+//  ⚠️ Los dos nombres estaban inventariados en
+//  scripts/test_app_init_dead_duplicates.js como propiedad de este fichero;
+//  esa lista se ha actualizado en la misma ronda. Si no, el guard exigiría
+//  que este archivo siguiera declarando algo que ya no existe.
 
 function confirmStopLive() {
     if (confirm('¿Finalizar la transmisión en vivo?\n\nEl enlace quedará guardado como historial.')) {

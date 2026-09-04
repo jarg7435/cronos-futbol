@@ -852,7 +852,7 @@ async function openParentPanel(initialTab) {
                             await updateDoc(doc(fa.db, 'cronos_player_links', linkId), {
                                 parentUid:   me.uid,
                                 parentEmail: me.email || '',
-                                parentPhone: myData.whatsapp || myData.phone || '',
+                                parentPhone: myData.phone || '',   // v671 · sin el respaldo `.whatsapp`
                                 parentName:  myData.displayName || me.email || '',
                                 // Solo establecer categoría si el link no la tenía aún.
                                 ...(!_exCat && pCat ? { category: pCat } : {}),
@@ -866,7 +866,7 @@ async function openParentPanel(initialTab) {
                                 category:          pCat || pTeam || '',
                                 parentUid:         me.uid,
                                 parentEmail:       me.email || '',
-                                parentPhone:       myData.whatsapp || myData.phone || '',
+                                parentPhone:       myData.phone || '',   // v671 · sin `.whatsapp`
                                 parentName:        myData.displayName || me.email || '',
                                 canReceiveReports: true,
                                 canReceiveConv:    true,
@@ -1981,9 +1981,6 @@ function openWeeklyPlanModal() {
             <button onclick="sendWeeklyPlan()" class="btn primary" style="flex:1.5; background:rgba(88,166,255,0.15); border-color:rgba(88,166,255,0.4); color:var(--primary); font-weight:700;">
                 📱 Envío Interno
             </button>
-            <button onclick="sendWeeklyPlanWA()" class="btn" style="flex:1;background:rgba(63,185,80,0.12);color:#3fb950;font-weight:700;border:1px solid rgba(63,185,80,0.4);">
-                📱 WhatsApp
-            </button>
             <button onclick="sendWeeklyPlanEmail()" class="btn" style="flex:1;background:rgba(88,166,255,0.12);border-color:rgba(88,166,255,0.4);color:var(--primary);font-weight:700;">
                 📧 Email
             </button>
@@ -2131,30 +2128,8 @@ function _buildWeeklyPlanText() {
     return text;
 }
 
-function sendWeeklyPlanWA() {
-    const recipients = sharedGetSelectedRecipients('tr').filter(r => r.phone);
-    const msg = _buildWeeklyPlanText();
-    if (!msg) {
-        showToast('⚠️ Selecciona la fecha primero', 3000);
-        return;
-    }
-    
-    const encoded = encodeURIComponent(msg);
-
-    if (!recipients.length) {
-        window.open(`https://wa.me/?text=${encoded}`, '_blank');
-        showToast('📱 WhatsApp abierto — ningún contacto con teléfono seleccionado', 4000);
-        return;
-    }
-
-    recipients.forEach((r, i) => {
-        setTimeout(() => {
-            window.open(`https://wa.me/${r.phone}?text=${encoded}`, '_blank');
-        }, i * 800);
-    });
-    showToast(`📱 Enviando a ${recipients.length} contacto(s) por WhatsApp`, 4000);
-}
-
+// v671 · `sendWeeklyPlanWA` retirada con su botón. Quedan el envío interno
+// y el correo.
 function sendWeeklyPlanEmail() {
     const recipients = sharedGetSelectedRecipients('tr').filter(r => r.email);
     const msg = _buildWeeklyPlanText();
@@ -2181,7 +2156,6 @@ function sendWeeklyPlanEmail() {
 
 window.openWeeklyPlanModal = openWeeklyPlanModal;
 window.sendWeeklyPlan          = sendWeeklyPlan;
-window.sendWeeklyPlanWA         = sendWeeklyPlanWA;
 window.sendWeeklyPlanEmail      = sendWeeklyPlanEmail;
 
 // ════════════════════════════════════════════════════════════════════

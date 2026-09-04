@@ -173,11 +173,6 @@ window.openBulkMessageComposer = function() {
                        color:var(--primary);font-weight:700;font-size:0.78rem;flex:1.5;">
                 📱 Envío Interno
             </button>
-            <button onclick="_sendBulkMsgWA()" class="btn"
-                style="background:rgba(37,211,102,0.15);border-color:rgba(37,211,102,0.4);
-                       color:#25d366;font-weight:700;font-size:0.78rem;flex:1;">
-                📱 WhatsApp
-            </button>
             <button onclick="_sendBulkMsgEmail()" class="btn"
                 style="background:rgba(88,166,255,0.12);border-color:rgba(88,166,255,0.25);
                        color:var(--primary);font-weight:700;font-size:0.78rem;flex:1;">
@@ -262,22 +257,8 @@ window._sendBulkMsgFirestore = async function() {
 };
 
 // ── Envío grupal por WhatsApp ─────────────────────────────────────────
-window._sendBulkMsgWA = function() {
-    const text = document.getElementById('bulk-msg-text')?.value.trim();
-    if (!text) { showToast('⚠️ Escribe un mensaje antes de enviar', 3000); return; }
-    const withPhone = _msgGetSelected().filter(s => s.parentWA);
-    if (!withPhone.length) {
-        showToast('⚠️ Ningún destinatario seleccionado tiene WhatsApp configurado', 4000);
-        return;
-    }
-    const encoded = encodeURIComponent(text);
-    withPhone.forEach((s, i) => {
-        setTimeout(() => {
-            window.open(`https://wa.me/${s.parentWA}?text=${encoded}`, '_blank');
-        }, i * 700);
-    });
-    showToast(`📱 WhatsApp abierto para ${withPhone.length} destinatario${withPhone.length !== 1 ? 's' : ''}`, 4000);
-};
+// v671 · `_sendBulkMsgWA` retirada con su botón. Quedan el Envío Interno
+// (el de la propia app) y el email.
 
 // ── Envío grupal por Email ───────────────────────────────────────────
 window._sendBulkMsgEmail = function() {

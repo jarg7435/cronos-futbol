@@ -57,7 +57,7 @@ window._CRONOS_EXTRAS_DEF = [
     { key: 'rol_padres',      icon: '👨‍👩‍👧', label: 'Rol: Familiar / Jugador', desc: 'Permitir el acceso al panel de Familias (familiares, tutores y jugadores)' },
     { key: 'rol_coordinador', icon: '🎯', label: 'Rol: Coordinador',         desc: 'Permitir el acceso al panel de Coordinación' },
     { key: 'rol_director',    icon: '📋', label: 'Rol: Director Deportivo',  desc: 'Permitir el acceso al panel de Dirección' },
-    { key: 'secretaria',      icon: '✉️', label: '↳ Secretaría del Director', desc: 'Sub-opción de Dirección: invitar por correo o WhatsApp a entrenadores, coordinadores y familias' },
+    { key: 'secretaria',      icon: '✉️', label: '↳ Secretaría del Director', desc: 'Sub-opción de Dirección: invitar por correo a entrenadores, coordinadores y familias' },
 ];
 
 window.saExtras = async function saExtras() {

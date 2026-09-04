@@ -192,7 +192,16 @@ function buildSandbox({
             getElementById: (id) => el(id),
             createElement: (t) => mkEl(t, true),
             querySelectorAll: (sel) => {
-                if (sel === '.contact-phone') return phoneRows;
+                // 🚨 v671 · EL ENUMERADOR DE FILAS CAMBIÓ. Antes las filas de
+                //    familias vinculadas se contaban por `.contact-phone`; al
+                //    retirar la columna de WhatsApp ese input desapareció y
+                //    `saveContactManagerData` habría recorrido una lista
+                //    VACÍA, dejando de guardar nombres, correos y los siete
+                //    permisos sin un solo error. Ahora enumera por
+                //    `.contact-parent-email`. `phoneRows` conserva el nombre
+                //    en el arnés porque es lo que alimentan los casos de la
+                //    PARTE 4; lo que cambia es el selector que lo devuelve.
+                if (sel === '.contact-parent-email') return phoneRows;
                 if (sel === '.custom-contact-row') return staffRows;
                 if (sel === '.manual-parent') return manualRows;
                 return queryMap[sel] || [];
@@ -622,8 +631,13 @@ const manualRow = (id, name, phone, email, playerId, optText, tags = []) => {
         });
         await t.g.openContactManager();
         const h = t.modal.innerHTML;
-        ok('3g · los inputs de telefono del padre llevan la clase que lee el guardado',
-            h.includes('class="contact-phone"'));
+        // v671 · ya no hay input de telefono. Lo que el guardado enumera es
+        // el correo, asi que ES ESA clase la que no puede faltar.
+        ok('3g · 🔑 los inputs de EMAIL llevan la clase que enumera el guardado',
+            h.includes('class="contact-parent-email"'));
+        ok('3g2 · ⚠️ y no queda ningun campo de telefono en la tabla',
+            !h.includes('class="contact-phone"') && !h.includes('class="p-phone"')
+            && !h.includes('class="c-phone"'));
     }
     {
         const t = buildSandbox({
@@ -660,7 +674,12 @@ const manualRow = (id, name, phone, email, playerId, optText, tags = []) => {
         const u = t.written[0];
         ok('4a · escribe cada padre vinculado en cronos_player_links por su linkId',
             u && u.col === 'cronos_player_links' && u.id === 'club1_7', t.written);
-        ok('4b · normaliza el telefono quitando los espacios', u.data.parentPhone === '600112233', u.data.parentPhone);
+        // v671 · ANTES: "normaliza el telefono quitando los espacios".
+        //   Ya no se recoge telefono, y `parentPhone` NO se escribe. Se omite
+        //   a proposito en vez de ponerlo a '': un `updateDoc` que escribiera
+        //   vacio BORRARIA el numero que un club pudiera tener guardado.
+        ok('4b · ⚠️ ya NO escribe parentPhone (omitir ≠ borrar)',
+            !('parentPhone' in u.data), u.data.parentPhone);
         ok('4c · vuelca los cinco permisos desde las palomillas',
             u.data.canReceiveConv === true && u.data.canReceiveTr === false
             && u.data.canReceiveMsg === true && u.data.canReceiveReports === true
@@ -701,8 +720,11 @@ const manualRow = (id, name, phone, email, playerId, optText, tags = []) => {
         });
         await t.g.saveContactManagerData();
         const c = t.cfg().contacts;
-        ok('4f · reconstruye emailConfig.contacts desde el DOM, recortando y quitando espacios del telefono',
-            c.length === 2 && c[0].name === 'Dir' && c[0].email === 'd@x.com' && c[0].phone === '60011',
+        // v671 · el telefono ya no se lee del DOM (el campo no se pinta), asi
+        //   que la clave `phone` queda en cadena vacia. Se conserva en el
+        //   contacto para no cambiarle la forma al resto de la app.
+        ok('4f · reconstruye emailConfig.contacts desde el DOM, recortando espacios',
+            c.length === 2 && c[0].name === 'Dir' && c[0].email === 'd@x.com' && c[0].phone === '',
             c);
         ok('4g · ⚠️ el nombre del jugador se recupera parseando el TEXTO del <option> con split("] ")',
             c[1].player === 'Ana' && c[1].playerId === 'J7', c[1]);

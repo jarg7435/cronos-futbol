@@ -464,34 +464,16 @@ window._executeReportsSend = async function(method) {
     const globalText = _buildGlobalReportText();
     let sentCount = 0;
 
-    // ----- MODO WHATSAPP -----
+    // ── v671 · EL "MODO WHATSAPP" SE HA IDO ─────────────────────────
+    //  Abría una pestaña de wa.me por destinatario. Retirado con el resto
+    //  del canal.
+    //  ⚠️ SI ALGÚN CAMINO VIEJO SIGUE PIDIENDO method='wa', NO SE CAE EN
+    //  SILENCIO NI SE ENVÍA POR OTRO SITIO SIN AVISAR: se dice y se para.
+    //  Mandar por correo algo que alguien pidió por WhatsApp sería peor que
+    //  no mandarlo.
     if (method === 'wa') {
-        const toSend = recipients.filter(r => r.phone);
-        if (!toSend.length) { showToast('⚠️ Ningún seleccionado con WA configurado.',3000); return; }
-        
-        toSend.forEach((r, i) => {
-            setTimeout(() => {
-                let text = globalText;
-                if (r.type === 'parent') {
-                    // Try to deduce player from label, or use links
-                    let matchedPlayer = null;
-                    const link = links.find(l => l.parentPhone === r.phone || (l.parentUid && r.id === l.parentUid));
-                    if (link) {
-                        matchedPlayer = homePlayers.find(p => String(p.number) === String(link.playerNumber));
-                    } else if (r.label.includes('(')) {
-                        const extractedName = r.label.match(/\((.*?)\)/)[1];
-                        matchedPlayer = homePlayers.find(p => p.name === extractedName || p.alias === extractedName);
-                    }
-                    if (matchedPlayer) {
-                        text = _buildIndividualReportText(matchedPlayer, scoreHome, scoreAway, matchDate);
-                    }
-                }
-                window.open(`https://wa.me/${r.phone}?text=${encodeURIComponent(text)}`, '_blank');
-            }, i * 800);
-        });
-        showToast('📱 Abriendo pestañas de WhatsApp...', 3000);
-        if (msgEl) msgEl.textContent = 'Completado.';
-        setTimeout(() => document.getElementById('setup-modal').style.display='none', 2000);
+        showToast('⚠️ El envío por WhatsApp ya no está disponible. Usa Email o el envío interno.', 5000);
+        if (msgEl) msgEl.textContent = 'Envío por WhatsApp retirado.';
         return;
     }
 
