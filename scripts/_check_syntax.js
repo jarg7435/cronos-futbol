@@ -67,6 +67,8 @@ const COBERTURA_DECLARADA = [
   // v669 · Selección múltiple reutilizable. Lo consumen seis listados de tres
   // áreas, así que se declara igual que el resto de módulos compartidos.
   'js/shared/multi-select.js',
+  // v672 · Pases de regalo, dentro de la Secretaría del SuperAdmin.
+  'js/admin/superadmin/gift-passes.js',
 ];
 
 const files = (argFiles.length

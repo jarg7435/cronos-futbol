@@ -272,6 +272,17 @@ window.saSecretary = async function saSecretary(opciones) {
                 <span id="sec-btn-text">✉️ Enviar Invitación por Email</span>
             </button>
         </div>
+
+        <!-- 🎁 v672 · PASES DE REGALO (js/admin/superadmin/gift-passes.js).
+             ⚠️ El bloque DEVUELVE CADENA VACÍA para quien no sea
+             SuperAdministrador, así que aquí se interpola sin condicional:
+             esta misma pantalla la abre el Director Deportivo con su
+             catálogo recortado, y un pase de regalo funda una entidad y
+             regala la app entera — no es cosa suya.
+             ⚠️ Y con guarda typeof: si el módulo no ha cargado, la
+             Secretaría sigue funcionando entera y simplemente no ofrece
+             regalos. Nunca a medias. -->
+        ${(typeof window.cronosBloqueRegalos === 'function') ? window.cronosBloqueRegalos() : ''}
     </div>`;
 
     // Inicializar plantillas (con la guardada del club, si la hay)

@@ -1295,12 +1295,27 @@ if (typeof window.cronosCrearInvitacion !== 'function') {
         }
 
         const ahora = Date.now();
+        // 🎁 v672 · CAMPOS DEL PASE DE REGALO.
+        //   ⚠️ Se añaden aquí y NO se aceptan a granel desde `d`: este objeto
+        //   es una LISTA BLANCA a propósito. Volcar todo lo que llegue dejaría
+        //   que quien invita escriba `usedAt`, `createdBy` o `expiresAt` y se
+        //   fabrique una invitación eterna o a nombre de otro (el defecto que
+        //   cerró v636 en platform_requests). Cada campo nuevo se declara.
+        //   `gift` sólo se guarda cuando es true: así la consulta
+        //   `where('gift','==',true)` del panel de regalos no arrastra las
+        //   invitaciones normales de Secretaría.
+        const _extraRegalo = (d.gift === true) ? {
+            gift:         true,
+            giftNota:     (d.giftNota == null ? '' : String(d.giftNota)).trim().slice(0, 200),
+            giftEntityId: (d.giftEntityId == null ? '' : String(d.giftEntityId)).trim(),
+        } : {};
         await m.setDoc(m.doc(fa.db, 'invites', token), {
             v: 1,
             email:     (d.email == null ? '' : String(d.email)).trim(),
             role:      (d.role == null ? '' : String(d.role)).trim(),
             clubName:  (d.clubName == null ? '' : String(d.clubName)).trim(),
             clubId:    (d.clubId == null ? '' : String(d.clubId)).trim(),
+            ..._extraRegalo,
             createdBy: yo.uid,
             createdAt: new Date(ahora).toISOString(),
             // ⚠️ Timestamp de verdad, no una cadena: la regla lo compara con
