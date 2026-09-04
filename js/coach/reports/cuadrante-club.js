@@ -374,6 +374,48 @@ function _cqFechaKey(d) {
 function _cqDocId(weekKey) { return 'CUADRANTE__' + weekKey; }
 
 // ════════════════════════════════════════════════════════════════════
+//  🧹 v673 · CASILLAS HUÉRFANAS: LAS QUE NO CAEN EN LA SEMANA DEL DOCUMENTO
+// ════════════════════════════════════════════════════════════════════
+//  El pegado de fila anterior a la v673 escribía las fechas de la semana de
+//  ORIGEN dentro del documento de la semana de DESTINO (ver la nota larga
+//  junto a `cqCopiarFila`). Esas claves no las mira nadie: la parrilla, el
+//  resumen del envío y la directriz del entrenador consultan `celdas` por las
+//  SIETE fechas de su propia semana. Quedan ahí, invisibles, ocupando el
+//  documento y manteniendo viva una fila que quizá ya no tenga nada.
+//
+//  🔑 SE BARREN AL ABRIR, NO AL GUARDAR. Si sólo se filtraran al escribir,
+//  un club que nunca vuelva a tocar esa semana las conservaría para siempre;
+//  y `_cqFilasEfectivas` decide qué filas se pintan MIRANDO `celdas`, así que
+//  tienen que estar fuera antes de esa decisión.
+//
+//  ⚠️ NO MARCA `sucio`. Aparecer con un "● Sin guardar" que el usuario no ha
+//  provocado sería mentirle sobre lo que ha hecho; basta con que la basura no
+//  vuelva a escribirse en el próximo guardado legítimo.
+// ════════════════════════════════════════════════════════════════════
+function _cqSanearCeldas(doc) {
+    if (!doc || !doc.celdas || !doc.weekKey) return 0;
+    // Mediodía y `setDate`: ver la nota de `_cqFechasSemana`. Aquí importa el
+    // doble, porque esto BORRA: un desfase de un día en la semana del cambio
+    // de hora se llevaría por delante las casillas del domingo.
+    const lunes = new Date(doc.weekKey + 'T12:00:00');
+    if (isNaN(lunes.getTime())) return 0;
+    const validas = {};
+    _cqFechasSemana(lunes).forEach(f => { validas[f] = true; });
+    let fuera = 0;
+    Object.keys(doc.celdas).forEach(k => {
+        const corte = k.lastIndexOf('|');
+        // Sin '|' la clave no tiene forma de celda; con fecha ajena, no es de
+        // esta semana. En los dos casos, nadie la puede ver.
+        if (corte < 0 || !validas[k.slice(corte + 1)]) { delete doc.celdas[k]; fuera++; }
+    });
+    if (fuera) {
+        console.warn('[Cuadrante] ' + fuera + ' casilla(s) con fecha ajena a la semana ' +
+                     doc.weekKey + ' descartadas (basura del pegado de fila anterior a v673).');
+    }
+    return fuera;
+}
+
+// ════════════════════════════════════════════════════════════════════
 //  🔴 v612 · LA COMPOSICIÓN DE EQUIPOS ES DEL CLUB, NO DE LA SEMANA
 // ════════════════════════════════════════════════════════════════════
 //  Reporte del autor: «al asignar o añadir la categoría y el equipo, guardar
@@ -701,6 +743,9 @@ async function _sdLoadCuadrante(contenedorId) {
             leido = { v: 1, weekKey, espacios: CQ_ESPACIOS, filas: [],
                       celdas: {}, publicadoEn: '', publicadoPor: '', publicadoA: [] };
         }
+        // 🧹 v673 · Antes de decidir las filas: `_cqFilasEfectivas` mira
+        // `celdas`, y una casilla huérfana mantendría viva una fila vacía.
+        _cqSanearCeldas(leido);
         leido.filas = _cqFilasEfectivas(filasClub, leido.filas, leido.celdas);
         if (!leido.filas.length) leido.filas = await _cqFilasPorDefecto(clubId);
 
@@ -851,6 +896,7 @@ function _cqLlegaCambio(snap, weekKey) {
         publicadoA:  Array.isArray(d.publicadoA) ? d.publicadoA : [],
         actualizado: sello, actualizadoPorNombre: d.actualizadoPorNombre || '',
     };
+    _cqSanearCeldas(entrante);   // 🧹 v673 · mismo criterio que al abrir
 
     // Camino 3: tengo trabajo sin guardar o el editor abierto → no se toca.
     if (st.sucio || document.getElementById('cq-overlay')) {
@@ -1353,7 +1399,10 @@ function _cqBarraPortapapeles() {
         '<span style="font-size:0.72rem;color:#d2a8ff;font-weight:700;">📋 Copiado:</span>' +
         '<span style="flex:1;min-width:0;font-size:0.72rem;color:white;overflow-wrap:break-word;word-break:normal;hyphens:auto;">' + _cqE(p.etiqueta) + '</span>' +
         '<span style="font-size:0.68rem;color:var(--text-muted);">' +
-            (p.modo === 'fila' ? 'Pulsa el 📌 de otro equipo para pegar su semana'
+            // v673 · Se dice que TAMBIÉN vale en otra semana: hasta ahora el
+            // rótulo sólo hablaba de "otro equipo", y pegar en otra semana
+            // —que es para lo que se usa— ni se mencionaba ni funcionaba.
+            (p.modo === 'fila' ? 'Cambia de semana si quieres y pulsa el 📌 del equipo de destino'
                                : 'Pulsa una casilla para pegarlo ahí') + '</span>' +
         '<button onclick="cqCancelarCopia()" style="padding:0.28rem 0.7rem;border-radius:7px;cursor:pointer;' +
                 'font-size:0.68rem;font-weight:700;background:transparent;border:1px solid rgba(255,255,255,0.18);' +
@@ -1400,30 +1449,112 @@ window.cqPegarCelda = function (filaId, fecha) {
     // varios días seguidos. Se sale con "✕ Salir" de la barra.
 };
 
+// ════════════════════════════════════════════════════════════════════
+//  🔴 v673 · LA FILA COPIADA TAMBIÉN VIAJA POR ÍNDICE DE DÍA
+// ════════════════════════════════════════════════════════════════════
+//  Reporte del autor (capturas 9962-9963): copia la semana de Juvenil C en la
+//  del 31 ago – 6 sept, se va con ▶ a la del 21 – 27 sept, pulsa el 📌 …y no
+//  se pinta NADA. El aviso de "copiado" seguía ahí, así que parecía que el
+//  portapapeles funcionaba y que lo roto era el pegado.
+//
+//  🔑 LA CAUSA ES LA MISMA QUE LA v607 DOCUMENTÓ PARA LA SEMANA ENTERA, Y
+//  AQUÍ SE QUEDÓ SIN ARREGLAR. Las celdas viven en `celdas['<filaId>|<fecha>']`
+//  con la fecha ABSOLUTA. `cqCopiarFila` guardaba esas fechas tal cual y
+//  `cqPegarFila` las reescribía tal cual, así que al pegar en otra semana se
+//  metían claves con fecha 31/08 dentro del documento de la semana del 21/09.
+//  La parrilla sólo mira los siete días de SU semana: las casillas existían,
+//  estaban marcadas como cambio pendiente («● Sin guardar») y no se veían.
+//
+//  ⚠️ Y GUARDAR LAS PERPETUABA. `_cqGuardar` escribe `celdas` entero con
+//  merge:false: esas claves huérfanas quedaban en el documento de la semana
+//  destino para siempre, invisibles en las dos semanas. Por eso al abrir el
+//  documento se barren (`_cqSanearCeldas`): un cuadrante ya ensuciado por este
+//  defecto se limpia solo la próxima vez que se abra esa semana.
+//
+//  🔑 LA COPIA SE GUARDA POR ÍNDICE (0 = lunes … 6 = domingo) Y SE REMAPEA AL
+//  PEGAR. Es exactamente lo que hace `cqCopiarSemana`, y ahora las dos
+//  granularidades —fila y semana— comparten criterio en vez de divergir.
+//
+//  🔴 Y EL PARTIDO NO VIAJA, por la regla de v615: un partido es un hecho con
+//  fecha propia del calendario oficial, no una actividad semanal repetible.
+//  Aquí la razón es DOBLE, porque este pegado además cambia de EQUIPO: llevar
+//  el partido de Juvenil C a la fila del Cadete B le plantaría un rival y una
+//  sede que no son suyos. Ni se copia, ni se pisa el del destino.
+// ════════════════════════════════════════════════════════════════════
+
+// Rótulo corto de la semana que arranca ese lunes ("31 ago – 6 sept").
+function _cqRotuloSemana(lunes) {
+    const dom = new Date(lunes); dom.setDate(lunes.getDate() + 6);
+    const f = d => d.toLocaleDateString('es-ES', { day: 'numeric', month: 'short' });
+    return f(lunes) + ' – ' + f(dom);
+}
+
+// ⚠️ LAS SIETE FECHAS SE CALCULAN CON `setDate`, NO SUMANDO 86.400.000 ms.
+//  El lunes viene a las 00:00 y el último domingo de octubre el día dura una
+//  hora MÁS: sumarle 6 × 86.400.000 ms cae a las 23:00 del SÁBADO, y
+//  `_cqFechaKey` devuelve entonces la fecha del día anterior. La parrilla
+//  siempre usó `setDate` (que respeta el calendario), así que sumar
+//  milisegundos aquí sacaría la copia de cuadre con lo que se ve en pantalla
+//  justo esa semana. Es el mismo criterio en un solo sitio para que las dos
+//  granularidades —fila y semana entera— no puedan volver a divergir.
+function _cqFechasSemana(lunes) {
+    const out = [];
+    for (let i = 0; i < 7; i++) {
+        const d = new Date(lunes); d.setDate(lunes.getDate() + i);
+        out.push(_cqFechaKey(d));
+    }
+    return out;
+}
+
 window.cqCopiarFila = function (filaId) {
     const st = window._cqState;
+    if (!st.doc) return;
     const fila = st.doc.filas.find(f => f.id === filaId);
     if (!fila) return;
-    const semana = {};
-    let n = 0;
-    Object.keys(st.doc.celdas).forEach(k => {
-        if (k.indexOf(filaId + '|') !== 0) return;
-        const c = st.doc.celdas[k];
-        semana[k.slice(filaId.length + 1)] = {
-            tipo: c.tipo, ini: c.ini, fin: c.fin, esp: (c.esp || []).slice(), txt: c.txt, nota: c.nota };
-        n++;
+
+    const lunes  = _cqLunes(st.offset);
+    const fechas = _cqFechasSemana(lunes);
+    const entradas = [];
+    let partidosFuera = 0;
+    fechas.forEach((fecha, dia) => {
+        const c = st.doc.celdas[filaId + '|' + fecha];
+        if (!c) return;
+        // 🔴 El partido NO viaja (ver la nota de arriba).
+        if (_cqEsPartido(c)) { partidosFuera++; return; }
+        entradas.push({ dia: dia,
+            celda: { tipo: c.tipo, ini: c.ini, fin: c.fin,
+                     esp: (c.esp || []).slice(), txt: c.txt, nota: c.nota } });
     });
-    if (!n) { _cqToast('⚠️ «' + fila.label + '» no tiene nada esta semana.', 4000); return; }
-    st.portapapeles = { modo: 'fila', datos: semana,
-        etiqueta: 'la semana de ' + fila.label + ' (' + n + ' día' + (n === 1 ? '' : 's') + ')' };
-    _cqToast('📋 Semana copiada. Pulsa el 📌 del equipo de destino.', 4000);
+
+    if (!entradas.length) {
+        _cqToast(partidosFuera
+            ? '⚠️ «' + fila.label + '» sólo tiene partidos esta semana, y los partidos no se copian: cada jornada cae en un día distinto.'
+            : '⚠️ «' + fila.label + '» no tiene nada esta semana.', 5000);
+        return;
+    }
+
+    const semana = _cqRotuloSemana(lunes);
+    st.portapapeles = {
+        modo: 'fila',
+        filaLabel: fila.label,
+        weekKey: st.doc.weekKey,
+        semana: semana,
+        entradas: entradas,
+        // La etiqueta lleva la SEMANA DE ORIGEN: en cuanto se navega a otra,
+        // "la semana de Juvenil C" a secas ya no dice de dónde salió.
+        etiqueta: 'la semana de ' + fila.label + ' (' + entradas.length +
+                  ' día' + (entradas.length === 1 ? '' : 's') + ' · ' + semana + ')',
+    };
+    _cqToast('📋 Semana copiada' +
+        (partidosFuera ? ' · ' + partidosFuera + ' partido(s) NO se copian (cada jornada cae en otro día)' : '') +
+        '. Puedes cambiar de semana y pulsar el 📌 del equipo de destino.', 6000);
     _cqPintar();
 };
 
 window.cqPegarFila = function (filaId) {
     const st = window._cqState;
     const p = st.portapapeles;
-    if (!p || p.modo !== 'fila') return;
+    if (!st.doc || !p || p.modo !== 'fila' || !Array.isArray(p.entradas)) return;
     const fila = st.doc.filas.find(f => f.id === filaId);
     if (!fila) return;
 
@@ -1431,19 +1562,55 @@ window.cqPegarFila = function (filaId) {
     // cosas, se pregunta: perder la semana de un equipo por un clic sería
     // exactamente el tipo de borrado silencioso que este proyecto ya ha
     // sufrido varias veces.
-    const tenia = Object.keys(st.doc.celdas).filter(k => k.indexOf(filaId + '|') === 0);
-    if (tenia.length && !confirm('«' + fila.label + '» ya tiene ' + tenia.length +
-            ' día(s) asignados esta semana.\n\n¿Sustituirlos por ' + p.etiqueta + '?')) return;
-
-    tenia.forEach(k => { delete st.doc.celdas[k]; });
-    Object.keys(p.datos).forEach(fecha => {
-        const c = p.datos[fecha];
-        st.doc.celdas[filaId + '|' + fecha] = {
-            tipo: c.tipo, ini: c.ini, fin: c.fin, esp: (c.esp || []).slice(), txt: c.txt, nota: c.nota };
+    //
+    // 🔴 Pero lo que se vacía NO incluye los partidos del destino: están en SU
+    // día porque lo dice el calendario oficial (regla de v615).
+    const lunes  = _cqLunes(st.offset);
+    const fechas = _cqFechasSemana(lunes);
+    const yaHabia = [], partidosDestino = [];
+    fechas.forEach(fecha => {
+        const k = filaId + '|' + fecha;
+        const c = st.doc.celdas[k];
+        if (!c) return;
+        if (_cqEsPartido(c)) partidosDestino.push(k);
+        else yaHabia.push(k);
     });
+
+    const mismaSemana = (p.weekKey === st.doc.weekKey);
+    if (!confirm('Vas a pegar ' + p.etiqueta + ' en «' + fila.label + '»' +
+        (mismaSemana ? '' : ', en la semana del ' + _cqRotuloSemana(lunes)) + '.' +
+        (yaHabia.length ? '\n\n⚠️ «' + fila.label + '» ya tiene ' + yaHabia.length +
+            ' actividad(es) esta semana y se SUSTITUIRÁN.' : '') +
+        (partidosDestino.length ? '\n\n✅ Sus ' + partidosDestino.length +
+            ' partido(s) oficiales de esta semana NO se tocan.' : '') +
+        '\n\nNo se guarda hasta que pulses GUARDAR.')) return;
+
+    yaHabia.forEach(k => { delete st.doc.celdas[k]; });
+
+    // 🔑 Aquí está el arreglo: el índice de día se remapea a la fecha de ESTA
+    // semana. Sin esto se escribían las fechas de la semana de origen.
+    let pegadas = 0, respetados = 0;
+    p.entradas.forEach(en => {
+        const fecha = fechas[en.dia];
+        if (!fecha) return;
+        const clave = filaId + '|' + fecha;
+        // El entrenamiento del viernes de la semana origen puede caer justo
+        // donde ESTA semana hay partido. El partido manda.
+        if (_cqEsPartido(st.doc.celdas[clave])) { respetados++; return; }
+        const c = en.celda || {};
+        st.doc.celdas[clave] = {
+            tipo: c.tipo, ini: c.ini, fin: c.fin,
+            esp: (c.esp || []).slice(), txt: c.txt, nota: c.nota };
+        pegadas++;
+    });
+
     st.sucio = true;
     _cqHistPush('pegar fila en ' + fila.label);
-    _cqToast('📌 Semana pegada en ' + fila.label + '. Ajusta las horas y guarda.', 4000);
+    _cqToast('📌 Pegadas ' + pegadas + ' actividad(es) en ' + fila.label +
+             ' · semana del ' + _cqRotuloSemana(lunes) +
+             (partidosDestino.length ? ' · ' + partidosDestino.length + ' partido(s) intactos' : '') +
+             (respetados ? ' · ' + respetados + ' casilla(s) no se pisaron por haber partido' : '') +
+             '. Ajusta las horas y guarda.', 6000);
     _cqPintar();
 };
 
@@ -1671,8 +1838,9 @@ window.cqCopiarSemana = function () {
     const visibles = _cqFilasVisibles(st.doc.filas);
     const entradas = [];
     let partidosFuera = 0;
+    const fechasSem = _cqFechasSemana(lunes);   // v673 · un solo criterio de fechas
     for (let i = 0; i < 7; i++) {
-        const fecha = _cqFechaKey(new Date(lunes.getTime() + i * 86400000));
+        const fecha = fechasSem[i];
         visibles.forEach(f => {
             const c = st.doc.celdas[f.id + '|' + fecha];
             if (!c) return;
@@ -1769,10 +1937,12 @@ window.cqPegarSemana = function () {
     // 3. Y se escribe el paquete, remapeando el índice de día a la fecha de
     //    ESTA semana.
     const lunes = _cqLunes(st.offset);
+    const fechasSem = _cqFechasSemana(lunes);   // v673 · un solo criterio de fechas
     let pegadas = 0, respetados = 0;
     p.entradas.forEach(en => {
         if (!idsVisibles[en.filaId]) return;   // fila fuera de su alcance: no se toca
-        const fecha = _cqFechaKey(new Date(lunes.getTime() + en.dia * 86400000));
+        const fecha = fechasSem[en.dia];
+        if (!fecha) return;
         const clave = en.filaId + '|' + fecha;
         // 🔴 Y AQUÍ LA SEGUNDA MITAD DE LA MISMA REGLA. Aunque el paquete ya
         // no trae partidos, el entrenamiento del martes de la semana origen

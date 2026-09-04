@@ -72,7 +72,12 @@ const sb = {
     String, Array, Number, Object, Date, parseInt, parseFloat, isNaN, RegExp, Math, JSON,
     document: { getElementById: () => null, body: { contains: () => false },
                 querySelectorAll: () => [], createElement: () => ({ style: {}, addEventListener() {} }) },
+    // v673 · `cqPegarFila` pregunta antes de sustituir. Sin este stub la
+    // llamada moriría en un ReferenceError y el test de copiar-pegar entre
+    // semanas no llegaría a ejercitar nada.
+    confirm: () => sb.__confirmar,
 };
+sb.__confirmar = true;
 sb.window = sb;
 sb.globalThis = sb;
 vm.createContext(sb);
@@ -83,7 +88,8 @@ vm.runInContext(CQ + '\n;window.__probe = { _cqMin, _cqHHMM, _cqDocId, _cqFilasV
                      '_cqEtiquetaCelda, _cqOcupaCampo, _cqMinutosOcupados, ' +
                      '_cqEspaciosDe, _cqEspacioImplicito, _cqNombreEspacios, CQ_ESPACIOS, ' +
                      'CQ_HORA_INI_SEMANA, CQ_HORA_INI_FINDE, CQ_HORA_FIN, CQ_PASO_MIN, ' +
-                     'CQ_TIPOS, CQ_ORDEN_CAT, CQ_PAPEL };' +
+                     'CQ_TIPOS, CQ_ORDEN_CAT, CQ_PAPEL, ' +
+                     '_cqLunes, _cqFechaKey, _cqFechasSemana, _cqRotuloSemana, _cqSanearCeldas };' +
                      '\n;window.__baseFuente = _cqBaseFuente;', sb);
 const P = sb.window.__probe;
 
@@ -504,8 +510,11 @@ console.log('\n13) 📋 v604 · Copiar y pegar bloques (punto 6)');
            return s.indexOf('ENTRENO') === 0 && s.indexOf('18:00–19:30') > 0 && s.indexOf('1·2') > 0;
        })(), P._cqEtiquetaCelda({ tipo: 'entreno', ini: '18:00', fin: '19:30', esp: [2,1], txt: 'ENTRENO' }));
 
+    // v673 · La pregunta sigue, pero ya no cuelga de `tenia`: el pegado mira
+    // los siete días de ESTA semana y aparta los partidos (ver la sección 27).
     ok('13f · 🔴 pegar una semana ENCIMA de otra con datos PREGUNTA antes',
-       /tenia\.length && !confirm\(/.test(CQ),
+       /actividad\(es\) esta semana y se SUSTITUIRÁN/.test(CQ) &&
+       /if \(!confirm\(/.test(_seccion(CQ_COD, 'window.cqPegarFila', 'window.cqCancelarCopia')),
        'perder la semana de un equipo por un clic es el borrado silencioso de siempre');
 
     ok('13g · ⚠️ pegar NO guarda: marca sucio y el autor revisa',
@@ -519,7 +528,8 @@ console.log('\n13) 📋 v604 · Copiar y pegar bloques (punto 6)');
        /if \(!c\) \{ _cqToast\('⚠️ No hay nada que copiar/.test(CQ));
 
     ok('13j · copiar la semana de un equipo sin nada tampoco',
-       /if \(!n\) \{ _cqToast\('⚠️ «'/.test(CQ));
+       /if \(!entradas\.length\) \{[\s\S]{0,400}no tiene nada esta semana/
+           .test(_seccion(CQ_COD, 'window.cqCopiarFila', 'window.cqPegarFila')));
 }
 
 // ══════════════════════════════════════════════════════════════════════
@@ -939,9 +949,12 @@ console.log('\n20) 🗓️ v607 · Copiar y pegar la semana entera (punto 2)');
        /window\.cqPegarSemana = function/.test(CQ_COD) &&
        /window\.cqOlvidarSemana = function/.test(CQ_COD));
 
+    // v673 · El remapeo sigue siendo por índice, pero la fecha ya no se calcula
+    // sumando milisegundos: sale de `_cqFechasSemana`, el ÚNICO sitio donde se
+    // recorre la semana (con `setDate`, que respeta el cambio de hora). Ver 27a.
     ok('20b · 🔑🔑 se guarda por ÍNDICE DE DÍA, no por fecha',
        /entradas\.push\(\{ filaId: f\.id, dia: i,/.test(CQ_COD) &&
-       /const fecha = _cqFechaKey\(new Date\(lunes\.getTime\(\) \+ en\.dia \* 86400000\)\);/.test(CQ_COD),
+       /const fecha = fechasSem\[en\.dia\];/.test(CQ_COD),
        'copiar las claves con su fecha metería casillas de la semana origen en el documento de la destino');
 
     ok('20c · 🔑🔑 SÓLO se copian las filas que este usuario VE',
@@ -1302,6 +1315,187 @@ console.log('\n24 · ↩️ v615 · DESHACER Y REHACER');
     // 🔴 Deshacer NO escribe en Firestore: sólo devuelve la pantalla atrás.
     ok('24r · 🔴 deshacer no toca Firestore',
        !/setDoc|getDoc/.test(_seccion(CQ_COD, 'function _cqHistIr', 'function _cqPuedeDeshacer')));
+}
+
+// ════════════════════════════════════════════════════════════════════════
+console.log('\n27 · 🔴 v673 · LA FILA COPIADA SE PEGA EN LA SEMANA DE DESTINO');
+// ════════════════════════════════════════════════════════════════════════
+//  Reporte del autor (capturas 9962-9963): copia la semana de Juvenil C
+//  (31 ago – 6 sept), navega con ▶ hasta el 21 – 27 sept, pulsa el 📌 …y no
+//  aparece nada. El mensaje de "copiado" seguía en pantalla, así que parecía
+//  un fallo del PEGADO cuando el fallo era del REMAPEO.
+//
+//  🔑 La causa: `cqCopiarFila` guardaba las claves `<filaId>|<FECHA ABSOLUTA>`
+//  y `cqPegarFila` las reescribía tal cual. Las casillas SÍ se creaban —de ahí
+//  el "● Sin guardar" de la captura 9963— pero con fechas de la semana de
+//  ORIGEN dentro del documento de la semana de DESTINO: la parrilla sólo mira
+//  los siete días de SU semana, así que eran invisibles en las dos.
+//
+//  Es EXACTAMENTE lo que la v607 documentó y resolvió para la semana entera
+//  («se guarda por índice de día, NO por fecha»), y que se quedó sin aplicar
+//  en la granularidad de al lado. El mismo defecto, con la misma forma, en la
+//  función de al lado — el patrón de v643 y v652.
+//
+//  ⚠️ Estas aserciones son EJECUTABLES a propósito. Un regex sobre "dia" habría
+//  dado verde con el remapeo mal hecho; lo que hay que probar es que la
+//  casilla del miércoles de la semana origen ACABA en el miércoles de la
+//  semana destino.
+// ════════════════════════════════════════════════════════════════════════
+{
+    const W = sb.window;
+    const F = P._cqFechaKey;
+    const lunesDe = (off) => P._cqLunes(off);
+    const dias = (off) => P._cqFechasSemana(lunesDe(off));
+
+    // ── Las siete fechas, con el calendario y no con milisegundos ──────
+    ok('27a · ⚠️ la semana se recorre con setDate, no sumando 86.400.000 ms',
+       !/86400000/.test(_seccion(CQ_COD, 'function _cqFechasSemana', '\n}')) &&
+       /setDate\(lunes\.getDate\(\) \+ i\)/.test(_seccion(CQ_COD, 'function _cqFechasSemana', '\n}')),
+       'el último domingo de octubre dura 25 h: sumar ms cae en el sábado');
+
+    ok('27b · ejecutable: siete fechas consecutivas y la primera es el lunes',
+       (() => {
+           const f = dias(0);
+           if (f.length !== 7 || f[0] !== F(lunesDe(0))) return false;
+           for (let i = 1; i < 7; i++) {
+               const a = new Date(f[i - 1] + 'T12:00:00'), b = new Date(f[i] + 'T12:00:00');
+               if (Math.round((b - a) / 86400000) !== 1) return false;
+           }
+           return true;
+       })(), dias(0));
+
+    // 🔴 La semana del cambio de hora (25/10/2026, el domingo en que en España
+    //    se atrasa el reloj) es la que reventaba la aritmética en milisegundos.
+    ok('27c · 🔴 la semana del cambio de hora no pierde el domingo',
+       (() => {
+           const lunes = new Date(2026, 9, 19, 0, 0, 0, 0);   // lunes 19/10/2026
+           const f = P._cqFechasSemana(lunes);
+           return f[0] === '2026-10-19' && f[6] === '2026-10-25';
+       })(), P._cqFechasSemana(new Date(2026, 9, 19, 0, 0, 0, 0)));
+
+    // ── El flujo de las capturas, de principio a fin ───────────────────
+    const doc = (off) => ({ v: 1, weekKey: F(lunesDe(off)), espacios: [1,2,3,4],
+                            filas: [{ id: 'juvenil_c', tipo: 'equipo', cat: 'juvenil', sub: 'C', label: 'Juvenil C' },
+                                    { id: 'cadete_b',  tipo: 'equipo', cat: 'cadete',  sub: 'B', label: 'Cadete B' }],
+                            celdas: {} });
+
+    // Semana de ORIGEN (offset 0): Juvenil C entrena lunes, miércoles y jueves.
+    W._cqState.offset = 0;
+    W._cqState.doc = doc(0);
+    W._cqState.portapapeles = null;
+    const origen = dias(0);
+    [0, 2, 3].forEach(i => {
+        W._cqState.doc.celdas['juvenil_c|' + origen[i]] =
+            { tipo: 'entreno', ini: '16:30', fin: '18:00', esp: [1,2], txt: 'Garita', nota: '' };
+    });
+    // …y un partido el viernes, que NO debe viajar (regla de v615).
+    W._cqState.doc.celdas['juvenil_c|' + origen[4]] =
+        { tipo: 'partido_fuera', ini: '20:30', fin: '', esp: [], txt: 'JOVERO-LAS ROSAS', nota: '' };
+    W._cqHistInit();
+
+    W.cqCopiarFila('juvenil_c');
+    const pp = W._cqState.portapapeles;
+
+    ok('27d · copiar guarda ÍNDICES de día (0-6), no fechas',
+       !!pp && pp.modo === 'fila' && Array.isArray(pp.entradas) &&
+       pp.entradas.length === 3 &&
+       pp.entradas.map(e => e.dia).join(',') === '0,2,3' &&
+       pp.entradas.every(e => !('fecha' in e)),
+       pp && pp.entradas);
+
+    ok('27e · 🔴 el partido del viernes NO se copia',
+       !!pp && !pp.entradas.some(e => e.celda.tipo === 'partido_fuera'));
+
+    ok('27f · 🔑 la etiqueta dice de QUÉ semana salió',
+       !!pp && pp.etiqueta.indexOf('Juvenil C') > 0 &&
+       pp.etiqueta.indexOf(P._cqRotuloSemana(lunesDe(0))) > 0 &&
+       pp.weekKey === F(lunesDe(0)),
+       pp && pp.etiqueta);
+
+    // ── Se cambia de semana (tres adelante) y se pega en el MISMO equipo ──
+    W._cqState.offset = 3;
+    W._cqState.doc = doc(3);
+    W._cqHistInit();
+    const destino = dias(3);
+    // Esa semana ya tiene un partido oficial fijado el MIÉRCOLES, justo donde
+    // cae uno de los entrenamientos copiados.
+    W._cqState.doc.celdas['juvenil_c|' + destino[2]] =
+        { tipo: 'partido_casa', ini: '11:00', fin: '', esp: [1,2,3,4], txt: 'Jornada 8', nota: '' };
+
+    W.cqPegarFila('juvenil_c');
+    const celdas = W._cqState.doc.celdas;
+
+    ok('27g · 🔴🔴 EL DEFECTO DE LAS CAPTURAS: lo pegado cae en la semana DESTINO',
+       !!celdas['juvenil_c|' + destino[0]] && !!celdas['juvenil_c|' + destino[3]],
+       Object.keys(celdas));
+
+    ok('27h · 🔴 …y NINGUNA casilla queda con fecha de la semana de origen',
+       !Object.keys(celdas).some(k => origen.indexOf(k.slice(k.lastIndexOf('|') + 1)) >= 0),
+       Object.keys(celdas));
+
+    ok('27i · el día de la semana se respeta: lunes→lunes, jueves→jueves',
+       celdas['juvenil_c|' + destino[0]].txt === 'Garita' &&
+       celdas['juvenil_c|' + destino[3]].txt === 'Garita' &&
+       !celdas['juvenil_c|' + destino[1]] && !celdas['juvenil_c|' + destino[4]],
+       Object.keys(celdas));
+
+    ok('27j · ⚠️ el partido del destino NO se pisa con el entrenamiento copiado',
+       celdas['juvenil_c|' + destino[2]].tipo === 'partido_casa' &&
+       celdas['juvenil_c|' + destino[2]].txt === 'Jornada 8');
+
+    ok('27k · pegar marca sucio y NO guarda',
+       W._cqState.sucio === true &&
+       !/_cqGuardar\(/.test(_seccion(CQ_COD, 'window.cqPegarFila', 'window.cqCancelarCopia')));
+
+    ok('27l · el portapapeles sigue lleno: se puede pegar en más equipos',
+       !!W._cqState.portapapeles && W._cqState.portapapeles.modo === 'fila');
+
+    // ── Y el mismo paquete, en OTRO equipo de esa semana (uso de v604) ──
+    W.cqPegarFila('cadete_b');
+    ok('27m · el mismo paquete vale para otro equipo, sin salirse de la semana',
+       !!W._cqState.doc.celdas['cadete_b|' + destino[0]] &&
+       !!W._cqState.doc.celdas['cadete_b|' + destino[2]] &&
+       !W._cqState.doc.celdas['cadete_b|' + origen[0]],
+       Object.keys(W._cqState.doc.celdas).filter(k => k.indexOf('cadete_b|') === 0));
+
+    // ── Decir que no en el aviso no toca NADA ───────────────────────────
+    sb.__confirmar = false;
+    const antes = JSON.stringify(W._cqState.doc.celdas);
+    W.cqPegarFila('juvenil_c');
+    ok('27n · 🔴 si se contesta que NO al aviso, no se borra ni se escribe nada',
+       JSON.stringify(W._cqState.doc.celdas) === antes);
+    sb.__confirmar = true;
+
+    // ── 🧹 El barrido de la basura que dejó el defecto ──────────────────
+    const sucio = { weekKey: F(lunesDe(3)), celdas: {} };
+    sucio.celdas['juvenil_c|' + destino[1]] = { tipo: 'entreno', txt: 'bueno' };
+    sucio.celdas['juvenil_c|' + origen[1]]  = { tipo: 'entreno', txt: 'huérfano' };
+    sucio.celdas['sin_barra']               = { tipo: 'entreno', txt: 'malformado' };
+    const fuera = P._cqSanearCeldas(sucio);
+
+    ok('27o · 🧹 al abrir se barren las casillas con fecha ajena a la semana',
+       fuera === 2 && !!sucio.celdas['juvenil_c|' + destino[1]] &&
+       !sucio.celdas['juvenil_c|' + origen[1]] && !sucio.celdas['sin_barra'],
+       Object.keys(sucio.celdas));
+
+    ok('27p · …y se llama ANTES de decidir las filas (que miran `celdas`)',
+       /_cqSanearCeldas\(leido\);\s*\n\s*leido\.filas = _cqFilasEfectivas\(/.test(CQ_COD),
+       'una casilla huérfana mantendría viva una fila vacía');
+
+    ok('27q · …y también sobre el cambio que llega en vivo de otra persona',
+       /_cqSanearCeldas\(entrante\);/.test(CQ_COD));
+
+    ok('27r · ⚠️ el barrido NO marca sucio: el usuario no ha tocado nada',
+       !/st\.sucio = true/.test(_seccion(CQ_COD, 'function _cqSanearCeldas', '\n}')));
+
+    // ── Las dos granularidades comparten criterio de fechas ─────────────
+    ok('27s · 🔑 copiar/pegar SEMANA usa el mismo _cqFechasSemana que la fila',
+       /const fechasSem = _cqFechasSemana\(lunes\);/.test(_seccion(CQ_COD, 'window.cqCopiarSemana', 'window.cqPegarSemana')) &&
+       /const fechasSem = _cqFechasSemana\(lunes\);/.test(_seccion(CQ_COD, 'window.cqPegarSemana', 'window.cqOlvidarSemana')),
+       'dos criterios de fecha vuelven a divergir a la primera corrección');
+
+    ok('27t · y la barra invita a cambiar de semana antes de pegar',
+       /Cambia de semana si quieres y pulsa el 📌 del equipo de destino/.test(CQ));
 }
 
 console.log('\n' + '─'.repeat(70));
