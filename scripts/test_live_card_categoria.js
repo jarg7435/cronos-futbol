@@ -412,10 +412,28 @@ ok('6f · ⚠️ snapCat (grupo del semaforo) sigue siendo el del perfil',
 // `_matchSub || snapSub`, la letra del perfil se colaba en cuanto la del
 // partido venia vacia —aun teniendo la categoria del partido resuelta—, y ahi
 // volvia a formarse el hibrido. Lo que no cambia: nunca `undefined`.
+// 🔄 v675 · La regla que importa aquí es «nunca `undefined`», y sigue intacta:
+// las dos ramas terminan en `null`. Lo que cambia es que el respaldo al perfil
+// pasa a estar CONDICIONADO a `_perfilUnico` (un solo equipo). Con dos, el
+// perfil acierta en uno y falla en el otro siempre — y además colisionaba la
+// ranura local. El motivo largo, en test_subcategoria_del_equipo.js (PARTE 3).
 ok('6g · los campos nuevos terminan en `|| null` (undefined en Firestore LANZA)',
-   /matchCategory:\s*_matchCat\s*\|\|\s*snapCat\s*\|\|\s*null/.test(SYNC) &&
-   /matchSubcategory:\s*_matchCat \? \(_matchSub \|\| null\) : \(snapSub \|\| null\)/.test(SYNC),
+   /matchCategory:\s*_matchCat \|\| \(_perfilUnico \? snapCat : null\) \|\| null/.test(SYNC) &&
+   /matchSubcategory:\s*_matchCat \? \(_matchSub \|\| null\)\s*\n?\s*: \(_perfilUnico \? \(snapSub \|\| null\) : null\)/.test(SYNC),
    'y el respaldo al perfil es de la pareja entera, no de cada mitad');
+
+// 🔴 v675 · Lo que este guard NO puede dejar volver: sellar la identidad con el
+// perfil cuando el entrenador lleva varios equipos.
+ok('6h · 🔴 la identidad se sella POR matchId y no se re-deriva en cada latido',
+   /window\._cronosIdPartido\[liveMatchId\] = \{ cat: _matchCat, sub: _matchSub \|\| '' \}/.test(SYNC) &&
+   /const _sello = liveMatchId \? window\._cronosIdPartido\[liveMatchId\] : null/.test(SYNC),
+   'una global de pestaña describe al ÚLTIMO partido, no a éste');
+
+ok('6i · 🔴🔴 sin categoría del partido, `teamId` se deja NULO, no se inventa',
+   /return null;\s*\n\s*\}\)\(\),/.test(SYNC) &&
+   /se deja sin teamId en vez de sellarlo con el perfil/.test(SYNC),
+   'la ranura local es cronos_tab_match::<teamId>: un sello equivocado le roba ' +
+   'la ranura al partido de al lado (capturas 9999/10004/10006)');
 
 // ═══════════ Resultado ═══════════
 console.log('\n────────────────────────────────');

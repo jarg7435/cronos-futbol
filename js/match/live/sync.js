@@ -779,14 +779,103 @@ async function pushLiveSnapshot(status = 'active') {
         //  a la vez, mientras que los desplegables pueden haber quedado atrás
         //  —o desaparecido, porque el panel se repinta— cada uno por su lado.
         // ══════════════════════════════════════════════════════════════
+        // ══════════════════════════════════════════════════════════════
+        //  🔴🔴 v675 · LA IDENTIDAD SE SELLA POR `matchId`, NO POR PESTAÑA
+        // ══════════════════════════════════════════════════════════════
+        //  Encargo del autor (implementar.txt 2026-09-04, capturas 9999 y
+        //  10003-10006): con dos partidos simultáneos «un partido de categoría
+        //  juvenil llegó a mostrarse como alevín por culpa de variables
+        //  globales de pestaña y claves de caché compartidas
+        //  (cronos_tab_match::<teamId>)… Todo debe estar atado estrictamente a
+        //  su matchId».
+        //
+        //  ✅ MEDIDO EN PRODUCCIÓN antes de tocar nada. Los dos documentos:
+        //     arinaga-7 …  mode f7   matchCategory "alevin"  teamId …__alevin__c
+        //     arinaga-jv … mode f11  matchCategory "alevin"  teamId …__alevin__c
+        //  El cruce está EN EL DOCUMENTO, no en el pintado: arreglarlo en
+        //  live.html habría sido cosmético.
+        //
+        //  🔑 LA CAUSA: `window._currentMatchCategory` es UNA GLOBAL ÚNICA de
+        //  la pestaña, sin atar al partido. Cuando está vacía —el panel ya se
+        //  cerró, la página se recargó, o el partido se retomó desde la nube—
+        //  `matchCategory` Y `teamId` caían al PERFIL del entrenador. Se ve en
+        //  el dato: quedó `"alevin"` SIN el prefijo `f7_`/`f11_` que pone el
+        //  desplegable, o sea que vino del perfil. Para un entrenador con dos
+        //  equipos, el respaldo al perfil ACIERTA EN UNO Y FALLA EN EL OTRO
+        //  siempre. Es el defecto que v561 cerró para `teamId` por la vía
+        //  principal y que seguía vivo por la vía del RESPALDO.
+        //
+        //  🔑🔑 Y NO ERA SÓLO UNA ETIQUETA FEA. `js/core/match-slots.js` guarda
+        //  la ranura local en `cronos_tab_match::<teamId>`: con los dos
+        //  partidos sellados con el MISMO teamId **comparten ranura y uno pisa
+        //  al otro**. Por eso en la captura 9999 el Alevín sale «DISPOSITIVO +
+        //  NUBE» y el Juvenil «NUBE» a secas — se quedó sin copia local, y de
+        //  ahí que desapareciera del panel de recuperación.
+        //
+        //  🔑 EL ARREGLO: la pareja se resuelve UNA VEZ y se SELLA bajo el
+        //  `matchId`. A partir de ahí ningún latido la vuelve a derivar de una
+        //  global que puede estar describiendo al otro partido. El orden añade
+        //  una fuente nueva y decisiva —EL ESTADO DE LA RANURA DE ESTE PARTIDO,
+        //  que ya guarda su `category` y su `teamId` desde el panel de
+        //  creación— por delante del perfil, que es el que mentía.
+        //
+        //  ⚠️ SE SIGUE TOMANDO LA PAREJA ENTERA DE UNA SOLA FUENTE (v562): que
+        //  la categoría salga de un sitio y la letra de otro es como nacía el
+        //  híbrido «Regional C» de un Regional A.
+        // ══════════════════════════════════════════════════════════════
+        window._cronosIdPartido = window._cronosIdPartido || {};
+        const _sello = liveMatchId ? window._cronosIdPartido[liveMatchId] : null;
+
         let _matchCat = '', _matchSub = '';
-        if (window._currentMatchCategory) {
+        if (_sello && _sello.cat) {
+            // Ya sellada para ESTE partido: no se vuelve a mirar ninguna global.
+            _matchCat = _sello.cat;
+            _matchSub = _sello.sub || '';
+        } else if (window._currentMatchCategory) {
             _matchCat = window._currentMatchCategory;
             _matchSub = window._currentMatchSubcategory || '';
         } else if (_dom('match-category')) {
             _matchCat = _dom('match-category');
             _matchSub = _dom('match-subcategory') || '';
+        } else if (liveMatchId) {
+            // 🔑 LA RANURA DE ESTE PARTIDO, antes que el perfil. Es la única
+            // fuente que sabe de QUÉ partido habla; el perfil no.
+            try {
+                const _st = window._cronosMatchSlots &&
+                            typeof window._cronosMatchSlots.leer === 'function'
+                          ? window._cronosMatchSlots.leer(liveMatchId) : null;
+                if (_st && _st.category) {
+                    _matchCat = _st.category;
+                    _matchSub = _st.subcategory || '';
+                }
+            } catch (e) { /* sin ranura legible: se cae al perfil, como antes */ }
         }
+
+        // Se sella lo resuelto, para que el resto del partido no dependa de
+        // globales que otro partido puede haber reescrito entre latidos.
+        if (liveMatchId && _matchCat && !(_sello && _sello.cat)) {
+            window._cronosIdPartido[liveMatchId] = { cat: _matchCat, sub: _matchSub || '' };
+        }
+
+        // ⚠️ ¿PUEDE EL PERFIL SERVIR DE RESPALDO? Sólo si su dueño lleva UN
+        // equipo: entonces «la categoría del entrenador» y «la del partido» son
+        // por fuerza la misma y el respaldo no puede equivocarse. Con dos o más
+        // —el caso de la captura 10003— acierta en uno y falla en el otro
+        // SIEMPRE, y encima colisiona la ranura. Ante la duda, nada.
+        // La lista de equipos es la de v540 (`cronosEquiposDeEntrenador`), la
+        // misma que usa el selector de equipo.
+        const _perfilUnico = (function () {
+            try {
+                if (typeof window.cronosEquiposDeEntrenador !== 'function') return false;
+                // ⚠️ La firma es (allRoles, clubId), NO (usuario). Pasarle el
+                // usuario devuelve [] en silencio y el respaldo se apagaría
+                // también para quien SÍ lleva un solo equipo: su tarjeta se
+                // quedaría sin etiqueta sin que nadie viera un error.
+                const _me = window._cronosCurrentUser || {};
+                const _eq = window.cronosEquiposDeEntrenador(_me.allRoles, null) || [];
+                return _eq.length === 1;
+            } catch (e) { return false; }
+        })();
 
         const _me = window._cronosCurrentUser;
         const _extras = (_me && _me.extras) || (_thresholds && _thresholds.extras) || {};
@@ -855,15 +944,49 @@ async function pushLiveSnapshot(status = 'active') {
             // desplegable como `f11_regional`, y `cronosTeamId` haría el slug
             // `f11-regional`, que NO casa con el `…__regional__a` de la ficha de
             // equipo: el partido quedaría huérfano de su plantilla.
+            // 🔴🔴 v675 · Y AQUÍ ESTABA LA MITAD QUE HACÍA DAÑO DE VERDAD. La
+            // ranura local vive en `cronos_tab_match::<teamId>`, así que dos
+            // partidos con el mismo `teamId` COMPARTEN RANURA y uno pisa al
+            // otro. El respaldo al perfil no sólo ponía una etiqueta fea:
+            // fabricaba la colisión. Ver la nota larga de arriba.
             teamId: (function () {
                 if (typeof cronosTeamId !== 'function') return null;
                 const _u = window._cronosCurrentUser || {};
                 const _sinPrefijo = (v) => String(v || '').replace(/^f(?:7|8|11)_/i, '');
-                const _cat = _sinPrefijo(_matchCat) ||
-                             _u.category || _u._activeRoleData?.category || _u.categoryLabel || '';
-                const _sub = (_matchCat ? (_matchSub || '') : '') ||
-                             _u.subcategory || _u._activeRoleData?.subcategory || '';
-                return cronosTeamId(_u.clubId || '', _cat, _sub) || null;
+
+                // 1 · Lo que ya sellara la ranura de ESTE partido manda sobre
+                //     todo: es un `teamId` completo y de este partido.
+                if (liveMatchId) {
+                    try {
+                        const _st = window._cronosMatchSlots &&
+                                    typeof window._cronosMatchSlots.leer === 'function'
+                                  ? window._cronosMatchSlots.leer(liveMatchId) : null;
+                        if (_st && _st.teamId) return _st.teamId;
+                    } catch (e) { /* seguimos con la pareja resuelta */ }
+                }
+
+                // 2 · La pareja del PARTIDO, entera (v562).
+                if (_matchCat) {
+                    return cronosTeamId(_u.clubId || '', _sinPrefijo(_matchCat), _matchSub || '') || null;
+                }
+
+                // 3 · ⚠️ SIN CATEGORÍA DEL PARTIDO NO SE INVENTA UNA.
+                //     Caer al perfil aquí es lo que sellaba el Juvenil como
+                //     Alevín y le robaba la ranura al otro partido. Un `teamId`
+                //     nulo deja el documento sin sello —recuperable y visible—
+                //     mientras que un sello EQUIVOCADO se lleva por delante el
+                //     partido de al lado. Misma regla que la etiqueta: si no se
+                //     resuelve, no se inventa.
+                //     El perfil se sigue usando SÓLO cuando no puede haber
+                //     ambigüedad: un entrenador con UN único equipo.
+                if (_perfilUnico) {
+                    const _cat = _u.category || _u._activeRoleData?.category || _u.categoryLabel || '';
+                    const _sub = _u.subcategory || _u._activeRoleData?.subcategory || '';
+                    return cronosTeamId(_u.clubId || '', _cat, _sub) || null;
+                }
+                console.warn('[v675] Partido sin categoría resuelta (' + liveMatchId +
+                             '): se deja sin teamId en vez de sellarlo con el perfil.');
+                return null;
             })(),
 
             // v463 · Categoría y Subcategoría DEL PARTIDO, tal y como las dejó el
@@ -880,8 +1003,16 @@ async function pushLiveSnapshot(status = 'active') {
             // la categoría del PARTIDO, la letra sale del partido aunque quede
             // en null; sólo cuando no hay categoría de partido se recurre al
             // perfil, y entonces se toman sus DOS campos.
-            matchCategory:    _matchCat || snapCat || null,
-            matchSubcategory: _matchCat ? (_matchSub || null) : (snapSub || null),
+            // 🔴 v675 · El respaldo al perfil (`snapCat`) sólo vale cuando NO
+            // puede equivocarse: un entrenador con un único equipo. Con dos, es
+            // el que ponía «ALEVÍN C» encima de un partido de Juvenil (captura
+            // 10003). Sin categoría resoluble se deja en null y la tarjeta no
+            // pinta etiqueta — regla D del guard de v463: si no se resuelve, no
+            // se inventa, porque una etiqueta equivocada le atribuye el partido
+            // a otro equipo.
+            matchCategory:    _matchCat || (_perfilUnico ? snapCat : null) || null,
+            matchSubcategory: _matchCat ? (_matchSub || null)
+                                        : (_perfilUnico ? (snapSub || null) : null),
 
             // Partido
             mode:        currentMode,

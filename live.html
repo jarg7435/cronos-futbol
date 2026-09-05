@@ -1924,6 +1924,7 @@ function teardownBackgroundWatch() {
             delete _matchPrevState[id];
             delete _matchSeeded[id];
             delete _matchSeedTs[id];
+            delete _matchWatchStart[id];
             delete _matchLastTs[id];
             delete _matchPrevPhase[id];
             delete _matchLastData[id];
@@ -1969,6 +1970,40 @@ const _matchSeeded = {};
 // lo he visto TODO"; una marca temporal sí, y da el mismo resultado gane quien
 // gane la carrera.
 const _matchSeedTs = {};
+// ════════════════════════════════════════════════════════════════════
+//  🔴🔴 v676 · EL INSTANTE EN QUE EMPEZAMOS A MIRAR ESTE PARTIDO
+// ════════════════════════════════════════════════════════════════════
+//  Encargo del autor (implementar.txt 2026-09-04): «la cascada ocurre dentro
+//  del partido en vivo, con el panel ya abierto y viéndose el partido. Al
+//  sincronizar o reconectar en tiempo real, la interfaz vierte de golpe todos
+//  los eventos pasados… los sucesos antiguos deben tratarse de forma
+//  silenciosa o ir exclusivamente al historial inferior».
+//
+//  🔑 POR QUÉ LA MARCA DE AGUA DE v572b NO BASTABA. `_matchSeedTs` se calcula
+//  con el suceso más reciente DEL PRIMER SNAPSHOT. Y ese primer snapshot puede
+//  venir de la CACHÉ: Firestore sirve primero la copia local y después la del
+//  servidor. Si la caché está incompleta o atrasada —lo normal al reconectar—
+//  la marca nace DEMASIADO BAJA y la siembra se cierra igualmente. Cuando
+//  llega el snapshot bueno con los 46 sucesos, ya no hay siembra que los calle
+//  y todos quedan por encima de esa marca: se anuncian de golpe.
+//
+//  ⚠️ Y NO SE PODÍA ARREGLAR CON `if (fromCache) return;`: los sucesos se
+//  evalúan A PROPÓSITO por encima de esa guarda desde v567, porque en un iPad
+//  con cobertura irregular casi todos los snapshots llegan de caché y filtrarlos
+//  dejaba al usuario sin avisos. Ése era el fallo 3 del autor.
+//
+//  🔑 EL INVARIANTE CORRECTO NO ES «lo que vi al principio», ES EL TIEMPO: un
+//  suceso creado ANTES de que yo abriera este partido es historial, me entere
+//  cuando me entere y me lo cuente quien me lo cuente. Eso no depende de qué
+//  snapshot gane la carrera ni de si venía de la caché.
+//
+//  ⚠️ CON TOLERANCIA, porque los relojes no son el mismo: `createdAt` lo pone
+//  el dispositivo del entrenador y esto se compara con el del espectador. Sin
+//  margen, un desfase de unos segundos silenciaría un gol recién marcado — que
+//  es peor que la cascada que venimos a quitar.
+// ════════════════════════════════════════════════════════════════════
+const _matchWatchStart = {};
+const _TOLERANCIA_RELOJ_MS = 2 * 60 * 1000;
 // Ultimo updatedAt (epoch ms) PROCESADO por matchId. Sirve para descartar
 // snapshots no monotonicos (reenvios de Firestore tras reconexion o emisiones
 // desde cache local desactualizada), que de otro modo re-dispararian alertas
@@ -4112,8 +4147,19 @@ function detectAndAlert(matchId, matchData, fromCache) {
         // manda el Set de eventId. No se inventa una marca "ahora", que
         // silenciaría sucesos legítimos de un partido ya en marcha.
         _matchSeedTs[matchId] = _tope;
+        // 🔴 v676 · Y el instante en que empezamos a mirar. Ver la nota larga
+        // junto a `_matchWatchStart`: la marca de arriba puede nacer baja si el
+        // primer snapshot vino de una caché incompleta; ésta no depende de qué
+        // snapshot gane la carrera.
+        if (!_matchWatchStart[matchId]) _matchWatchStart[matchId] = Date.now();
     }
     const _corte = _matchSeedTs[matchId] || 0;
+    // 🔴 v676 · EL SUELO DEL INSTANTE DE APERTURA. Con la marca de agua sola,
+    // un primer snapshot de caché incompleto dejaba pasar el historial entero
+    // al llegar el bueno. Con este suelo, lo creado ANTES de abrir el partido
+    // es historial aunque nos enteremos más tarde.
+    const _sueloApertura = _matchWatchStart[matchId]
+        ? (_matchWatchStart[matchId] - _TOLERANCIA_RELOJ_MS) : 0;
 
     _evArr.forEach(ev => {
         // 🔑 AISLAMIENTO: un evento que declare otro matchId no se procesa aquí
@@ -4127,7 +4173,20 @@ function detectAndAlert(matchId, matchData, fromCache) {
         // 🔑 Y tampoco lo anterior a la marca de agua, aunque este Set no lo
         // hubiera visto porque nunca cupo en la ventana del índice.
         const _ts = Number(ev.createdAt) || 0;
-        if (_corte && _ts && _ts <= _corte) return;
+        // ⚠️⚠️ v676 · EL SUELO DE APERTURA SÓLO SE APLICA A SELLOS QUE SEAN UNA
+        // ÉPOCA DE VERDAD. Se compara contra `Date.now()`, así que la
+        // comparación sólo significa algo si el valor está en la misma escala.
+        // Un `createdAt` que no lo sea —un contador, un sello relativo, un
+        // partido de una versión que lo escribiera de otra forma— quedaría
+        // SIEMPRE por debajo del suelo y el visor no volvería a anunciar nada
+        // en toda su vida. Cambiar una cascada por un silencio permanente es
+        // peor, y es literalmente el aviso que ya dejó escrito v572b.
+        // Para esos sellos manda la marca de agua de siempre, y el volcado lo
+        // sigue cubriendo el tope del anuncio (`_TOPE_DIRECTO`), que no mira
+        // relojes.
+        const _EPOCH_MS_MIN = 1e12;   // ≈ 2001-09-09, cualquier fecha real es mayor
+        const _limite = (_ts >= _EPOCH_MS_MIN) ? Math.max(_corte, _sueloApertura) : _corte;
+        if (_limite && _ts && _ts <= _limite) return;
         _evNuevos.push(ev);
     });
     // La siembra se cierra AQUÍ, y no en la vía delta: ver el aviso de arriba.
@@ -4165,6 +4224,36 @@ function detectAndAlert(matchId, matchData, fromCache) {
         // rama por quedar más arriba; al subir los sucesos por encima de las
         // guardas hay que traérselo explícitamente, o un partido ya terminado
         // anunciaría su historial al reconectar.
+        // ════════════════════════════════════════════════════════════════
+        //  🔴 v676 · UN VOLCADO NO ES JUEGO EN DIRECTO: NO SE CANTA
+        // ════════════════════════════════════════════════════════════════
+        //  Segunda mitad del arreglo de la cascada, y es la que NO depende de
+        //  los relojes. El suelo de apertura (ver `_matchWatchStart`) cierra el
+        //  caso normal, pero no puede cubrir dos huecos:
+        //    · sucesos SIN `createdAt` utilizable (partidos anteriores a v572),
+        //      que la marca de agua no puede fechar;
+        //    · un desfase de reloj mayor que la tolerancia.
+        //
+        //  🔑 EL CRITERIO ES LA FORMA DEL LOTE, NO SU CONTENIDO. En juego real
+        //  un snapshot trae uno o dos sucesos anunciables —el latido va cada 5
+        //  s—; una doble sustitución con tarjeta llega a cuatro. Veinte de
+        //  golpe no es un partido: es una puesta al día tras reconectar, que es
+        //  literalmente lo que el autor pide que no se cante.
+        //
+        //  ⚠️ SILENCIAR NO ES PERDER. La ventana inferior se reconstruye
+        //  ENTERA desde el snapshot por su propia vía
+        //  (`_loadMatchEventsFromSnapshot`), así que estos sucesos siguen
+        //  estando en el historial: lo único que no ocurre es el aviso, el
+        //  destello, el sonido y la vibración. Es exactamente «de forma
+        //  silenciosa o exclusivamente al historial inferior».
+        // ════════════════════════════════════════════════════════════════
+        const _TOPE_DIRECTO = 5;
+        if (_evNuevos.length > _TOPE_DIRECTO) {
+            console.warn('[v676] Volcado de ' + _evNuevos.length + ' sucesos en un solo ' +
+                         'snapshot (' + matchId + '): es una puesta al día, no juego en ' +
+                         'directo. Van al historial sin anunciarse.');
+            _evNuevos.length = 0;
+        }
         if (matchData.status === "active") {
             _evNuevos.forEach(ev => {
                 const _t = ev.type || 'sub';
@@ -4851,6 +4940,7 @@ async function refreshBackgroundWatchers() {
                 delete _matchPrevState[id];
                 delete _matchSeeded[id];
                 delete _matchSeedTs[id];
+                delete _matchWatchStart[id];
                 delete _matchLastTs[id];
                 delete _matchSeenEvents[id];
                 delete _matchPrevPhase[id];
@@ -4913,6 +5003,7 @@ window.loadMatch = function(matchId) {
     // event loop posterior, ningun snapshot puede colarse entre medias.
     delete _matchSeeded[matchId];
     delete _matchSeedTs[matchId];
+    delete _matchWatchStart[matchId];
     delete _matchLastTs[matchId];
     delete _matchPrevState[matchId];
     // También el registro de eventos vistos: al reabrir un partido la pasada de
@@ -7134,9 +7225,9 @@ setInterval(function() {
 }
 </style>
 <!-- v434 · Inmutabilidad: antes de retroactive-modal.js, que la consulta. -->
-<script src="js/match/immutability.js?v=v674"></script>
-<script src="js/match/replay/replay-player.js?v=v674"></script>
-<script src="js/match/events/retroactive-modal.js?v=v674"></script>
+<script src="js/match/immutability.js?v=v676"></script>
+<script src="js/match/replay/replay-player.js?v=v676"></script>
+<script src="js/match/events/retroactive-modal.js?v=v676"></script>
 
 <!-- ══════════════════════════════════════════════════════════════════
      🟩 v577 · FRANJA DE VERSIÓN TAMBIÉN EN EL VISOR
@@ -7149,7 +7240,7 @@ setInterval(function() {
      El sello lo escribe `scripts/cache-bust.js` a partir del CACHE_NAME de
      sw.js, nunca a mano: un número puesto a mano miente en cuanto alguien
      olvida cambiarlo (v527 lo encontró mintiendo 185 versiones seguidas). -->
-<div id="cronos-version-badge" data-version="v674" style="position:fixed;bottom:calc(4px + env(safe-area-inset-bottom, 0px));right:6px;z-index:2147483000;pointer-events:none;background:rgba(0,0,0,0.55);color:#2ea043;font-family:monospace;font-size:0.6rem;font-weight:700;letter-spacing:0.5px;padding:2px 6px;border-radius:4px;">CHRONOS v674</div>
+<div id="cronos-version-badge" data-version="v676" style="position:fixed;bottom:calc(4px + env(safe-area-inset-bottom, 0px));right:6px;z-index:2147483000;pointer-events:none;background:rgba(0,0,0,0.55);color:#2ea043;font-family:monospace;font-size:0.6rem;font-weight:700;letter-spacing:0.5px;padding:2px 6px;border-radius:4px;">CHRONOS v676</div>
 <script>
 /* 🧪 v577 · Y DE QUÉ ENTORNO ES ESA VERSIÓN.
    El problema real del autor no era no ver la versión: era no saber si la

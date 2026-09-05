@@ -398,13 +398,15 @@ console.log('\n── PARTE 6 · 🚨 el embudo que introdujo P2 (v572b) ──'
         let _sets = {};
         const sandbox = {
             _matchSeeded: {}, _matchSeedTs: {},
+            _matchWatchStart: {}, _TOLERANCIA_RELOJ_MS: 2 * 60 * 1000,   // v676
             _seenSetFor: (id) => _sets[id] || (_sets[id] = new Set()),
             _eventBelongsTo: (ev, id) => !ev.matchId || ev.matchId === id,
             _esEventoVisible: (ev) => ev.type !== 'tactical_move',
             _eventKey: (ev) => ev.eventId || '',
             Array, Number, Set, console: { warn(){}, error(){} }
         };
-        const reset = () => { sandbox._matchSeeded = {}; sandbox._matchSeedTs = {}; _sets = {}; };
+        const reset = () => { sandbox._matchSeeded = {}; sandbox._matchSeedTs = {};
+                              sandbox._matchWatchStart = {}; _sets = {}; };
         vm.createContext(sandbox);
         // El bloque usa `matchData`/`matchId` del ambito de detectAndAlert y
         // deja `_evNuevos`: se envuelve tal cual, sin tocar una linea.

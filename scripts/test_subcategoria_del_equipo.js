@@ -129,12 +129,22 @@ console.log('\n── PARTE 2 · el emisor toma las dos de la misma fuente ─�
     const j = SYNC.indexOf('const _me = window._cronosCurrentUser;', i);
     const FUENTE = SYNC.slice(i, j);
 
-    function resolver(dom, globales) {
-        const sb = { console: { warn() {} }, String };
+    // v675 · El bloque real pasó a sellar la identidad POR `matchId` y a mirar
+    // la ranura de ESE partido, así que el arnés tiene que ofrecerle las dos
+    // cosas. Se le pasan como parámetros para poder ejercitar también el
+    // escenario nuevo (global vacía + ranura con la categoría del partido).
+    function resolver(dom, globales, opciones) {
+        const o = opciones || {};
+        const sb = { console: { warn() {} }, String, Object };
         sb.window = sb;
         sb.window._currentMatchCategory    = globales.cat;
         sb.window._currentMatchSubcategory = globales.sub;
         sb.document = { getElementById: (id) => (dom[id] !== undefined ? { value: dom[id] } : null) };
+        sb.liveMatchId = o.matchId || 'partido-1';
+        // Sello previo de otro latido del MISMO partido, si el caso lo pide.
+        if (o.sello) sb.window._cronosIdPartido = { [sb.liveMatchId]: o.sello };
+        // Ranura local: la fuente que sabe de QUÉ partido habla.
+        sb.window._cronosMatchSlots = { leer: (id) => (o.ranuras && o.ranuras[id]) || null };
         vm.createContext(sb);
         vm.runInContext(FUENTE + '\n_res = { cat: _matchCat, sub: _matchSub };', sb);
         return vm.runInContext('_res', sb);
@@ -161,6 +171,38 @@ console.log('\n── PARTE 2 · el emisor toma las dos de la misma fuente ─�
     const r4 = resolver({}, {});
     ok('2d · sin nada, las dos vacías (el respaldo al perfil va después)',
        r4.cat === '' && r4.sub === '');
+
+    // ═══════════════════════════════════════════════════════════════════
+    //  🔴 v675 · EL CASO REAL DE LAS CAPTURAS 9999 / 10003-10006
+    // ═══════════════════════════════════════════════════════════════════
+    //  Dos partidos a la vez, un entrenador con dos equipos. El panel ya se
+    //  cerró (o la página se recargó), así que NO hay global ni desplegable:
+    //  antes de v675 los dos caían al perfil (alevin/C) y quedaban con el
+    //  mismo `matchCategory` y el mismo `teamId`.
+    const RANURAS = {
+        'arinaga-7-04092026':  { category: 'f7_alevin',   subcategory: 'C',
+                                 teamId: 'club-x__alevin__c' },
+        'arinaga-jv-04092026': { category: 'f11_juvenil', subcategory: 'C',
+                                 teamId: 'club-x__juvenil__c' },
+    };
+    const rA = resolver({}, {}, { matchId: 'arinaga-7-04092026',  ranuras: RANURAS });
+    const rB = resolver({}, {}, { matchId: 'arinaga-jv-04092026', ranuras: RANURAS });
+
+    ok('2e · 🔴🔴 EL CASO DEL REPORTE: cada partido saca SU categoría de SU ranura',
+       rA.cat === 'f7_alevin' && rB.cat === 'f11_juvenil',
+       JSON.stringify({ arinaga7: rA, arinagaJV: rB }));
+
+    ok('2f · 🔑 y no pueden volver a salir iguales (era el cruce medido)',
+       rA.cat !== rB.cat,
+       'los dos documentos reales tenían matchCategory "alevin" los dos');
+
+    // ⚠️ Una global del OTRO partido no puede pisar al que ya está sellado.
+    const rSellado = resolver({}, { cat: 'f7_alevin', sub: 'C' },
+        { matchId: 'arinaga-jv-04092026',
+          sello: { cat: 'f11_juvenil', sub: 'C' }, ranuras: RANURAS });
+    ok('2g · ⚠️ sellado el partido, una global ajena ya NO lo reescribe',
+       rSellado.cat === 'f11_juvenil' && rSellado.sub === 'C',
+       JSON.stringify(rSellado));
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -168,12 +210,39 @@ console.log('\n── PARTE 2 · el emisor toma las dos de la misma fuente ─�
 // ═══════════════════════════════════════════════════════════════════════
 console.log('\n── PARTE 3 · el respaldo al perfil, entero o nada ──');
 
+// ═══════════════════════════════════════════════════════════════════════
+//  🔄 v675 · SE REVOCA LA FORMA EXACTA DEL RESPALDO, NO SU REGLA
+// ═══════════════════════════════════════════════════════════════════════
+//  3a y 3b fijaban los literales `_matchCat || snapCat || null` y
+//  `_matchCat ? (_matchSub || null) : (snapSub || null)`. La regla que
+//  defendían —la pareja se toma ENTERA de una sola fuente— sigue viva y se
+//  sigue exigiendo abajo. Lo que se revoca es que el respaldo al perfil sea
+//  INCONDICIONAL.
+//
+//  🔴 POR QUÉ. Medido en producción (implementar.txt 2026-09-04, capturas
+//  10003/10005): con DOS equipos, el perfil acierta en uno y falla en el otro
+//  SIEMPRE. Los dos partidos simultáneos quedaron con `matchCategory: "alevin"`
+//  y —lo grave— el MISMO `teamId`, que es la clave de la ranura local
+//  (`cronos_tab_match::<teamId>` en match-slots.js): un partido le robaba la
+//  ranura al otro y desaparecía del panel de recuperación.
+//
+//  🔑 Ahora el perfil sólo respalda cuando NO puede equivocarse: un entrenador
+//  con UN único equipo. Con dos o más se deja en null y la tarjeta no pinta
+//  etiqueta — regla D del guard de v463: si no se resuelve, no se inventa.
+// ═══════════════════════════════════════════════════════════════════════
 ok('3a · 🔑 con categoría de PARTIDO, la letra sale del partido aunque quede null',
-   /matchSubcategory: _matchCat \? \(_matchSub \|\| null\) : \(snapSub \|\| null\)/.test(SYNC),
+   /matchSubcategory:\s*_matchCat \? \(_matchSub \|\| null\)\s*\n?\s*: \(_perfilUnico \? \(snapSub \|\| null\) : null\)/.test(SYNC),
    'con `_matchSub || snapSub` volvía a colarse la letra del perfil');
 
-ok('3b · y la categoría conserva su respaldo de siempre',
-   /matchCategory:\s+_matchCat \|\| snapCat \|\| null,/.test(SYNC));
+ok('3b · 🔴 el respaldo al perfil ya NO es incondicional: sólo con UN equipo',
+   /matchCategory:\s+_matchCat \|\| \(_perfilUnico \? snapCat : null\) \|\| null,/.test(SYNC),
+   'con dos equipos el perfil acierta en uno y falla en el otro SIEMPRE');
+
+ok('3c · …y "un equipo" se mide con la lista real, no a ojo',
+   /const _perfilUnico = /.test(SYNC) &&
+   /cronosEquiposDeEntrenador\(_me\.allRoles, null\)/.test(SYNC) &&
+   /_eq\.length === 1/.test(SYNC),
+   '⚠️ la firma es (allRoles, clubId): pasarle el usuario devuelve [] en silencio');
 
 // ═══════════════════════════════════════════════════════════════════════
 //  PARTE 4 · EL CASO REAL, DE PUNTA A PUNTA

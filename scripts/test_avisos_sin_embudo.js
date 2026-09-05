@@ -77,6 +77,10 @@ console.log('── PARTE 1 · el efecto embudo (comportamiento real) ──');
             // mismo partido (indice ligero y documento entero) y la siembra ya
             // no puede ser un booleano: ver `_matchSeedTs` en live.html.
             _matchSeedTs: {},
+            // v676 · marca del instante de apertura + tolerancia de reloj: sin
+            // ellas `detectAndAlert` lanza ReferenceError (ver live.html).
+            _matchWatchStart: {},
+            _TOLERANCIA_RELOJ_MS: 2 * 60 * 1000,
             _matchSeenEvents: {}, _matchLastData: {}, _matchPrevPhase: {},
             currentMatchId: 'M1',
             // ── colaboradores, estabulados ──

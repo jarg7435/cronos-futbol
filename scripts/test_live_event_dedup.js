@@ -348,5 +348,173 @@ console.log('\n── PARTE 6 · el panel inferior flotante ya no existe ──'
        'sin eso, tras limpiar el siguiente snapshot no repintaría nada: todo contaría como ya visto');
 }
 
+// ═══════════════════════════════════════════════════════════════════════
+//  PARTE 7 · 🔴 v676 · LA CASCADA AL RECONECTAR CON EL PARTIDO ABIERTO
+// ═══════════════════════════════════════════════════════════════════════
+//  Encargo del autor (implementar.txt 2026-09-04): «con el panel ya abierto y
+//  viéndose el partido, al sincronizar o reconectar la interfaz vierte de golpe
+//  todos los eventos pasados… los sucesos antiguos deben tratarse de forma
+//  silenciosa o ir exclusivamente al historial inferior».
+//
+//  🔑 LA CAUSA. `_matchSeedTs` (la marca de agua de v572b) se calcula con el
+//  suceso más reciente DEL PRIMER SNAPSHOT — y ese primero puede venir de la
+//  CACHÉ, incompleto: Firestore sirve la copia local antes que la del servidor.
+//  La marca nacía baja, la siembra se cerraba igual, y el snapshot bueno traía
+//  el historial entero por encima de esa marca: se anunciaba todo de golpe.
+//
+//  ⚠️ Y NO se arregla con `if (fromCache) return;`: desde v567 los sucesos se
+//  evalúan A PROPÓSITO por encima de esa guarda, porque en un iPad con
+//  cobertura irregular casi todos los snapshots llegan de caché y filtrarlos
+//  dejaba al usuario sin avisos (fallo 3 del autor). Las aserciones 4a2/4a3 de
+//  la PARTE 4 fijan ese orden y siguen en verde: no se ha tocado.
+//
+//  ⚠️⚠️ ESTE BLOQUE EJECUTA EL CÓDIGO REAL DEL VISOR, recortado de
+//  `detectAndAlert`. No se reimplementa la criba aquí: una copia de la lógica
+//  escrita en el propio test es el verde en falso que ya se pagó en v620.
+console.log('\n── PARTE 7 · v676 · reconectar no puede cantar el historial ──');
+{
+    const l = LIVE;
+
+    // El estado (marcas, sets) y sus ayudantes, tal cual están en live.html.
+    const iniEstado = l.indexOf('const _matchSeeded = {};');
+    const finEstado = l.indexOf('window.toggleMute');
+    // Y la criba REAL: desde el array de sucesos hasta el cierre de la siembra.
+    const iniCriba  = l.indexOf('    const _evArr   = Array.isArray(matchData.events)');
+    const finCriba  = l.indexOf('_matchSeeded[matchId] = true;');
+
+    ok('7a · se pueden recortar el estado y la criba real del visor',
+       iniEstado >= 0 && finEstado > iniEstado && iniCriba >= 0 && finCriba > iniCriba,
+       'si esto falla, todo lo de abajo estaría midiendo un trozo equivocado');
+
+    if (iniEstado >= 0 && finEstado > iniEstado && iniCriba >= 0 && finCriba > iniCriba) {
+        const ESTADO = l.slice(iniEstado, finEstado);
+        const CRIBA  = l.slice(iniCriba, finCriba) + '_matchSeeded[matchId] = true;';
+
+        // Un entorno nuevo por escenario: cada uno arranca sin haber visto nada.
+        function visor() {
+            const sb = { console: { log() {}, warn() {} },
+                         Array, Number, Object, String, Set, Map, Date, Math, JSON };
+            sb.window = sb; sb.globalThis = sb;
+            vm.createContext(sb);
+            vm.runInContext(ESTADO, sb);
+            // Una pasada = un snapshot. Devuelve los sucesos que SE ANUNCIARÍAN.
+            sb.__pasada = function (matchId, matchData) {
+                sb.matchId = matchId; sb.matchData = matchData;
+                // ⚠️ En un BLOQUE: la criba declara con `const`, y sin acotarla
+                // la segunda pasada choca con «ya declarado». Cada snapshot es
+                // una ejecución nueva, igual que en el visor.
+                vm.runInContext('{\n' + CRIBA + '\n__ultimo = _evNuevos;\n}', sb);
+                return sb.__ultimo;
+            };
+            return sb;
+        }
+
+        const AHORA = Date.now();
+        // Un partido con 46 sucesos, el último hace un minuto: historial real.
+        const historial = [];
+        for (let i = 0; i < 46; i++) {
+            historial.push({ eventId: 'ev' + i, matchId: 'M1', type: 'goal',
+                             text: '⚽ GOL - JUGADOR ' + i,
+                             createdAt: AHORA - (90 - i) * 60 * 1000 });
+        }
+        const recienMarcado = { eventId: 'ev_nuevo', matchId: 'M1', type: 'goal',
+                                text: '⚽ GOL - RECIÉN', createdAt: AHORA + 1000 };
+
+        // ── 7b · EL ESCENARIO DEL REPORTE ────────────────────────────────
+        // Snapshot 1 (de CACHÉ, incompleto: sólo los 3 primeros) y snapshot 2
+        // (del servidor, los 46). Antes de v676 el segundo cantaba 43 de golpe.
+        {
+            const v = visor();
+            const deCache = v.__pasada('M1', { events: historial.slice(0, 3) });
+            const dServer = v.__pasada('M1', { events: historial });
+            ok('7b · 🔴🔴 EL DEFECTO DEL REPORTE: un snapshot de caché incompleto ' +
+               'ya no deja cantar el historial',
+               deCache.length === 0 && dServer.length === 0,
+               'siembra=' + deCache.length + ' · servidor=' + dServer.length +
+               ' (antes de v676 el segundo eran 43)');
+        }
+
+        // ── 7c · y el gol de VERDAD sigue sonando ────────────────────────
+        {
+            const v = visor();
+            v.__pasada('M1', { events: historial.slice(0, 3) });
+            v.__pasada('M1', { events: historial });
+            const nuevos = v.__pasada('M1', { events: historial.concat([recienMarcado]) });
+            ok('7c · 🔑 …pero un gol POSTERIOR a abrir el partido SÍ se anuncia',
+               nuevos.length === 1 && nuevos[0].eventId === 'ev_nuevo',
+               'silenciar de más sería peor que la cascada: ' + JSON.stringify(nuevos.map(e => e.eventId)));
+        }
+
+        // ── 7d · el suelo va por TIEMPO, no por «ya pasé por aquí» ───────
+        {
+            const v = visor();
+            // Primer snapshot COMPLETAMENTE vacío (la caché no tenía nada).
+            const vacio = v.__pasada('M1', { events: [] });
+            const luego = v.__pasada('M1', { events: historial });
+            ok('7d · ⚠️ con la caché VACÍA (marca de agua = 0) tampoco se canta nada',
+               vacio.length === 0 && luego.length === 0,
+               'aquí la marca de agua de v572b valía 0 y no protegía: manda el suelo de apertura');
+        }
+
+        // ── 7e · el cortafuegos, independiente de los relojes ────────────
+        {
+            const v = visor();
+            // Sucesos SIN `createdAt`: la marca de agua no puede fecharlos.
+            const sinFecha = [];
+            for (let i = 0; i < 20; i++) {
+                sinFecha.push({ eventId: 'sf' + i, matchId: 'M1', type: 'goal',
+                                text: '⚽ GOL - VIEJO ' + i });
+            }
+            v.__pasada('M1', { events: [] });                 // siembra vacía
+            const golpe = v.__pasada('M1', { events: sinFecha });
+            ok('7e · sin `createdAt` la criba los da por nuevos (lo cubre el tope del anuncio)',
+               golpe.length === 20,
+               'esto documenta POR QUÉ hace falta el segundo cortafuegos');
+        }
+
+        // El tope vive en el anuncio, no en la criba: se comprueba en el fuente.
+        ok('7f · 🔴 y ahí actúa el tope: un lote grande no se canta',
+           /const _TOPE_DIRECTO = 5;/.test(l) &&
+           /if \(_evNuevos\.length > _TOPE_DIRECTO\) \{/.test(l) &&
+           /_evNuevos\.length = 0;/.test(l),
+           'es lo que cubre el desfase de reloj y los sucesos sin fecha');
+
+        ok('7g · ⚠️ silenciar NO es perder: el cajón se reconstruye por su vía',
+           /window\._loadMatchEventsFromSnapshot = function\(events\)/.test(l),
+           'el autor pidió «silenciosa o exclusivamente al historial inferior»');
+
+        ok('7h · la marca de apertura se limpia donde se limpian sus hermanas',
+           (l.match(/delete _matchWatchStart\[/g) || []).length ===
+           (l.match(/delete _matchSeedTs\[/g) || []).length,
+           'una marca huérfana volvería a silenciar un partido reabierto');
+
+        // ── 7j · 🚨 el suelo NO puede convertirse en un silencio permanente ──
+        //  Lo cazó test_p1_p2_consumo (6e): sus fixtures usan `createdAt: 2000`.
+        //  Un sello que no sea una época real queda SIEMPRE por debajo del
+        //  suelo, y entonces el visor no volvería a anunciar nada nunca. Es el
+        //  mismo aviso que ya dejó escrito v572b: cambiar un retraso —o una
+        //  cascada— por un silencio permanente es peor que el defecto.
+        {
+            const v = visor();
+            const viejos = [{ eventId: 'a', matchId: 'M1', type: 'goal', text: 'GOL 1', createdAt: 1000 }];
+            const nuevoSintetico = { eventId: 'b', matchId: 'M1', type: 'goal',
+                                     text: 'GOL 2', createdAt: 2000 };
+            v.__pasada('M1', { events: viejos });
+            const r = v.__pasada('M1', { events: viejos.concat([nuevoSintetico]) });
+            ok('7j · 🚨 con sellos que NO son época real manda la marca de agua, no el suelo',
+               r.length === 1 && r[0].eventId === 'b',
+               'si no, un `createdAt` en otra escala silenciaría el visor PARA SIEMPRE');
+        }
+
+        ok('7k · …y ese límite está escrito y acotado',
+           /const _EPOCH_MS_MIN = 1e12;/.test(l) &&
+           /_ts >= _EPOCH_MS_MIN\) \? Math\.max\(_corte, _sueloApertura\) : _corte/.test(l));
+
+        ok('7i · ⚠️ la tolerancia de reloj existe y no es cero',
+           /const _TOLERANCIA_RELOJ_MS = 2 \* 60 \* 1000;/.test(l),
+           '`createdAt` lo pone el móvil del entrenador; esto corre en otro reloj');
+    }
+}
+
 console.log(`\n${pass} PASS / ${fail} FAIL`);
 process.exit(fail ? 1 : 0);
