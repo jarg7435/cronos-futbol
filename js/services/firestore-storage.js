@@ -415,20 +415,21 @@ async function migrateLocalToCloud() {
     }
 }
 
+// ⚠️ LOAD-BEARING, NO ES CÓDIGO DE EMAILJS. Doce sitios la llaman (el panel de
+// Comunicaciones, Contactos, los informes...) porque es quien vuelca
+// `cronos_email_config` sobre `emailConfig`, y de ahí sale la LISTA DE
+// CONTACTOS de media aplicación. El nombre engaña: no configura ningún envío
+// por correo. v677 · sólo se le quitó la llamada a initEmailJS().
 function loadEmailConfig() {
     const saved = localStorage.getItem('cronos_email_config');
     if (saved) {
         try { emailConfig = { ...emailConfig, ...JSON.parse(saved) }; } catch(e) {}
     }
-    initEmailJS();
 }
 
-function initEmailJS() {
-    if (emailConfig.emailjsPublicKey && typeof emailjs !== 'undefined') {
-        emailjs.init(emailConfig.emailjsPublicKey);
-        window._emailjsReady = true;
-    }
-}
+// v677 · `initEmailJS` retirada con `sendReportByEmail` (ver la nota de abajo).
+// No hacía nada desde siempre: exigía `emailConfig.emailjsPublicKey` y esa
+// clave nunca la escribió nadie.
 
 function saveEmailSettings() {
     // v671 · Ya no se guardan números de WhatsApp. ⚠️ Los campos
@@ -448,49 +449,26 @@ function saveEmailSettings() {
 
 // v671 · `testWhatsApp` retirada con el resto del canal.
 
-async function sendReportByEmail(matchInfo, reportHtml) {
-    if (!emailConfig.contacts || emailConfig.contacts.length === 0) {
-        if (!emailConfig.directorEmail) return;
-        emailConfig.contacts = [{ name: 'Director', email: emailConfig.directorEmail, tags: ['reports'] }];
-    }
-    const recipients = emailConfig.contacts.filter(c => c.tags.includes('reports') && c.email);
-    if (recipients.length === 0) return;
-    if (!emailConfig.emailjsServiceId || !emailConfig.emailjsTemplateId || !emailConfig.emailjsPublicKey) return;
-    if (!window._emailjsReady) {
-        initEmailJS();
-        if (!window._emailjsReady) return;
-    }
-    const date = new Date().toLocaleDateString('es-ES');
-    let successCount = 0;
-    for (const contact of recipients) {
-        try {
-            await emailjs.send(
-                emailConfig.emailjsServiceId,
-                emailConfig.emailjsTemplateId,
-                {
-                    to_name:     contact.name,
-                    to_email:    contact.email,
-                    coach_email: emailConfig.coachEmail || '',
-                    subject:     `📊 Informe de Partido — ${matchInfo} — ${date}`,
-                    match_info:  matchInfo,
-                    report_body: reportHtml
-                }
-            );
-            successCount++;
-        } catch(err) {
-            console.error(`Error enviando email a ${contact.email}:`, err);
-        }
-    }
-    if (successCount === 0) {
-        const toast = document.createElement('div');
-        toast.textContent = '⚠️ El informe se descargó, pero no pudo enviarse por email.';
-        toast.style.cssText = 'position:fixed;bottom:80px;left:50%;transform:translateX(-50%);' +
-            'background:#c0392b;color:#fff;padding:10px 20px;border-radius:8px;' +
-            'font-size:0.82rem;z-index:9999;box-shadow:0 4px 12px rgba(0,0,0,0.4);';
-        document.body.appendChild(toast);
-        setTimeout(() => toast.remove(), 5000);
-    }
-}
+// ─────────────────────────────────────────────────────────────────────────
+// v677 · `sendReportByEmail` ELIMINADA. Prometía enviar el informe de partido
+// al Director Deportivo por correo y NO SE EJECUTÓ NUNCA:
+//   · cero llamadores en todo el proyecto (ningún .js, ni index.html ni
+//     live.html la invocaban);
+//   · y aunque la hubieran llamado, salía por el `return` de las credenciales:
+//     `emailjsServiceId`/`TemplateId`/`PublicKey` nacían a '' en app-init.js y
+//     no había pantalla que las guardase. Fallaba cerrado y en silencio.
+// El informe llega al Director Deportivo POR LA VÍA INTERNA de la app; el
+// correo, si se quiere, lo manda el entrenador tras descargarlo. Los textos que
+// prometían lo contrario se corrigieron en la misma v677 (Paso 9 del asistente
+// de bienvenida y landing.html).
+// Con ella se fueron `initEmailJS`, el <script> del SDK en index.html,
+// `window._emailjsReady`, las tres claves de app-init.js, `api.emailjs.com` del
+// CSP y el fichero huérfano js/services/email-whatsapp.js, que tenía una copia
+// divergente de todo esto y no lo cargaba nadie desde v124.
+// ⚠️ NO CONFUNDIR con `loadEmailConfig` ni con `saveEmailSettings`, que SIGUEN
+// VIVAS: gestionan `emailConfig.contacts` y los correos del director, que usan
+// los informes, Contactos y el directo.
+// ─────────────────────────────────────────────────────────────────────────
 
 // NOTA (v76-fix): function init() ELIMINADA — ya existe en app-init.js
 // La versión de app-init.js es la correcta (tiene _checkActiveMatch).

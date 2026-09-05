@@ -133,12 +133,15 @@ let liveIsActive   = false;  // true cuando hay partido en vivo activo
 // vacio para siempre. Guardado por scripts/test_admin_shared_constants.js.
 
 // --- CONFIGURACIÓN DE EMAIL Y WHATSAPP (persiste en localStorage) ---
+// ⚠️ Este objeto NO es sólo correo: `emailConfig.contacts` es la lista de
+// contactos que leen los informes, Contactos, el directo y la mensajería.
 let emailConfig = {
     coachEmail: '',        // correo del entrenador (copia para él)
-    directorEmail: '',     // correo del director deportivo (destino principal)
-    emailjsServiceId: '',  // ID del servicio EmailJS
-    emailjsTemplateId: '', // ID de la plantilla EmailJS
-    emailjsPublicKey: ''   // Clave pública EmailJS
+    directorEmail: ''      // correo del director deportivo (destino principal)
+    // v677 · se retiran `emailjsServiceId`, `emailjsTemplateId` y
+    // `emailjsPublicKey` con `sendReportByEmail` (services/firestore-storage.js).
+    // Nacían a '' y NADIE las escribía: no había pantalla que las guardase, así
+    // que el envío por EmailJS no pudo funcionar ni una sola vez.
     // v671 · se retira `whatsappNumber` de los valores por defecto. Los
     // documentos ya guardados que lo lleven no se tocan: nadie lo lee.
 };

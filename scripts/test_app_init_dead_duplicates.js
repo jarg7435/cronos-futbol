@@ -81,9 +81,21 @@ const BORRADAS = {
         'openConvocationMessage', 'buildConvocationText', 'saveConvConfig',
         // v671 · sale `sendConvocationWA` (WhatsApp fuera de la app)
         'previewConvocationMsg', 'sendConvocationEmail'],
-    'js/services/firestore-storage.js': [        // §7 nube + emailjs + SW (Fase B)
+    'js/services/firestore-storage.js': [        // §7 nube + SW (Fase B)
+        // ⚠️ v677 · SALEN DE LA LISTA `initEmailJS` y `sendReportByEmail`: ya no
+        // existen en ningun sitio. El envio del informe por EmailJS no se
+        // ejecuto nunca (cero llamadores y credenciales vacias que nadie
+        // escribia), asi que se elimino con el SDK, `window._emailjsReady`, las
+        // tres claves de app-init.js, `api.emailjs.com` del CSP y el fichero
+        // huerfano js/services/email-whatsapp.js. Este mapa exige DUENYO UNICO,
+        // o sea que exige EXISTIR: dejarlas aqui habria puesto el guard rojo
+        // por el borrado correcto, igual que paso con las diez de «Importar con
+        // IA» en v647. Que no reaparezcan lo vigila la PARTE 8 de este archivo.
+        // `loadEmailConfig` SE QUEDA: es load-bearing (vuelca
+        // `cronos_email_config` sobre `emailConfig`, de donde sale la lista de
+        // contactos) y la llaman doce sitios.
         'cloudSet', 'cloudGet', 'syncFromCloud', 'startRealtimeSync', 'migrateLocalToCloud',
-        'loadEmailConfig', 'initEmailJS', 'sendReportByEmail', 'registerServiceWorker', 'forceUpdate'],
+        'loadEmailConfig', 'registerServiceWorker', 'forceUpdate'],
     'js/match/live/sync.js': [                   // §7 transmision en vivo (Fase B)
         'cleanupStaleMatches', 'updateLiveButton', 'openLiveView', 'showLiveShareModal',
         'copyLiveUrl', 'shareLiveEmail', 'confirmStopLive', 'liveSyncOnAction'],
@@ -192,8 +204,10 @@ ORDER.forEach(f => { decl[f] = declaraciones(rd(f)); });
     // v671 · 91 → 87: se van las CUATRO de WhatsApp (sendConvocationWA,
     // sendTrainingWA, shareLiveWhatsApp y notifyAllLiveContacts) al retirar
     // ese canal de toda la app.
-    ok('1d · el recuento cuadra: 87 funciones con duenyo unico',
-        TODAS.length === 87, TODAS.length);
+    // v677 · 87 → 85: se van `initEmailJS` y `sendReportByEmail` al retirar
+    // EmailJS, que no se ejecuto nunca. Lo vigila la PARTE 8.
+    ok('1d · el recuento cuadra: 85 funciones con duenyo unico',
+        TODAS.length === 85, TODAS.length);
 
     // ── las 5 multi-declaradas de la Fase C: se fija QUIEN gana, no que sea unica
     const malGanador = [], malConjunto = [];
@@ -539,6 +553,67 @@ ORDER.forEach(f => { decl[f] = declaraciones(rd(f)); });
     const sinCreador = Object.entries(HUERFANOS).filter(([n, f]) =>
         !new RegExp('window\\.' + n + '\\s*=').test(rd(f))).map(([n, f]) => n + ' ya no lo crea ' + f);
     ok('7j · ⚠️ saTab, saAddIndividual y saMarkNoticeSent los sigue creando otro archivo', sinCreador.length === 0, sinCreador);
+}
+
+// ────────── PARTE 8 · ⚠️ v677 · EMAILJS NO VUELVE ──────────
+// El envio del informe al Director Deportivo por correo NUNCA se ejecuto: cero
+// llamadores y unas credenciales que nadie escribia. Se elimino entero. Esta
+// parte existe porque el borrado es INVISIBLE desde la aplicacion —no habia
+// nada que dejara de funcionar— y por eso mismo es facil que alguien lo
+// reintroduzca «arreglando» un texto o copiando de un backup.
+{
+    console.log('\n── PARTE 8 · EmailJS retirado (v677) ──\n');
+
+    // Copia local del detector: el de la PARTE 7 es un `const` dentro de SU
+    // bloque, no se ve desde aqui. Reconoce las dos formas con las que se
+    // declaraban estas funciones: `function X(` / `async function X(` y
+    // `window.X = function`.
+    const declaraEn = (src, n) =>
+        new RegExp('^(?:async\\s+)?function\\s+' + n + '\\s*\\(', 'm').test(src) ||
+        new RegExp('^window\\.' + n + '\\s*=\\s*(?:async\\s+)?function', 'm').test(src);
+
+    const MUERTAS = ['sendReportByEmail', 'initEmailJS'];
+    const revividas = [];
+    for (const f of ORDER) {
+        const src = rd(f);
+        for (const n of MUERTAS) if (declaraEn(src, n)) revividas.push(n + ' en ' + f);
+    }
+    ok('8a · ni sendReportByEmail ni initEmailJS vuelven a declararse', revividas.length === 0, revividas);
+
+    // El fichero huerfano: tenia una copia DIVERGIDA de todo esto y no lo
+    // cargaba nadie desde v124. Que no vuelva a aparecer sin que se le enchufe
+    // un <script>, que es como estuvo cientos de versiones.
+    ok('8b · js/services/email-whatsapp.js sigue sin existir',
+        !fs.existsSync(path.join(ROOT, 'js/services/email-whatsapp.js')));
+
+    // El SDK y su bandera. Un <script> del CDN cargado es justo lo que hacia
+    // que la cadena PARECIERA viva desde fuera.
+    ok('8c · index.html no vuelve a cargar el SDK de EmailJS',
+        !/<script[^>]*emailjs[^>]*>/i.test(idxHtml));
+    ok('8d · window._emailjsReady no reaparece en index.html',
+        !/window\._emailjsReady\s*=/.test(idxHtml));
+
+    // Las tres claves: sin ellas la funcion salia por el `return`. Si alguien
+    // las devuelve a los valores por defecto es que esta rehaciendo el camino.
+    const aiSrc8 = rd(AI);
+    const claves = ['emailjsServiceId', 'emailjsTemplateId', 'emailjsPublicKey']
+        .filter(k => new RegExp('\\b' + k + '\\s*:').test(aiSrc8));
+    ok('8e · emailConfig no recupera las tres claves de EmailJS', claves.length === 0, claves);
+
+    // ⚠️ LA CARA POSITIVA, y es la que importa: loadEmailConfig NO era codigo de
+    // EmailJS. Vuelca `cronos_email_config` sobre `emailConfig`, de donde sale
+    // la lista de contactos de media aplicacion, y la llaman doce sitios.
+    // Borrarla «de paso» habria dejado media app sin contactos SIN UN ERROR.
+    const fss = rd('js/services/firestore-storage.js');
+    ok('8f · ⚠️ loadEmailConfig y saveEmailSettings SIGUEN VIVAS (no son EmailJS)',
+        declaraEn(fss, 'loadEmailConfig') && declaraEn(fss, 'saveEmailSettings'));
+    ok('8g · loadEmailConfig conserva la lectura de cronos_email_config',
+        /cronos_email_config/.test(fss));
+
+    // Y el permiso de red. Un `connect-src` que autoriza un destino al que ya
+    // no se habla es superficie regalada.
+    ok('8h · el CSP de firebase.json ya no autoriza api.emailjs.com',
+        !/api\.emailjs\.com/.test(rd('firebase.json')));
 }
 
 console.log('\n────────────────────────────────────────────');

@@ -65,7 +65,6 @@ ROOT/
 | training-firestore-sync.js | 10 | Sync entrenamientos ↔ Firestore |
 | audit-logger.js | 7 | Log de auditoría (acciones críticas) |
 | notification-dismiss-sync.js | 4 | Sync dismissal notificaciones |
-| email-whatsapp.js | 3 | Envío email/WhatsApp vía EmailJS |
 | firestore-sync.js | 1 | Sync genérico Firestore |
 | cloud-data.js | 1 | Acceso datos cloud (stub/wrapper) |
 
