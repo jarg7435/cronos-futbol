@@ -23,6 +23,13 @@ window._CRONOS_EXTRAS_DEF = [
     { key: 'contactos',      icon: '📱', label: 'Gestionar Contactos',      desc: 'Teléfonos, emails y permisos de familiares, jugadores y staff' },
     { key: 'convocatorias',  icon: '📋', label: 'Crear Convocatorias',      desc: 'Enviar convocatorias a destinatarios' },
     { key: 'entrenamientos', icon: '🏃', label: 'Crear Entrenamientos',     desc: 'Planificación semanal de entrenamientos' },
+    // v679 · El Cuadrante se contrata aparte. Va detrás de 'entrenamientos'
+    // porque es el principio de esa misma cadena: el club reparte espacios y
+    // horarios de la semana, y sobre esa pauta monta cada entrenador su
+    // planificación. Lo gobiernan el panel de Dirección/Coordinación
+    // (js/coach/reports/club-reports.js) y el panel del Ente Individual
+    // (js/admin/individual/panel.js), que es el otro sitio donde se ve.
+    { key: 'cuadrante',      icon: '🗓️', label: 'Cuadrante Semanal',        desc: 'Reparto de espacios del campo y horarios de la semana, y su envío a los entrenadores' },
     { key: 'informes',       icon: '📊', label: 'Recibir Informes',         desc: 'Informes colectivos y de partido' },
     // v429: 'mensajeria' es INDEPENDIENTE de 'comunicaciones'. Antes la
     // descripción de comunicaciones prometía "Mensajes", pero esa clave no la

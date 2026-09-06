@@ -413,13 +413,20 @@ window.switchStaffTab = async (tab) => {
             ? window._cronosCoordScope(_me) : '';
         const _extras   = _me.extras || {};
         const _ptOn     = (_extras.partidos_terminados ?? true) !== false;
+        // v679 · El Cuadrante pasa a ser un extra contratable. Misma regla que
+        // el resto: AUSENTE O true = ACTIVO (`!== false`), para que los clubes
+        // que nunca han pasado por el panel del SuperAdmin lo conserven.
+        const _cqMotivo = (_extras.cuadrante !== false) ? ''
+            : (window.CRONOS_EXTRA_CUADRANTE_MOTIVO
+               || 'Extra no activado para tu club. Habla con el administrador.');
         const _opciones = [
             // 🗓️ v603 · La PAUTA del club. Va la primera porque es el principio
             // de la cadena: el club reparte espacios y horarios, el entrenador
             // monta su semana sobre eso, y de ahí salen asistencia e informes.
             { icono: '🗓️', titulo: 'Cuadrante', color: '#58a6ff',
               desc: 'Reparte los espacios del campo y los horarios de la semana, y envíaselo a los entrenadores.',
-              onclick: "switchStaffTab('cuadrante')" },
+              onclick: "switchStaffTab('cuadrante')",
+              bloqueado: _cqMotivo },
             { icono: '📋', titulo: 'Convocatorias', color: '#3fb950',
               desc: 'Las convocatorias recibidas, por categoría y subcategoría.',
               onclick: "switchStaffTab('convocatorias')" },
@@ -547,9 +554,24 @@ window.switchStaffTab = async (tab) => {
     }
 
     // 🗓️ v603 · Cuadrante semanal del club (js/coach/reports/cuadrante-club.js).
-    // Sin guarda de extra: es una herramienta del propio panel de dirección,
-    // como Convocatorias o Asistencia, y no se contrata aparte.
+    // v679 · YA NO ES «una herramienta del panel que no se contrata aparte»:
+    // se vende como extra y lo gobierna el SuperAdmin (`cuadrante`).
     if (tab === 'cuadrante') {
+        // ⚠️ SEGUNDA PUERTA, y la que de verdad cierra el acceso: bloquear la
+        // tarjeta del tablero no impide llamar a switchStaffTab('cuadrante')
+        // desde la consola, ni volver por la PILA DE NAVEGACIÓN a una pestaña
+        // que quedó guardada como argumento de la raíz. Misma forma que
+        // 'config' y 'partidos_terminados'.
+        const _cqEx = (window._cronosCurrentUser?.extras) || {};
+        if (_cqEx.cuadrante === false) {
+            container.innerHTML = `
+                <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:4rem 2rem;text-align:center;gap:1rem;">
+                    <div style="font-size:3.5rem;">🔒</div>
+                    <div style="font-size:1.1rem;font-weight:700;color:white;">Cuadrante no disponible</div>
+                    <div style="font-size:0.85rem;color:#8b949e;max-width:340px;">Este extra no está activado para tu club. Contacta con el administrador para habilitarlo.</div>
+                </div>`;
+            return;
+        }
         if (typeof window._sdLoadCuadrante !== 'function') {
             container.innerHTML = '<div style="text-align:center;padding:3rem;color:#ff5858;">' +
                 '⚠️ El módulo de Cuadrante no está disponible. Recarga el panel.</div>';

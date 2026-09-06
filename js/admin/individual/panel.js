@@ -1072,6 +1072,18 @@ async function openIndividualAdminPanel(mantenerSeccion = false) {
           '<div style="text-align:center;padding:3rem;color:var(--text-muted);">⏳ Cargando el cuadrante…</div>' +
         '</div>';
 
+    // 🔒 v679 · El extra `cuadrante`, resuelto UNA vez para las dos puertas de
+    // este panel (la tarjeta del tablero y la ruta `indTab('cuadrante')`).
+    // ⚠️ Se lee del usuario efectivo por `_cronosExtraEnabled`, la MISMA
+    // función que usa el resto de la app: leer `extras` a mano aquí abriría una
+    // segunda regla que puede divergir de la primera (la lección de v429).
+    // Falla hacia el SÍ: sin el helper cargado, la sección queda abierta.
+    const _indCuadranteOn = (typeof window._cronosExtraEnabled !== 'function')
+        || window._cronosExtraEnabled('cuadrante');
+    const _indCuadranteMotivo = _indCuadranteOn ? ''
+        : (window.CRONOS_EXTRA_CUADRANTE_MOTIVO
+           || 'Extra no activado para tu entidad. Habla con el administrador.');
+
     const _IND_SECCIONES = {
         cuadrante:   { titulo: '🗓️ Cuadrante',      html: _secCuadrante },
         equipo:      { titulo: '⚽ Mi Equipo',       html: _secMiEquipo },
@@ -1099,9 +1111,15 @@ async function openIndividualAdminPanel(mantenerSeccion = false) {
         //    y por delante de "Mi Equipo" por el mismo motivo que en el panel
         //    de Dirección: es el principio de la cadena —se reparten espacios y
         //    horarios, y de ahí sale la Planificación Semanal de cada equipo.
+        // 🔒 v679 · …y desde la v679 se CONTRATA: el mismo extra `cuadrante`
+        //    que gobierna la tarjeta del panel de Dirección. El SuperAdmin
+        //    apaga extras de clubes Y de entes en la misma pantalla, así que
+        //    dejar esta abierta habría hecho que el interruptor MINTIERA para
+        //    la mitad de las entidades.
         { icono: '🗓️', titulo: 'Cuadrante', color: '#58a6ff',
           desc: 'Reparte los espacios del campo y los horarios de la semana de tus equipos.',
-          onclick: "indTab('cuadrante')" },
+          onclick: "indTab('cuadrante')",
+          bloqueado: _indCuadranteMotivo },
         { icono: '⚽', titulo: 'Mi Equipo', color: '#3fb950',
           badge: _misEquipos.length,
           desc: _misEquipos.length >= 2
@@ -1187,6 +1205,22 @@ async function openIndividualAdminPanel(mantenerSeccion = false) {
         // ⚠️ Si el fichero no ha cargado, se dice POR QUÉ está vacío: un hueco
         // mudo es indistinguible de una avería (la doctrina de v598).
         if (sec === 'cuadrante') {
+            // ⚠️ SEGUNDA PUERTA (v679). Bloquear la tarjeta no impide llamar a
+            // indTab('cuadrante') desde la consola, ni volver aquí por
+            // `_indSeccionActual`, que guarda la sección entre repintados: si
+            // el extra se apaga con la sección abierta, el repintado la
+            // recuperaría. Misma forma que switchStaffTab('cuadrante').
+            if (!_indCuadranteOn) {
+                const _cb = document.getElementById('ind-cuadrante-body');
+                if (_cb) _cb.innerHTML =
+                    '<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;' +
+                           'padding:4rem 2rem;text-align:center;gap:1rem;">' +
+                      '<div style="font-size:3.5rem;">🔒</div>' +
+                      '<div style="font-size:1.1rem;font-weight:700;color:white;">Cuadrante no disponible</div>' +
+                      '<div style="font-size:0.85rem;color:#8b949e;max-width:340px;">' + _indCuadranteMotivo + '</div>' +
+                    '</div>';
+                return;
+            }
             if (typeof window._sdLoadCuadrante === 'function') {
                 Promise.resolve(window._sdLoadCuadrante('ind-cuadrante-body')).catch(e => {
                     console.warn('[IndPanel] el cuadrante no se pudo cargar:', e && e.message ? e.message : e);

@@ -100,6 +100,17 @@ window.CRONOS_ROL_EXTRA_MOTIVO = {
     secretaria:      'Secretaría no está contratada en el plan de tu club. Habla con el administrador.',
 };
 
+// v679 · El motivo del extra `cuadrante`, en UN solo sitio. Lo leen los dos
+// anfitriones del módulo —el panel de Dirección/Coordinación
+// (js/coach/reports/club-reports.js) y el del Ente Individual
+// (js/admin/individual/panel.js)—, que son pantallas distintas y en ficheros
+// distintos: escrito dos veces, divergiría a la primera corrección.
+// ⚠️ NO va en CRONOS_ROL_EXTRA_MOTIVO: ese mapa es de los extras que apagan un
+// ROL entero, y éste apaga una SECCIÓN. Mezclarlos haría creer que existe un
+// `rol_cuadrante` que el selector de rol tendría que mirar, y no lo hay.
+window.CRONOS_EXTRA_CUADRANTE_MOTIVO =
+    'El Cuadrante no está contratado en el plan de tu club. Habla con el administrador.';
+
 // FIX: re-renderizar el modal cuando los extras se carguen
 window._cronosRefreshExtras = function() {
     if (typeof openSetupModal === 'function' && document.querySelector('.setup-mode')) {
