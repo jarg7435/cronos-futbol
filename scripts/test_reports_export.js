@@ -57,6 +57,7 @@ console.log('── Descarga de informes en PDF / CSV ──\n');
 
 const SRC_EXPORT  = leer('js/coach/reports/reports-export.js');
 const SRC_REPORTS = leer('js/coach/reports/reports-tab.js');
+const SRC_BILLING = leer('js/admin/superadmin/billing.js');
 const SRC_TREE    = leer('js/admin/shared/category-tree.js');
 
 const _s = SRC_REPORTS.indexOf('async function _sdLoadReports');
@@ -78,9 +79,17 @@ const escHtml = (str) => {
 // nunca los BYTES del archivo. Daba verde con un fallo de codificación real
 // delante. El Blob nativo de Node codifica igual que el del navegador, que es
 // lo unico que sirve para hablar de codificaciones.
-function exportSandbox({ popupBloqueado = false } = {}) {
+// ⚠️ v681 · EL NAVEGADOR DE MENTIRA AHORA TAMBIÉN SABE SER TÁCTIL Y TENER DOM.
+//  El visor interno (_rxVisorEnLaApp) crea elementos, los cuelga del body y
+//  escribe el documento en el `contentDocument` de un iframe. Con el mock
+//  anterior —un `createElement` que sólo servía para el `<a download>`— la
+//  función habría reventado y caído en su try/catch: el guard habría dado por
+//  bueno "no se pudo" sin haber probado NADA. Un mock que no sabe hacer lo que
+//  el código hace no prueba ese código.
+function exportSandbox({ popupBloqueado = false, tactil = false } = {}) {
     const descargas = [];   // { nombre, blob, mime, ordenDom }
     const ventanas  = [];   // { html }
+    const visores   = [];   // { titulo, html, barra, impresiones, cerrar(), imprimir() }
     const toasts    = [];
     const dom       = [];   // traza de appendChild / click / removeChild
 
@@ -93,23 +102,71 @@ function exportSandbox({ popupBloqueado = false } = {}) {
             revokeObjectURL: () => { dom.push('revoke'); },
         },
         document: {
-            createElement: (tag) => ({
-                tagName: tag, href: '', download: '',
-                click() {
-                    dom.push('click');
-                    descargas.push({
-                        nombre: this.download,
-                        blob: pendiente,
-                        mime: pendiente ? pendiente.type : '',
-                        ordenDom: dom.slice(),
-                    });
-                },
-            }),
+            createElement: (tag) => {
+                const nodo = {
+                    tagName: tag, href: '', download: '', id: '', title: '',
+                    style: { cssText: '' }, innerHTML: '', hijos: [], parentNode: null,
+                    // El <a> de las descargas, tal cual estaba.
+                    click() {
+                        dom.push('click');
+                        descargas.push({
+                            nombre: this.download,
+                            blob: pendiente,
+                            mime: pendiente ? pendiente.type : '',
+                            ordenDom: dom.slice(),
+                        });
+                    },
+                    appendChild(h) { h.parentNode = this; this.hijos.push(h); return h; },
+                    removeChild(h) { h.parentNode = null; this.hijos = this.hijos.filter(x => x !== h); return h; },
+                    // Los botones de la barra del visor: se devuelve SIEMPRE el
+                    // mismo objeto por selector para poder dispararlos luego.
+                    _botones: {},
+                    querySelector(sel) { return (this._botones[sel] || (this._botones[sel] = { onclick: null })); },
+                };
+                if (tag === 'iframe') {
+                    nodo.__html = '';
+                    nodo.__impresiones = 0;
+                    nodo.contentDocument = {
+                        open() {}, close() {},
+                        write(h) { nodo.__html += h; },
+                    };
+                    nodo.contentWindow = {
+                        document: nodo.contentDocument,
+                        focus() {},
+                        print() { nodo.__impresiones++; },
+                    };
+                }
+                return nodo;
+            },
+            getElementById: () => null,   // nunca hay un visor previo
             body: {
-                appendChild: () => dom.push('append'),
-                removeChild: () => dom.push('remove'),
+                appendChild(n) {
+                    dom.push('append');
+                    if (n) { n.parentNode = this; }
+                    // ¿Es el visor interno? Se registra con lo que hace falta
+                    // para MANEJARLO desde el test, no sólo para mirarlo.
+                    if (n && n.id === 'rx-visor') {
+                        const marco = (n.hijos || []).filter(h => h.tagName === 'iframe')[0] || {};
+                        const barra = (n.hijos || []).filter(h => h.tagName !== 'iframe')[0] || { _botones: {} };
+                        visores.push({
+                            nodo: n,
+                            titulo: marco.title || '',
+                            barraHtml: barra.innerHTML || '',
+                            get html() { return marco.__html || ''; },
+                            get impresiones() { return marco.__impresiones || 0; },
+                            get cerrado() { return n.parentNode === null; },
+                            cerrar()   { const f = barra._botones['#rx-visor-close']; return f && f.onclick && f.onclick(); },
+                            imprimir() { const f = barra._botones['#rx-visor-print']; return f && f.onclick && f.onclick(); },
+                        });
+                    }
+                    return n;
+                },
+                removeChild(n) { dom.push('remove'); if (n) n.parentNode = null; return n; },
             },
         },
+        // 📲 v681 · Lo que mira `_rxEsTactil()`.
+        navigator: { maxTouchPoints: tactil ? 5 : 0 },
+        matchMedia: (q) => ({ matches: tactil && /pointer:\s*coarse/.test(q) }),
         escapeHtml: escHtml,
         showToast: (m) => toasts.push(String(m)),
         Date, Math, JSON, Intl, String, Number, Object, Array, RegExp, isFinite, parseInt,
@@ -128,7 +185,7 @@ function exportSandbox({ popupBloqueado = false } = {}) {
     };
     vm.createContext(sandbox);
     vm.runInContext(SRC_EXPORT, sandbox);
-    return { w: sandbox, descargas, ventanas, toasts, dom };
+    return { w: sandbox, descargas, ventanas, visores, toasts, dom };
 }
 
 // Los BYTES que de verdad se descargarían.
@@ -414,16 +471,143 @@ console.log('\n── PARTE 5 · 🔑 el PDF, y las dos trampas que lo dejan en 
     ok('5i · con el resultado en el subtítulo, según myTeamRole',
         /2 - 1 \(VICTORIA\)/.test(doc2), (doc2.match(/rx-sub">[^<]*/) || [''])[0]);
 
+    // ⚠️ v681 · ESTA ASERCIÓN DECÍA LO CONTRARIO, Y A PROPÓSITO. Hasta aquí,
+    // con la emergente bloqueada se avisaba y el usuario se quedaba SIN
+    // documento: un callejón sin salida que sólo se abría yendo a los ajustes
+    // del navegador. Ahora se le enseña por el visor interno. Lo que se sigue
+    // exigiendo —y es lo que de verdad importaba— es que se le AVISE.
     const bloq = exportSandbox({ popupBloqueado: true });
-    ok('5j · 🔑 ventana emergente bloqueada: devuelve false y AVISA',
-        bloq.w.rxExportarResumenPDF([{ equipo: 'X', partidos: 1, filas: [F()] }], {}) === false &&
-        bloq.toasts.some(m => /emergentes/.test(m)), bloq.toasts);
+    ok('5j · 🔑 emergente bloqueada: avisa Y enseña el documento igualmente',
+        bloq.w.rxExportarResumenPDF([{ equipo: 'X', partidos: 1, filas: [F()] }], {}) === true &&
+        bloq.toasts.some(m => /bloque/i.test(m)) &&
+        bloq.visores.length === 1 && bloq.visores[0].html.length > 500,
+        bloq.toasts);
 
     const sinDatos = exportSandbox();
     ok('5k · sin bloques no abre ninguna ventana',
         sinDatos.w.rxExportarResumenPDF([], {}) === false && sinDatos.ventanas.length === 0);
     ok('5l · y el CSV vacío tampoco descarga nada',
         sinDatos.w.rxExportarResumenCSV([], {}) === false && sinDatos.descargas.length === 0);
+}
+
+// ═══════════ PARTE 5b · 📲 v681 · en táctil NO SE NAVEGA ═══════════
+//  Encargo del autor (implementar.txt + capturas 10144-10145, 2026-09-07)
+//  sobre el "🖨️ EXPORTAR" del Cuadrante: en PC abre pestaña nueva y puede
+//  volver; en móvil e iPad la exportación REEMPLAZA la pantalla y al cerrarla
+//  se sale de la app. Es la saga v526→v530 otra vez —"no se sobrevive a la
+//  navegación: hay que NO NAVEGAR"—, con `window.open` en el papel que allí
+//  hacía el `<a download>` con blob:.
+console.log('\n── PARTE 5b · 📲 el documento, en táctil, DENTRO de la app ──');
+{
+    const tac = exportSandbox({ tactil: true });
+    const okTac = tac.w.rxExportarResumenPDF(
+        [{ equipo: 'Alevín A', partidos: 1, filas: [F()] }], { club: 'CD Test' });
+
+    ok('5m · 🔑🔑 en táctil NO se abre ninguna ventana: no se navega',
+        okTac === true && tac.ventanas.length === 0 && tac.visores.length === 1,
+        'ventanas=' + tac.ventanas.length + ' visores=' + tac.visores.length);
+
+    // ⚠️ SIN VISOR, LAS DE ABAJO SE PONEN ROJAS — NO REVIENTAN. Con el código
+    // anterior no se creaba ninguno y el guard moría con un TypeError en 5n,
+    // llevándose por delante el resto de la batería: un guard que lanza no
+    // informa, y el red-check quedaba ilegible justo cuando hacía falta.
+    const v0 = tac.visores[0] || {
+        html: '', barraHtml: '', impresiones: 0, cerrado: false, cerrar() {}, imprimir() {},
+    };
+
+    ok('5n · el documento se escribe dentro del iframe del visor',
+        v0.html.length > 500 &&
+        /CHRONOS FÚTBOL/.test(v0.html) &&
+        /print-color-adjust:exact/.test(v0.html));
+    // 🔑 Si el documento se imprimiera solo, el diálogo taparía el botón de
+    //    cerrar nada más abrirse — y en iOS ni siquiera está permitido sin
+    //    gesto del usuario.
+    ok('5o · 🔑 y NO se imprime solo: nada de window.onload+print ahí dentro',
+        !/window\.onload/.test(v0.html) && v0.impresiones === 0);
+    ok('5p · 🔑 la barra trae las dos salidas: imprimir y CERRAR',
+        /rx-visor-print/.test(v0.barraHtml) &&
+        /rx-visor-close/.test(v0.barraHtml));
+    // 🔑🔑 LO QUE PEDÍA EL ENCARGO: cerrar devuelve la pantalla de antes, que
+    //     no se ha destruido — el visor era un overlay y punto.
+    v0.imprimir();
+    ok('5q · imprimir manda al IFRAME, no a la app que hay debajo',
+        v0.impresiones === 1, v0.impresiones);
+    v0.cerrar();
+    ok('5r · 🔑🔑 "Cerrar" quita el visor y deja la app donde estaba',
+        v0.cerrado === true);
+
+    // En PC no cambia NADA: es la lección de v530 (arreglar el iPad y romper
+    // el PC no es un arreglo), y él dice expresamente que ahí funciona bien.
+    const pc = exportSandbox();
+    pc.w.rxExportarResumenPDF([{ equipo: 'A', partidos: 1, filas: [F()] }], {});
+    ok('5s · ⚠️ en PC sigue abriéndose la VENTANA de siempre, y sin visor',
+        pc.ventanas.length === 1 && pc.visores.length === 0);
+    ok('5t · ⚠️ con su auto-print y su botón de respaldo intactos',
+        /window\.onload/.test(pc.ventanas[0].html) &&
+        /Guardar como PDF/.test(pc.ventanas[0].html));
+}
+
+// ═══════════ PARTE 5c · 🚪 la puerta única, y la factura del SA ═══════════
+//  La factura del SuperAdmin (billing.js) tenía EL MISMO defecto: su propio
+//  `window.open('', '_blank', 'width=750,height=900')`. Se le pidió al autor y
+//  dijo que sí (2026-09-07). No se copió allí el visor: se publicó
+//  `rxAbrirDocumento` y billing.js delega — una segunda definición de "cómo se
+//  abre un documento" divergiría a la primera corrección (v511).
+console.log('\n── PARTE 5c · 🚪 rxAbrirDocumento: una puerta para los dos ──');
+{
+    const pc = exportSandbox();
+    ok('5u · la puerta está publicada en window',
+        typeof pc.w.rxAbrirDocumento === 'function');
+
+    const okPc = pc.w.rxAbrirDocumento({ titulo: 'F-1', doc: '<html>FACTURA</html>', ventana: 'width=750,height=900' });
+    ok('5v · en PC abre ventana y escribe el documento',
+        okPc === true && pc.ventanas.length === 1 && /FACTURA/.test(pc.ventanas[0].html));
+
+    const tac = exportSandbox({ tactil: true });
+    const okTac = tac.w.rxAbrirDocumento({ titulo: 'F-1', doc: '<html>FACTURA</html>', ventana: 'width=750,height=900' });
+    ok('5w · 🔑 en táctil va al visor y NO abre ventana (aunque pidan tamaño)',
+        okTac === true && tac.ventanas.length === 0 &&
+        tac.visores.length === 1 && /FACTURA/.test(tac.visores[0].html));
+    ok('5x · y el visor se titula con lo que le pasan',
+        (tac.visores[0] || {}).titulo === 'F-1', (tac.visores[0] || {}).titulo);
+
+    // ── La factura, EJECUTANDO su decisión real ──────────────────────
+    //  ⚠️ NO se comprueba leyendo el fichero: `billShowInvoice` es async y tira
+    //  de Firestore, así que se EXTRAE el trozo que decide y se ejecuta con un
+    //  window de mentira. Medir el ORDEN del texto fuente ya dio un verde falso
+    //  en v679; aquí se mide el EFECTO.
+    const ini = SRC_BILLING.indexOf("if (typeof window.rxAbrirDocumento === 'function') {");
+    const fin = SRC_BILLING.indexOf("_saToast('⚠️ Permite las ventanas emergentes para ver la factura'", ini);
+    ok('5y · billing.js trae el bloque de decisión (si no, lo de abajo no prueba nada)',
+        ini > 0 && fin > ini);
+
+    if (ini > 0 && fin > ini) {
+        const trozo = SRC_BILLING.slice(ini, SRC_BILLING.indexOf('}', fin) + 1);
+        const correr = (conPuerta) => {
+            const llamadas = { puerta: [], open: [], toast: [] };
+            const win = {
+                rxAbrirDocumento: conPuerta ? (o) => { llamadas.puerta.push(o); return true; } : undefined,
+                open: (u, t, opt) => { llamadas.open.push(opt); return { document: { write() {}, close() {} } }; },
+            };
+            const fn = new Function('window', '_saToast', 'html', 'inv',
+                'return (function(){ ' + trozo + ' })();');
+            fn(win, (m) => llamadas.toast.push(m), '<html>FACTURA</html>', { invoiceNumber: 'F-2026-001' });
+            return llamadas;
+        };
+        const conPuerta = correr(true);
+        ok('5z · 🔑 la factura DELEGA en la puerta y no abre ventana por su cuenta',
+            conPuerta.puerta.length === 1 && conPuerta.open.length === 0,
+            'puerta=' + conPuerta.puerta.length + ' open=' + conPuerta.open.length);
+        ok('5aa · le pasa el documento, el número de factura y el tamaño',
+            /FACTURA/.test(conPuerta.puerta[0].doc || '') &&
+            /F-2026-001/.test(conPuerta.puerta[0].titulo || '') &&
+            /750/.test(conPuerta.puerta[0].ventana || ''),
+            JSON.stringify({ t: conPuerta.puerta[0].titulo, v: conPuerta.puerta[0].ventana }));
+        // ⚠️ Una factura que no se puede ver es peor que una en ventana.
+        const sinPuerta = correr(false);
+        ok('5ab · ⚠️ sin el módulo cargado, la factura se abre igual (respaldo)',
+            sinPuerta.open.length === 1 && /750/.test(sinPuerta.open[0] || ''));
+    }
 }
 
 // ═══════════ PARTE 6 · el informe grupal en CSV ═══════════

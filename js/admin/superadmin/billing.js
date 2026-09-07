@@ -974,6 +974,39 @@ function _billPrintInvoice(inv) {
 </body>
 </html>`;
 
+    // ════════════════════════════════════════════════════════════════
+    //  📲 v681 · LA FACTURA TAMPOCO PUEDE COMERSE LA PANTALLA EN UN iPad
+    //
+    //  Tenía el mismo defecto que el "🖨️ EXPORTAR" del Cuadrante que reportó
+    //  el autor (implementar.txt + capturas 10144-10145): `window.open('',
+    //  '_blank')` es una pestaña en un PC, pero en la app instalada **es
+    //  navegar**, y al cerrar la factura el SuperAdmin se salía de su panel.
+    //  Es la saga v526→v530: «no se sobrevive a la navegación: hay que NO
+    //  NAVEGAR».
+    //
+    //  🔑 SE DELEGA EN `rxAbrirDocumento` (reports-export.js) EN VEZ DE COPIAR
+    //  AQUÍ EL VISOR: una segunda definición de "cómo se abre un documento"
+    //  divergiría de la primera a la primera corrección. Allí está escrito el
+    //  porqué de cada decisión (táctil, emergente bloqueada, auto-print).
+    //
+    //  ⚠️ El `width/height` sólo lo entiende la ventana; en el visor es a
+    //  pantalla completa y así debe ser.
+    //  ⚠️ La factura lleva SU PROPIO botón "🖨️ Imprimir / Guardar como PDF"
+    //  dentro del documento, así que se pasa un solo `doc`: dentro del visor
+    //  ese botón imprime el iframe, que es exactamente lo que se quiere.
+    //  ⚠️ RESPALDO: si el módulo de exportación no estuviera cargado, se abre
+    //  como siempre. Una factura que no se puede ver es peor que una factura
+    //  que se ve en una ventana.
+    // ════════════════════════════════════════════════════════════════
+    if (typeof window.rxAbrirDocumento === 'function') {
+        window.rxAbrirDocumento({
+            titulo:  'Factura ' + (inv.invoiceNumber || ''),
+            doc:     html,
+            ventana: 'width=750,height=900',
+        });
+        return;
+    }
+
     const w = window.open('', '_blank', 'width=750,height=900');
     if (w) {
         w.document.write(html);

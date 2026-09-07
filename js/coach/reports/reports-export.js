@@ -268,17 +268,162 @@
             'border:none;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;}' +
         '@media print{.rx-btn{display:none !important;}}';
 
+    // ════════════════════════════════════════════════════════════════
+    //  📲 v681 · EN TÁCTIL EL DOCUMENTO SE ABRE **DENTRO** DE LA APP
+    //
+    //  Reportado por el autor (implementar.txt + capturas 10144-10145,
+    //  2026-09-07) sobre el "🖨️ EXPORTAR" del Cuadrante: «en PC se abre en una
+    //  pestaña nueva y puedo volver; en móviles y iPads la vista de exportación
+    //  REEMPLAZA a la pantalla, y al cerrar el documento se sale de la app y se
+    //  pierde la sesión».
+    //
+    //  🔑🔑 NO ES UN FALLO NUEVO: ES LA SAGA v526→v530 OTRA VEZ, Y ESTÁ ESCRITA
+    //  30 LÍNEAS MÁS ARRIBA. «No se sobrevive a la navegación: hay que NO
+    //  NAVEGAR.» Allí el que navegaba era un `<a download>` con `blob:`; aquí es
+    //  `window.open('', '_blank')`. En un PC eso abre una pestaña de verdad
+    //  —la del `about:blank` de su captura—, pero **en la app instalada no hay
+    //  barra de pestañas**: lo que ocurre es que la vista se sustituye, y al
+    //  cerrarla el usuario vuelve a la pantalla de acceso. Su cuadrante, con lo
+    //  que estuviera editando, ya no está.
+    //
+    //  🔑 LA SALIDA ES LA MISMA QUE ENTONCES: no mover la página. El documento
+    //  se pinta en un `<iframe>` dentro de un visor a pantalla completa, encima
+    //  de la app. El cuadrante NO se destruye —sigue vivo en el DOM, debajo—,
+    //  «✕ Cerrar» lo devuelve al instante y "🖨️ Imprimir / Guardar como PDF"
+    //  ofrece el PDF igual que la ventana de antes.
+    //
+    //  ⚠️ EN PC NO SE TOCA NADA. Él dice expresamente que ahí funciona bien, y
+    //  la lección de v530 es literal: *un arreglo que arregle el iPad y rompa el
+    //  PC no es un arreglo*. El criterio de "táctil" es `_rxEsTactil()`, el
+    //  MISMO que ya decide compartir-vs-descargar en este fichero: dos
+    //  definiciones de "esto es un móvil" acabarían discrepando.
+    //
+    //  ⚠️ Y EN EL VISOR NO SE IMPRIME SOLO. La ventana nueva sí lo hace (el
+    //  usuario pidió "descargar en PDF", no "ver una página"), pero un diálogo
+    //  de impresión que salta encima de un visor recién abierto tapa el botón de
+    //  cerrar; además iOS exige gesto del usuario para imprimir. Aquí el botón
+    //  ES el gesto.
+    //
+    //  ⚠️ El `<iframe>` se rellena con `document.write` sobre su propio
+    //  documento (mismo origen, `about:blank`), NO con `srcdoc`: el documento
+    //  lleva comillas, `<script>` y miles de estilos en línea, y meterlo en un
+    //  atributo es pedir un escapado que fallará el día que un nombre de equipo
+    //  traiga una comilla.
+    // ════════════════════════════════════════════════════════════════
+    function _rxVisorEnLaApp(doc, titulo) {
+        try {
+            const previo = document.getElementById('rx-visor');
+            if (previo && previo.parentNode) previo.parentNode.removeChild(previo);
+
+            const ov = document.createElement('div');
+            ov.id = 'rx-visor';
+            ov.style.cssText = 'position:fixed;inset:0;z-index:99999;background:#ffffff;' +
+                'display:flex;flex-direction:column;';
+
+            const barra = document.createElement('div');
+            barra.style.cssText = 'display:flex;align-items:center;gap:0.5rem;padding:0.55rem 0.7rem;' +
+                'background:#161b22;border-bottom:1px solid rgba(255,255,255,0.12);flex-shrink:0;';
+            barra.innerHTML =
+                '<div style="flex:1;min-width:0;color:#c9d1d9;font-size:0.78rem;font-weight:700;' +
+                    'overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + _rxEsc(titulo) + '</div>' +
+                '<button type="button" id="rx-visor-print" style="padding:0.45rem 0.8rem;border-radius:8px;' +
+                    'border:1px solid #2563eb;background:#2563eb;color:#fff;font-size:0.74rem;' +
+                    'font-weight:700;cursor:pointer;">🖨️ Imprimir / Guardar como PDF</button>' +
+                '<button type="button" id="rx-visor-close" style="padding:0.45rem 0.8rem;border-radius:8px;' +
+                    'border:1px solid rgba(248,81,73,0.5);background:rgba(248,81,73,0.15);color:#f85149;' +
+                    'font-size:0.74rem;font-weight:700;cursor:pointer;">✕ Cerrar</button>';
+
+            const marco = document.createElement('iframe');
+            marco.title = titulo;
+            marco.style.cssText = 'flex:1;width:100%;border:0;background:#fff;';
+
+            ov.appendChild(barra);
+            ov.appendChild(marco);
+            document.body.appendChild(ov);
+
+            // ⚠️ El documento se escribe DESPUÉS de adjuntar el iframe: antes de
+            // estar en el DOM, `contentDocument` es null y no hay dónde escribir.
+            const d = marco.contentDocument || (marco.contentWindow && marco.contentWindow.document);
+            if (!d) { ov.parentNode.removeChild(ov); return false; }
+            d.open(); d.write(doc); d.close();
+
+            barra.querySelector('#rx-visor-close').onclick = function () {
+                if (ov.parentNode) ov.parentNode.removeChild(ov);
+            };
+            barra.querySelector('#rx-visor-print').onclick = function () {
+                // Se imprime EL IFRAME, no la app que hay debajo.
+                try { marco.contentWindow.focus(); marco.contentWindow.print(); }
+                catch (e) { _rxToast('⚠️ No se pudo abrir la impresión: ' + (e && e.message ? e.message : e), 4000); }
+            };
+            return true;
+        } catch (e) {
+            _rxToast('⚠️ No se pudo abrir el documento: ' + (e && e.message ? e.message : e), 4000);
+            return false;
+        }
+    }
+
+    // ════════════════════════════════════════════════════════════════
+    //  🚪 v681 · UNA SOLA PUERTA PARA ABRIR UN DOCUMENTO GENERADO
+    //
+    //  rxAbrirDocumento({ titulo, doc, docVisor?, ventana? }) → bool
+    //    · táctil            → visor interno, sin navegar.
+    //    · PC                → ventana nueva, como siempre.
+    //    · emergente bloqueada → visor, en vez de dejar al usuario sin nada.
+    //
+    //  🔑 SE PUBLICA EN `window` PORQUE HAY UN SEGUNDO CONSUMIDOR: la factura
+    //  del SuperAdmin (`js/admin/superadmin/billing.js`) montaba su propio
+    //  `window.open('', '_blank', 'width=750,height=900')` con el mismo defecto
+    //  —en un iPad, la factura se comía la pantalla del panel—. Copiar allí el
+    //  visor habría creado la SEGUNDA definición de "cómo se abre un documento"
+    //  y el día que una cambie, la otra se queda atrás: es el patrón que este
+    //  proyecto lleva pagando desde v511.
+    //
+    //  ⚠️ `docVisor` existe porque el documento NO ES EL MISMO en los dos
+    //  destinos: el de la ventana lleva auto-print y su botón; el del visor, no
+    //  (los pone la barra). Quien no necesite distinguirlos pasa sólo `doc`.
+    //  ⚠️ `ventana` son las opciones de tamaño de `window.open`; en el visor no
+    //  significan nada y se ignoran, que es lo correcto: a pantalla completa.
+    // ════════════════════════════════════════════════════════════════
+    window.rxAbrirDocumento = function (opts) {
+        opts = opts || {};
+        const titulo = opts.titulo || 'Documento · Chronos Fútbol';
+        const docVisor = opts.docVisor || opts.doc || '';
+        if (!docVisor && !opts.doc) return false;
+
+        if (_rxEsTactil()) return _rxVisorEnLaApp(docVisor, titulo);
+
+        const w = window.open('', '_blank', opts.ventana || '');
+        if (!w) {
+            // ⚠️ v681 · LA EMERGENTE BLOQUEADA YA NO ES UN CALLEJÓN SIN SALIDA.
+            // Hasta aquí sólo se avisaba y el usuario se quedaba sin documento,
+            // teniendo que ir a los ajustes del navegador. Ahora se le enseña
+            // por el mismo visor del táctil, que no depende de emergentes.
+            _rxToast('⚠️ El navegador bloqueó la ventana emergente: el documento se abre aquí mismo', 5000);
+            return _rxVisorEnLaApp(docVisor, titulo);
+        }
+        w.document.open();
+        w.document.write(opts.doc || docVisor);
+        w.document.close();
+        return true;
+    };
+
     // rxImprimir({ titulo, subtitulo, meta[], cuerpo, apaisado }) → bool
     //   cuerpo: HTML ya montado (bloques .rx-block).
-    //   Devuelve false si el navegador bloqueó la ventana emergente, que es
-    //   el único fallo realista y hay que decírselo al usuario.
+    //   En táctil abre el visor interno (v681, ver arriba); en PC, la ventana
+    //   nueva de siempre. Devuelve false sólo si no se pudo enseñar el
+    //   documento por ninguna de las dos vías, y entonces se avisa.
     window.rxImprimir = function (opts) {
         opts = opts || {};
         const titulo = opts.titulo || 'Informe · Chronos Fútbol';
         const meta = (opts.meta || []).filter(Boolean)
             .map(function (l) { return '<div>' + _rxEsc(l) + '</div>'; }).join('');
-
-        const doc =
+        // ⚠️ EL DOCUMENTO SE MONTA SEGÚN DÓNDE VA A VIVIR, y por eso es una
+        // función y no una cadena: en la ventana nueva lleva su auto-print y su
+        // botón; en el visor interno, ninguno de los dos (los pone la barra).
+        // Con una sola cadena, el respaldo de la emergente bloqueada habría
+        // enseñado el documento de la ventana dentro del visor — con el diálogo
+        // de impresión saltando encima del botón de cerrar.
+        const montarDoc = function (conVentana) { return (
             '<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8">' +
             '<meta name="viewport" content="width=device-width,initial-scale=1">' +
             '<title>' + _rxEsc(titulo) + '</title>' +
@@ -298,24 +443,32 @@
                 (opts.cuerpo || '') +
                 '<div class="rx-pie">Chronos Fútbol · documento generado desde el Panel de Dirección. ' +
                     'Los datos proceden de los informes enviados por los entrenadores.</div>' +
-                '<button class="rx-btn" onclick="window.print()">🖨️ Imprimir / Guardar como PDF</button>' +
+                // ⚠️ En el visor interno ESTE botón sobra: la barra de arriba ya
+                // trae el suyo, y el de dentro imprimiría igual pero sin el
+                // «✕ Cerrar» al lado. En la ventana nueva se queda, que es el
+                // respaldo de cuando el navegador ignora el print automático.
+                (conVentana
+                    ? '<button class="rx-btn" onclick="window.print()">🖨️ Imprimir / Guardar como PDF</button>'
+                    : '') +
             '</div>' +
             // El diálogo se abre solo: el usuario ha pedido "descargar en PDF",
             // no "ver una página". El botón queda como respaldo para cuando el
             // navegador ignora el print automático (Safari en iOS lo hace).
-            '<script>window.onload=function(){setTimeout(function(){' +
-                'try{window.focus();window.print();}catch(e){}},350);};<\/script>' +
-            '</body></html>';
+            // ⚠️ NO en el visor interno: ver la nota de _rxVisorEnLaApp.
+            (conVentana
+                ? '<script>window.onload=function(){setTimeout(function(){' +
+                      'try{window.focus();window.print();}catch(e){}},350);};<\/script>'
+                : '') +
+            '</body></html>'
+        ); };
 
-        const w = window.open('', '_blank');
-        if (!w) {
-            _rxToast('⚠️ Permite las ventanas emergentes para descargar el PDF', 5000);
-            return false;
-        }
-        w.document.open();
-        w.document.write(doc);
-        w.document.close();
-        return true;
+        // 🚪 Quién abre y dónde lo decide rxAbrirDocumento, que es el punto
+        //    único (lo comparte con la factura del SuperAdmin).
+        return window.rxAbrirDocumento({
+            titulo:   titulo,
+            doc:      montarDoc(true),    // ventana nueva: con auto-print
+            docVisor: montarDoc(false),   // visor interno: sin él
+        });
     };
 
     // ── RESUMEN ACUMULADO DE LA TEMPORADA ────────────────────────────
