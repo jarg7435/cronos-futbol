@@ -269,9 +269,22 @@ console.log('\n4) 🚪 Al entrar, al ente SÍ se le carga su plaza');
     ok('4b · ⚠️ y el criterio se pregunta a la lista única, no a mano',
        /window\.CRONOS_ROLES_CON_EQUIPO\s*\n?\s*\|\| \['user', 'coach', 'individual', 'admin_individual'\]/.test(LAUNCH));
 
-    ok('4c · 🔑 el selector de equipo (dos equipos) también lo cubre',
-       /if \(_esRolDeEquipo &&\s*\n\s*typeof window\.cronosEquipoElegido === 'function'/.test(LAUNCH),
-       'sin esto, el segundo equipo del ente sería inalcanzable desde el panel de partido');
+    // ⚠️ v680 · ESTA ASERCIÓN MIRABA LA REDACCIÓN, NO LA REGLA. Estaba clavada
+    // a `if (_esRolDeEquipo && \n typeof window.cronosEquipoElegido …`, la forma
+    // EXACTA que tenía la condición en v627, y se puso roja en cuanto v680
+    // reordenó ese mismo bloque para que el arranque preguntase a la lista de
+    // equipos ANTES de mirar la elección de la sesión. Lo que hay que proteger
+    // —y lo que se comprueba ahora— es que la rama de los roles CON equipo
+    // sigue consultando las dos piezas del selector: la lista única
+    // (`cronosEquiposDeEntrenador`) y el equipo elegido en la sesión
+    // (`cronosEquipoElegido`, v540). Ver [[feedback_guard_desfasado_desorienta]].
+    {
+        const _bloque = (LAUNCH.match(/if \(_esRolDeEquipo && typeof window\.cronosEquiposDeEntrenador === 'function'\) \{[\s\S]{0,900}?\n        \}/) || [''])[0];
+        ok('4c · 🔑 el selector de equipo (dos equipos) también lo cubre',
+           !!_bloque && /window\.cronosEquiposDeEntrenador\(me\.allRoles, null\)/.test(_bloque) &&
+           /window\.cronosEquipoElegido\(\)/.test(_bloque),
+           'sin esto, el segundo equipo del ente sería inalcanzable desde el panel de partido');
+    }
 
     ok('4d · ⚠️ la normalización NO toca la rama del entrenador de club',
        /if \(_catRol && role !== 'user' && role !== 'coach' &&/.test(LAUNCH),

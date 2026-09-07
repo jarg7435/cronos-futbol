@@ -643,22 +643,76 @@ function _launchWithRole(role) {
             || ['user', 'coach', 'individual', 'admin_individual'];
         const _esRolDeEquipo = _rolesConEquipo.indexOf(role) >= 0;
 
+        // ══════════════════════════════════════════════════════════════
+        //  🔴🔴 v680 · SE ARRANCA EN UN EQUIPO QUE EL PANEL SÍ OFRECE
+        //
+        //  Reportado por el autor (implementar.txt + captura 10117,
+        //  2026-09-07): arinagazone@gmail.com es **Familiar en Alevín C** y
+        //  **Entrenador en Regional B** (capturas 10118 y 10121). Al entrar por
+        //  la tarjeta "Entrenador" el panel se abría en **Alevín C**, que no es
+        //  su equipo: la consola decía a la vez
+        //      [auth] entrenador category: alevin subcategory: C
+        //      [v261] Modalidades permitidas: f11
+        //  —la categoría de un equipo y la modalidad de OTRO en la misma
+        //  pantalla— y debajo "Sin plantillas en esta modalidad".
+        //
+        //  🔑🔑 LA CAUSA ES UNA ASIMETRÍA ENTRE LAS DOS MITADES DEL ARRANQUE.
+        //  Las otras dos superficies filtran las plazas: `showRoleSelection`
+        //  (en este mismo fichero) sólo pinta tarjetas de plazas VIVAS
+        //  —`isAuthorized === true` Y `status === 'active'`— y el selector de
+        //  equipos del panel lee `cronosEquiposDeEntrenador` (utils.js), que
+        //  aplica ESE MISMO filtro y además descarta las entradas sin
+        //  categoría (los "restos" de v582). Este `find` no miraba ni el
+        //  estado ni la categoría: devolvía la PRIMERA entrada del array cuyo
+        //  rol casara, aunque estuviera pendiente, revocada o vacía. Y de esa
+        //  entrada salen `me.category` y `me.subcategory`, que es lo que los
+        //  47 consumidores de `_cronosCurrentUser` entienden por "su equipo".
+        //  Resultado: la tarjeta la abría una plaza y el panel lo llenaba OTRA.
+        //
+        //  🔑 SE PREGUNTA A LA LISTA ÚNICA, NO SE COPIA SU FILTRO AQUÍ.
+        //  `cronosEquiposDeEntrenador` es desde v598 el sitio donde se decide
+        //  qué equipos son suyos; escribir aquí un segundo criterio sería el
+        //  patrón que este proyecto lleva pagando desde v511. Con esto, el
+        //  panel NO PUEDE abrirse en un equipo que su propio selector "MIS
+        //  EQUIPOS" (setup-modal.js, v540) no ofrece.
+        //
+        //  ⚠️ ORDEN: primero el equipo ELEGIDO en esta sesión (v540), luego uno
+        //  de SU club y sólo después cualquiera. Y se prefieren los equipos
+        //  cuyo rol casa con el alias del rol activo, pero NO se exige: el
+        //  dueño de un ente entra como 'individual' y su equipo puede estar
+        //  guardado como plaza 'user' (v602) — exigirlo le dejaría sin equipo.
+        // ══════════════════════════════════════════════════════════════
         let _elegida;
-        if (_esRolDeEquipo &&
-            typeof window.cronosEquipoElegido === 'function' &&
-            typeof window.cronosEquiposDeEntrenador === 'function') {
-            const _elegido = window.cronosEquipoElegido();
-            if (_elegido) {
-                const _eq = window.cronosEquiposDeEntrenador(me.allRoles, null)
-                    .find(e => e.teamId === _elegido);
-                if (_eq) _elegida = _eq._rol;
-            }
+        if (_esRolDeEquipo && typeof window.cronosEquiposDeEntrenador === 'function') {
+            const _equipos = window.cronosEquiposDeEntrenador(me.allRoles, null) || [];
+            const _mismoRol  = _equipos.filter(e => _matchRoles.includes(e.role));
+            const _mismoClub = e => String(e.clubId || '') === String(currentClubId || '');
+            const _elegido = (typeof window.cronosEquipoElegido === 'function')
+                ? window.cronosEquipoElegido() : '';
+            // ⚠️ La elección de la sesión se VALIDA contra los equipos vivos: si
+            // ese equipo ya no es suyo, sale undefined y se sigue la cascada.
+            const _eq = (_elegido && _equipos.find(e => e.teamId === _elegido))
+                || _mismoRol.find(_mismoClub)
+                || _mismoRol[0]
+                || _equipos.find(_mismoClub)
+                || _equipos[0];
+            if (_eq) _elegida = _eq._rol;
         }
+
+        // ⚠️ Y SI NO HAY NINGÚN EQUIPO VIVO QUE OFRECERLE, la cascada de
+        // siempre — pero con las plazas VIVAS DELANTE. No se exige que lo sean:
+        // hay perfiles de legado cuya entrada no trae `status`/`isAuthorized`, y
+        // dejarlos fuera les quitaría el arranque entero sin ningún aviso. Falla
+        // hacia el "sí", como el resto de este módulo.
+        const _plazaViva  = r => r && r.isAuthorized === true && r.status === 'active';
+        const _candidatas = me.allRoles.filter(r => _matchRoles.includes(r.role));
+        const _vivas      = _candidatas.filter(_plazaViva);
+        const _pool       = _vivas.length ? _vivas : _candidatas;
 
         const roleEntry =
             _elegida ||
-            me.allRoles.find(r => _matchRoles.includes(r.role) && r.clubId === currentClubId) ||
-            me.allRoles.find(r => _matchRoles.includes(r.role)) ||
+            _pool.find(r => r.clubId === currentClubId) ||
+            _pool[0] ||
             // Fallback: buscar por prefijo (ej: 'user' coincide con 'user_XXX')
             me.allRoles.find(r => r.role && r.role.startsWith(role.split('_')[0]));
 
@@ -743,6 +797,29 @@ function _launchWithRole(role) {
                 if (_catRol) {
                     me.category    = _catRol;
                     me.subcategory = _subRol;
+                }
+                // ══════════════════════════════════════════════════════
+                //  🔑 v680 · LA CATEGORÍA DE LA RAÍZ SÓLO VALE SI LA RAÍZ
+                //  ES DE ESTE OFICIO
+                //
+                //  El documento del usuario tiene UNA categoría en la raíz, y
+                //  es la del último rol que se guardó. En la cuenta del
+                //  encargo —Familiar en Alevín C, Entrenador en Regional B— esa
+                //  raíz es la de la FAMILIA. El `if` de arriba respeta la raíz a
+                //  propósito (perfiles antiguos que sólo la tienen ahí), pero
+                //  eso sólo es correcto cuando la raíz describe a un
+                //  entrenador: si la plaza con la que entra no trae categoría y
+                //  la raíz es de otro rol, heredarla le mete en el equipo de su
+                //  hijo, con plantilla, convocatorias e informes ajenos.
+                //
+                //  🔑 Vacía, `_forceCategorySelect` (setup-modal.js) devuelve
+                //  false y los desplegables se quedan ABIERTOS: elige él. Es
+                //  exactamente lo que pide el encargo, y es preferible a
+                //  elegir por él la categoría equivocada.
+                // ══════════════════════════════════════════════════════
+                else if (_rolesConEquipo.indexOf(me.role) < 0) {
+                    me.category    = null;
+                    me.subcategory = null;
                 }
                 // El equipo activo queda anotado para que el selector del
                 // panel sepa cuál está abierto (y lo marque).
