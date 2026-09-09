@@ -80,6 +80,17 @@ CAPTURAS/
 # describen el estado del codigo: se quedan en disco y no se siguen.
 CALENDARIOS/
 
+# MATERIAL DE PRESENTACION (capturas de la app para ensenarla)
+# Mismo caso que CAPTURAS/: son pantallazos de la aplicacion, o sea nombres y
+# dorsales de jugadores menores de edad, y pesan varios MB. Se quedan en disco.
+# Se escriben SIN TILDE a proposito (Presentaci*n), por la misma razon que en el
+# `ignore` de firebase.json: el acento ya dio problemas de codificacion ahi.
+# 2026-09-09: estas 30 capturas SE PUBLICARON EN TESTEO por el "public": "." de
+# firebase.json, que sube toda la carpeta del proyecto. Van excluidas en los dos
+# sitios; una cosa no sustituye a la otra: git y el hosting son listas distintas.
+Presentaci*n/
+presentaci*n/
+
 # SCRIPTS DE INVESTIGACION/DEBUG PUNTUAL CONTRA PRODUCCION (Admin SDK)
 # Nunca deben vivir en functions/ (se empaqueta en cada deploy) ni commitearse:
 # acceden a produccion directamente y no forman parte del producto.
