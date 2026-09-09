@@ -10,6 +10,8 @@
       "**/node_modules/**",
       "CAPTURAS/**",
       "CALENDARIOS/**",
+      "Presentaci*n/**",
+      "presentaci*n/**",
       "firestore.rules",
       "firestore.rules.*",
       "firestore.indexes.json",

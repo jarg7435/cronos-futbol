@@ -1216,41 +1216,99 @@ async function openParentPanel(initialTab) {
             const _buildTimeline = (r) => {
                 const playedSec  = _mmssToSec(r.minutesPlayed);
                 const history    = Array.isArray(r.history) ? r.history : [];
-                // Duración total visual: al menos el tiempo jugado, mín 30 min, máx 90 min
-                const durSec     = Math.max(playedSec, 30*60);
-                const capDurSec  = Math.min(durSec, 90*60);
+                const toSec      = (ev) => (ev.minute||0)*60 + (ev.second||0);
 
                 // Calcular períodos de juego y eventos desde history
                 const periods = [];   // [{startSec, endSec}]
-                const events  = [];   // [{type, timeSec, note}]
+                const events  = [];   // [{type, timeSec, note, orphan?}]
 
-                if (history.length > 0) {
-                    // Convertir minuto+segundo a segundos totales
-                    const toSec = (ev) => (ev.minute||0)*60 + (ev.second||0);
-                    const sorted = [...history].sort((a,b) => toSec(a) - toSec(b));
-                    let inField = false, lastSec = 0;
-                    sorted.forEach(ev => {
-                        const t = toSec(ev);
-                        if (ev.type === 'starter') {
-                            inField = true; lastSec = 0;
-                        } else if (ev.type === 'sub_in') {
-                            inField = true; lastSec = t;
-                            events.push({type:'sub_in', timeSec:t, note: ev.note||''});
-                        } else if (ev.type === 'sub_out') {
-                            if (inField) periods.push({startSec:lastSec, endSec:t});
-                            inField = false;
-                            events.push({type:'sub_out', timeSec:t, note: ev.note||''});
-                        } else if (['goal','yellow','red','injury'].includes(ev.type)) {
-                            events.push({type:ev.type, timeSec:t, note: ev.note||ev.timeStr||''});
-                        }
-                    });
-                    if (inField && playedSec > 0) {
-                        periods.push({startSec: lastSec, endSec: playedSec});
+                const sorted = [...history].sort((a,b) => toSec(a) - toSec(b));
+
+                // ── 🔑 v683 · UNA MARCA SÓLO SE PINTA SI DELIMITA UN BLOQUE ──
+                // El diagrama sacaba rayas rojas de "Sale" flotando sobre el
+                // BANQUILLO, sin bloque azul que cerrar, y la tarjeta anunciando
+                // al lado los minutos jugados. No era un fallo de pintado: era la
+                // RECONSTRUCCIÓN, que arrancaba con `inField = false` SIEMPRE.
+                //
+                // Nadie escribe un apunte 'starter' en toda la app (la rama de
+                // abajo es de un formato que nunca llegó a existir), así que el
+                // historial de un TITULAR empieza directamente por su SALIDA: no
+                // había nada que cerrar y se perdía el bloque entero.
+                //
+                // Se aplica la MISMA regla airtight que el motor de informes del
+                // entrenador (js/coach/reports/report-engine.js · buildIvs, v425):
+                // si la primera transición registrada es una SALIDA, forzosamente
+                // estaba en el campo; si es una ENTRADA, forzosamente fuera. Los
+                // tiempos jugados de las tarjetas cuadran al segundo con los
+                // intervalos que salen de esta regla (guard
+                // scripts/test_gantt_salidas_huerfanas.js, medido sobre las
+                // capturas 10204-10207).
+                const trans = sorted.filter(ev => ev.type === 'sub_in' || ev.type === 'sub_out');
+
+                // Los apuntes automáticos de fase —"Sale (DESCANSO)" y "Entra
+                // (2ªP)"— llevan el MISMO sello de tiempo, porque los dos salen
+                // de masterTimeH1; un cambio de posición dentro del campo también.
+                // No son transiciones: no parten el bloque de juego ni pueden
+                // pintar una raya roja EN MEDIO de la barra azul. Mismo criterio
+                // que soloCambiosReales en report-engine.js (v426).
+                const simultaneos = new Set();
+                const porTiempo = {};
+                trans.forEach(ev => {
+                    const k = String(toSec(ev));
+                    porTiempo[k] = porTiempo[k] || {};
+                    porTiempo[k][ev.type] = true;
+                });
+                Object.keys(porTiempo).forEach(k => {
+                    if (porTiempo[k].sub_in && porTiempo[k].sub_out) simultaneos.add(k);
+                });
+                const esFase = (ev) => simultaneos.has(String(toSec(ev)));
+
+                const realTrans = trans.filter(ev => !esFase(ev));
+                // Sin ninguna transición (un historial que sólo trae el gol, o
+                // vacío) manda el cronómetro: jugó de principio a fin.
+                let inField = realTrans.length ? realTrans[0].type === 'sub_out'
+                                               : playedSec > 0;
+                let lastSec = 0;
+
+                sorted.forEach(ev => {
+                    const t = toSec(ev);
+                    if (ev.type === 'starter') {
+                        inField = true; lastSec = 0;
+                    } else if (ev.type === 'sub_in') {
+                        // Una entrada que no abre bloque (ya estaba en el campo)
+                        // se conserva en la lista cronológica pero NO se pinta:
+                        // adelantar `lastSec` ACORTABA la barra azul.
+                        const abre = !inField && !esFase(ev);
+                        if (abre) { inField = true; lastSec = t; }
+                        events.push({type:'sub_in', timeSec:t, note: ev.note||'', orphan: !abre});
+                    } else if (ev.type === 'sub_out') {
+                        const cierra = inField && !esFase(ev);
+                        if (cierra) { periods.push({startSec:lastSec, endSec:t}); inField = false; }
+                        events.push({type:'sub_out', timeSec:t, note: ev.note||'', orphan: !cierra});
+                    } else if (['goal','yellow','red','injury'].includes(ev.type)) {
+                        events.push({type:ev.type, timeSec:t, note: ev.note||ev.timeStr||''});
                     }
-                } else if (playedSec > 0) {
-                    // Sin historial: asumir titular desde minuto 0
-                    periods.push({startSec:0, endSec:playedSec});
+                });
+
+                // Bloque abierto al terminar: se cierra con lo que le quede de
+                // cronómetro, para que la suma de las barras sea EXACTAMENTE el
+                // tiempo jugado de la cabecera. Antes se cerraba EN `playedSec`,
+                // que es el tiempo ACUMULADO: a quien entraba en el 44' y jugaba
+                // 20 minutos le salía una barra hacia atrás (44'→20'), de anchura
+                // negativa, que el `Math.max(2, pw)` disimulaba en 2 píxeles.
+                if (inField && playedSec > 0) {
+                    const yaContado = periods.reduce((s,p) => s + (p.endSec - p.startSec), 0);
+                    const resto = playedSec - yaContado;
+                    if (resto > 0) periods.push({startSec: lastSec, endSec: lastSec + resto});
                 }
+
+                // Duración total visual: cubre el tiempo jugado, lo apuntado y lo
+                // reconstruido —un suceso posterior al tiempo JUGADO se salía del
+                // lienzo, y el SVG se pinta con overflow:visible—. Mín 30, máx 90.
+                const lastEvtSec = sorted.length ? toSec(sorted[sorted.length-1]) : 0;
+                const lastPerEnd = periods.reduce((m,p) => Math.max(m, p.endSec), 0);
+                const durSec     = Math.max(playedSec, lastEvtSec, lastPerEnd, 30*60);
+                const capDurSec  = Math.min(durSec, 90*60);
 
                 // ── Construir SVG ────────────────────────────────────────────
                 const W = 500, Hsvg = 72;
@@ -1258,6 +1316,9 @@ async function openParentPanel(initialTab) {
                 const EVT_Y   = 12;                 // zona de eventos (sobre barra)
                 const LBL_Y   = Hsvg - 4;           // etiquetas de minutos
                 const sc      = W / capDurSec;       // px por segundo
+                // Nada se pinta fuera de la caja: el SVG lleva overflow:visible,
+                // así que lo que se pase del ancho no se recorta, se ve suelto.
+                const px      = (s) => Math.min(W, Math.max(0, s * sc));
 
                 // Marcas de tiempo (cada 15 min, ajustadas al partido)
                 const tickMins = capDurSec <= 40*60
@@ -1285,9 +1346,9 @@ async function openParentPanel(initialTab) {
                 if (prev < capDurSec) gaps.push({startSec:prev, endSec:capDurSec});
 
                 gaps.forEach(g => {
-                    const gW = (g.endSec - g.startSec) * sc;
+                    const gW = px(g.endSec) - px(g.startSec);
                     if (gW > 40) {
-                        const cx = g.startSec * sc + gW/2;
+                        const cx = px(g.startSec) + gW/2;
                         svg += `<text x="${cx.toFixed(1)}" y="${TRACK_Y+TRACK_H/2+3}"
                             text-anchor="middle" font-size="7"
                             fill="rgba(255,255,255,0.22)" font-weight="600"
@@ -1297,8 +1358,10 @@ async function openParentPanel(initialTab) {
 
                 // Barras de tiempo jugado (azul)
                 periods.forEach(p => {
-                    const px = p.startSec * sc, pw = (p.endSec - p.startSec) * sc;
-                    svg += `<rect x="${px.toFixed(1)}" y="${TRACK_Y}" width="${Math.max(2,pw).toFixed(1)}"
+                    // El ancho mínimo de 2px (para que un bloque de segundos se
+                    // vea) no puede empujar la barra fuera de la caja.
+                    const x0 = Math.min(px(p.startSec), W - 2), pw = px(p.endSec) - x0;
+                    svg += `<rect x="${x0.toFixed(1)}" y="${TRACK_Y}" width="${Math.max(2,pw).toFixed(1)}"
                         height="${TRACK_H}" rx="3" fill="#58a6ff" fill-opacity="0.82"/>`;
                 });
 
@@ -1312,9 +1375,13 @@ async function openParentPanel(initialTab) {
                         text-anchor="${mn===0?'start':mn===tickMins[tickMins.length-1]?'end':'middle'}">${mn}'</text>`;
                 });
 
-                // Marcadores de sustitución (línea vertical)
-                events.filter(e => e.type === 'sub_in' || e.type === 'sub_out').forEach(e => {
-                    const ex = e.timeSec * sc;
+                // Marcadores de sustitución (línea vertical). SÓLO los que
+                // delimitan un bloque de juego: una marca `orphan` es una salida
+                // sin bloque que cerrar (o un apunte de fase), y pintarla deja
+                // una raya suelta que no significa nada. Sigue apareciendo en la
+                // lista de EVENTOS CRONOLÓGICOS, que es el registro de lo que pasó.
+                events.filter(e => (e.type === 'sub_in' || e.type === 'sub_out') && !e.orphan).forEach(e => {
+                    const ex = px(e.timeSec);
                     const col = e.type === 'sub_in' ? '#3fb950' : '#ff5858';
                     svg += `<line x1="${ex.toFixed(1)}" y1="${TRACK_Y-4}" x2="${ex.toFixed(1)}" y2="${TRACK_Y+TRACK_H+2}"
                         stroke="${col}" stroke-width="1.5"/>`;
@@ -1326,7 +1393,7 @@ async function openParentPanel(initialTab) {
                 // Iconos de eventos (goles, tarjetas, lesiones)
                 const evtIcon = {goal:'⚽', yellow:'🟨', red:'🟥', injury:'🚑'};
                 events.filter(e => evtIcon[e.type]).forEach(e => {
-                    const ex = e.timeSec * sc;
+                    const ex = px(e.timeSec);
                     svg += `<text x="${ex.toFixed(1)}" y="${EVT_Y}" text-anchor="middle"
                         font-size="10">${evtIcon[e.type]}</text>`;
                     // Tiempo exacto debajo del icono
