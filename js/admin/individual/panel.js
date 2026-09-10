@@ -395,18 +395,19 @@ async function openIndividualAdminPanel(mantenerSeccion = false) {
     const totalPending = pendingAutoReg.length + parents.filter(u => u.status === 'pending_individual' && u.isAuthorized === false).length;
 
     // ── Counters ──────────────────────────────────────────────────
-    // Contar usuarios que hayan sido CONFIRMADOS por el SuperAdmin
-    // Un usuario está confirmado cuando su estado principal es 'active' y está autorizado,
-    // o bien cuando al menos uno de sus roles en allRoles está activo y autorizado.
-    const activeParents = parents.filter(u =>
-        (u.status === 'active' && u.isAuthorized === true) ||
-        (u.allRoles||[]).some(r => r.isAuthorized && r.status === 'active')
-    );
     const blockedParents = parents.filter(u => u.status === 'blocked');
-    // FIX: No contar los roles propios del admin (uid === me.uid) como usuarios separados
-    const _isAdmin = (u) => (u.uid || u._id) === me.uid;
-    // Contar entrenadores basándose en su rol principal o allRoles y su estado de autorización
-    // Contar entrenadores basándose en su rol principal o allRoles y su estado de autorización
+    // ══════════════════════════════════════════════════════════════════
+    //  🔢 v684 · AQUÍ VIVÍAN `coachCount` Y `parentCount`, Y SE HAN BAJADO
+    //  AL FINAL, junto a `statsHTML`. No es un traslado por orden: contaban
+    //  sobre `parents` —lo que Firestore devuelve— mientras las fichas de
+    //  equipo de más abajo pintan OTRA lista. El motivo entero está escrito
+    //  donde ahora se calculan.
+    //
+    //  ⚠️ Con ellos se van `activeParents`, `_rolesAqui`, `_tieneAqui` y un
+    //  `_isAdmin` que ya no llamaba nadie: eran SUS piezas y de nadie más.
+    //  Dejarlas sin llamar es lo que alguien revive por error dentro de seis
+    //  meses creyendo que siguen en uso (la doctrina de v602).
+    // ══════════════════════════════════════════════════════════════════
     // ══════════════════════════════════════════════════════════════════
     //  🔴🔴🔴 v584 · ESTE PANEL CONTABA PLAZAS DE CLUB COMO SUYAS
     //
@@ -437,19 +438,6 @@ async function openIndividualAdminPanel(mantenerSeccion = false) {
         const anclas = [String(r.clubId||''), String(r.individualEntityId||''), String(r.individualOwnerId||'')];
         return anclas.indexOf(String(_queryId)) >= 0 || anclas.indexOf(String(uid)) >= 0;
     };
-    // Los roles anclados a ESTE ente. Si no hay ninguno, manda el rol de la
-    // raíz (compat) — y la pertenencia al ente ya está comprobada arriba.
-    const _rolesAqui = (u) => (Array.isArray(u.allRoles) ? u.allRoles : []).filter(_delEsteEnte);
-    const _tieneAqui = (u, nombres) => {
-        const propios = _rolesAqui(u);
-        if (propios.length) {
-            return propios.some(r => nombres.indexOf(r.role) >= 0 && (r.isAuthorized || u.isAuthorized));
-        }
-        return nombres.indexOf(u.role) >= 0;
-    };
-    const coachCount  = activeParents.filter(u => _tieneAqui(u, ['user', 'entrenador_individual'])).length;
-    // Contar padres basándose en su rol principal o allRoles y su estado de autorización
-    const parentCount = activeParents.filter(u => _tieneAqui(u, ['parent', 'parent_individual'])).length;
 
     // ── Deduplicate and expand users ──────────────────────────────
     const userMap = new Map();
@@ -665,26 +653,9 @@ async function openIndividualAdminPanel(mantenerSeccion = false) {
     //   que de verdad hacían el trabajo y ahora sirven a las fichas de equipo.
     const _indIdx = _buildIndIndex(sortedUsers);
 
-    // ── Stats cards ───────────────────────────────────────────────
-    const statsHTML = `
-    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:0.6rem;margin-bottom:1.5rem;">
-        <div style="background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.1);border-radius:9px;padding:0.7rem;text-align:center;">
-            <div style="font-size:1.3rem;font-weight:800;color:#3fb950;">${coachCount}</div>
-            <div style="font-size:0.65rem;color:#8b949e;margin-top:0.1rem;">⚽ Entrenadores</div>
-        </div>
-        <div style="background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.1);border-radius:9px;padding:0.7rem;text-align:center;">
-            <div style="font-size:1.3rem;font-weight:800;color:#79c0ff;">${parentCount}</div>
-            <div style="font-size:0.65rem;color:#8b949e;margin-top:0.1rem;">👨‍👩‍👧 Familiares / Jugadores</div>
-        </div>
-        <div style="background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.1);border-radius:9px;padding:0.7rem;text-align:center;">
-            <div style="font-size:1.3rem;font-weight:800;color:#ffa500;">${totalPending}</div>
-            <div style="font-size:0.65rem;color:#8b949e;margin-top:0.1rem;">⏳ Pendientes</div>
-        </div>
-        <div style="background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.1);border-radius:9px;padding:0.7rem;text-align:center;">
-            <div style="font-size:1.3rem;font-weight:800;color:#ff5858;">${blockedParents.length}</div>
-            <div style="font-size:0.65rem;color:#8b949e;margin-top:0.1rem;">🔒 Bloqueados</div>
-        </div>
-    </div>`;
+    // ⚠️ v684 · `statsHTML` SE MONTA AL FINAL, no aquí. Necesita `coachCount`
+    //    y `parentCount`, y desde la v684 esos dos se derivan de las FILAS que
+    //    el panel pinta, que todavía no existen a esta altura del fichero.
 
     // ── Section: Solicitudes enviadas al SA (transparencia) ───────
     let saForwardHTML = '';
@@ -933,7 +904,12 @@ async function openIndividualAdminPanel(mantenerSeccion = false) {
 
     const _esFilaEntrenador = (f) => _IND_COACH.has((f._activeRoleData || {}).role || f.role);
 
-    const _fichaEquipo = (eq) => {
+    // 🔢 v684 · LAS FILAS DE UN EQUIPO, EN UNA SOLA FUNCIÓN. Esto vivía dentro
+    //    de `_fichaEquipo`, así que la única manera de saber quién sale en la
+    //    ficha era pintarla. El cuadro de cifras de arriba tenía por eso su
+    //    propia idea de quién entrena aquí — y era otra. Ahora las dos leen
+    //    esta lista.
+    const _filasDeEquipo = (eq) => {
         const filas = _filasIndice(eq.catId, eq.sub);
         if (!filas.some(f => (f._id || f.uid) === uid)) {
             filas.unshift(_yoComoFila({
@@ -941,6 +917,11 @@ async function openIndividualAdminPanel(mantenerSeccion = false) {
                 category: eq.catId, subcategory: eq.sub,
             }));
         }
+        return filas;
+    };
+
+    const _fichaEquipo = (eq) => {
+        const filas = _filasDeEquipo(eq);
         const entrenadores = filas.filter(_esFilaEntrenador);
         const familias     = filas.filter(f => !_esFilaEntrenador(f));
 
@@ -1017,11 +998,127 @@ async function openIndividualAdminPanel(mantenerSeccion = false) {
           </div>
         </div>` : '';
 
+    // ════════════════════════════════════════════════════════════════
+    //  🔢🔢 v684 · EL CUADRO DECÍA "0 ENTRENADORES" CON EL ENTRENADOR DEBAJO
+    //
+    //  Encargo del autor (implementar.txt, capturas 10226-10227): la tarjeta
+    //  ⚽ Entrenadores marcaba 0 mientras la ficha de Regional A, dos
+    //  centímetros más abajo, listaba ENTRENADOR 1 — él mismo.
+    //
+    //  🔑 NO ERA UN CERO DE MÁS: ERAN DOS REGLAS DE "QUIÉN ENTRENA AQUÍ".
+    //  El contador preguntaba `_tieneAqui(u, ['user','entrenador_individual'])`
+    //  sobre `parents` (lo que devuelve Firestore). Las fichas preguntan
+    //  `_IND_COACH`, que desde la v602 SÍ incluye 'individual' y
+    //  'admin_individual' porque el Entrenador Administrador ES el entrenador
+    //  de sus equipos (unificación de la v599). El contador se quedó con el
+    //  modelo viejo —el administrador gestiona, no entrena— y nadie lo movió.
+    //  Dos defectos de un tiro, además: el dueño puede NO ESTAR en `parents`
+    //  (por eso `_yoComoFila` existe), así que ni con el rol correcto en la
+    //  lista de nombres habría contado siempre.
+    //
+    //  👉 LA CORRECCIÓN NO ES AÑADIR SU ROL A LA LISTA. Eso deja las dos
+    //  reglas vivas y vuelven a divergir a la siguiente (la lección de v683:
+    //  el panel de familias era una copia divergida de la regla buena). Se
+    //  cuenta sobre LAS MISMAS FILAS que se pintan: fichas de equipo + "Otros
+    //  usuarios del ente". Si el desglose enseña a alguien, arriba se suma.
+    //
+    //  ⚠️⚠️ v685 · PLAZAS, NO PERSONAS — Y ES UNA DECISIÓN DEL AUTOR, NO UN
+    //  DETALLE. La v684 deduplicaba por persona: con sus dos equipos (Regional
+    //  A · F11 y Prebenjamín A · F7) la tarjeta ponía 1, porque el entrenador
+    //  es el mismo. Él lo pidió al revés dos veces seguidas —"la suma real de
+    //  entrenadores de sus equipos" (v684) y "debe reflejar el total de
+    //  entrenadores/equipos activos (en este caso, 2)" (v685)— y tiene razón
+    //  en lo que importa: la tarjeta se lee CONTRA el badge del tablero, que
+    //  cuenta equipos. Un 2 arriba y un 1 abajo es la incoherencia que se ve.
+    //
+    //  🔑 ASÍ QUE SE CUENTA LO MISMO QUE CUENTA EL BADGE: una plaza por
+    //  equipo. La clave de deduplicación es persona+categoría+subcategoría, no
+    //  la persona: la misma persona en dos equipos son dos plazas, y la misma
+    //  plaza repetida (que no debería llegar) sigue contando una vez.
+    //
+    //  ⚠️ Y LOS PENDIENTES SIGUEN SIN CONTAR AQUÍ. Tienen su propia tarjeta
+    //  (⏳ Pendientes) y su ⏳ en la fila: sumarlos en las dos los contaría dos
+    //  veces y borraría la diferencia entre "está" y "lo he pedido".
+    // ════════════════════════════════════════════════════════════════
+    const _filasDelPanel = _misEquiposNorm
+        .reduce((acc, eq) => acc.concat(_filasDeEquipo(eq)), [])
+        .concat(_filasHuerfanas);
+
+    // El dueño cuenta siempre: está usando el panel, y su fila puede venir de
+    // `_yoComoFila` (fabricada, sin estado en `parents`).
+    const _filaCuenta = (f) => {
+        if ((f._id || f.uid) === uid) return true;
+        const r = f._activeRoleData || {};
+        const aut = (r.isAuthorized !== undefined) ? r.isAuthorized : f.isAuthorized;
+        const est = r.status || f.status;
+        return aut !== false && est === 'active';
+    };
+    const _rolDeFila  = (f) => (f._activeRoleData || {}).role || f.role;
+    // Una PLAZA = persona + equipo. Dos equipos de la misma persona son dos.
+    const _plazasQueCuentan = (pred) => {
+        const vistas = new Set();
+        _filasDelPanel.forEach(f => {
+            if (!_filaCuenta(f) || !pred(f)) return;
+            const r = f._activeRoleData || {};
+            vistas.add(String(f._id || f.uid || f.email || '') + '|' +
+                       String(r.category || '').toLowerCase() + '|' +
+                       String(r.subcategory || '').toUpperCase());
+        });
+        return vistas.size;
+    };
+    const coachCount  = _plazasQueCuentan(_esFilaEntrenador);
+    const parentCount = _plazasQueCuentan(f => _IND_PARENT.has(_rolDeFila(f)));
+
+    // ── Stats cards ───────────────────────────────────────────────
+    const statsHTML = `
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:0.6rem;margin-bottom:1.5rem;">
+        <div style="background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.1);border-radius:9px;padding:0.7rem;text-align:center;">
+            <div style="font-size:1.3rem;font-weight:800;color:#3fb950;">${coachCount}</div>
+            <div style="font-size:0.65rem;color:#8b949e;margin-top:0.1rem;">⚽ Entrenadores</div>
+        </div>
+        <div style="background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.1);border-radius:9px;padding:0.7rem;text-align:center;">
+            <div style="font-size:1.3rem;font-weight:800;color:#79c0ff;">${parentCount}</div>
+            <div style="font-size:0.65rem;color:#8b949e;margin-top:0.1rem;">👨‍👩‍👧 Familiares / Jugadores</div>
+        </div>
+        <div style="background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.1);border-radius:9px;padding:0.7rem;text-align:center;">
+            <div style="font-size:1.3rem;font-weight:800;color:#ffa500;">${totalPending}</div>
+            <div style="font-size:0.65rem;color:#8b949e;margin-top:0.1rem;">⏳ Pendientes</div>
+        </div>
+        <div style="background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.1);border-radius:9px;padding:0.7rem;text-align:center;">
+            <div style="font-size:1.3rem;font-weight:800;color:#ff5858;">${blockedParents.length}</div>
+            <div style="font-size:0.65rem;color:#8b949e;margin-top:0.1rem;">🔒 Bloqueados</div>
+        </div>
+    </div>`;
+
+    // ⏳ v685 · LA FICHA DEL EQUIPO QUE ESPERA. Se pinta con la misma forma que
+    //    las otras para que se reconozca como equipo suyo, pero en ámbar y
+    //    diciendo en palabras por qué todavía no puede usarlo. Un equipo que
+    //    simplemente no apareciera sería indistinguible de un fallo al guardar
+    //    (la doctrina de v598: nada mudo).
+    const _fichaEquipoPendiente = (eq) => `
+        <div class="sa-card" style="margin-bottom:0.7rem;border-color:rgba(255,165,0,0.35);
+                                    background:rgba(255,165,0,0.04);">
+          <div class="sa-card-title" style="margin-bottom:0.4rem;">
+            <span>⏳ ${_eH(eq.label)}</span>
+            ${eq.mod ? '<span class="sa-badge" style="background:rgba(255,165,0,0.15);color:#ffa500;">'
+                       + _eH(_MOD_LBL[eq.mod] || eq.mod) + '</span>' : ''}
+            <span class="sa-badge" style="background:rgba(255,165,0,0.15);color:#ffa500;">Pendiente</span>
+          </div>
+          <div style="font-size:0.75rem;color:var(--text-muted);line-height:1.5;">
+            Has solicitado este equipo y <strong>el SuperAdmin todavía no lo ha aprobado</strong>.
+            Mientras tanto no aparece para crear partidos, en el cuadrante ni en la plantilla,
+            y no cuenta en el resumen de arriba. En cuanto lo apruebe, pasará a ser tuyo.
+          </div>
+        </div>`;
+
     const _secMiEquipo =
         statsHTML +
         _secMisEquipos +
         (_misEquiposNorm.length
             ? '<div style="margin-top:1rem;">' + _misEquiposNorm.map(_fichaEquipo).join('') + '</div>'
+            : '') +
+        (_misEquiposPendNorm.length
+            ? '<div style="margin-top:0.7rem;">' + _misEquiposPendNorm.map(_fichaEquipoPendiente).join('') + '</div>'
             : '') +
         (_secOtros ? '<div style="margin-top:0.6rem;">' + _secOtros + '</div>' : '');
 

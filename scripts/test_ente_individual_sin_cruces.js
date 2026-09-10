@@ -201,11 +201,28 @@ console.log('\n── E · el panel del ADMINISTRADOR DEL ENTE tampoco cruza (v5
     const cuerpo = IND.slice(i, i + 1800);
     ok('E2 · acepta el id del ente Y el uid del admin (hay altas antiguas con el uid)',
        /_queryId/.test(cuerpo) && /uid !== _queryId/.test(cuerpo));
-    ok('E3 · 🔑🔑🔑 los contadores sólo miran las plazas ancladas a este ente',
-       /const _rolesAqui[\s\S]{0,200}\.filter\(_delEsteEnte\)/.test(cuerpo) &&
-       /coachCount\s*=\s*activeParents\.filter\(u => _tieneAqui\(u, \['user', 'entrenador_individual'\]\)\)/.test(IND));
-    ok('E4 · y el padre igual',
-       /parentCount\s*=\s*activeParents\.filter\(u => _tieneAqui\(u, \['parent', 'parent_individual'\]\)\)/.test(IND));
+    // ══════════════════════════════════════════════════════════════════
+    //  🔢 v684 · E3/E4 MIRAN A OTRO SITIO, Y VIGILAN LO MISMO.
+    //
+    //  Estas dos exigían literalmente `activeParents.filter(u => _tieneAqui(…))`.
+    //  Esa pareja ya no existe: contaba sobre `parents` mientras las fichas de
+    //  equipo pintaban otra lista, y por eso el cuadro decía "0 Entrenadores"
+    //  con el entrenador listado debajo (capturas 10226-10227). Ahora los dos
+    //  contadores se derivan de `_filasDelPanel` — las filas que el panel pinta.
+    //
+    //  🔑 EL AISLAMIENTO DE v584 NO SE HA PERDIDO: SE HA MOVIDO AGUAS ARRIBA.
+    //  Esas filas salen del índice, que se construye con `sortedUsers`, y
+    //  `sortedUsers` sólo expande las plazas que pasan `_delEsteEnte` (E5). O
+    //  sea: una plaza de club no llega a las fichas, así que tampoco al
+    //  contador. Se comprueba justo eso — que el contador bebe de la lista
+    //  filtrada y no vuelve a `parents`, que es la lista SIN filtrar.
+    // ══════════════════════════════════════════════════════════════════
+    ok('E3 · 🔑🔑🔑 los contadores beben de las filas del panel, ya filtradas por ente',
+       /const _filasDelPanel = _misEquiposNorm[\s\S]{0,200}\.concat\(_filasHuerfanas\)/.test(IND) &&
+       /coachCount\s*=\s*_plazasQueCuentan\(_esFilaEntrenador\)/.test(IND));
+    ok('E4 · 🚨 y NINGUNO vuelve a contar sobre `parents`, que es la lista sin filtrar',
+       /parentCount\s*=\s*_plazasQueCuentan\(/.test(IND) &&
+       !/(coach|parent)Count\s*=\s*(active)?[Pp]arents\./.test(IND));
     ok('E5 · 🔑🔑🔑 el árbol sólo expande las plazas de este ente',
        /const _propias = uniqueRoles\.filter\(_delEsteEnte\);/.test(IND) &&
        /const rolesToExpand = _propias\.length \? _propias : uniqueRoles;/.test(IND));
