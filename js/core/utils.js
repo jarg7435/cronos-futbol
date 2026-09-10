@@ -476,6 +476,225 @@ if (typeof window.cronosEquiposDeEntrenador !== 'function') {
 }
 
 // ════════════════════════════════════════════════════════════════════
+//  👨‍👩‍👧 v688 · LA SOLICITUD DE ALTA DEL ENTE DECIDE SOBRE SU PLAZA, NO SOBRE
+//             LA CUENTA
+//
+//  Reporte del autor (implementar.txt + capturas 10254-10256). Probó a darse
+//  de alta como Familiar en su propio ente con SU correo de administrador.
+//  MEDIDO en producción (`inspect_roles_por_email.js`, 2026-09-10):
+//
+//      RAÍZ  role=parent  status=rejected  isAuthorized=false
+//      [0] individual regional/A   ✅   [1] individual prebenjamin/A ✅
+//      [3] parent     SIN categoría ✅
+//
+//  Un administrador ACTIVO, con sus dos equipos vivos, echado de la app.
+//  Tres decisiones escribían en la RAÍZ como si la cuenta fuera sólo esa
+//  solicitud:
+//    · el ✕ del ente (`indRejectRequest`) y el Rechazar del SuperAdmin →
+//      `status:'rejected'` en la raíz, aunque fuera un DUPLICADO;
+//    · el reenvío (`indForwardToSA`) → `status:'pending_sa'` en la raíz;
+//    · la aprobación del SuperAdmin → `role: 'parent'` en la raíz.
+//
+//  🔑 LA UNIDAD ES LA PLAZA (v540). Estas funciones reciben el documento del
+//  usuario y la solicitud y devuelven QUÉ HAY QUE ESCRIBIR — puras, para que
+//  el guard las EJECUTE. La raíz sólo se toca cuando la cuenta ES esa
+//  solicitud: un alta nueva sin ninguna otra plaza viva.
+//
+//  Y la plaza del familiar nacía SIN EQUIPO: ver `equipo()` y el alta en
+//  auth.js.
+// ════════════════════════════════════════════════════════════════════
+if (typeof window.cronosAltaEnte !== 'object' || !window.cronosAltaEnte) {
+    window.cronosAltaEnte = (function () {
+        const PEND = ['pending_individual', 'pending_sa', 'pending', 'pending_club_admin'];
+        const ente  = (x) => String((x && (x.clubId || x.individualEntityId || x.individualOwnerId)) || '');
+        const enteReq = (q) => String((q && (q.individualOwnerId || q.clubId)) || '');
+        const viva  = (r) => !!r && r.isAuthorized === true && r.status === 'active';
+        const muerta = (r) => !r || r.status === 'removed' || r.status === 'rejected';
+        const raizViva = (u) => !!u && u.isAuthorized === true && u.status === 'active';
+        const normCat = (c) => String(c || '').trim().toLowerCase().replace(/_[abc]$/, '');
+        const normSub = (c, s) => {
+            let sub = String(s || '').trim().toUpperCase();
+            if (!sub) { const m = String(c || '').match(/_([abc])$/i); if (m) sub = m[1].toUpperCase(); }
+            return sub;
+        };
+        const etiqueta = (c, s) => (typeof window.cronosNombreCategoria === 'function')
+            ? window.cronosNombreCategoria(c, s) : (c + (s ? ' ' + s : ''));
+        const conEquipo = (rol) => (window.CRONOS_ROLES_CON_EQUIPO || ['user', 'coach']).indexOf(rol) >= 0;
+        // La categoría que ya trae la solicitud, si trae alguna.
+        const catDe = (q) => {
+            const c = q && (q.requestedCategory || q.category);
+            if (!c) return null;
+            return { category: normCat(c),
+                     subcategory: normSub(c, q.requestedSubcategory || q.requestedSubcat || q.subcategory) };
+        };
+
+        // ¿Esta entrada de allRoles es la plaza que pide la solicitud?
+        // Rol + ente; y para quien lleva equipo, además el equipo si se sabe.
+        function esSuPlaza(r, q) {
+            if (!r || !q || r.role !== q.requestedRole) return false;
+            if (ente(r) !== enteReq(q)) return false;
+            const cq = catDe(q);
+            if (cq && r.category && conEquipo(r.role) && typeof window.cronosMismaPlaza === 'function') {
+                return window.cronosMismaPlaza(
+                    { role: r.role, clubId: enteReq(q), category: normCat(r.category), subcategory: normSub(r.category, r.subcategory) },
+                    { role: r.role, clubId: enteReq(q), category: cq.category, subcategory: cq.subcategory });
+            }
+            return true;
+        }
+
+        // Los equipos del ente, sin repetir, a partir del allRoles de su admin.
+        function equiposDelEnte(allRolesAdmin, enteId) {
+            const lista = (typeof window.cronosEquiposDeEntrenador === 'function')
+                ? window.cronosEquiposDeEntrenador(allRolesAdmin, enteId) : [];
+            const vistos = new Set(), out = [];
+            lista.forEach(e => {
+                const category = normCat(e.category), subcategory = normSub(e.category, e.subcategory);
+                const k = category + '|' + subcategory;
+                if (vistos.has(k)) return; vistos.add(k);
+                out.push({ category, subcategory, modalidad: e.modalidad, etiqueta: etiqueta(category, subcategory) });
+            });
+            return out;
+        }
+
+        // ── A QUÉ EQUIPO VA EL ALTA — sin adivinar ────────────────────────
+        //  1. la categoría que ya traiga, si es un equipo del ente;
+        //  2. la modalidad que eligió en el formulario (F7/F11) → el equipo
+        //     de esa modalidad, que es único por la regla de v537;
+        //  3. si el ente tiene UN solo equipo, ése;
+        //  4. si no, { elegir } y lo decide el administrador. NUNCA se
+        //     reenvía sin equipo: eso era la bandeja "Sin categoría".
+        function equipo(q, plaza, equipos) {
+            const eqs = Array.isArray(equipos) ? equipos : [];
+            const cq = catDe(q) || (plaza && plaza.category
+                ? { category: normCat(plaza.category), subcategory: normSub(plaza.category, plaza.subcategory) } : null);
+            if (cq) {
+                if (!eqs.length) return { category: cq.category, subcategory: cq.subcategory, via: 'solicitud' };
+                const casa = eqs.filter(e => e.category === cq.category && e.subcategory === cq.subcategory)[0];
+                if (casa) return { category: casa.category, subcategory: casa.subcategory, via: 'solicitud' };
+            }
+            const mod = (q && q.requestedModality) || (plaza && plaza.requestedModality) || '';
+            if (mod) {
+                const deMod = eqs.filter(e => e.modalidad === mod);
+                if (deMod.length === 1) return { category: deMod[0].category, subcategory: deMod[0].subcategory, via: 'modalidad' };
+                if (deMod.length > 1) return { elegir: deMod };
+            }
+            if (eqs.length === 1) return { category: eqs[0].category, subcategory: eqs[0].subcategory, via: 'unico' };
+            if (eqs.length > 1) return { elegir: eqs };
+            return { ninguno: true };
+        }
+
+        // Coloca el equipo en la plaza de la solicitud y quita los restos SIN
+        // equipo de esa misma plaza (los dejaban los reintentos del alta).
+        function _colocar(roles, q, eq, cambios) {
+            let objetivo = -1;
+            roles.forEach((r, i) => {
+                if (objetivo >= 0 || muerta(r) || !esSuPlaza(r, q)) return;
+                if (eq && r.category && (normCat(r.category) !== eq.category || normSub(r.category, r.subcategory) !== eq.subcategory)) return;
+                objetivo = i;
+            });
+            const out = [];
+            let plaza = null;
+            roles.forEach((r, i) => {
+                if (i === objetivo) {
+                    plaza = Object.assign({}, r, cambios);
+                    if (eq) Object.assign(plaza, { category: eq.category, subcategory: eq.subcategory,
+                                                   categoryLabel: etiqueta(eq.category, eq.subcategory) });
+                    out.push(plaza); return;
+                }
+                // Resto de la MISMA plaza, pendiente y sin equipo: sedimento.
+                if (objetivo >= 0 && !viva(r) && !muerta(r) && esSuPlaza(r, q) && !r.category) return;
+                out.push(r);
+            });
+            return { roles: out, plaza };
+        }
+
+        // ── REENVÍO DEL ENTE AL SUPERADMIN ──
+        //  `eq` es el equipo ya resuelto con `equipo()`.
+        function reenviar(userData, q, eq) {
+            const roles = (userData && Array.isArray(userData.allRoles)) ? userData.allRoles.slice() : [];
+            const cambios = {};
+            const col = _colocar(roles, q, eq, {});
+            if (col.plaza && col.plaza.status === 'pending_individual') col.plaza.status = 'pending_sa';
+            cambios.allRoles = col.roles;
+            // La raíz, sólo si la cuenta ES esta alta (nueva y pendiente).
+            if (!raizViva(userData) && userData && userData.status === 'pending_individual') {
+                cambios.status = 'pending_sa';
+            }
+            return cambios;
+        }
+
+        // ── APROBACIÓN DEL SUPERADMIN ──
+        function aprobar(userData, q, por, cuando) {
+            const u = userData || {};
+            const roles = Array.isArray(u.allRoles) ? u.allRoles.slice() : [];
+            const eq = catDe(q);
+            const col = _colocar(roles, q, eq, { isAuthorized: true, status: 'active' });
+            let out = col.roles, plaza = col.plaza;
+            if (!plaza) {
+                plaza = { role: q.requestedRole, clubId: enteReq(q), individualEntityId: enteReq(q),
+                          isAuthorized: true, status: 'active' };
+                if (eq) Object.assign(plaza, { category: eq.category, subcategory: eq.subcategory,
+                                               categoryLabel: etiqueta(eq.category, eq.subcategory) });
+                out = out.concat([plaza]);
+            }
+            const cambios = { allRoles: out };
+            const otrasVivas = out.filter(r => viva(r) && r !== plaza).length;
+            if (otrasVivas > 0) {
+                // Cuenta con otras plazas vivas: la raíz NO es de esta solicitud.
+                // Sólo se le devuelve el acceso si lo había perdido — nunca se
+                // le cambia el rol ni el equipo, ni se desbloquea a nadie.
+                if (!raizViva(u) && u.status !== 'blocked') {
+                    Object.assign(cambios, { isAuthorized: true, status: 'active',
+                                             authorizedAt: cuando, authorizedBy: por });
+                }
+            } else {
+                Object.assign(cambios, {
+                    isAuthorized: true, status: 'active', role: q.requestedRole,
+                    authorizedAt: cuando, authorizedBy: por,
+                    individualEntityId: enteReq(q) || u.individualEntityId || null,
+                    individualOwnerId:  enteReq(q) || u.individualOwnerId  || null,
+                });
+                if (eq) Object.assign(cambios, { category: eq.category, subcategory: eq.subcategory,
+                                                 categoryLabel: etiqueta(eq.category, eq.subcategory) });
+            }
+            return cambios;
+        }
+
+        // ── RETIRAR UNA SOLICITUD (✕ del ente, Rechazar del SuperAdmin) ──
+        //  `otraViva`: queda OTRA solicitud pendiente de esta misma plaza, o
+        //  sea que ésta era un duplicado → no se toca al usuario. Devuelve
+        //  null cuando no hay nada que escribir.
+        function retirar(userData, q, otraViva, por, cuando) {
+            if (otraViva) return null;
+            const u = userData || {};
+            const roles = Array.isArray(u.allRoles) ? u.allRoles : [];
+            // Se retira sólo lo PENDIENTE de esa plaza. Si la plaza ya está
+            // viva, la solicitud era un resto de un alta ya aprobada.
+            const out = roles.filter(r => !(r && esSuPlaza(r, q) && !viva(r) && !muerta(r)));
+            const cambios = {};
+            if (out.length !== roles.length) cambios.allRoles = out;
+            const quedanVivas = out.some(viva);
+            if (!quedanVivas && !raizViva(u) && PEND.indexOf(u.status) >= 0) {
+                Object.assign(cambios, { status: 'rejected', isAuthorized: false,
+                                         rejectedAt: cuando, rejectedBy: por });
+            }
+            return Object.keys(cambios).length ? cambios : null;
+        }
+
+        // ¿Es `otra` una solicitud VIVA de la misma plaza que `q`?
+        function mismaSolicitud(q, otra) {
+            if (!q || !otra || otra === q) return false;
+            if (PEND.indexOf(otra.status) < 0) return false;
+            if (String(otra.userUid || '') !== String(q.userUid || '')) return false;
+            if (otra.requestedRole !== q.requestedRole) return false;
+            return enteReq(otra) === enteReq(q);
+        }
+
+        return { esSuPlaza, equiposDelEnte, equipo, reenviar, aprobar, retirar, mismaSolicitud, viva, raizViva };
+    })();
+}
+
+// ════════════════════════════════════════════════════════════════════
 //  v541 · ¿SE PUEDE RECARGAR LA PÁGINA AHORA MISMO?
 //
 //  La app se actualiza sola cuando hay versión nueva (ver el bloque de la

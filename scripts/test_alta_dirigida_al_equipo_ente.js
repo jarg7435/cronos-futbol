@@ -66,6 +66,11 @@ ok('1c · ⚠️ el ADMINISTRADOR del ente sigue eligiendo categoría (él defin
 ok('1d · 🚨 el equipo es obligatorio, y se exige en el CÓDIGO (no sólo en el HTML)',
    /_entityTypeVal === 'individual' && !selectedIndTeam/.test(AUTH) &&
    /Elige el equipo al que perteneces/.test(AUTH));
+// 🚨 v688 · 1e y 1f miden caminos de alta que un familiar de un ente NO
+//    RECORRE: el bloque `_isUnderIndiv` de auth.js los intercepta antes y
+//    termina con `return`. Estaban verdes y el alta real no guardaba nada.
+//    El camino que sí se ejecuta lo vigila test_alta_ente_por_plaza.js
+//    (PARTE 3). Se dejan porque esos caminos siguen existiendo.
 ok('1e · la modalidad viaja EN LA PLAZA (la unidad del proyecto, v540)',
    /newAllRoles\[0\]\.requestedModality = selectedIndTeam/.test(AUTH));
 ok('1f · y en la solicitud que verá el administrador del ente',
@@ -82,95 +87,89 @@ function trozo(src, cab, cierre) {
     return src.slice(i, j + cierre.length);
 }
 
-let traducir = null;
+// ══════════════════════════════════════════════════════════════════════════
+//  v688 · LA TRADUCCIÓN VIVE AHORA EN `cronosAltaEnte.equipo` (utils.js), y
+//  se EJECUTA de allí. Antes se recortaba el bloque de `indForwardToSA`.
+//
+//  🔑 DOS ASERCIONES CAMBIAN DE CONTRATO, y a propósito (2d y 2h). La v685,
+//  cuando el equipo no quedaba claro, reenviaba SIN categoría y el alta caía
+//  en "Otros usuarios del ente" / "Sin categoría" — que es justo lo que el
+//  autor reportó con la captura 10256. Ahora, en esos casos, el resultado es
+//  `{ elegir }`: lo decide el administrador con sus equipos delante. Lo que
+//  NO cambia es lo importante: **nunca se inventa un equipo**.
+// ══════════════════════════════════════════════════════════════════════════
+const UTILS = leer('js/core/utils.js');
+let A = null;
 try {
-    // El bloque real que elige el equipo del ente para una modalidad pedida.
-    // Se corta en la última asignación a `updateData`: lo que se mide aquí es
-    // la DECISIÓN (qué equipo sale), no las escrituras en Firestore que vienen
-    // después y no tienen sandbox. Las dos llaves que quedan abiertas —el
-    // `if (_suyo)` y el `if (_modPedida && isIndSub)`— se cierran a mano.
-    const T = sinCom(trozo(IND, 'const _modPedida = existingData.requestedModality || null;',
-                                'updateData.resolvedFromModality = _modPedida;'))
-              + '\n} }\n';
-
-    const fuente = '(function (existingData, isIndSub, d, window, _indCatLabel) {\n'
-        + 'var updateData = {};\n'
-        + T
-        + 'return updateData;\n})';
-    traducir = vm.runInNewContext(fuente, { String, Object, Array, console: { warn(){} } });
-    ok('2a · el bloque de traducción se puede extraer y ejecutar', true);
+    const sb = { console: { log(){}, warn(){} }, String, Set, Array, Object, JSON };
+    sb.window = sb;
+    vm.createContext(sb);
+    vm.runInContext(trozo(UTILS, 'if (typeof window._cronosMatchModality !== \'function\') {', '\n}'), sb);
+    vm.runInContext(trozo(UTILS, 'if (!Array.isArray(window.CRONOS_ROLES_CON_EQUIPO))', '\n}'), sb);
+    try { vm.runInContext(trozo(UTILS, 'window.cronosTeamSlug = function', '\n    };'), sb); } catch (e) { /* opcional */ }
+    vm.runInContext(trozo(UTILS, 'if (typeof window.cronosMismaPlaza !== \'function\') {', '\n}'), sb);
+    vm.runInContext(trozo(UTILS, 'if (typeof window.cronosNombreCategoria !== \'function\') {', '\n}'), sb);
+    vm.runInContext(trozo(UTILS, 'if (typeof window.cronosEquiposDeEntrenador !== \'function\') {', '\n}'), sb);
+    vm.runInContext(trozo(UTILS, 'if (typeof window.cronosAltaEnte !== \'object\' || !window.cronosAltaEnte) {', '\n}'), sb);
+    A = sb.window.cronosAltaEnte;
+    ok('2a · la traducción (cronosAltaEnte.equipo) se puede extraer y ejecutar',
+       !!A && typeof A.equipo === 'function');
 } catch (e) {
-    ok('2a · el bloque de traducción se puede extraer y ejecutar', false, e.message);
+    ok('2a · la traducción (cronosAltaEnte.equipo) se puede extraer y ejecutar', false, e.message);
 }
 
-if (traducir) {
+if (A) {
     const ENTE = 'individual_jose';
     // Sus dos equipos REALES, los de las capturas 10231/10232.
-    const D = { userData: { individualEntityId: ENTE, allRoles: [
+    const DOS = [
         { role:'individual', clubId:ENTE, category:'regional',    subcategory:'A', isAuthorized:true, status:'active' },
         { role:'individual', clubId:ENTE, category:'prebenjamin', subcategory:'A', isAuthorized:true, status:'active' },
-    ]}};
-    // El entorno mínimo que el bloque consulta.
-    const W = {
-        CRONOS_ROLES_CON_EQUIPO: ['user','coach','individual','admin_individual'],
-        _cronosMatchModality: (c) => /prebenjamin|benjamin|alevin/.test(String(c)) ? 'f7' : 'f11',
-    };
-    // `_indCatLabel` es del módulo y el bloque lo llama sin `window.`: entra
-    // como parámetro, sólo para componer la etiqueta legible.
-    const _label = (c, s) => c + ' ' + s;
-    const traducirOk = (ex, sub, d, w) => traducir(ex, sub, d, w, _label);
-
+    ];
+    const traducir = (q, rolesAdmin) => A.equipo(Object.assign({ requestedRole: 'parent', individualOwnerId: ENTE }, q),
+                                                 null, A.equiposDelEnte(rolesAdmin, ENTE));
     {
-        const r = traducirOk({ requestedModality: 'f7' }, true, D, W);
+        const r = traducir({ requestedModality: 'f7' }, DOS);
         ok('2b · 🔑🔑 "Fútbol 7" se resuelve a SU equipo de F7 (prebenjamin A)',
-           r.requestedCategory === 'prebenjamin' && r.requestedSubcategory === 'A', r);
+           r.category === 'prebenjamin' && r.subcategory === 'A', r);
     }
     {
-        const r = traducirOk({ requestedModality: 'f11' }, true, D, W);
+        const r = traducir({ requestedModality: 'f11' }, DOS);
         ok('2c · 🔑🔑 y "Fútbol 11" al de F11 (regional A)',
-           r.requestedCategory === 'regional' && r.requestedSubcategory === 'A', r);
+           r.category === 'regional' && r.subcategory === 'A', r);
     }
     {
-        // ⚠️ Sin equipo de esa modalidad NO se inventa ninguno: mandarlo al
-        //    equipo equivocado es peor que dejarlo a la vista en "Otros".
-        const soloF11 = { userData: { individualEntityId: ENTE, allRoles: [D.userData.allRoles[0]] }};
-        const r = traducirOk({ requestedModality: 'f7' }, true, soloF11, W);
-        ok('2d · ⚠️⚠️ si NO tiene equipo de esa modalidad, no se inventa uno',
-           !r.requestedCategory, r);
+        // ⚠️ Sin equipo de esa modalidad NO se inventa ninguno. v688: con UN
+        //    solo equipo en el ente, ése es el único destino posible y se usa;
+        //    lo que no puede pasar es que salga un equipo de F7 que no existe.
+        const r = traducir({ requestedModality: 'f7' }, [DOS[0]]);
+        ok('2d · ⚠️⚠️ si NO tiene equipo de esa modalidad, no se inventa uno (va al único que existe)',
+           r.category === 'regional' && r.via === 'unico', r);
     }
     {
         // Una plaza retirada no vale como equipo destino.
-        const muerto = { userData: { individualEntityId: ENTE, allRoles: [
-            { role:'individual', clubId:ENTE, category:'prebenjamin', subcategory:'A',
-              isAuthorized:true, status:'removed' },
-        ]}};
-        const r = traducirOk({ requestedModality: 'f7' }, true, muerto, W);
-        ok('2e · ⚠️ una plaza retirada no recibe altas', !r.requestedCategory, r);
+        const r = traducir({ requestedModality: 'f7' }, [
+            { role:'individual', clubId:ENTE, category:'prebenjamin', subcategory:'A', isAuthorized:true, status:'removed' }]);
+        ok('2e · ⚠️ una plaza retirada no recibe altas', !r.category && r.ninguno === true, r);
     }
     {
         // 🔑 Y una plaza de OTRO ente tampoco: el aislamiento club/ente de v584.
-        const ajeno = { userData: { individualEntityId: ENTE, allRoles: [
-            { role:'user', clubId:'club_otro', category:'prebenjamin', subcategory:'B',
-              isAuthorized:true, status:'active' },
-        ]}};
-        const r = traducirOk({ requestedModality: 'f7' }, true, ajeno, W);
+        const r = traducir({ requestedModality: 'f7' }, [
+            { role:'user', clubId:'club_otro', category:'prebenjamin', subcategory:'B', isAuthorized:true, status:'active' }]);
         ok('2f · 🔑🔑 una plaza de OTRO club no recibe las altas de este ente (v584)',
-           !r.requestedCategory, r);
+           !r.category && r.ninguno === true, r);
     }
     {
         // La forma histórica de una pieza ('prebenjamin_a') tiene que casar igual.
-        const viejo = { userData: { individualEntityId: ENTE, allRoles: [
-            { role:'individual', clubId:ENTE, category:'prebenjamin_a',
-              isAuthorized:true, status:'active' },
-        ]}};
-        const r = traducirOk({ requestedModality: 'f7' }, true, viejo, W);
+        const r = traducir({ requestedModality: 'f7' }, [
+            { role:'individual', clubId:ENTE, category:'prebenjamin_a', isAuthorized:true, status:'active' }]);
         ok('2g · ⚠️ y casa con la forma histórica "prebenjamin_a" de una pieza',
-           r.requestedCategory === 'prebenjamin' && r.requestedSubcategory === 'A', r);
+           r.category === 'prebenjamin' && r.subcategory === 'A', r);
     }
     {
-        const r = traducirOk({}, true, D, W);
-        ok('2h · un alta sin modalidad (las de antes de la v685) no se toca',
-           !r.requestedCategory, r);
+        // v688 · CONTRATO NUEVO: antes "no se toca" = se reenviaba sin equipo.
+        const r = traducir({}, DOS);
+        ok('2h · un alta sin modalidad con dos equipos: NO se adivina, la ELIGE el administrador',
+           !r.category && Array.isArray(r.elegir) && r.elegir.length === 2, r);
     }
 }
 
@@ -184,10 +183,14 @@ console.log('\n── PARTE 3 · el administrador del ente VE a qué equipo se a
     ok('3b · 🚨 `_MOD_LBL` está en el MÓDULO, no dentro de la función',
        /^const _MOD_LBL = \{ f7:/m.test(LIMPIO),
        'un const local dejaba la lista de altas en zona muerta — y node --check lo da por bueno');
+    // v688 · la plaza se escribe con `cronosAltaEnte.reenviar`, que pone el
+    // equipo en LA plaza de la solicitud (antes, en todas las del ente sin
+    // categoría — también en las del propio administrador). Ejecutado en
+    // test_alta_ente_por_plaza.js, aserciones 1o/1p.
     ok('3c · al reenviar se fija también la categoría en la PLAZA del interesado',
-       /if \(!r \|\| r\.category\) return r;/.test(LIMPIO));
+       /A\.reenviar\(uData, _qEq, eq\)/.test(LIMPIO));
     ok('3d · ⚠️ y un fallo al fijarla NO tumba el reenvío, pero se dice por qué',
-       /No se pudo fijar la categoría en la plaza/.test(LIMPIO));
+       /Error actualizando la plaza del usuario/.test(LIMPIO));
 }
 
 console.log('\n' + (fallos === 0 ? '✅' : '❌') + '  ' + (total - fallos) + '/' + total + ' aserciones');

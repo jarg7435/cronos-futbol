@@ -28,6 +28,7 @@
       "usuarios_temp.json",
       "*.md",
       "**/*.bak",
+      "**/*.lnk",
       "**/*.exe",
       "**/*.bat",
       "**/*.cmd",

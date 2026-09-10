@@ -1297,6 +1297,17 @@ export async function checkAuthorization(user) {
         }
 
 
+        // ── CASO 3c: Rechazada ─────────────────────────────────
+        // v688 · Caía en el CASO 4 y decía "Acceso pendiente de aprobación"
+        // (captura 10255): nadie iba a aprobar nada, porque estaba RECHAZADA.
+        // Un mensaje que promete una espera que no llega es peor que un no.
+        if (data.status === 'rejected') {
+            await fa.signOut(fa.auth);
+            showAuthError('❌ Tu solicitud de acceso fue rechazada. ' +
+                          'Si crees que es un error, habla con el administrador de tu entidad.');
+            return;
+        }
+
         // ── CASO 4: Pendiente de aprobación ────────────────────
         if (!data.isAuthorized) {
             await fa.signOut(fa.auth);
@@ -2878,8 +2889,13 @@ export async function doAuth() {
                     }
                 }
 
-                const _cat      = document.getElementById('auth-category')?.value || null;
-                const _sub      = document.getElementById('auth-subcat')?.value || null;
+                // v688 · Bajo un ente el selector de categoría está OCULTO (se
+                // pregunta el equipo, `selectedIndTeam`), pero puede conservar un
+                // valor de antes de cambiar el tipo de entidad. Si hay equipo
+                // elegido, manda él: una categoría fantasma dejaría la plaza en
+                // un equipo que el ente no tiene.
+                const _cat      = selectedIndTeam ? null : (document.getElementById('auth-category')?.value || null);
+                const _sub      = selectedIndTeam ? null : (document.getElementById('auth-subcat')?.value || null);
                 const _catLbs   = {prebenjamin:'Prebenjamín',benjamin:'Benjamín',alevin:'Alevín',infantil:'Infantil',cadete:'Cadete',juvenil:'Juvenil',regional:'Regional',regional_fem:'Regional FEM',futurefem:'FUTureFEM'};
                 const _catLabel = _cat ? (_catLbs[_cat]||_cat)+(_sub?' '+_sub:'') : null;
                 const _disp     = (firstName && lastName) ? (firstName+' '+lastName).trim() : (firstName || email);
@@ -2887,9 +2903,37 @@ export async function doAuth() {
                 // 1. Crear/actualizar documento del sub-usuario
                 // Si isAddingRole → añadir rol a allRoles sin sobrescribir existentes
                 // CRITICAL: clubId = _entityId so the user is linked to the entity in SuperAdmin
+                // ══════════════════════════════════════════════════════════
+                //  ⚽🔴 v688 · ESTE ES EL ALTA QUE DE VERDAD SE EJECUTA
+                //
+                //  Reporte del autor (captura 10256): el familiar aprobado
+                //  caía en "Sin categoría/subcategoría asignada".
+                //
+                //  🔑🔑 La v685 cambió el formulario bajo un ente para
+                //  preguntar el EQUIPO (F7/F11, `auth-ind-team`) en vez de la
+                //  categoría… y guardó la respuesta en los caminos de alta de
+                //  MÁS ABAJO. Pero este bloque intercepta ANTES a todo
+                //  entrenador/familiar de un ente con administrador y termina
+                //  con `return`: aquéllos no se alcanzan. Aquí se leía
+                //  `auth-category`, que bajo un ente está OCULTO — o sea
+                //  vacío. La plaza y la solicitud nacían sin equipo y sin
+                //  modalidad, y así llegaban al SuperAdmin. Mismo patrón que
+                //  la v686: la rama tocada no era la que se ejecuta.
+                //
+                //  Ahora la modalidad viaja en la PLAZA y en la SOLICITUD, y
+                //  el administrador la traduce a su equipo al reenviar
+                //  (`cronosAltaEnte.equipo`).
+                // ══════════════════════════════════════════════════════════
+                const _modalidadAlta = selectedIndTeam || null;
                 const _newIndivRole = { role: _finalSubRole, clubId: _entityId, isAuthorized: false, status: 'pending_individual',
                              category: _cat, subcategory: _sub, categoryLabel: _catLabel, playerAlias: playerName || null,
-                             individualEntityId: _entityId };
+                             individualEntityId: _entityId, requestedModality: _modalidadAlta };
+
+                // Si ya hay una solicitud VIVA de esta misma plaza, no se crea
+                // otra: los reintentos del alta la duplicaban, y borrar "la que
+                // sobra" es justo lo que dejó al autor fuera (capturas
+                // 10254-10255). Se sabe tras escribir la plaza, más abajo.
+                let _solicitudViva = false;
 
                 if (isAddingRole) {
                     // Leer doc existente y añadir el nuevo rol
@@ -2898,9 +2942,48 @@ export async function doAuth() {
                     if (_existingSnap.exists()) {
                         _existingRoles = _existingSnap.data().allRoles || [];
                     }
-                    // Evitar duplicado
-                    if (!_existingRoles.some(r => r.role === _finalSubRole && (r.individualEntityId || null) === _entityId)) {
-                        _existingRoles.push(_newIndivRole);
+                    // ══════════════════════════════════════════════════════
+                    //  v688 · QUÉ HACER SI ESA PLAZA YA EXISTE
+                    //  · viva → ya es de este ente con ese rol: no se pide
+                    //    nada otra vez y no se crea solicitud;
+                    //  · pendiente → se le anota la modalidad elegida ahora;
+                    //  · retirada/rechazada → se sustituye por la nueva.
+                    //  Antes, cualquier entrada con ese rol y ente bastaba
+                    //  para no añadir la nueva — también una rechazada, y la
+                    //  persona se quedaba con una plaza muerta para siempre.
+                    // ══════════════════════════════════════════════════════
+                    const _esEsta = (r) => r && r.role === _finalSubRole &&
+                        String(r.individualEntityId || r.clubId || '') === String(_entityId);
+                    const _previa = _existingRoles.filter(r => _esEsta(r) && r.status !== 'removed' && r.status !== 'rejected')[0];
+                    if (_previa && _previa.isAuthorized === true && _previa.status === 'active') {
+                        await fa.signOut(fa.auth).catch(()=>{});
+                        window._addingRole = false; window._loginThisSession = false;
+                        switchTab('login');
+                        showAuthError('ℹ️ Esta cuenta ya es ' + (_finalSubRole === 'user' ? 'Entrenador' : 'Familiar / Jugador') +
+                                      ' de esta entidad y está activa. No hace falta volver a pedirlo: entra con tu correo y contraseña.');
+                        return;
+                    }
+                    if (_previa) {
+                        _existingRoles = _existingRoles.map(r => (r === _previa && _modalidadAlta)
+                            ? Object.assign({}, r, { requestedModality: _modalidadAlta }) : r);
+                    } else {
+                        _existingRoles = _existingRoles.filter(r => !_esEsta(r)).concat([_newIndivRole]);
+                    }
+                    // ¿Hay ya una solicitud pendiente de esta plaza? El propio
+                    // interesado puede leer las suyas (regla `userUid`).
+                    try {
+                        const _mias = await _m.getDocs(_m.query(_m.collection(fa.db, 'platform_requests'),
+                            _m.where('userUid', '==', cred.user.uid)));
+                        _mias.forEach(pd => {
+                            const p = pd.data() || {};
+                            if (['pending_individual', 'pending_sa'].indexOf(p.status) >= 0 &&
+                                p.requestedRole === _finalSubRole &&
+                                String(p.individualOwnerId || p.clubId || '') === String(_entityId)) _solicitudViva = true;
+                        });
+                    } catch (_eMias) {
+                        // Sin poder comprobarlo se crea: un duplicado se retira
+                        // sin daño desde v688; un alta perdida, no.
+                        console.warn('[Chronos] No se pudieron leer las solicitudes previas:', _eMias.message);
                     }
                     await _m.setDoc(_m.doc(fa.db, 'users', cred.user.uid), {
                         individualOwnerId: _entityId, individualOwnerEmail: _ownerEmail,
@@ -2919,6 +3002,7 @@ export async function doAuth() {
                         requestedRole: _finalSubRole, firstName: firstName||null, lastName: lastName||null,
                         displayName: _disp, category: _cat, subcategory: _sub, categoryLabel: _catLabel,
                         playerAlias: playerName || null,
+                        requestedModality: _modalidadAlta,
                         clubId: _entityId, clubName: null,
                         allRoles: [_newIndivRole],
                         createdAt: _m.serverTimestamp(),
@@ -2928,17 +3012,22 @@ export async function doAuth() {
 
                 // 2. Crear platform_request visible en panel Pendientes del individual
                 // individualOwnerId = ID de la ENTIDAD (para que el admin pueda buscar por entity)
-                const _prId = 'ind_reg_' + _entityId + '_' + cred.user.uid + '_' + Date.now().toString(36);
-                await _m.setDoc(_m.doc(fa.db, 'platform_requests', _prId), {
-                    type: 'ind_sub_registration', status: 'pending_individual',
-                    individualOwnerId: _entityId, individualOwnerEmail: _ownerEmail,
-                    userUid: cred.user.uid, userEmail: email, userName: _disp,
-                    requestedRole: _finalSubRole,
-                    requestedRoleLabel: _finalSubRole === 'user' ? 'Entrenador Individual' : 'Familiar / Jugador Individual',
-                    category: _cat, subcategory: _sub, categoryLabel: _catLabel,
-                    playerAlias: playerName || null,
-                    createdAt: new Date().toISOString(),
-                });
+                // v688 · salvo que ya haya una viva de esta plaza (ver arriba).
+                if (!_solicitudViva) {
+                    const _prId = 'ind_reg_' + _entityId + '_' + cred.user.uid + '_' + Date.now().toString(36);
+                    await _m.setDoc(_m.doc(fa.db, 'platform_requests', _prId), {
+                        type: 'ind_sub_registration', status: 'pending_individual',
+                        individualOwnerId: _entityId, individualOwnerEmail: _ownerEmail,
+                        userUid: cred.user.uid, userEmail: email, userName: _disp,
+                        requestedRole: _finalSubRole,
+                        requestedRoleLabel: _finalSubRole === 'user' ? 'Entrenador Individual' : 'Familiar / Jugador Individual',
+                        category: _cat, subcategory: _sub, categoryLabel: _catLabel,
+                        // ⚽ v688 · el equipo elegido (F7/F11). Lo traduce el ente al reenviar.
+                        requestedModality: _modalidadAlta,
+                        playerAlias: playerName || null,
+                        createdAt: new Date().toISOString(),
+                    });
+                }
 
                 await fa.signOut(fa.auth).catch(()=>{});
                 window._addingRole = false; window._loginThisSession = false;

@@ -559,7 +559,28 @@
                                 window.saRequests(); return;
                             }
                             await updateDoc(doc(db, 'platform_requests', reqId), { status: 'rejected', rejectedAt: new Date().toISOString() });
-                            if (r.userUid) await updateDoc(doc(db, 'users', r.userUid), { status: 'rejected' }).catch(function () {});
+                            // 🔴 v688 · Aquí se escribía `status:'rejected'` en la
+                            // RAÍZ del usuario, siempre: rechazar una solicitud —
+                            // aunque fuera un duplicado— dejaba fuera de la app a
+                            // quien ya estaba activo con otro rol. Ahora se retira
+                            // sólo su plaza pendiente, y la raíz únicamente cuando
+                            // la cuenta es esta alta y nada más
+                            // (`cronosAltaEnte.retirar`, utils.js).
+                            if (r.userUid && window.cronosAltaEnte) {
+                                try {
+                                    var uSnapRj = await getDoc(doc(db, 'users', r.userUid));
+                                    if (uSnapRj.exists()) {
+                                        var _otraViva = false;
+                                        var _hermRj = await getDocs(query(collection(db, 'platform_requests'),
+                                            where('userUid', '==', r.userUid)));
+                                        _hermRj.forEach(function (hd) {
+                                            if (hd.id !== reqId && window.cronosAltaEnte.mismaSolicitud(r, hd.data())) _otraViva = true;
+                                        });
+                                        var _cambRj = window.cronosAltaEnte.retirar(uSnapRj.data(), r, _otraViva, me, new Date().toISOString());
+                                        if (_cambRj) await updateDoc(doc(db, 'users', r.userUid), _cambRj);
+                                    }
+                                } catch (_eRj) { console.warn('[saExtApprove] No se pudo retirar la plaza:', _eRj && _eRj.message); }
+                            }
                             if (typeof showToast === 'function') showToast('✕ Rechazada', 3000);
                             window.saRequests(); return;
                         }
@@ -670,36 +691,47 @@
 
                         // ── individual sub-user registration: activate directly ──
                         } else if (r.type === 'ind_sub_registration' && r.userUid) {
+                            // ══════════════════════════════════════════════════
+                            //  🔴🔴 v688 · APROBAR UN ALTA NO CAMBIA QUIÉN ERES
+                            //
+                            //  Aquí se escribía `role: r.requestedRole` en la RAÍZ
+                            //  y se activaban TODAS las plazas con ese rol. Medido
+                            //  en producción (2026-09-10): el administrador del
+                            //  ente, que se dio de alta como Familiar con su propio
+                            //  correo, quedó con la raíz en `role:'parent'`. Y la
+                            //  categoría iba sólo a la raíz: la plaza —que es lo que
+                            //  pintan los paneles— seguía sin equipo, y de ahí
+                            //  "Sin categoría/subcategoría asignada" (captura 10256).
+                            //
+                            //  Ahora `cronosAltaEnte.aprobar` (utils.js) activa LA
+                            //  plaza de esta solicitud y le pone su equipo. La raíz
+                            //  sólo se reescribe si la cuenta no tiene ninguna otra
+                            //  plaza viva. Mismo criterio que ya tenía el aprobar de
+                            //  requests-tab.js («NO cambiar el rol principal si el
+                            //  usuario ya tiene otro rol activo»).
+                            // ══════════════════════════════════════════════════
                             var uSnapInd = await getDoc(doc(db,'users',r.userUid)).catch(()=>null);
                             if (uSnapInd && uSnapInd.exists()) {
-                                var uDataInd = uSnapInd.data();
-                                var updRolesInd = (uDataInd.allRoles||[]).map(function(rl) {
-                                    if (rl.role === r.requestedRole) {
-                                        return Object.assign({}, rl, { isAuthorized: true, status: 'active' });
-                                    }
-                                    return rl;
-                                });
-                                var indUpdateData = {
-                                    isAuthorized: true,
-                                    status: 'active',
-                                    allRoles: updRolesInd,
-                                    role: r.requestedRole || uDataInd.role,
-                                    authorizedAt: new Date().toISOString(),
-                                    authorizedBy: me,
-                                    // CRITICAL: preserve both individualEntityId and individualOwnerId
-                                    individualEntityId: r.individualOwnerId || uDataInd.individualEntityId || null,
-                                    individualOwnerId: r.individualOwnerId || uDataInd.individualOwnerId || null,
-                                };
-                                // Preserve category data from the request
-                                if (r.requestedCategory || r.category) {
-                                    indUpdateData.category = r.requestedCategory || r.category;
-                                    indUpdateData.categoryLabel = r.requestedCategoryLabel || r.categoryLabel || null;
-                                }
-                                if (r.requestedSubcat) {
-                                    indUpdateData.subcategory = r.requestedSubcat;
-                                }
-                                await updateDoc(doc(db,'users',r.userUid), indUpdateData);
+                                await updateDoc(doc(db,'users',r.userUid),
+                                    window.cronosAltaEnte.aprobar(uSnapInd.data(), r, me, new Date().toISOString()));
                             }
+                            // Las OTRAS solicitudes vivas de esa misma plaza (los
+                            // duplicados de reintentar el alta) se cierran: ya
+                            // no hay nada que decidir y, pendientes, invitaban a
+                            // "borrar la que sobra".
+                            try {
+                                var _hermanas = await getDocs(query(collection(db, 'platform_requests'),
+                                    where('userUid', '==', r.userUid)));
+                                var _cierres = [];
+                                _hermanas.forEach(function (hd) {
+                                    if (hd.id === reqId) return;
+                                    if (window.cronosAltaEnte.mismaSolicitud(r, hd.data())) {
+                                        _cierres.push(updateDoc(doc(db, 'platform_requests', hd.id),
+                                            { status: 'duplicate', closedBy: reqId, approvedAt: new Date().toISOString(), approvedBy: me }));
+                                    }
+                                });
+                                await Promise.all(_cierres);
+                            } catch (_eH) { console.warn('[saExtApprove] No se cerraron los duplicados:', _eH && _eH.message); }
                             await updateDoc(doc(db,'platform_requests',reqId), { status: approve ? 'sa_approved' : 'rejected', approvedAt: new Date().toISOString(), approvedBy: me }).catch(function(){});
                             if (typeof showToast === 'function') showToast(approve ? '✅ Sub-usuario individual activado' : '❌ Rechazada', 3000);
                             window.saRequests();
@@ -792,12 +824,11 @@
                         
                         // FIX: asegurar que allRoles también refleje isAuthorized:true o el estado rechazado
                         if (r.userUid) {
-                            if (!approve) {
-                                await updateDoc(doc(db, 'users', r.userUid), { status: 'rejected' }).catch(function(){});
-                                if (typeof showToast === 'function') showToast('✕ Solicitud rechazada', 3000);
-                                window.saRequests();
-                                return;
-                            }
+                            // v688 · Aquí había una rama `if (!approve)` que ponía
+                            // la raíz en 'rejected'. Era inalcanzable —todo
+                            // rechazo sale antes, en `if (!approve) {…return}`—
+                            // y se quita para que nadie la resucite: rechazar
+                            // decide sobre la PLAZA (cronosAltaEnte.retirar).
 
                             var finalSnap = await getDoc(doc(db, 'users', r.userUid)).catch(function(){ return null; });
                             if (finalSnap && finalSnap.exists()) {

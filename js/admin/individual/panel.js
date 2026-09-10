@@ -1541,13 +1541,68 @@ window.indForwardToSA = async function indForwardToSA(prId, userUid, role, email
     const roleLabel = isIndSub
         ? (role === 'user' ? 'Entrenador Individual' : 'Familiar / Jugador Individual')
         : (window.ROLE_META[role] || {}).label || role;
-    if (!confirm('¿Enviar solicitud al SuperAdmin para ' + email + '?\n\nRol: ' + roleLabel + (categoryLabel ? ' · ' + categoryLabel : '') + '\n\nEl SuperAdmin deberá aprobarla.')) return;
+    const A = window.cronosAltaEnte;
+    let _fs, existingData = {}, uData = null, eq = null;
+    try {
+        _fs = await saFS();
+        const { db, doc, getDoc } = _fs;
+        const prSnap = await getDoc(doc(db, 'platform_requests', prId)).catch(() => null);
+        existingData = prSnap && prSnap.exists() ? prSnap.data() : {};
+        const uSnap = userUid ? await getDoc(doc(db, 'users', userUid)).catch(() => null) : null;
+        uData = uSnap && uSnap.exists() ? uSnap.data() : null;
+    } catch (e) {
+        if (typeof _saToast === 'function') _saToast('❌ Error: ' + e.message, 4000);
+        return;
+    }
+    const _enteId = d.userData?.individualEntityId || d.userData?.clubId || '';
+    // La solicitud tal como se va a reenviar: el rol que decide el panel y el
+    // ente del administrador si el documento no lo traía.
+    const qReq = Object.assign({}, existingData, {
+        requestedRole: isIndSub ? role : (existingData.requestedRole || role),
+        individualOwnerId: existingData.individualOwnerId || _enteId,
+        userUid: existingData.userUid || userUid,
+    });
+
+    // ══════════════════════════════════════════════════════════════
+    //  ⚽⚽ v688 · NINGUNA ALTA SALE HACIA EL SUPERADMIN SIN EQUIPO
+    //
+    //  Reporte del autor (captura 10256): el familiar aprobado aparecía en
+    //  "Sin categoría/subcategoría asignada". La v685 traducía aquí la
+    //  modalidad (F7/F11) a su equipo… pero si la solicitud no traía
+    //  modalidad —y el alta real NO la guardaba, ver auth.js— se reenviaba
+    //  sin categoría y así se aprobaba.
+    //
+    //  🔑 Ahora el equipo se resuelve ANTES de confirmar (`cronosAltaEnte.
+    //  equipo`, utils.js): categoría que ya traiga → modalidad elegida →
+    //  el único equipo del ente → y si hay dos posibles, LO ELIGE EL
+    //  ADMINISTRADOR. Nunca se adivina y nunca se reenvía sin equipo.
+    //  Sólo para entrenador y familiar: coordinador y director no ocupan
+    //  equipo.
+    // ══════════════════════════════════════════════════════════════
+    if (isIndSub && A) {
+        const equipos = A.equiposDelEnte(d.userData?.allRoles || [], _enteId);
+        const plaza = (uData?.allRoles || []).filter(r => A.esSuPlaza(r, qReq)
+            && r.status !== 'removed' && r.status !== 'rejected')[0] || null;
+        let res = A.equipo(qReq, plaza, equipos);
+        if (res.ninguno) {
+            alert('⚠️ Tu entidad todavía no tiene ningún equipo activo.\n\n' +
+                  'Esta alta tiene que ir a un equipo concreto. Crea o solicita antes tu equipo ' +
+                  'y vuelve a reenviarla. No se ha enviado nada.');
+            return;
+        }
+        if (res.elegir) {
+            const elegido = await _indElegirEquipo(res.elegir, email, qReq.requestedModality || (plaza && plaza.requestedModality) || '');
+            if (!elegido) return;
+            res = { category: elegido.category, subcategory: elegido.subcategory, via: 'admin' };
+        }
+        eq = res;
+    }
+    const _eqLabel = eq ? _indCatLabel(eq.category, eq.subcategory) : (categoryLabel || '');
+    if (!confirm('¿Enviar solicitud al SuperAdmin para ' + email + '?\n\nRol: ' + roleLabel +
+                 (_eqLabel ? '\nEquipo: ' + _eqLabel : '') + '\n\nEl SuperAdmin deberá aprobarla.')) return;
     if (typeof _saShowSpinner === 'function') _saShowSpinner('Enviando al SuperAdmin…');
     try {
-        const { db, doc, updateDoc, getDoc } = await saFS();
-        // Read the existing platform_request to preserve all data
-        const prSnap = await getDoc(doc(db, 'platform_requests', prId)).catch(() => null);
-        const existingData = prSnap && prSnap.exists() ? prSnap.data() : {};
+        const { db, doc, updateDoc } = _fs;
 
         const updateData = {
             status:          'pending_sa',
@@ -1555,62 +1610,13 @@ window.indForwardToSA = async function indForwardToSA(prId, userUid, role, email
             forwardedBy:     me.uid,
             forwardedByEmail: me.email,
         };
-
-        // ══════════════════════════════════════════════════════════════
-        //  ⚽⚽ v685 · AQUÍ SE TRADUCE "FÚTBOL 7" A "PREBENJAMÍN A"
-        //
-        //  Encargo del autor (2026-09-10, punto 3): que las altas vayan
-        //  dirigidas a la subcategoría de F7 o a la de F11.
-        //
-        //  🔑 ESTE ES EL MOMENTO EN QUE SE PUEDE. Quien rellenó el alta no
-        //  tenía cuenta y sólo podía leer `clubs_public` (name/type/status),
-        //  así que eligió MODALIDAD. Aquí manda el administrador del ente, con
-        //  sus equipos delante: `_indData.userData.allRoles` los tiene.
-        //
-        //  ⚠️ SI NO TIENE EQUIPO DE ESA MODALIDAD, NO SE INVENTA NINGUNO. Se
-        //  reenvía sin categoría y el alta cae donde caía antes ("Otros
-        //  usuarios del ente"), con su ✏️ para colocarla. Rellenar a ojo la
-        //  metería en el equipo EQUIVOCADO, que es peor que dejarla a la vista.
-        // ══════════════════════════════════════════════════════════════
-        const _modPedida = existingData.requestedModality || null;
-        if (_modPedida && isIndSub) {
-            const _enteId = d.userData?.individualEntityId || d.userData?.clubId || '';
-            const _rolesEq = window.CRONOS_ROLES_CON_EQUIPO || ['user', 'coach', 'individual', 'admin_individual'];
-            const _mod = (c) => (typeof window._cronosMatchModality === 'function')
-                ? window._cronosMatchModality(c) : '';
-            const _suyo = (d.userData?.allRoles || []).filter(r =>
-                r && _rolesEq.indexOf(r.role) >= 0 && r.category &&
-                r.status !== 'removed' && r.isAuthorized !== false &&
-                String(r.clubId || r.individualEntityId || '') === String(_enteId) &&
-                _mod(r.category) === _modPedida)[0];
-            if (_suyo) {
-                // La misma normalización canónica del resto del panel (v627).
-                const _cat = String(_suyo.category || '').toLowerCase().replace(/_[abc]$/, '');
-                let _sub = String(_suyo.subcategory || '').toUpperCase();
-                if (!_sub) { const m = String(_suyo.category||'').match(/_([abc])$/i); if (m) _sub = m[1].toUpperCase(); }
-                updateData.requestedCategory    = _cat;
-                updateData.requestedSubcategory = _sub;
-                updateData.requestedCategoryLabel = _indCatLabel(_cat, _sub);
-                updateData.resolvedFromModality = _modPedida;
-                // Y la plaza del interesado, para que el panel lo pinte ya en
-                // su equipo en vez de en "Otros usuarios del ente".
-                try {
-                    const uSnap = await getDoc(doc(db, 'users', userUid)).catch(() => null);
-                    if (uSnap && uSnap.exists()) {
-                        const _rr = (uSnap.data().allRoles || []).map(r => {
-                            if (!r || r.category) return r;      // ya tiene equipo: no se toca
-                            if (String(r.clubId || r.individualEntityId || '') !== String(_enteId)) return r;
-                            return Object.assign({}, r, { category: _cat, subcategory: _sub });
-                        });
-                        await updateDoc(doc(db, 'users', userUid), { allRoles: _rr });
-                    }
-                } catch (eCat) {
-                    // No tumba el reenvío: la solicitud ya lleva la categoría y
-                    // el SuperAdmin la escribe al aprobar. Pero se dice por qué.
-                    console.warn('[indForwardToSA] No se pudo fijar la categoría en la plaza:', eCat.message);
-                }
-            } else {
-                console.warn('[indForwardToSA] Sin equipo de modalidad', _modPedida, '— se reenvía sin categoría.');
+        if (eq) {
+            updateData.requestedCategory      = eq.category;
+            updateData.requestedSubcategory   = eq.subcategory;
+            updateData.requestedCategoryLabel = _indCatLabel(eq.category, eq.subcategory);
+            if (eq.via === 'modalidad') {
+                updateData.resolvedFromModality = qReq.requestedModality
+                    || ((uData?.allRoles || []).filter(r => A.esSuPlaza(r, qReq))[0] || {}).requestedModality || null;
             }
         }
         // CRITICAL: Ensure requestedRole and requestedRoleLabel are correct for sub-users
@@ -1638,28 +1644,29 @@ window.indForwardToSA = async function indForwardToSA(prId, userUid, role, email
         }
 
         await updateDoc(doc(db, 'platform_requests', prId), updateData);
-        // CRITICAL FIX: También actualizar el estado del usuario a 'pending_sa'
-        // para que si intenta iniciar sesión, vea el mensaje correcto:
-        // "Tu solicitud fue reenviada al SuperAdmin. Espera la confirmación."
-        // en vez de "El Administrador Individual debe revisarla"
-        if (userUid) {
+        // ══════════════════════════════════════════════════════════════
+        //  🔴 v688 · LA PLAZA, NO LA CUENTA
+        //
+        //  Aquí se escribía `status:'pending_sa'` en la RAÍZ del usuario,
+        //  siempre. Si esa persona ya estaba activa con otro rol —el autor
+        //  probó con su propio correo de administrador—, el reenvío la
+        //  dejaba FUERA de la app hasta que el SuperAdmin contestara. Y el
+        //  equipo se ponía en todas las plazas sin categoría del ente,
+        //  incluidas las del propio administrador.
+        //
+        //  Ahora `cronosAltaEnte.reenviar` pone el equipo y el estado en LA
+        //  plaza de esta solicitud, y la raíz sólo pasa a `pending_sa` si la
+        //  cuenta es un alta nueva todavía pendiente.
+        // ══════════════════════════════════════════════════════════════
+        if (userUid && uData && A) {
             try {
-                const _userUpdateData = { status: 'pending_sa' };
-                // También asegurarse de que allRoles refleje el estado correcto
-                const _userSnap = await getDoc(doc(db, 'users', userUid)).catch(() => null);
-                if (_userSnap && _userSnap.exists()) {
-                    const _userData = _userSnap.data();
-                    const _updatedAllRoles = (_userData.allRoles || []).map(r => {
-                        if (r.role === role && r.status === 'pending_individual') {
-                            return { ...r, status: 'pending_sa' };
-                        }
-                        return r;
-                    });
-                    _userUpdateData.allRoles = _updatedAllRoles;
-                }
-                await updateDoc(doc(db, 'users', userUid), _userUpdateData);
+                const _qEq = eq ? Object.assign({}, qReq, { requestedCategory: eq.category,
+                                                            requestedSubcategory: eq.subcategory }) : qReq;
+                await updateDoc(doc(db, 'users', userUid), A.reenviar(uData, _qEq, eq));
             } catch (userUpdateErr) {
-                console.warn('[indForwardToSA] Error actualizando estado del usuario:', userUpdateErr.message);
+                // No tumba el reenvío: la solicitud ya lleva el equipo y el
+                // SuperAdmin lo escribe en la plaza al aprobar.
+                console.warn('[indForwardToSA] Error actualizando la plaza del usuario:', userUpdateErr.message);
             }
         }
         if (typeof _saHideSpinner === 'function') _saHideSpinner();
@@ -1672,13 +1679,90 @@ window.indForwardToSA = async function indForwardToSA(prId, userUid, role, email
     }
 };
 
+// ═══════════════════════════════════════════════════════════════════
+//  v688 · ¿A QUÉ EQUIPO VA ESTA ALTA? — lo decide el administrador
+//
+//  Sólo aparece cuando la solicitud no lo deja claro (ni categoría, ni una
+//  modalidad que case con UN equipo). Devuelve el equipo elegido o null si
+//  se cancela, y entonces no se reenvía nada.
+// ═══════════════════════════════════════════════════════════════════
+function _indElegirEquipo(equipos, email, modalidad) {
+    return new Promise(resolve => {
+        const ov = document.createElement('div');
+        ov.style.cssText = 'position:fixed;inset:0;z-index:2147482000;background:rgba(0,0,0,0.7);' +
+            'display:flex;align-items:center;justify-content:center;padding:1rem;';
+        // ⚠️ `_eH` es local de openIndividualAdminPanel: aquí, `_indEsc`.
+        const _mod = modalidad ? ' Pidió: <strong>' + _indEsc(_MOD_LBL[modalidad] || modalidad) + '</strong>.' : '';
+        ov.innerHTML = `<div style="background:#161b22;border:1px solid rgba(88,166,255,0.35);border-radius:12px;
+                padding:1.2rem;max-width:420px;width:100%;color:white;">
+            <div style="font-weight:700;font-size:0.95rem;margin-bottom:0.4rem;">⚽ ¿A qué equipo va esta alta?</div>
+            <div style="font-size:0.78rem;color:#8b949e;line-height:1.45;margin-bottom:0.9rem;">
+                <strong style="color:#c9d1d9;">${_indEsc(email || '')}</strong> no indica su equipo con claridad.${_mod}
+                Elige dónde colocarla: así el SuperAdmin la aprueba ya en su categoría.
+            </div>
+            <div data-eq style="display:flex;flex-direction:column;gap:0.45rem;"></div>
+            <button data-cancel class="sa-btn" style="margin-top:0.9rem;width:100%;color:#8b949e;">Cancelar</button>
+        </div>`;
+        const cerrar = (v) => { ov.remove(); resolve(v); };
+        const caja = ov.querySelector('[data-eq]');
+        equipos.forEach(e => {
+            const b = document.createElement('button');
+            b.className = 'sa-btn';
+            b.style.cssText = 'width:100%;text-align:left;color:#3fb950;border-color:rgba(63,185,80,0.3);' +
+                'background:rgba(63,185,80,0.08);font-size:0.85rem;padding:0.6rem 0.8rem;';
+            b.textContent = '⚽ ' + (e.etiqueta || _indCatLabel(e.category, e.subcategory)) +
+                (e.modalidad ? '  ·  ' + (_MOD_LBL[e.modalidad] || e.modalidad) : '');
+            b.onclick = () => cerrar(e);
+            caja.appendChild(b);
+        });
+        ov.querySelector('[data-cancel]').onclick = () => cerrar(null);
+        ov.addEventListener('click', (ev) => { if (ev.target === ov) cerrar(null); });
+        document.body.appendChild(ov);
+    });
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  🔴🔴 v688 · RETIRAR UNA SOLICITUD NO ECHA A NADIE DE LA APP
+//
+//  Reporte del autor (capturas 10254-10255): borró una de dos solicitudes
+//  DUPLICADAS de su propio correo y se quedó sin poder entrar —«Acceso
+//  pendiente de aprobación»— siendo el administrador ACTIVO del ente.
+//
+//  Aquí se escribía `{status:'rejected', isAuthorized:false}` en la RAÍZ
+//  del usuario, siempre: la raíz es la puerta de toda la cuenta, así que
+//  decir que no a UNA solicitud bloqueaba todos sus roles.
+//
+//  Ahora decide `cronosAltaEnte.retirar` (utils.js):
+//    · si queda OTRA solicitud viva de esa misma plaza, era un duplicado y
+//      el usuario no se toca;
+//    · si no, se retira sólo la plaza PENDIENTE de esta solicitud;
+//    · y la raíz sólo se rechaza cuando la cuenta ES esta alta: nueva, sin
+//      ninguna otra plaza viva.
+//  ⚠️ Si la solicitud no se puede leer, NO se toca al usuario: mejor dejar
+//  una plaza pendiente a la vista que cerrar una cuenta a ciegas.
+// ═══════════════════════════════════════════════════════════════════
 window.indRejectRequest = async function indRejectRequest(prId, userUid, email) {
     if (!confirm('¿Rechazar la solicitud de ' + (email || 'este usuario') + '?')) return;
     try {
-        const { db, doc, updateDoc, deleteDoc } = await saFS();
+        const { db, doc, getDoc, updateDoc, deleteDoc } = await saFS();
+        const A = window.cronosAltaEnte;
+        const d = window._indData || {};
+        const prSnap = prId ? await getDoc(doc(db, 'platform_requests', prId)).catch(() => null) : null;
+        const q = prSnap && prSnap.exists() ? prSnap.data() : null;
         if (prId) await deleteDoc(doc(db, 'platform_requests', prId)).catch(()=>{});
-        if (userUid) {
-            await updateDoc(doc(db, 'users', userUid), { status: 'rejected', isAuthorized: false }).catch(()=>{});
+        if (userUid && q && A) {
+            const otras = [].concat(d.pendingAutoReg || [], d.pendingSAForward || [])
+                .filter(o => o && o._prId !== prId);
+            const otraViva = otras.some(o => A.mismaSolicitud(Object.assign({ userUid }, q), o));
+            const uSnap = await getDoc(doc(db, 'users', userUid)).catch(() => null);
+            if (uSnap && uSnap.exists()) {
+                const cambios = A.retirar(uSnap.data(), Object.assign({ userUid }, q), otraViva,
+                    (window._cronosCurrentUser || {}).uid || 'individual', new Date().toISOString());
+                if (cambios) {
+                    await updateDoc(doc(db, 'users', userUid), cambios).catch(e =>
+                        console.warn('[indRejectRequest] No se pudo retirar la plaza:', e.message));
+                }
+            }
         }
         if (typeof _saToast === 'function') _saToast('✕ Solicitud rechazada', 3000);
         openIndividualAdminPanel(true);
