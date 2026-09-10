@@ -384,6 +384,30 @@ service cloud.firestore {
              || resource.data.get('approvedBySA', false) == true;
     }
 
+    // v687 · Lo UNICO que puede escribir el Administrador Individual en una
+    // solicitud de alta de su ente: el reenvio de indForwardToSA
+    // (js/admin/individual/panel.js). Quien lo invoca ya comprobo que es el
+    // admin del ente del documento; el porque de cada condicion esta en el
+    // `allow update` de platform_requests.
+    function esReenvioDelEnteAlSA() {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+               'status', 'forwardedAt', 'forwardedBy', 'forwardedByEmail',
+               'requestedCategory', 'requestedSubcategory', 'requestedCategoryLabel',
+               'resolvedFromModality', 'requestedRole', 'requestedRoleLabel',
+               'type', 'clubId', 'individualEntityId'
+             ])
+             && resource.data.get('status', '') == 'pending_individual'
+             && request.resource.data.get('status', '') == 'pending_sa'
+             && request.resource.data.get('type', '') == 'ind_sub_registration'
+             && request.resource.data.get('forwardedBy', null) == request.auth.uid
+             && (request.resource.data.get('clubId', null) == resource.data.get('clubId', null)
+                 || request.resource.data.get('clubId', null) == resource.data.get('individualOwnerId', null))
+             && (request.resource.data.get('individualEntityId', null) == resource.data.get('individualEntityId', null)
+                 || request.resource.data.get('individualEntityId', null) == resource.data.get('individualOwnerId', null))
+             && (request.resource.data.get('requestedRole', null) == resource.data.get('requestedRole', null)
+                 || request.resource.data.get('requestedRole', null) in ['user', 'parent']);
+    }
+
     // El usuario es el propietario del enlace padre→jugador
     function isLinkOwner() {
       return isAuth() && request.auth.uid == resource.data.get('parentUid', null);
@@ -995,8 +1019,38 @@ service cloud.firestore {
         isAdminOfClub(request.resource.data.get('clubId', null)) ||
         isIndividualAdmin(request.resource.data.get('individualOwnerId', null))
       );
+      // ══════════════════════════════════════════════════════════════
+      //  📤 v687 · EL ENTE INDIVIDUAL REENVIA SUS ALTAS AL SUPERADMIN
+      //
+      //  Reportado por el autor (capturas 10250-10251): «Reenviar al SA» en el
+      //  panel del Administrador Individual → "Missing or insufficient
+      //  permissions" en indForwardToSA, y la solicitud colgada.
+      //
+      //  🔑 LA RAMA DE ABAJO NO PODIA CUMPLIRSE NUNCA PARA UN ALTA DEL ENTE.
+      //  Pide `sameClubAsDoc(clubId)`, y las solicitudes `ind_sub_registration`
+      //  NO LLEVAN clubId: los cinco sitios que las crean (auth.js) escriben
+      //  `individualOwnerId` = el ente, y nada mas. Lo decia ya la nota del
+      //  `delete` de aqui debajo. Y a diferencia del club —cuyo reenvio CREA
+      //  una solicitud nueva (`fwd_…`, rama `isAdminOfClub` del create)— el
+      //  del ente ACTUALIZA la existente. Solo lo pasaba el SuperAdmin.
+      //
+      //  ⚠️ ACOTADA A LO QUE ESCRIBE EL REENVIO Y NADA MAS:
+      //   · quien lo hace es el ADMIN del ente del documento EXISTENTE
+      //     (`resource`, nunca el entrante): no se puede tocar la cola ajena;
+      //   · solo el salto `pending_individual` → `pending_sa`. El ente NO
+      //     aprueba: el visto bueno sigue siendo del SuperAdmin;
+      //   · `individualOwnerId` no esta en la lista: no se puede mudar la
+      //     solicitud a otro ente;
+      //   · `clubId` / `individualEntityId` solo pueden quedar como estaban o
+      //     apuntar al PROPIO ente —no se puede colgar de un club ajeno—;
+      //   · el rol solo puede quedar como estaba o ser de los dos del ente
+      //     (entrenador o familiar): no se sube a nadie a administrador;
+      //   · `forwardedBy` tiene que ser quien firma.
+      // ══════════════════════════════════════════════════════════════
       allow update: if isSuperAdmin() ||
-                       (isAuth() && sameClubAsDoc(resource.data.get('clubId', null)));
+                       (isAuth() && sameClubAsDoc(resource.data.get('clubId', null))) ||
+                       (isAdminOfClub(resource.data.get('individualOwnerId', null))
+                        && esReenvioDelEnteAlSA());
       // v474 · El administrador del club (o de la entidad individual) RETIRA
       // las solicitudes de registro de los suyos. Antes solo podia el
       // SuperAdmin, asi que al rechazar desde el Panel de Administrador de
