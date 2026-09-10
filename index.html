@@ -668,6 +668,51 @@
                 </select>
             </div>
 
+            <!-- ══════════════════════════════════════════════════════════════
+                 ⚽ v685 · EL EQUIPO, CUANDO EL ALTA ES BAJO UN ENTE INDIVIDUAL
+
+                 Encargo del autor (implementar.txt, 2026-09-10, punto 3):
+                 «configurar la recepción de altas para que los registros de
+                 padres/familiares vayan dirigidos a la subcategoría de Fútbol 7
+                 y las altas de jugadores correspondan a la de Fútbol 11».
+
+                 🔑 SE PREGUNTA POR MODALIDAD, NO POR NOMBRE DE CATEGORÍA, y no
+                 es un atajo: es lo único que se puede preguntar aquí. Este
+                 formulario lo rellena alguien SIN CUENTA todavía, así que sólo
+                 puede leer `clubs_public` — el espejo público que mantiene la
+                 Cloud Function `syncClubPublic`, y que expone exactamente tres
+                 campos: name, type y status. Los equipos del ente viven en
+                 `users/{admin}.allRoles`, que un anónimo no puede leer. Poner
+                 aquí "Regional A" obligaría a publicar los equipos en ese
+                 espejo, o sea a tocar y desplegar Cloud Functions.
+
+                 🔑 Y NO HACE FALTA: la regla del proyecto garantiza que un ente
+                 lleva como mucho DOS equipos y obligatoriamente uno de cada
+                 modalidad (`cronosPuedeLlevarEquipo`, v537/v598). Así que "el de
+                 Fútbol 7" identifica UN equipo sin ambigüedad posible. El ente
+                 lo traduce a su categoría real al reenviar la solicitud, que es
+                 el momento en que sus equipos SÍ se conocen.
+
+                 ⚠️ Sustituye al selector de 9 categorías × 3 grupos para este
+                 caso: de 27 combinaciones —26 de ellas imposibles— a las dos que
+                 existen. Es lo que llenaba "Otros usuarios del ente".
+                 ══════════════════════════════════════════════════════════════ -->
+            <div id="ind-team-container" style="display:none; margin-bottom:1rem;">
+                <label style="font-size:0.78rem; color:#3fb950; display:block; margin-bottom:5px;">⚽ Equipo al que perteneces *</label>
+                <select id="auth-ind-team"
+                    style="width:100%; padding:0.75rem; background:rgba(63,185,80,0.05);
+                           border:1px solid rgba(63,185,80,0.25); border-radius:8px;
+                           color:white; font-size:0.95rem; box-sizing:border-box; outline:none;">
+                    <option value="">-- Selecciona tu equipo --</option>
+                    <option value="f7">⚽ El equipo de Fútbol 7 de la entidad</option>
+                    <option value="f11">⚽ El equipo de Fútbol 11 de la entidad</option>
+                </select>
+                <div style="font-size:0.72rem; color:rgba(255,255,255,0.45); margin-top:4px; line-height:1.45;">
+                    Una entidad individual lleva como mucho dos equipos: uno de Fútbol 7 y otro de Fútbol 11.
+                    Elige el tuyo — el administrador confirmará la categoría exacta al aprobar tu alta.
+                </div>
+            </div>
+
             <!-- Selector de Tipo de Coordinador — RESPALDO (v593)
                  Desde v593 la modalidad se elige YA en el desplegable de rol
                  ("Coordinador de Fútbol 7", etc.), así que este selector queda

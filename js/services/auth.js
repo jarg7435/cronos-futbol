@@ -93,7 +93,8 @@ export async function switchTab(tab) {
     } else {
         // Modo login: ocultar todos los campos extra del registro
         ['club-container', 'new-club-container', 'individual-name-container',
-         'player-name-container', 'category-container', 'entity-type-container'].forEach(id => {
+         'player-name-container', 'category-container', 'entity-type-container',
+         'ind-team-container'].forEach(id => {
             const el = document.getElementById(id);
             if (el) el.style.display = 'none';
         });
@@ -479,8 +480,26 @@ export function handleRoleChange() {
     //  propio panel (decisión del autor, 2026-08-21), que es el mismo camino
     //  que ya recorre el entrenador de club.
     // ══════════════════════════════════════════════════════════════════
-    const needsCategory = ['user', 'parent', 'individual'].includes(role)
-                       || (isUnderIndividual && ['user', 'parent'].includes(role));
+    // ══════════════════════════════════════════════════════════════════
+    //  ⚽ v685 · BAJO UN ENTE SE PREGUNTA EL EQUIPO, NO LA CATEGORÍA
+    //
+    //  Encargo del autor (2026-09-10, punto 3). Quien se da de alta bajo un
+    //  ente elegía entre 9 categorías × 3 grupos = 27 combinaciones, de las
+    //  que como mucho DOS son equipos reales de ese ente. Las otras 25 no
+    //  fallaban: aterrizaban en "Otros usuarios del ente", a que alguien las
+    //  corrigiera a mano con ✏️.
+    //
+    //  ⚠️ EL ADMINISTRADOR DEL ENTE ('individual') SIGUE ELIGIENDO CATEGORÍA.
+    //  Él SÍ define equipos —es lo que hace posible el candado F7/F11 de la
+    //  v598, explicado justo aquí arriba—; los que cuelgan de él, no: se
+    //  apuntan a uno de los suyos.
+    // ══════════════════════════════════════════════════════════════════
+    const _bajoEnte     = isUnderIndividual && ['user', 'parent'].includes(role);
+    const needsCategory = !_bajoEnte && ['user', 'parent', 'individual'].includes(role);
+    const indTeamCont   = document.getElementById('ind-team-container');
+    if (indTeamCont) indTeamCont.style.display = _bajoEnte ? 'block' : 'none';
+    const indTeamEl = document.getElementById('auth-ind-team');
+    if (indTeamEl && !_bajoEnte) indTeamEl.value = '';
 
     const clubCont       = document.getElementById('club-container');
     const newClubCont    = document.getElementById('new-club-container');
@@ -2335,6 +2354,10 @@ export async function doAuth() {
         const requestedSlot    = selectedCategory
             ? (selectedSubcat ? `${selectedCategory}_${selectedSubcat}` : selectedCategory)
             : null;
+        // ⚽ v685 · La modalidad del equipo, cuando el alta es bajo un ente
+        //    individual ('f7' | 'f11'). Sustituye a categoría+subcategoría en
+        //    ese caso: ver el bloque largo de `ind-team-container` en index.html.
+        const selectedIndTeam  = document.getElementById('auth-ind-team')?.value || '';
 
         // ── Validaciones por rol ────────────────────────────────
         if (requestedRole === 'club_admin' && !newClubName && !selectedClubId) {
@@ -2351,6 +2374,12 @@ export async function doAuth() {
         const _entityTypeVal = document.getElementById('auth-entity-type')?.value || '';
         if (['user', 'parent'].includes(requestedRole) && _entityTypeVal === 'individual' && !selectedIndivId) {
             showAuthError('⚠️ Selecciona la entidad individual a la que perteneces.'); return;
+        }
+        // ⚽ v685 · Y el equipo, que es lo que dirige el alta a su sitio. Se
+        //    exige aquí y no sólo con `required` en el HTML: el atributo es
+        //    cosmético y se salta manipulando el DOM (la lección de v548).
+        if (['user', 'parent'].includes(requestedRole) && _entityTypeVal === 'individual' && !selectedIndTeam) {
+            showAuthError('⚠️ Elige el equipo al que perteneces (Fútbol 7 o Fútbol 11).'); return;
         }
         // Entrenador/Padre bajo club: deben seleccionar un club
         if (['user', 'parent'].includes(requestedRole) && _entityTypeVal === 'club' && !selectedClubId) {
@@ -2985,6 +3014,15 @@ export async function doAuth() {
                     newUserData.individualOwnerEmail = individualOwnerEmail || null;
                     newAllRoles[0].individualEntityId = selectedIndivId;
                     newAllRoles[0].status = isAuthorized ? 'active' : 'pending_individual';
+                    // ⚽ v685 · La modalidad del equipo que ha elegido. Viaja EN LA
+                    //    PLAZA, no suelta en la raíz, porque la unidad del proyecto
+                    //    es la plaza (v540) y es la plaza la que pertenece a un
+                    //    equipo. `indForwardToSA` la traduce a la categoría real
+                    //    del ente cuando el administrador reenvía el alta.
+                    if (selectedIndTeam) {
+                        newAllRoles[0].requestedModality = selectedIndTeam;
+                        newUserData.requestedModality    = selectedIndTeam;
+                    }
                 }
 
                 await fa.setDoc(fa.doc(fa.db, 'users', cred.user.uid), newUserData);
@@ -3024,6 +3062,10 @@ export async function doAuth() {
                         requestedName: (firstName && lastName) ? (firstName + ' ' + lastName) : '',
                         requestedRole: finalRole,
                         requestedRoleLabel: ROLE_LABELS[finalRole] || finalRole,
+                        // ⚽ v685 · El equipo pedido, por modalidad. Es lo que el
+                        //    administrador del ente ve en su lista de altas y lo
+                        //    que `indForwardToSA` traduce a su categoría real.
+                        requestedModality: selectedIndTeam || null,
                         userUid: cred.user.uid,
                         status: 'pending_individual',
                         createdAt: new Date().toISOString(),

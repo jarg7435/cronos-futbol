@@ -27,7 +27,10 @@ const ok = (nombre, cond, extra) => {
 };
 
 // ── Recorte del bloque real ─────────────────────────────────────────────────
-const ini = SRC.indexOf('    const _misEquiposNorm = _misEquipos.map(r => {');
+// ⚠️ v685 · El recorte empieza en `_normalizaEquipo`, no en `_misEquiposNorm`:
+//    la normalización se extrajo a su propia función para que la compartan los
+//    equipos activos y los que esperan al SuperAdmin.
+const ini = SRC.indexOf('    const _normalizaEquipo = (r) => {');
 const finMarca = '        (_secOtros ? \'<div style="margin-top:0.6rem;">\' + _secOtros + \'</div>\' : \'\');';
 const fin = SRC.indexOf(finMarca);
 if (ini < 0 || fin < 0) {
@@ -67,12 +70,27 @@ function correr(escenario) {
         sortedUsers: filas,
         _indIdx: { byCatSub, catHasAny: new Set(), subHasAny: new Set() },
         _IND_COACH: new Set(['user', 'entrenador_individual', 'individual', 'admin_individual']),
+        // 🔢 v684 · El bloque recortado ahora CUENTA además de pintar, y para
+        //    separar entrenadores de familias necesita las dos listas. Antes
+        //    sólo usaba `_IND_COACH`.
+        _IND_PARENT: new Set(['parent', 'parent_individual']),
         _MOD_LBL: { f7: 'Fútbol 7', f11: 'Fútbol 11' },
         _indModalidad: (c) => (/prebenjamin|benjamin|alevin/.test(String(c)) ? 'f7' : 'f11'),
         _indCatLabel: (c, s) => c + ' ' + s,
         _eH: (s) => String(s == null ? '' : s),
-        statsHTML: '<!--STATS-->',
+        // ⚠️ v684 · YA NO SE SIMULA `statsHTML`. El cuadro de cifras se declara
+        //    DENTRO del bloque recortado desde la v684 (necesita las filas que
+        //    el bloque construye), así que un `statsHTML` de sandbox quedaría
+        //    sombreado y este guard estaría midiendo un marcador muerto. Se
+        //    busca el cuadro REAL por su etiqueta.
         _secMisEquipos: '<!--GESTION-->',
+        // Las otras dos cifras del cuadro se calculan mucho más arriba, fuera
+        // del recorte: aquí sólo tienen que existir para que pinte.
+        totalPending: 0,
+        blockedParents: [],
+        // ⏳ v685 · Los equipos que esperan al SuperAdmin. El escenario por
+        //    defecto no tiene ninguno; la parte 15 los prueba aparte.
+        _misEquiposPend: escenario.pendientes || [],
         // La fila real ya tiene su guard; aquí sólo hace falta poder RECONOCERLA.
         _indRowHeaderHtml: () => '<!--HEAD-->',
         _indUserRowHtml: (u) => '<!--FILA:' + (u._id || u.uid) + ':'
@@ -126,10 +144,21 @@ console.log('── v602 · la sección "Mi Equipo", ejecutada ──');
 
     // 3 · 🔑 UNIFICAR NO ES BORRAR: las tres piezas siguen en la sección.
     ok('3 · 🔑 la sección lleva el resumen, la gestión y las fichas de equipo',
-        html.indexOf('<!--STATS-->') === 0
+        html.indexOf('⚽ Entrenadores') >= 0
+        && html.indexOf('⚽ Entrenadores') < html.indexOf('<!--GESTION-->')
         && html.includes('<!--GESTION-->')
         && html.includes('⚽ Entrenador')
         && html.includes('Familiares / Jugadores'));
+
+    // 3bis · 🔢 Y EL CUADRO DICE LO MISMO QUE LAS FICHAS. Que estas cifras
+    //     salgan del mismo bloque que pinta las filas es lo que corrigió la
+    //     v684: antes el cuadro contaba aparte y decía 0 entrenadores.
+    //     ⚠️ v685 · Y cuenta PLAZAS, no personas: el dueño lleva los dos
+    //     equipos de este escenario, así que son 2 — decisión del autor, para
+    //     que la cifra se lea contra el badge del tablero, que cuenta equipos.
+    ok('3bis · 🔢 el cuadro cuenta 2 (una plaza por equipo, aunque sea el mismo entrenador)',
+        />2<\/div><div[^>]*>⚽ Entrenadores/.test(html.replace(/\s*\n\s*/g, '')),
+        (html.replace(/\s*\n\s*/g, '').match(/>(\d+)<\/div><div[^>]*>⚽ Entrenadores/) || [])[1]);
 
     // 4 · 🔑🔑 EL DUEÑO APARECE COMO ENTRENADOR DE SUS DOS EQUIPOS. Ninguna
     //     de las filas de entrada era suya: si no se inyectara, sus dos equipos
@@ -173,7 +202,7 @@ console.log('── v602 · la sección "Mi Equipo", ejecutada ──');
     const s = correr({ misEquipos: [], filas: [fila('P1', 'parent', 'alevin', 'A')] });
     const html = s._secMiEquipo;
     ok('11 · ⚠️ sin equipos asignados sigue pintando resumen y gestión, sin romper',
-        html.includes('<!--STATS-->') && html.includes('<!--GESTION-->'));
+        html.includes('⚽ Entrenadores') && html.includes('<!--GESTION-->'));
     ok('12 · ⚠️ y el padre suelto no se pierde: cae en "Otros usuarios del ente"',
         html.includes('Otros usuarios del ente') && html.includes('<!--FILA:P1:parent-->'));
 }
@@ -189,6 +218,38 @@ console.log('── v602 · la sección "Mi Equipo", ejecutada ──');
         html.includes('Todavía no hay familias vinculadas a este equipo.'));
     ok('14 · ⚠️ y no inventa un bloque de "Otros" cuando no hay nadie suelto',
         !html.includes('Otros usuarios del ente'));
+}
+
+{
+    // ══════════════════════════════════════════════════════════════════
+    //  ⏳ v685 · UN EQUIPO ESPERANDO AL SUPERADMIN
+    //
+    //  Encargo del autor (2026-09-10, punto 4): el ente ya no se autoconcede
+    //  el segundo equipo. Mientras espera tiene que VERSE —un equipo que
+    //  desapareciera sería indistinguible de un fallo al guardar— pero sin
+    //  contar como suyo en ningún sitio.
+    // ══════════════════════════════════════════════════════════════════
+    const s = correr({
+        misEquipos: [{ role: 'individual', category: 'regional', subcategory: 'A' }],
+        pendientes: [{ role: 'individual', category: 'prebenjamin', subcategory: 'A',
+                       status: 'pending_sa_team', isAuthorized: false }],
+        filas: [],
+    });
+    const html = s._secMiEquipo;
+    const plano = html.replace(/\s*\n\s*/g, '');
+
+    // ⚠️ El nombre sale por `_indCatLabel`, que aquí es el simulado del
+    //    sandbox ('prebenjamin A'), no el bonito del catálogo.
+    ok('15 · ⏳ el equipo pendiente SE VE, con su nombre y marcado como pendiente',
+        html.includes('prebenjamin A') && plano.includes('>Pendiente<'),
+        { nombre: html.includes('prebenjamin A'), badge: plano.includes('>Pendiente<') });
+    ok('16 · ⚠️ y dice en palabras por qué todavía no puede usarlo',
+        html.includes('todavía no lo ha aprobado'));
+    ok('17 · 🔑🔑 pero NO suma en el cuadro: sigue contando 1 entrenador',
+        />1<\/div><div[^>]*>⚽ Entrenadores/.test(plano),
+        (plano.match(/>(\d+)<\/div><div[^>]*>⚽ Entrenadores/) || [])[1]);
+    ok('18 · ⚠️ y no se le pinta bloque de familias (no es su equipo todavía)',
+        (html.match(/Todavía no hay familias vinculadas a este equipo\./g) || []).length === 1);
 }
 
 console.log('\n────────────────────────────────────────────');

@@ -217,6 +217,16 @@ window.saRequests = async function saRequests() {
                 ].filter(Boolean).join(' · ');
                 extraRows += `<div style="grid-column:1/-1;"><div style="color:#8b949e;font-size:0.67rem;">Cuotas pedidas</div><div style="color:white;font-size:0.8rem;">${parts||'–'}</div></div>`;
             }
+            // ⚽ v685 · QUÉ EQUIPO PIDE. Sin esta fila, la tarjeta de un
+            //    `ind_team_request` sería idéntica a la de un alta de usuario
+            //    y el SuperAdmin estaría aprobando a ciegas: el dato que
+            //    decide —la categoría— no saldría por ninguna parte.
+            if (item.type === 'ind_team_request') {
+                const _lblEq = item.requestedTeamLabel
+                    || [item.requestedCategory, item.requestedSubcategory].filter(Boolean).join(' ')
+                    || '–';
+                extraRows += `<div style="grid-column:1/-1;"><div style="color:#8b949e;font-size:0.67rem;">Equipo solicitado</div><div style="color:#3fb950;font-weight:700;">⚽ ${typeof escapeHtml==='function'?escapeHtml(_lblEq):_lblEq}</div></div>`;
+            }
             if (item.playerNumber) {
                 extraRows += `<div><div style="color:#8b949e;font-size:0.67rem;">Dorsal jugador</div><div style="color:white;">#${item.playerNumber}${item.playerAlias?' · '+(typeof escapeHtml==='function'?escapeHtml(item.playerAlias):item.playerAlias):''}</div></div>`;
             }
@@ -236,7 +246,7 @@ window.saRequests = async function saRequests() {
                         <span style="font-size:1.3rem;">${meta.icon}</span>
                         <div>
                             <div style="font-weight:700;font-size:0.88rem;color:${meta.color};">${meta.label}</div>
-                            <div style="font-size:0.7rem;color:#8b949e;">${isDirect ? (role==='club_admin'||role==='individual' ? 'Aprobación directa SA' : 'Registro — SA confirma') : (item.type === 'ind_admin_registration' ? 'Registro Admin Individual' : item.type === 'ind_sub_registration' ? 'Reenviado por Admin Individual' : 'Reenviado por Club Admin')}</div>
+                            <div style="font-size:0.7rem;color:#8b949e;">${isDirect ? (role==='club_admin'||role==='individual' ? 'Aprobación directa SA' : 'Registro — SA confirma') : (item.type === 'ind_team_request' ? '⚽ Equipo nuevo de un Ente Individual' : item.type === 'ind_admin_registration' ? 'Registro Admin Individual' : item.type === 'ind_sub_registration' ? 'Reenviado por Admin Individual' : 'Reenviado por Club Admin')}</div>
                         </div>
                     </div>
                     <span style="font-size:0.68rem;color:#8b949e;background:rgba(255,255,255,0.06);padding:2px 7px;border-radius:5px;">${fmt(item.createdAt)}</span>
@@ -540,8 +550,73 @@ window.saApproveRequest = async function saApproveRequest(id, type, approve) {
             const r = rSnap.data();
             if (approve) {
 
+                // ══════════════════════════════════════════════════════════
+                //  ⏳ v685 · UN EQUIPO MÁS PARA UN ENTE INDIVIDUAL
+                //
+                //  Encargo del autor (implementar.txt, 2026-09-10, punto 4):
+                //  el ente ya no se autoconcede su segundo equipo; lo PIDE, y
+                //  esta es la mano que lo concede.
+                //
+                //  🔑 RAMA PROPIA, Y NO LA DE `requestedRole === 'individual'`
+                //  QUE ESTÁ JUSTO DEBAJO. Aquella es el ALTA del ente: activa
+                //  la raíz del usuario, escribe `hasAdmin` en `clubs`, pide
+                //  custom claims y marca TODOS sus roles 'individual' como
+                //  activos. Reutilizarla habría aprobado de paso cualquier otra
+                //  plaza pendiente suya y tocado media ficha del ente para
+                //  conceder un equipo. Aquí se toca UNA plaza: la pedida.
+                //
+                //  ⚠️ Y SE IDENTIFICA POR CATEGORÍA + SUBCATEGORÍA, no por rol.
+                //  Sus plazas son todas `role:'individual'` en el MISMO ente:
+                //  lo único que las distingue es el equipo. Casar por rol —el
+                //  defecto que v552 cerró en esta misma función— activaría la
+                //  que ya tenía y dejaría la pedida pendiente para siempre.
+                // ══════════════════════════════════════════════════════════
+                if (r.type === 'ind_team_request' && r.userUid) {
+                    const _catPide = String(r.requestedCategory || '').toLowerCase();
+                    const _subPide = String(r.requestedSubcategory || '').toUpperCase();
+                    const _entePide = r.individualOwnerId || r.clubId || null;
+                    const uSnapT = await getDoc(doc(db,'users',r.userUid)).catch(()=>null);
+                    if (!uSnapT || !uSnapT.exists()) throw new Error('El usuario de la solicitud ya no existe');
+                    const uDataT = uSnapT.data();
+                    // La misma normalización que usa el panel del ente: la
+                    // categoría vive en dos formas históricas ('alevin'+'A' y
+                    // 'alevin_a' de una pieza) y las dos tienen que casar.
+                    const _mismaCat = (rol) => {
+                        const c = String(rol.category || '').toLowerCase().replace(/_[abc]$/, '');
+                        let s = String(rol.subcategory || '').toUpperCase();
+                        if (!s) { const m = String(rol.category||'').match(/_([abc])$/i); if (m) s = m[1].toUpperCase(); }
+                        return c === _catPide && s === _subPide;
+                    };
+                    const _mismoEnte = (rol) =>
+                        String(rol.clubId || rol.individualEntityId || '') === String(_entePide || '');
+
+                    let _tocada = false;
+                    const rolesT = (uDataT.allRoles || []).map(rol => {
+                        if (!rol || _tocada || !_mismoEnte(rol) || !_mismaCat(rol)) return rol;
+                        _tocada = true;
+                        return {...rol, isAuthorized:true, status:'active'};
+                    });
+                    // ⚠️ Si la plaza no está (la escritura del panel falló tras
+                    //    crear la solicitud), se CREA. Es la degradación que el
+                    //    orden de escrituras del panel da por supuesta.
+                    if (!_tocada) {
+                        rolesT.push({
+                            role: 'individual', clubId: _entePide, individualEntityId: _entePide,
+                            clubName: r.clubName || uDataT.clubName || '',
+                            category: _catPide, subcategory: _subPide,
+                            categoryLabel: r.requestedTeamLabel || null,
+                            isAuthorized: true, status: 'active',
+                            firstName: uDataT.firstName || null, lastName: uDataT.lastName || null,
+                        });
+                    }
+                    await updateDoc(doc(db,'users',r.userUid), { allRoles: rolesT });
+                    await updateDoc(doc(db,'platform_requests',id), {
+                        status:'sa_approved', approvedAt:new Date().toISOString(), approvedBy:me });
+                    _saHideSpinner();
+                    _saToast(`✅ Equipo aprobado: ${r.requestedTeamLabel || (_catPide + ' ' + _subPide)} · ${r.requestedEmail||''}`, 6000);
+
                 // ── club_admin: crear el club y activar usuario existente ──
-                if (r.requestedRole === 'club_admin' && r.requestedClubName && r.userUid) {
+                } else if (r.requestedRole === 'club_admin' && r.requestedClubName && r.userUid) {
                     const newClubId = 'club_' + Date.now().toString(36);
                     const q = r.requestedQuotas || {};
                     await setDoc(doc(db,'clubs',newClubId), {
@@ -828,6 +903,40 @@ window.saApproveRequest = async function saApproveRequest(id, type, approve) {
                 }
 
             } else {
+                // ══════════════════════════════════════════════════════════
+                //  🗑️ v685 · RECHAZAR UN EQUIPO TIENE QUE RETIRAR LA PLAZA
+                //
+                //  ⚠️⚠️ Marcar la solicitud como 'rejected' y nada más dejaría
+                //  la plaza pendiente viva en `allRoles` PARA SIEMPRE: el ente
+                //  la ve en ámbar, no puede usarla, y —lo peor— sigue OCUPANDO
+                //  una de sus dos plazas, así que tampoco puede pedir otra. Un
+                //  callejón sin salida que sólo se arregla a mano en la base de
+                //  datos. El rechazo la quita.
+                //
+                //  🔑 Se marca `status:'removed'`, que es lo que ya entienden
+                //  el panel, el validador de equipos y `cronosEquiposDeEntrenador`
+                //  — no se inventa un estado nuevo, y queda rastro de que
+                //  aquella petición existió (la doctrina de v633).
+                // ══════════════════════════════════════════════════════════
+                if (r.type === 'ind_team_request' && r.userUid) {
+                    const _catR = String(r.requestedCategory || '').toLowerCase();
+                    const _subR = String(r.requestedSubcategory || '').toUpperCase();
+                    const _enteR = r.individualOwnerId || r.clubId || null;
+                    const uSnapR = await getDoc(doc(db,'users',r.userUid)).catch(()=>null);
+                    if (uSnapR && uSnapR.exists()) {
+                        const _pend = window.IND_EQUIPO_PENDIENTE || 'pending_sa_team';
+                        const rolesR = (uSnapR.data().allRoles || []).map(rol => {
+                            if (!rol || rol.status !== _pend) return rol;
+                            if (String(rol.clubId || rol.individualEntityId || '') !== String(_enteR || '')) return rol;
+                            const c = String(rol.category || '').toLowerCase().replace(/_[abc]$/, '');
+                            let s = String(rol.subcategory || '').toUpperCase();
+                            if (!s) { const m = String(rol.category||'').match(/_([abc])$/i); if (m) s = m[1].toUpperCase(); }
+                            if (c !== _catR || s !== _subR) return rol;
+                            return {...rol, status:'removed', isAuthorized:false};
+                        });
+                        await updateDoc(doc(db,'users',r.userUid), { allRoles: rolesR });
+                    }
+                }
                 await updateDoc(doc(db,'platform_requests',id), { status:'rejected', rejectedAt:new Date().toISOString(), rejectedBy:me });
                 _saHideSpinner();
                 _saToast('❌ Solicitud rechazada.', 3000);

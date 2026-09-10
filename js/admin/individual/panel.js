@@ -78,6 +78,19 @@ if (typeof window.ROLE_META === 'undefined') {
 const IND_CATEGORIES = window.CT_CATEGORIES || [];
 const IND_SUB_CATS   = window.CT_SUBCATS    || ['A', 'B', 'C'];
 
+// ⏳ v685 · El estado de una plaza de equipo que espera al SuperAdmin. Se
+//   escribe en `allRoles[].status` y lo leen el panel (para pintarla aparte y
+//   no contarla) y la rama de aprobación del SuperAdmin. Va en una constante
+//   porque son TRES ficheros los que tienen que decir exactamente lo mismo:
+//   este panel, `requests-tab.js` y el guard.
+const IND_EQUIPO_PENDIENTE = 'pending_sa_team';
+window.IND_EQUIPO_PENDIENTE = IND_EQUIPO_PENDIENTE;
+
+// Etiquetas de modalidad. En el módulo porque las usan tanto la lista de altas
+// pendientes (arriba del todo del panel) como las fichas de equipo (mucho más
+// abajo): un `const` dentro de la función dejaba a la primera en zona muerta.
+const _MOD_LBL = { f7: 'Fútbol 7', f11: 'Fútbol 11' };
+
 // ═══════════════════════════════════════════════════════════════════
 // HELPERS
 // ═══════════════════════════════════════════════════════════════════
@@ -696,13 +709,22 @@ async function openIndividualAdminPanel(mantenerSeccion = false) {
                 const catBadge = u.categoryLabel || u.requestedCategoryLabel
                     ? `<span style="font-size:0.68rem;color:#d2a8ff;background:rgba(210,168,255,0.1);border:1px solid rgba(210,168,255,0.2);border-radius:4px;padding:1px 6px;margin-left:0.3rem;">${_eH(u.categoryLabel || u.requestedCategoryLabel || '')}</span>`
                     : '';
+                // ⚽ v685 · A QUÉ EQUIPO SE APUNTA. Sin esto, el administrador
+                //    reenvía sin saber si viene al F7 o al F11 — que es
+                //    justamente el dato que el alta ahora sí pregunta. Se
+                //    enseña la modalidad, que es lo que eligió; la categoría
+                //    exacta se resuelve al reenviar.
+                const _modAlta = u.requestedModality || '';
+                const modBadge = (!u.categoryLabel && !u.requestedCategoryLabel && _modAlta)
+                    ? `<span style="font-size:0.68rem;color:#3fb950;background:rgba(63,185,80,0.1);border:1px solid rgba(63,185,80,0.25);border-radius:4px;padding:1px 6px;margin-left:0.3rem;">⚽ ${_eH(_MOD_LBL[_modAlta] || _modAlta)}</span>`
+                    : '';
                 const prId = _eA(u._prId || '');
                 const escEmail = _eA(u.userEmail || '');
                 const escUid = _eA(u.userUid || '');
                 return `<div style="background:rgba(0,0,0,0.2);border-radius:8px;padding:0.7rem;margin-bottom:0.5rem;border:1px solid rgba(255,165,0,0.15);display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:0.5rem;">
                     <div style="min-width:0;flex:1;">
                         <div style="font-size:0.85rem;font-weight:600;word-break:break-all;">${_eH(u.userEmail || u.userName || '')}</div>
-                        <div style="font-size:0.72rem;color:var(--text-muted);margin-top:2px;">${roleIcon} ${roleLabel}${catBadge}</div>
+                        <div style="font-size:0.72rem;color:var(--text-muted);margin-top:2px;">${roleIcon} ${roleLabel}${catBadge}${modBadge}</div>
                     </div>
                     <div style="display:flex;gap:0.4rem;flex-shrink:0;">
                         <button onclick="indForwardToSA('${prId}','${escUid}','${role}','${escEmail}','${_eA(u.categoryLabel||u.requestedCategoryLabel||'')}')" class="sa-btn" style="color:#58a6ff;border-color:rgba(88,166,255,0.3);background:rgba(88,166,255,0.08);font-size:0.75rem;">📤 Reenviar al SA</button>
@@ -772,21 +794,45 @@ async function openIndividualAdminPanel(mantenerSeccion = false) {
     // ════════════════════════════════════════════════════════════════
     const _indModalidad = (c) => (typeof window._cronosMatchModality === 'function')
         ? window._cronosMatchModality(c) : '';
-    const _MOD_LBL = { f7: 'Fútbol 7', f11: 'Fútbol 11' };
+    // ⚠️ v685 · `_MOD_LBL` VIVÍA AQUÍ Y SE HA SUBIDO AL MÓDULO. Desde la v685
+    //    también lo usa la lista de altas pendientes, que se construye MUCHO
+    //    antes que esta línea: con el `const` local reventaba por zona muerta
+    //    temporal en tiempo de ejecución, y `node --check` lo da por bueno
+    //    (la trampa exacta de la v670).
 
     // Sus plazas de entrenador ANCLADAS A SU ENTE. Se reutiliza el mismo
     // criterio de "quién lleva equipo" que el resto del proyecto.
     const _ROLES_EQUIPO = window.CRONOS_ROLES_CON_EQUIPO || ['user', 'coach', 'individual', 'admin_individual'];
-    const _misEquipos = (userData.allRoles || []).filter(r =>
+    const _delEnte = (r) =>
         r && _ROLES_EQUIPO.indexOf(r.role) >= 0 &&
-        r.status !== 'removed' && r.isAuthorized !== false &&
-        r.category &&
-        String(r.clubId || r.individualEntityId || '') === String(individualEntityId || '')
-    );
+        r.status !== 'removed' && r.category &&
+        String(r.clubId || r.individualEntityId || '') === String(individualEntityId || '');
 
+    const _misEquipos = (userData.allRoles || []).filter(r => _delEnte(r) && r.isAuthorized !== false);
+
+    // ════════════════════════════════════════════════════════════════
+    //  ⏳ v685 · LOS EQUIPOS QUE ESPERAN AL SUPERADMIN
+    //
+    //  Encargo del autor (implementar.txt, 2026-09-10, punto 4): «todo cambio
+    //  o nueva alta de entrenador/miembro en el ente individual debe
+    //  canalizarse hacia el panel del Superadministrador como una solicitud
+    //  pendiente de aprobación». Elegido por él entre las dos opciones: el
+    //  equipo se guarda PENDIENTE y no se puede usar hasta que lo aprueben.
+    //
+    //  🔑 NO HACE FALTA CONSULTAR `platform_requests` PARA SABERLO. La plaza
+    //  pendiente vive en su propio `allRoles`, que ya está cargado. Una
+    //  consulta más sobre una colección con regla por documento es justo el
+    //  camino del 403 entero que costó v635 y v674 — y aquí no aporta nada.
+    // ════════════════════════════════════════════════════════════════
+    const _misEquiposPend = (userData.allRoles || []).filter(r =>
+        _delEnte(r) && r.isAuthorized === false && r.status === IND_EQUIPO_PENDIENTE);
+
+    // ⚠️ EL CANDADO CUENTA LOS PENDIENTES TAMBIÉN. Si no, pedir un equipo y
+    //    —mientras espera— pedir otro le dejaría tres. "Pendiente" ocupa sitio.
+    const _equiposOcupados = _misEquipos.concat(_misEquiposPend);
     // La modalidad que YA cubre. Si tiene una, la segunda tiene que ser la otra.
-    const _modsOcupadas = new Set(_misEquipos.map(r => _indModalidad(r.category)).filter(Boolean));
-    const _puedeAnadir  = _misEquipos.length < 2;
+    const _modsOcupadas = new Set(_equiposOcupados.map(r => _indModalidad(r.category)).filter(Boolean));
+    const _puedeAnadir  = _equiposOcupados.length < 2;
 
     const _indOpcionesCat = IND_CATEGORIES.flatMap(cat =>
         IND_SUB_CATS.map(sub => {
@@ -794,13 +840,20 @@ async function openIndividualAdminPanel(mantenerSeccion = false) {
             const mod  = _indModalidad(cat.id);
             // ⚠️ Se compara la PAREJA categoría+subcategoría, no sólo la
             //    categoría: "Alevín A" y "Alevín B" son equipos distintos.
-            const yaEs = _misEquipos.some(r =>
+            const _esEste = (r) =>
                 String(r.category || '') === String(val) ||
                 (String(r.category || '') === String(cat.id) &&
-                 String(r.subcategory || '').toUpperCase() === String(sub).toUpperCase()));
+                 String(r.subcategory || '').toUpperCase() === String(sub).toUpperCase());
+            const yaEs     = _equiposOcupados.some(_esEste);
+            // ⏳ v685 · "Pendiente" y "ya es tuyo" bloquean igual, pero NO dicen
+            //    lo mismo: si el desplegable dijera "ya es tuyo" de un equipo
+            //    que aún no puede usar, la contradicción con la ficha ámbar de
+            //    abajo sería justo el tipo de mensaje que hace dudar de la app.
+            const estaPend = _misEquiposPend.some(_esEste);
             const chocaMod = mod && _modsOcupadas.has(mod);
             const bloq = yaEs || chocaMod;
-            const nota = yaEs ? ' — ya es tuyo'
+            const nota = estaPend ? ' — pendiente de aprobación'
+                       : yaEs ? ' — ya es tuyo'
                        : chocaMod ? ' — ya llevas un equipo de ' + (_MOD_LBL[mod] || mod)
                        : '';
             return '<option value="' + _indEscA(val) + '"' + (bloq ? ' disabled' : '') + '>' +
@@ -818,9 +871,20 @@ async function openIndividualAdminPanel(mantenerSeccion = false) {
             Dos de la misma modalidad no está permitido.
           </div>
 
-          ${_misEquipos.length === 0 ? `
+          ${_equiposOcupados.length === 0 ? `
             <div style="text-align:center;padding:1.6rem 1rem;color:var(--text-muted);font-size:0.85rem;">
               Todavía no tienes ningún equipo asignado.
+            </div>` : ''}
+
+          <!-- ⏳ v685 · Se dice AQUÍ que un equipo suyo está esperando, en el
+               mismo sitio donde se piden. Su ficha ámbar está más abajo. -->
+          ${_misEquiposPend.length ? `
+            <div style="margin-top:0.2rem;font-size:0.75rem;color:#ffa500;line-height:1.5;
+                        padding:0.5rem 0.7rem;background:rgba(255,165,0,0.06);border-radius:6px;
+                        border:1px solid rgba(255,165,0,0.22);">
+              ⏳ Tienes ${_misEquiposPend.length === 1 ? 'un equipo solicitado' : _misEquiposPend.length + ' equipos solicitados'}
+              esperando la aprobación del SuperAdmin. Ocupa${_misEquiposPend.length === 1 ? '' : 'n'} plaza,
+              pero todavía no puedes usarlo${_misEquiposPend.length === 1 ? '' : 's'}.
             </div>` : ''}
 
           <!-- ⚠️ v602 · AQUÍ HABÍA UNA LISTA PLANA DE SUS EQUIPOS, Y SE HA
@@ -830,7 +894,7 @@ async function openIndividualAdminPanel(mantenerSeccion = false) {
 
           ${_puedeAnadir ? `
             <div style="margin-top:1rem;padding-top:0.9rem;border-top:1px solid rgba(255,255,255,0.07);">
-              <label class="sa-label">${_misEquipos.length === 0 ? 'Elige tu equipo' : 'Añadir mi segundo equipo'} *</label>
+              <label class="sa-label">${_equiposOcupados.length === 0 ? 'Elige tu equipo' : 'Añadir mi segundo equipo'} *</label>
               <select class="sa-input" id="ind-mi-equipo">${_indOpcionesCat}</select>
               <div style="display:flex;justify-content:flex-end;margin-top:0.7rem;">
                 <button onclick="indAnadirMiEquipo()" class="sa-btn"
@@ -841,7 +905,10 @@ async function openIndividualAdminPanel(mantenerSeccion = false) {
             </div>` : `
             <div style="margin-top:0.6rem;font-size:0.74rem;color:var(--text-muted);
                         padding:0.5rem 0.7rem;background:rgba(255,255,255,0.03);border-radius:6px;">
-              ✅ Ya llevas los dos equipos que permite la regla: uno de Fútbol 7 y otro de Fútbol 11.
+              ${_misEquiposPend.length
+                  ? '⏳ Con el equipo que tienes solicitado ya cubres las dos plazas que permite la regla '
+                    + '(una de Fútbol 7 y otra de Fútbol 11). Podrás pedir otro si el SuperAdmin lo rechaza.'
+                  : '✅ Ya llevas los dos equipos que permite la regla: uno de Fútbol 7 y otro de Fútbol 11.'}
             </div>`}
         </div>
     `;
@@ -870,7 +937,7 @@ async function openIndividualAdminPanel(mantenerSeccion = false) {
     // Sus equipos, en forma canónica {catId, sub}. La categoría se guarda de
     // dos maneras históricas ('alevin' + subcategory, o 'alevin_a' de una
     // pieza): se normalizan las dos, igual que hacen _normCat/_normSub.
-    const _misEquiposNorm = _misEquipos.map(r => {
+    const _normalizaEquipo = (r) => {
         const catId = String(r.category || '').trim().toLowerCase().replace(/_[abc]$/, '');
         let sub = String(r.subcategory || '').trim().toUpperCase();
         if (!sub) {
@@ -878,7 +945,13 @@ async function openIndividualAdminPanel(mantenerSeccion = false) {
             if (m) sub = m[1].toUpperCase();
         }
         return { catId, sub, mod: _indModalidad(r.category), label: _indCatLabel(catId, sub) };
-    }).filter(e => e.catId);
+    };
+    const _misEquiposNorm = _misEquipos.map(_normalizaEquipo).filter(e => e.catId);
+    // ⏳ v685 · Los que esperan al SuperAdmin van APARTE: no son equipos suyos
+    //    todavía, así que no entran en `_misEquiposNorm` —de donde salen las
+    //    fichas, el índice de huérfanos y los contadores— sino en su propia
+    //    lista, con su propia ficha y su propio aviso.
+    const _misEquiposPendNorm = _misEquiposPend.map(_normalizaEquipo).filter(e => e.catId);
 
     const _clavesMias = new Set(_misEquiposNorm.map(e => e.catId + '|' + e.sub));
 
@@ -1482,6 +1555,64 @@ window.indForwardToSA = async function indForwardToSA(prId, userUid, role, email
             forwardedBy:     me.uid,
             forwardedByEmail: me.email,
         };
+
+        // ══════════════════════════════════════════════════════════════
+        //  ⚽⚽ v685 · AQUÍ SE TRADUCE "FÚTBOL 7" A "PREBENJAMÍN A"
+        //
+        //  Encargo del autor (2026-09-10, punto 3): que las altas vayan
+        //  dirigidas a la subcategoría de F7 o a la de F11.
+        //
+        //  🔑 ESTE ES EL MOMENTO EN QUE SE PUEDE. Quien rellenó el alta no
+        //  tenía cuenta y sólo podía leer `clubs_public` (name/type/status),
+        //  así que eligió MODALIDAD. Aquí manda el administrador del ente, con
+        //  sus equipos delante: `_indData.userData.allRoles` los tiene.
+        //
+        //  ⚠️ SI NO TIENE EQUIPO DE ESA MODALIDAD, NO SE INVENTA NINGUNO. Se
+        //  reenvía sin categoría y el alta cae donde caía antes ("Otros
+        //  usuarios del ente"), con su ✏️ para colocarla. Rellenar a ojo la
+        //  metería en el equipo EQUIVOCADO, que es peor que dejarla a la vista.
+        // ══════════════════════════════════════════════════════════════
+        const _modPedida = existingData.requestedModality || null;
+        if (_modPedida && isIndSub) {
+            const _enteId = d.userData?.individualEntityId || d.userData?.clubId || '';
+            const _rolesEq = window.CRONOS_ROLES_CON_EQUIPO || ['user', 'coach', 'individual', 'admin_individual'];
+            const _mod = (c) => (typeof window._cronosMatchModality === 'function')
+                ? window._cronosMatchModality(c) : '';
+            const _suyo = (d.userData?.allRoles || []).filter(r =>
+                r && _rolesEq.indexOf(r.role) >= 0 && r.category &&
+                r.status !== 'removed' && r.isAuthorized !== false &&
+                String(r.clubId || r.individualEntityId || '') === String(_enteId) &&
+                _mod(r.category) === _modPedida)[0];
+            if (_suyo) {
+                // La misma normalización canónica del resto del panel (v627).
+                const _cat = String(_suyo.category || '').toLowerCase().replace(/_[abc]$/, '');
+                let _sub = String(_suyo.subcategory || '').toUpperCase();
+                if (!_sub) { const m = String(_suyo.category||'').match(/_([abc])$/i); if (m) _sub = m[1].toUpperCase(); }
+                updateData.requestedCategory    = _cat;
+                updateData.requestedSubcategory = _sub;
+                updateData.requestedCategoryLabel = _indCatLabel(_cat, _sub);
+                updateData.resolvedFromModality = _modPedida;
+                // Y la plaza del interesado, para que el panel lo pinte ya en
+                // su equipo en vez de en "Otros usuarios del ente".
+                try {
+                    const uSnap = await getDoc(doc(db, 'users', userUid)).catch(() => null);
+                    if (uSnap && uSnap.exists()) {
+                        const _rr = (uSnap.data().allRoles || []).map(r => {
+                            if (!r || r.category) return r;      // ya tiene equipo: no se toca
+                            if (String(r.clubId || r.individualEntityId || '') !== String(_enteId)) return r;
+                            return Object.assign({}, r, { category: _cat, subcategory: _sub });
+                        });
+                        await updateDoc(doc(db, 'users', userUid), { allRoles: _rr });
+                    }
+                } catch (eCat) {
+                    // No tumba el reenvío: la solicitud ya lleva la categoría y
+                    // el SuperAdmin la escribe al aprobar. Pero se dice por qué.
+                    console.warn('[indForwardToSA] No se pudo fijar la categoría en la plaza:', eCat.message);
+                }
+            } else {
+                console.warn('[indForwardToSA] Sin equipo de modalidad', _modPedida, '— se reenvía sin categoría.');
+            }
+        }
         // CRITICAL: Ensure requestedRole and requestedRoleLabel are correct for sub-users
         // This prevents the SA from seeing "Administrador Individual" instead of "Entrenador/Padre"
         if (isIndSub && existingData.requestedRole !== role) {
@@ -1854,17 +1985,32 @@ window.indAnadirMiEquipo = async function indAnadirMiEquipo() {
           String(r.subcategory || '').toUpperCase() === subCat)));
     if (yaLoTiene) return decir('🚫 Ya llevas ese equipo.', '#ff5858');
 
-    if (typeof _saShowSpinner === 'function') _saShowSpinner('Añadiendo equipo…');
+    if (typeof _saShowSpinner === 'function') _saShowSpinner('Enviando la solicitud…');
     try {
-        const { db, doc, updateDoc } = await saFS();
+        const { db, doc, updateDoc, setDoc, collection } = await saFS();
         // La plaza nueva es del MISMO rol y del MISMO ente: sólo cambia el equipo.
         const nueva = {
             role:          'individual',
             clubId:        enteId,
             individualEntityId: enteId,
             clubName:      userData.clubName || '',
-            isAuthorized:  true,
-            status:        'active',
+            // ══════════════════════════════════════════════════════════
+            //  ⏳⏳ v685 · NACE PENDIENTE, NO ACTIVA
+            //
+            //  Encargo del autor (2026-09-10, punto 4), y elegida por él la
+            //  variante estricta: hasta que el SuperAdmin apruebe, el equipo
+            //  NO se puede usar. Aquí ponía `isAuthorized:true, status:'active'`
+            //  y el ente se autoconcedía el segundo equipo sin pasar por nadie.
+            //
+            //  🔑 Y CON ESTO SOLO YA QUEDA FUERA DE TODA LA APP, sin tocar una
+            //  línea más: `cronosEquiposDeEntrenador` (utils.js) exige
+            //  `isAuthorized === true && status === 'active'`, y es la lista
+            //  única que alimentan el selector de partido, el cuadrante y la
+            //  plantilla. Escribir aquí un candado propio habría sido la
+            //  segunda fuente de verdad de siempre.
+            // ══════════════════════════════════════════════════════════
+            isAuthorized:  false,
+            status:        IND_EQUIPO_PENDIENTE,
             firstName:     userData.firstName || null,
             lastName:      userData.lastName  || null,
             // ══════════════════════════════════════════════════════════
@@ -1892,11 +2038,62 @@ window.indAnadirMiEquipo = async function indAnadirMiEquipo() {
             subcategory:   subCat,
             categoryLabel: label,
         };
+        // ══════════════════════════════════════════════════════════════
+        //  📤 v685 · LA SOLICITUD PRIMERO, LA PLAZA DESPUÉS
+        //
+        //  ⚠️⚠️ EL ORDEN IMPORTA, Y ES EL ÚNICO SEGURO DE LOS DOS. No hay
+        //  transacción entre estas dos escrituras, así que hay que elegir qué
+        //  pasa si la segunda falla:
+        //   · Solicitud → plaza:  queda una solicitud sin plaza. El SuperAdmin
+        //     la ve, la aprueba, y la rama de aprobación CREA la plaza si no
+        //     existe. Se arregla solo.
+        //   · Plaza → solicitud:  queda una plaza pendiente que NADIE puede
+        //     aprobar, porque no hay solicitud en ninguna cola. El equipo se
+        //     queda bloqueado para siempre y sin síntoma — que es exactamente
+        //     la clase de avería muda que este proyecto ya ha pagado.
+        //  Por eso va primero.
+        //
+        //  🔑 `platform_requests` con `status:'pending_sa'` YA SALE en su
+        //  pestaña de Solicitudes ("📩 Solicitudes reenviadas") sin tocar el
+        //  listado: se lista por ese estado. Lo único que hubo que añadir allí
+        //  es la rama que sabe aprobar ESTE tipo (`ind_team_request`).
+        //
+        //  🔐 Y la escribe a SU nombre: `userUid == request.auth.uid`, que es
+        //  la rama que las reglas permiten desde la v636. No se fabrica una
+        //  solicitud de nadie más.
+        //
+        //  ⚠️ EL ID ES DETERMINISTA (uid + equipo). Si le da dos veces al botón
+        //  —o vuelve tras un error de red— se sobrescribe la MISMA solicitud en
+        //  vez de dejar dos idénticas en la cola del SuperAdmin.
+        // ══════════════════════════════════════════════════════════════
+        const reqId = 'ind_team_' + uid + '_' + catId + '_' + subCat;
+        await setDoc(doc(collection(db, 'platform_requests'), reqId), {
+            type:          'ind_team_request',
+            status:        'pending_sa',
+            userUid:       uid,
+            requestedBy:   uid,
+            requestedEmail: userData.email || (d.me && d.me.email) || '',
+            requestedName: userData.displayName || userData.firstName || '',
+            requestedRole: 'individual',
+            requestedRoleLabel: 'Entrenador Administrador Individual',
+            // El equipo que pide, en la forma canónica del proyecto (v627).
+            requestedCategory:    catId,
+            requestedSubcategory: subCat,
+            requestedTeamLabel:   label,
+            clubId:            enteId,
+            clubName:          userData.clubName || '',
+            individualOwnerId: enteId,
+            individualEntityId: enteId,
+            createdAt: new Date().toISOString(),
+        });
+
         await updateDoc(doc(db, 'users', uid), {
             allRoles: (userData.allRoles || []).concat([nueva]),
         });
+
         if (typeof _saHideSpinner === 'function') _saHideSpinner();
-        if (typeof _saToast === 'function') _saToast('✅ Equipo añadido: ' + label, 3000);
+        if (typeof _saToast === 'function') _saToast(
+            '📤 Solicitud enviada al SuperAdmin: ' + label + '. Podrás usarlo cuando la apruebe.', 6000);
         window._indSeccionActual = 'equipo';
         openIndividualAdminPanel(true);
     } catch (e) {

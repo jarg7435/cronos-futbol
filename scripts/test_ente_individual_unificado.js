@@ -85,10 +85,17 @@ ok('1e · ⚠️ el repliegue es a "parent", que SÍ está habilitado, no a "use
 
 // 🔑 Sin categoría en el alta, el candado F7/F11 no tendría contra qué comparar.
 {
-    const m = AUTH.match(/const needsCategory = \[([^\]]*)\]\.includes\(role\)/);
+    // ⚠️ v685 · La condición lleva delante `!_bajoEnte &&`: desde la v685 quien
+    //    se da de alta BAJO un ente elige equipo (F7/F11), no categoría. El
+    //    ADMINISTRADOR del ente sí la sigue eligiendo, que es lo que mide esta
+    //    aserción y lo que sostiene el candado F7/F11 — no ha cambiado.
+    const m = AUTH.match(/const needsCategory = (?:!_bajoEnte && )?\[([^\]]*)\]\.includes\(role\)/);
     const lista = m ? m[1].replace(/['"\s]/g, '').split(',').filter(Boolean).sort() : null;
     ok('1f · 🔑🔑 el ente unificado elige categoría al registrarse (es entrenador)',
        !!lista && lista.indexOf('individual') >= 0, lista);
+    ok('1f-bis · ⚠️ v685 · y quien cuelga de él NO: elige uno de los dos equipos',
+       /const _bajoEnte\s*=\s*isUnderIndividual && \['user', 'parent'\]\.includes\(role\)/.test(AUTH) &&
+       /const needsCategory = !_bajoEnte/.test(AUTH));
 }
 // Y esa categoría tiene que llegar de verdad a la plaza que se escribe.
 ok('1g · ⚠️ y esa categoría viaja a la plaza (allRoles[].category)',
