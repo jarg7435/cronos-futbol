@@ -167,8 +167,17 @@ console.log('\n── PARTE 4 · aprobar toca UNA plaza, no todas ──');
     // VERDE con el defecto puesto: el `map` está 14.656 caracteres por debajo
     // del ancla y quedaba fuera del corte. Cuarta vez en el proyecto que una
     // ventana corta finge un verde — se mide con indexOf antes de fijarla.
+    // ⚠️⚠️ v686 · Y LA QUINTA VEZ FUE ÉSTA: la ventana era `+20000` fijo y la
+    //    v686 metió dentro de `saExtApprove` la rama que aprueba el equipo de
+    //    un ente (~4 kB). `finalRoles` pasó a estar a +29.333 y 4c0 se puso
+    //    rojo — hizo su trabajo. Pero un número mágico caduca en la SIGUIENTE
+    //    edición, así que se deja de estimar: la ventana llega hasta donde
+    //    empieza la función siguiente, que es el límite de verdad.
     const iAp = EXTRAS.indexOf('saExtApprove = async function');
-    const bloqueAp = iAp === -1 ? '' : EXTRAS.slice(iAp, iAp + 20000);
+    let finAp = EXTRAS.indexOf('window.saExtDiscardRequest', iAp);
+    if (finAp < 0) finAp = EXTRAS.indexOf('window.saExtResetUser', iAp);
+    if (finAp < 0) finAp = iAp + 40000;          // respaldo, nunca el criterio
+    const bloqueAp = iAp === -1 ? '' : EXTRAS.slice(iAp, finAp);
     ok('4c0 · (la ventana llega hasta el mapeo de roles)',
        /finalRoles/.test(bloqueAp), 'la ventana se queda corta y 4c mediría el vacío');
     ok('4c · 🔑🔑🔑 el aprobar del SA ya no casa por `ar.role === role` a secas',

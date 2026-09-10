@@ -375,9 +375,23 @@
                 if (regReqs.length) {
                     html += '<div style="font-size:0.82rem;font-weight:700;color:#ffd700;margin-bottom:0.7rem;">📩 Solicitudes de Registro (' + regReqs.length + ')</div>';
                     regReqs.forEach(function (r) {
-                        var rl = RLABELS[r.requestedRole] || r.requestedRole || '?';
-                        var ri = RICONS[r.requestedRole] || '👤';
-                        var cat = r.requestedCategory ? ' · <strong style="color:#3fb950;">' + (CATS[r.requestedCategory] || r.requestedCategory) + (r.requestedSubcat ? ' ' + r.requestedSubcat : '') + '</strong>' : '';
+                        // ⚽ v686 · UNA PETICIÓN DE EQUIPO NO ES UN ALTA, y la
+                        //    tarjeta tiene que decirlo: `requestedRole` vale
+                        //    'individual' en las dos, así que sin esto el
+                        //    SuperAdmin lee "Usuario Individual" y cree que está
+                        //    dando de alta a alguien que ya lleva meses dentro.
+                        var _esEquipo = r.type === 'ind_team_request';
+                        var rl = _esEquipo
+                            ? 'Equipo nuevo · Entrenador Administrador Individual'
+                            : (RLABELS[r.requestedRole] || r.requestedRole || '?');
+                        var ri = _esEquipo ? '⚽' : (RICONS[r.requestedRole] || '👤');
+                        // ⚠️ El campo que escribe el panel del ente es
+                        //    `requestedSubcategory`; `requestedSubcat` es el del
+                        //    formulario de alta. Se aceptan los dos o la ficha
+                        //    diría "Prebenjamín" a secas, sin el grupo — que es
+                        //    justo el dato que distingue un equipo de otro.
+                        var _subCard = r.requestedSubcategory || r.requestedSubcat || '';
+                        var cat = r.requestedCategory ? ' · <strong style="color:#3fb950;">' + (CATS[r.requestedCategory] || r.requestedCategory) + (_subCard ? ' ' + _subCard : '') + '</strong>' : '';
                         
                         var eid = (r._id || '').replace(/'/g, "\\'");
                         var erole = (r.requestedRole || 'user').replace(/'/g, "\\'");
@@ -505,6 +519,45 @@
                         }
                         var me = (window._cronosCurrentUser || {}).email || 'superadmin';
                         if (!approve) {
+                            // ══════════════════════════════════════════════════
+                            //  🚨🚨 v686 · RECHAZAR UN EQUIPO NO PUEDE ECHAR AL ENTE
+                            //
+                            //  El rechazo genérico de abajo escribe `status:'rejected'`
+                            //  en la RAÍZ del documento del usuario. Para un alta eso
+                            //  es lo correcto. Para una solicitud de EQUIPO sería
+                            //  catastrófico: el Entrenador Administrador ya está
+                            //  activo y usando la aplicación con su primer equipo —
+                            //  decir que no a su segundo equipo lo dejaría fuera de
+                            //  todo, sin manera de volver a entrar.
+                            //
+                            //  🔑 Aquí se retira SÓLO la plaza pendiente, con el
+                            //  mismo `status:'removed'` que ya entienden el panel, el
+                            //  validador y `cronosEquiposDeEntrenador`. Y hace falta
+                            //  hacerlo: dejarla viva le bloquearía su hueco para
+                            //  siempre, porque los pendientes ocupan plaza (v685).
+                            // ══════════════════════════════════════════════════
+                            if (r.type === 'ind_team_request' && r.userUid) {
+                                var _catR = String(r.requestedCategory || '').toLowerCase();
+                                var _subR = String(r.requestedSubcategory || '').toUpperCase();
+                                var _enteR = r.individualOwnerId || r.clubId || null;
+                                var _pendR = window.IND_EQUIPO_PENDIENTE || 'pending_sa_team';
+                                var uSnapR = await getDoc(doc(db, 'users', r.userUid)).catch(function () { return null; });
+                                if (uSnapR && uSnapR.exists()) {
+                                    var rolesR = (uSnapR.data().allRoles || []).map(function (rol) {
+                                        if (!rol || rol.status !== _pendR) return rol;
+                                        if (String(rol.clubId || rol.individualEntityId || '') !== String(_enteR || '')) return rol;
+                                        var c = String(rol.category || '').toLowerCase().replace(/_[abc]$/, '');
+                                        var s = String(rol.subcategory || '').toUpperCase();
+                                        if (!s) { var mr = String(rol.category||'').match(/_([abc])$/i); if (mr) s = mr[1].toUpperCase(); }
+                                        if (c !== _catR || s !== _subR) return rol;
+                                        return Object.assign({}, rol, { status: 'removed', isAuthorized: false });
+                                    });
+                                    await updateDoc(doc(db, 'users', r.userUid), { allRoles: rolesR });
+                                }
+                                await updateDoc(doc(db, 'platform_requests', reqId), { status: 'rejected', rejectedAt: new Date().toISOString() });
+                                if (typeof showToast === 'function') showToast('✕ Equipo rechazado — el ente sigue activo', 4000);
+                                window.saRequests(); return;
+                            }
                             await updateDoc(doc(db, 'platform_requests', reqId), { status: 'rejected', rejectedAt: new Date().toISOString() });
                             if (r.userUid) await updateDoc(doc(db, 'users', r.userUid), { status: 'rejected' }).catch(function () {});
                             if (typeof showToast === 'function') showToast('✕ Rechazada', 3000);
@@ -544,6 +597,77 @@
                                 }
                             }
                             if (typeof showToast === 'function') showToast('✅ Club "' + (r.requestedClubName || clubName) + '" creado y ' + email + ' activado', 6000);
+                        // ══════════════════════════════════════════════════════
+                        //  ⏳ v686 · UN EQUIPO MÁS PARA UN ENTE — Y AQUÍ, QUE ES
+                        //  LA PANTALLA QUE EL SUPERADMIN USA DE VERDAD
+                        //
+                        //  🚨🚨 La v685 puso esta rama en `requests-tab.js`, y esa
+                        //  pestaña NO es la que se abre desde el tablero: la de las
+                        //  capturas 10240-10243 es ÉSTA (`saRequests`, extras.js).
+                        //  Se ve en el detalle: el botón "Descartar" y el aviso
+                        //  "✅ Administrador Individual activado" sólo existen aquí.
+                        //  Resultado: la solicitud de equipo caía en la rama de
+                        //  `role === 'individual'` —el ALTA del ente— que activa de
+                        //  golpe TODAS sus plazas 'individual' y anuncia otra cosa.
+                        //  Dos pantallas para lo mismo, y toqué la que no era: la
+                        //  lección de `email-whatsapp.js` (v677) otra vez.
+                        //
+                        //  🔑 SE IDENTIFICA POR `type`, NO POR `role`. Todas sus
+                        //  plazas son `role:'individual'` en el mismo ente; lo único
+                        //  que distingue esta solicitud de un alta de ente es el
+                        //  tipo. Y va ANTES que aquella rama, que la capturaba.
+                        //
+                        //  ⚠️ Y SE TOCA UNA SOLA PLAZA: la pedida, casada por
+                        //  categoría (la lección de v552). La rama del alta activa
+                        //  todas las 'individual', lo que aprobaría de paso
+                        //  cualquier otro equipo que estuviera esperando.
+                        // ══════════════════════════════════════════════════════
+                        } else if (r.type === 'ind_team_request' && r.userUid) {
+                            var _catPide = String(r.requestedCategory || '').toLowerCase();
+                            var _subPide = String(r.requestedSubcategory || '').toUpperCase();
+                            var _entePide = r.individualOwnerId || r.clubId || null;
+                            var uSnapT = await getDoc(doc(db,'users',r.userUid)).catch(function(){ return null; });
+                            if (!uSnapT || !uSnapT.exists()) {
+                                if (typeof showToast === 'function') showToast('⚠️ El usuario de la solicitud ya no existe', 4000);
+                                window.saRequests(); return;
+                            }
+                            var uDataT = uSnapT.data();
+                            // La misma normalización canónica del panel del ente:
+                            // la categoría se guarda en dos formas históricas
+                            // ('alevin'+'A' y 'alevin_a'), y las dos tienen que casar.
+                            var _mismaCatT = function (rol) {
+                                var c = String(rol.category || '').toLowerCase().replace(/_[abc]$/, '');
+                                var s = String(rol.subcategory || '').toUpperCase();
+                                if (!s) { var mm = String(rol.category||'').match(/_([abc])$/i); if (mm) s = mm[1].toUpperCase(); }
+                                return c === _catPide && s === _subPide;
+                            };
+                            var _tocadaT = false;
+                            var rolesT = (uDataT.allRoles || []).map(function (rol) {
+                                if (!rol || _tocadaT) return rol;
+                                if (String(rol.clubId || rol.individualEntityId || '') !== String(_entePide || '')) return rol;
+                                if (!_mismaCatT(rol)) return rol;
+                                _tocadaT = true;
+                                return Object.assign({}, rol, { isAuthorized: true, status: 'active' });
+                            });
+                            // ⚠️ Si la plaza no está —la escritura del panel del ente
+                            //    falló después de crear la solicitud—, se CREA. Es la
+                            //    degradación que el orden de escrituras da por supuesta.
+                            if (!_tocadaT) {
+                                rolesT.push({
+                                    role: 'individual', clubId: _entePide, individualEntityId: _entePide,
+                                    clubName: r.clubName || uDataT.clubName || '',
+                                    category: _catPide, subcategory: _subPide,
+                                    categoryLabel: r.requestedTeamLabel || null,
+                                    isAuthorized: true, status: 'active',
+                                    firstName: uDataT.firstName || null, lastName: uDataT.lastName || null,
+                                });
+                            }
+                            await updateDoc(doc(db,'users',r.userUid), { allRoles: rolesT });
+                            await updateDoc(doc(db,'platform_requests',reqId), { status: 'sa_approved', approvedAt: new Date().toISOString(), approvedBy: me }).catch(function(){});
+                            if (typeof showToast === 'function') showToast('✅ Equipo aprobado: ' + (r.requestedTeamLabel || (_catPide + ' ' + _subPide)), 5000);
+                            window.saRequests();
+                            return;
+
                         // ── individual sub-user registration: activate directly ──
                         } else if (r.type === 'ind_sub_registration' && r.userUid) {
                             var uSnapInd = await getDoc(doc(db,'users',r.userUid)).catch(()=>null);

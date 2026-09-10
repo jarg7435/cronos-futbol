@@ -1817,9 +1817,15 @@ export async function checkAuthorization(user) {
                 //    también PERSISTE (setDoc justo debajo). Se usa la misma
                 //    clave de plaza que los otros dos: rol + club + categoría.
                 //    Con la anterior, entrar a la app borraba el segundo equipo.
+                //  🔴 v686 · …y la lista de "quién ocupa equipo" era ['user','coach']
+                //     ESCRITA A MANO. Con el ente unificado (v598/v599) el
+                //     Entrenador Administrador lleva equipos con `role:'individual'`,
+                //     así que sus DOS plazas daban la misma clave y este filtro
+                //     —que persiste con el `setDoc` de abajo— borraba la segunda.
+                //     Ahora lee `CRONOS_ROLES_CON_EQUIPO`, la lista única.
                 const _clavePlazaHuerfana = (r) => (r.role || '') + '|' +
                     (r.clubId || r.individualEntityId || '') + '|' +
-                    ((r.role === 'user' || r.role === 'coach')
+                    ((window.CRONOS_ROLES_CON_EQUIPO || ['user', 'coach']).indexOf(r.role) >= 0
                         ? (typeof window.cronosTeamSlug === 'function'
                             ? window.cronosTeamSlug(String(r.category || r.categoryLabel || '') + '-' + (r.subcategory || ''))
                             : String(r.category || '').toLowerCase() + '-' + String(r.subcategory || '').toLowerCase())
@@ -1870,9 +1876,25 @@ export async function checkAuthorization(user) {
         //  La plaza es rol + club + categoría (`cronosMismaPlaza`). Un
         //  duplicado de verdad —dos entradas idénticas— se sigue quitando.
         // ═══════════════════════════════════════════════════════════════
+        //  🔴🔴🔴 v686 · Y LA v554 SÓLO ARREGLÓ LA MITAD, SIN SABERLO.
+        //
+        //  Metió la categoría en la clave, sí, pero **sólo para 'user' y
+        //  'coach'** — que en la v554 eran los únicos que llevaban equipo. La
+        //  v598/v599 hizo entrenador al Entrenador Administrador Individual con
+        //  `role:'individual'`, y para él la clave volvió a ser `rol|club` a
+        //  secas: sus dos equipos daban la misma, el `setDoc` de treinta líneas
+        //  más abajo se quedaba con uno, y el otro DESAPARECÍA DE FIRESTORE.
+        //
+        //  Medido en producción el 2026-09-10: la plaza de Prebenjamín A del
+        //  autor se había perdido así, con el SuperAdmin habiéndola aprobado.
+        //  El síntoma —"el SA la aprueba y su panel sigue con un equipo"— NO
+        //  era del aprobar: era de su propio arranque de sesión, exactamente
+        //  como en la v554 y como en v477/v478.
+        //
+        //  👉 La lista de quién ocupa equipo se LEE, no se repite.
         const _clavePlaza = (r) => (r.role || '') + '|' +
             (r.clubId || r.individualEntityId || '') + '|' +
-            ((r.role === 'user' || r.role === 'coach')
+            ((window.CRONOS_ROLES_CON_EQUIPO || ['user', 'coach']).indexOf(r.role) >= 0
                 ? (typeof window.cronosTeamSlug === 'function'
                     ? window.cronosTeamSlug(String(r.category || r.categoryLabel || '') + '-' + (r.subcategory || ''))
                     : String(r.category || '').toLowerCase() + '-' + String(r.subcategory || '').toLowerCase())

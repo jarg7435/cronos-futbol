@@ -363,8 +363,36 @@ if (typeof window.cronosMismaPlaza !== 'function') {
         const rolB = String(b.role || '');
         if (!rolA || rolA !== rolB) return false;
         if (String(a.clubId || '') !== String(b.clubId || '')) return false;
-        // Sólo el entrenador ocupa EQUIPO.
-        if (rolA !== 'user' && rolA !== 'coach') return true;
+        // ══════════════════════════════════════════════════════════════
+        //  🔴🔴🔴 v686 · AQUÍ DECÍA `rolA !== 'user' && rolA !== 'coach'`,
+        //  Y ESO BORRABA EL SEGUNDO EQUIPO DEL ENTE INDIVIDUAL
+        //
+        //  Medido en producción (2026-09-10, jose_arg027@hotmail.com): sus dos
+        //  plazas —Regional A (F11) y Prebenjamín A (F7), las dos
+        //  `role:'individual'` y en el mismo ente— daban "la MISMA plaza",
+        //  porque la categoría sólo entraba en la comparación para 'user' y
+        //  'coach'. El arranque de sesión las veía duplicadas, se quedaba con
+        //  una y **escribía el resultado en Firestore** (auth.js). Su panel
+        //  volvía a enseñar un solo equipo, y no lo deshacía el SuperAdmin:
+        //  se lo llevaba por delante su propio inicio de sesión.
+        //
+        //  🔑🔑 ES EL DEFECTO DE LA v554 OTRA VEZ, y por el mismo motivo que
+        //  el de la v684: la v554 lo cerró cuando el ÚNICO que llevaba equipo
+        //  era 'user'/'coach'. La v598/v599 amplió eso a 'individual' y
+        //  'admin_individual' en `CRONOS_ROLES_CON_EQUIPO` — y esta línea, que
+        //  define QUÉ ES UNA PLAZA, se quedó con la lista vieja escrita a mano.
+        //
+        //  👉 Por eso ahora lee la lista única en vez de repetirla: es la misma
+        //  que usan el candado de los dos equipos y el selector de partido. Si
+        //  mañana se amplía otra vez, esto va detrás solo.
+        //
+        //  ⚠️ LO QUE EL COMENTARIO DE ARRIBA DECÍA SIGUE SIENDO CIERTO: un
+        //  padre o un director NO ocupan equipo, y meterles la categoría en la
+        //  identidad les dejaría pedir el mismo rol una y otra vez. Siguen
+        //  fuera, porque no están en `CRONOS_ROLES_CON_EQUIPO`.
+        // ══════════════════════════════════════════════════════════════
+        const _conEquipo = window.CRONOS_ROLES_CON_EQUIPO || ['user', 'coach'];
+        if (_conEquipo.indexOf(rolA) < 0) return true;
         const slug = (typeof cronosTeamSlug === 'function')
             ? cronosTeamSlug
             : function (v) { return String(v == null ? '' : v).trim().toLowerCase(); };
