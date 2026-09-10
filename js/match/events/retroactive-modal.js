@@ -128,6 +128,12 @@
             document.body.appendChild(modal);
         }
 
+        // v690 · El modal se repinta SIEMPRE con "Gol" marcado, así que el tipo
+        // elegido tiene que volver a 'goal' al abrir. Antes sobrevivía de la
+        // vez anterior: tras un "Cambio", reabrir enseñaba "Gol" y guardaba un
+        // cambio. Con "Comentario" habría guardado una nota con el campo de
+        // texto escondido.
+        _selectedEventType = 'goal';
         _jugadoresModal = _jugadoresDestino();
         const playerOptions    = _opcionesJugadores(_jugadoresModal, 'todos');
         const playerOptionsIn  = _opcionesJugadores(_jugadoresModal, 'banquillo');
@@ -164,21 +170,36 @@
                 <!-- Selección del Tipo de Evento -->
                 <div>
                     <label style="font-size:0.75rem; font-weight:700; color:#58a6ff; display:block; margin-bottom:0.4rem;">Tipo de Suceso:</label>
-                    <div style="display:grid; grid-template-columns: repeat(5, 1fr); gap:0.4rem;">
+                    <!-- v690 · seis tipos: en tres columnas caben en el móvil sin cortar el texto -->
+                    <div style="display:grid; grid-template-columns: repeat(3, 1fr); gap:0.4rem;">
                         <button type="button" onclick="window._setRetroEventType('goal')" id="btn-retro-goal" class="btn-retro-type" style="background:rgba(88,166,255,0.25); border:1px solid #58a6ff; color:white; padding:0.5rem 0.2rem; border-radius:8px; font-weight:800; font-size:0.75rem; cursor:pointer;">⚽ Gol</button>
                         <button type="button" onclick="window._setRetroEventType('sub')" id="btn-retro-sub" class="btn-retro-type" style="background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.1); color:#7d8590; padding:0.5rem 0.2rem; border-radius:8px; font-weight:800; font-size:0.75rem; cursor:pointer;">🔄 Cambio</button>
                         <button type="button" onclick="window._setRetroEventType('yellow')" id="btn-retro-yellow" class="btn-retro-type" style="background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.1); color:#7d8590; padding:0.5rem 0.2rem; border-radius:8px; font-weight:800; font-size:0.75rem; cursor:pointer;">🟨 Amarilla</button>
                         <button type="button" onclick="window._setRetroEventType('red')" id="btn-retro-red" class="btn-retro-type" style="background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.1); color:#7d8590; padding:0.5rem 0.2rem; border-radius:8px; font-weight:800; font-size:0.75rem; cursor:pointer;">🟥 Roja</button>
                         <button type="button" onclick="window._setRetroEventType('injury')" id="btn-retro-injury" class="btn-retro-type" style="background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.1); color:#7d8590; padding:0.5rem 0.2rem; border-radius:8px; font-weight:800; font-size:0.75rem; cursor:pointer;">🚑 Lesión</button>
+                        <button type="button" onclick="window._setRetroEventType('comment')" id="btn-retro-comment" class="btn-retro-type" style="background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.1); color:#7d8590; padding:0.5rem 0.2rem; border-radius:8px; font-weight:800; font-size:0.75rem; cursor:pointer;">💬 Comentario</button>
                     </div>
                 </div>
 
                 <!-- Selección de Jugador -->
-                <div>
+                <div id="retro-player-container">
                     <label id="retro-player-label" style="font-size:0.75rem; font-weight:700; color:#58a6ff; display:block; margin-bottom:0.3rem;">Jugador Implicado:</label>
                     <select id="retro-player-select" style="width:100%; background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.15); color:white; padding:0.5rem; border-radius:8px; font-weight:700;">
                         ${playerOptions}
                     </select>
+                </div>
+
+                <!-- 💬 v690 · Comentario del partido: texto libre, sin jugador -->
+                <div id="retro-comment-container" style="display:none;">
+                    <label for="retro-comment-input" style="font-size:0.75rem; font-weight:700; color:#d2a8ff; display:block; margin-bottom:0.3rem;">Comentario del partido:</label>
+                    <textarea id="retro-comment-input" maxlength="500" rows="4"
+                        placeholder="Observaciones tácticas o generales sobre el partido (de los dos equipos)…"
+                        oninput="var c=document.getElementById('retro-comment-count'); if (c) c.textContent = this.value.length + ' / 500';"
+                        style="width:100%; box-sizing:border-box; resize:vertical; background:rgba(255,255,255,0.05); border:1px solid rgba(210,168,255,0.35); color:white; padding:0.55rem; border-radius:8px; font-size:0.85rem; font-family:inherit; line-height:1.4;"></textarea>
+                    <div style="display:flex; justify-content:space-between; gap:0.5rem; margin-top:0.25rem; font-size:0.68rem; color:#7d8590;">
+                        <span>🔒 Sólo lo ve el cuerpo técnico: historial del partido e informe.</span>
+                        <span id="retro-comment-count" style="flex-shrink:0;">0 / 500</span>
+                    </div>
                 </div>
 
                 <!-- Jugador Entrante (para cambios) -->
@@ -242,7 +263,7 @@
 
     window._setRetroEventType = function(type) {
         _selectedEventType = type;
-        const types = ['goal', 'sub', 'yellow', 'red', 'injury'];
+        const types = ['goal', 'sub', 'yellow', 'red', 'injury', 'comment'];
         types.forEach(t => {
             const btn = document.getElementById(`btn-retro-${t}`);
             if (btn) {
@@ -261,6 +282,16 @@
         const subContainer = document.getElementById('retro-sub-container');
         const playerLabel = document.getElementById('retro-player-label');
         if (subContainer) subContainer.style.display = type === 'sub' ? 'block' : 'none';
+        // 💬 v690 · Un comentario no tiene jugador: se esconde el selector y
+        // aparece el texto libre. Y al revés para cualquier otro tipo.
+        const playerContainer  = document.getElementById('retro-player-container');
+        const commentContainer = document.getElementById('retro-comment-container');
+        if (playerContainer)  playerContainer.style.display  = type === 'comment' ? 'none' : 'block';
+        if (commentContainer) commentContainer.style.display = type === 'comment' ? 'block' : 'none';
+        if (type === 'comment') {
+            const ta = document.getElementById('retro-comment-input');
+            if (ta) { try { ta.focus(); } catch (_) {} }
+        }
         // ⚠️ La etiqueta decía "Jugador que Sale (Banquillo)": al revés. El que
         // sale está EN EL CAMPO; al banquillo es a donde va.
         if (playerLabel) playerLabel.textContent = type === 'sub' ? 'Jugador que Sale (del campo):' : 'Jugador Implicado:';
@@ -303,6 +334,54 @@
         const minStr = String(minute).padStart(2, '0');
         const matchTime = `${half} ${minStr}:00`;
         const nowStr = new Date().toLocaleTimeString('es-ES', { hour:'2-digit', minute:'2-digit' });
+
+        // ════════════════════════════════════════════════════════════════
+        //  💬 v690 · COMENTARIO DEL PARTIDO
+        //
+        //  Encargo del autor (captura 10265): notas u observaciones tácticas o
+        //  generales sobre el partido, de los DOS equipos, con su parte y su
+        //  minuto, que salgan en orden en el historial y en el informe.
+        //
+        //  🔑 NO ES UN SUCESO DE JUGADOR y por eso sale ANTES de todo lo de
+        //  abajo: no suma goles ni tarjetas, no toca `history` de nadie (de
+        //  ahí sale el Gantt), ni el marcador, ni la ficha del partido. Sólo
+        //  entra en `events` por la ruta central, con el texto en un campo
+        //  ESTRUCTURADO (`comment`) —el texto visible no es el contrato—.
+        //  El informe lo recoge de ahí al terminar el partido
+        //  (`cronosComentariosDelPartido`, player-actions.js).
+        // ════════════════════════════════════════════════════════════════
+        if (_selectedEventType === 'comment') {
+            const ta = document.getElementById('retro-comment-input');
+            const nota = String((ta && ta.value) || '').replace(/\s+/g, ' ').trim().slice(0, 500);
+            if (!nota) {
+                if (typeof showToast === 'function') showToast('✏️ Escribe el comentario antes de guardarlo.', 3500);
+                if (ta) { try { ta.focus(); } catch (_) {} }
+                return;
+            }
+            if (!Number.isFinite(minute) || minute < 0 || minute > 130) {
+                if (typeof showToast === 'function') showToast('⏱️ Indica un minuto válido.', 3500);
+                return;
+            }
+            if (typeof _registerMatchEvent === 'function') {
+                _registerMatchEvent('comment', 'COMENTARIO · ' + nota, '💬', matchTime,
+                                    { comment: nota, half: half, minute: minute, staffOnly: true },
+                                    { matchId: _targetMatchId, matchData: _targetMatchData });
+            }
+            // El informe de un partido YA TERMINADO se generó al acabar y no se
+            // reescribe desde aquí (su id no es el del partido en vivo): la nota
+            // queda en el historial de ese partido. Se dice, en vez de dejar
+            // creer que el informe ya la lleva.
+            const _enCurso = (typeof liveMatchId !== 'undefined') ? liveMatchId : null;
+            const _esElEnCurso = !_targetMatchId || _targetMatchId === _enCurso;
+            if (typeof showToast === 'function') {
+                showToast(_esElEnCurso
+                    ? '💬 Comentario añadido al historial. Saldrá en el informe del partido.'
+                    : '💬 Comentario añadido al historial de este partido. Su informe ya estaba generado y no se modifica.',
+                    _esElEnCurso ? 3500 : 6500);
+            }
+            window.closeRetroactiveEventModal();
+            return;
+        }
 
         let eventType = _selectedEventType;
         let text = '';

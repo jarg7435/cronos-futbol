@@ -220,6 +220,9 @@ async function autoDispatchMatchReports() {
                 type:          'staff_match_report',
                 staffReport:   true,          // ← filtro exclusivo del panel staff
                 staffUids:     _allStaffUids, // ← FIX: UIDs de staff para reglas Firestore
+                // 💬 v690 · Comentarios del partido (sólo cuerpo técnico).
+                matchComments: (typeof window.cronosComentariosDelPartido === 'function')
+                                 ? window.cronosComentariosDelPartido() : [],
                 clubId:        me.clubId || null,
                 coachUid:      me.uid,
                 coachEmail:    me.email,
@@ -505,6 +508,9 @@ async function autoDispatchMatchReports() {
                     type:          'collective_match_report',
                     staffReport:   false,         // no aparece en vista del staff (ya tiene staffReport=true)
                     _forCoach:     true,
+                    // 💬 v690 · Comentarios del partido (sólo cuerpo técnico).
+                    matchComments: (typeof window.cronosComentariosDelPartido === 'function')
+                                     ? window.cronosComentariosDelPartido() : [],
                     clubId:        me.clubId || null,
                     coachUid:      me.uid,
                     coachEmail:    me.email,

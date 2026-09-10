@@ -400,6 +400,10 @@ window._sendCollectiveReportNow = async function() {
                 // a directores/coordinadores (request.auth.uid in resource.data.staffUids)
                 // y la consulta fallback array-contains los encuentre.
                 staffUids:      _collStaffUids,
+                // 💬 v690 · Comentarios del partido (sólo cuerpo técnico). Este
+                // objeto lo comparten la copia del staff y la del entrenador.
+                matchComments:  (typeof window.cronosComentariosDelPartido === 'function')
+                                  ? window.cronosComentariosDelPartido() : [],
                 clubId:         me.clubId || null,
                 coachUid:       me.uid,
                 coachEmail:     me.email,

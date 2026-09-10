@@ -964,7 +964,51 @@ const _RP = (() => {
     const _RANGO_SUCESO = { goal: 0, yellow: 1, red: 2, injury: 3, sub_out: 4, sub_in: 5 };
     const _instante = e => (e.minute || 0) + (e.second || 0) / 60;
 
-    const buildEventsList = players => {
+    // ════════════════════════════════════════════════════════════════
+    //  💬 v690 · LOS COMENTARIOS DEL PARTIDO
+    //
+    //  Encargo del autor (captura 10265): notas tácticas o generales que el
+    //  entrenador añade desde "Registrar Evento Perdido", y que tienen que
+    //  aparecer en este registro en su minuto.
+    //
+    //  🔑 No son de ningún jugador, así que no viajan en `history`: los tres
+    //  despachos los copian en `matchComments` de cada documento del cuerpo
+    //  técnico y del entrenador (nunca en los de las familias). Aquí se juntan
+    //  de TODOS los documentos del partido y se quitan los repetidos: el mismo
+    //  comentario viene una vez por jugador.
+    //  Se aceptan también en `m.matchComments` por si algún agrupador los sube
+    //  al nivel del partido.
+    // ════════════════════════════════════════════════════════════════
+    const _comentariosDelInforme = (mm) => {
+        const crudos = [];
+        const junta = (arr) => { if (Array.isArray(arr)) arr.forEach(c => crudos.push(c)); };
+        junta(mm && mm.matchComments);
+        ((mm && mm.players) || []).forEach(d => junta(d && d.matchComments));
+        const vistos = {};
+        const out = [];
+        crudos.forEach(c => {
+            if (!c) return;
+            const text = String(c.text || '').trim();
+            if (!text) return;
+            const minute = Number(c.minute) >= 0 ? Number(c.minute) : 0;
+            const k = c.id ? ('i:' + c.id) : ('m:' + minute + '|' + text);
+            if (vistos[k]) return;
+            vistos[k] = true;
+            out.push({ minute, text, realTime: String(c.realTime || ''), createdAt: Number(c.createdAt) || 0 });
+        });
+        return out.sort((a, b) => (a.minute - b.minute) || (a.createdAt - b.createdAt));
+    };
+    const filaComentario = (c) =>
+        `<div style="display:flex;align-items:flex-start;gap:8px;padding:5px 0;font-size:0.76rem;" data-suceso="comment">` +
+        `<span style="min-width:35px;font-size:0.69rem;font-weight:700;color:var(--text-muted);flex-shrink:0;">${formatTot(c.minute)}</span>` +
+        horaRealPill(c.realTime) +
+        `<span style="font-size:0.8rem;line-height:1.2;flex-shrink:0;">💬</span>` +
+        `<span style="color:#d2a8ff;min-width:0;"><strong style="letter-spacing:0.5px;">COMENTARIO</strong> &middot; ` +
+        `<span style="color:var(--text,#c9d1d9);white-space:pre-wrap;word-break:break-word;">${esc(c.text)}</span></span>` +
+        `</div>`;
+
+    const buildEventsList = (players, comentarios) => {
+        const notas = Array.isArray(comentarios) ? comentarios : [];
         const all = [];
         players.forEach(p => sucesosReales(p).forEach(ev => all.push({ ...ev, _p: p })));
         all.sort((a, b) =>
@@ -974,7 +1018,9 @@ const _RP = (() => {
             ((parseInt(a._p.playerNumber) || 99) - (parseInt(b._p.playerNumber) || 99)));
 
         const relevant = all.filter(ev => ['goal','yellow','red','injury','sub_in','sub_out'].includes(ev.type));
-        if (!relevant.length) return '';
+        // v690 · Un partido sin incidencias de juego pero con comentarios
+        // también tiene registro: antes aquí se salía en blanco.
+        if (!relevant.length && !notas.length) return '';
 
         const rows = relevant.map((ev, idx) => {
             // v218: sin "nº<num>"; solo nombre del jugador.
@@ -1071,9 +1117,14 @@ const _RP = (() => {
         // Se funden las dos listas por instante. La marca de fase va DELANTE de
         // los sucesos del mismo minuto: un cambio hecho durante el descanso se
         // lee después del rótulo DESCANSO, que es como ocurrió.
+        // 💬 v690 · Y los comentarios, DETRÁS de los sucesos de su mismo
+        // minuto: una nota suele hablar de lo que acaba de pasar.
+        // ⚠️ `sort` es estable: entre comentarios del mismo minuto se conserva
+        // el orden en que se escribieron (ya vienen ordenados así).
         const items = relevant
             .map((ev, i) => ({ t: _instante(ev), orden: 1, html: rows[i] }))
             .concat(marcas.map(mk => ({ t: mk.t, orden: 0, html: filaMarca(mk) })))
+            .concat(notas.map(c => ({ t: c.minute, orden: 2, html: filaComentario(c) })))
             .sort((a, b) => (a.t - b.t) || (a.orden - b.orden));
 
         const cuerpo = items.map((it, i) =>
@@ -1208,7 +1259,7 @@ const _RP = (() => {
             buildLegend() +
             buildTimeSummary(players) +
             buildRotPanel(subs) +
-            buildEventsList(players) +
+            buildEventsList(players, _comentariosDelInforme(m)) +
             `</div>`
         );
     };

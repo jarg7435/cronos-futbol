@@ -2046,8 +2046,23 @@ const _matchSeenEvents = {};   // matchId -> Set(eventKey)
 // de JSON crudo. Se siguen EMITIENDO —el replay depende de ellos— pero no se
 // anuncian ni se listan.
 const _TIPOS_NO_VISIBLES = new Set(['tactical_move']);
+// 💬 v690 · LOS COMENTARIOS DEL PARTIDO SON DEL CUERPO TÉCNICO.
+// Decisión del autor: notas tácticas o generales que el entrenador añade desde
+// "Registrar Evento Perdido". Las familias entran también a este visor (desde
+// su panel, con enlace directo al partido), así que para ellas no existen: ni
+// en el historial ni en ningún aviso. Se mira el rol PRINCIPAL de la cuenta,
+// que es lo que este visor usa para todo lo demás.
+// ⚠️ Es una puerta de PANTALLA, como el resto de la separación entre cuerpo
+// técnico y familias en los informes: las reglas no distinguen el tipo de
+// suceso dentro de `events`.
+function _veComentariosDePartido() {
+    const rol = (typeof userData !== 'undefined' && userData && userData.role) || '';
+    return !!rol && rol !== 'parent';
+}
 function _esEventoVisible(ev) {
-    return !!ev && !_TIPOS_NO_VISIBLES.has(ev.type);
+    if (!ev || _TIPOS_NO_VISIBLES.has(ev.type)) return false;
+    if (ev.type === 'comment' && !_veComentariosDePartido()) return false;
+    return true;
 }
 
 // 🔑 COLOREADO DE LAS SUSTITUCIONES (2026-07-31, glifos unificados en v424).
@@ -2415,7 +2430,10 @@ const EVENT_META = {
     yellow: { icon: "🟨", cls: "ev-yellow", title: "TARJETA AMARILLA", flash: "rgba(227,179,65,0.20)", vib: [200] },
     red:    { icon: "🟥", cls: "ev-red",    title: "TARJETA ROJA",  flash: "rgba(218,54,51,0.22)",  vib: [300,80,300] },
     sub:    { icon: "🔄", cls: "ev-sub",    title: "CAMBIO",        flash: "rgba(88,166,255,0.18)", vib: [100] },
-    injury: { icon: "🚑", cls: "ev-injury", title: "LESIÓN",        flash: "rgba(231,76,60,0.20)",  vib: [250,100,250] }
+    injury: { icon: "🚑", cls: "ev-injury", title: "LESIÓN",        flash: "rgba(231,76,60,0.20)",  vib: [250,100,250] },
+    // 💬 v690 · No se anuncia (ver detectAndAlert): este meta sólo da el icono
+    // si algún día llega por la vía del aviso, en vez de caer en el de CAMBIO.
+    comment: { icon: "💬", cls: "ev-sub",   title: "COMENTARIO",    flash: "rgba(210,168,255,0.14)", vib: [] }
 };
 
 // v218: colores oficiales para las palabras clave en MAYÚSCULAS.
@@ -2425,7 +2443,8 @@ const EVENT_KEYWORD_COLOR = {
     TARJETA_AMR: '#eab308', // amarillo
     TARJETA_ROJ: '#ef4444', // rojo
     LESION:      '#ef4444', // rojo
-    CAMBIO:      '#58a6ff'  // azul
+    CAMBIO:      '#58a6ff', // azul
+    COMENTARIO:  '#d2a8ff'  // malva (v690): una nota, no una incidencia de juego
 };
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -2450,7 +2469,8 @@ function _formateaLineaEvento(type, texto) {
         type === 'goal'   ? EVENT_KEYWORD_COLOR.GOL :
         type === 'yellow' ? EVENT_KEYWORD_COLOR.TARJETA_AMR :
         type === 'red'    ? EVENT_KEYWORD_COLOR.TARJETA_ROJ :
-        type === 'injury' ? EVENT_KEYWORD_COLOR.LESION : null;
+        type === 'injury' ? EVENT_KEYWORD_COLOR.LESION :
+        type === 'comment' ? EVENT_KEYWORD_COLOR.COMENTARIO : null;
     // El texto canónico es "PALABRA CLAVE · Nombre" ("GOL · X",
     // "TARJETA AMARILLA · X", "LESIÓN · X"). Se colorea todo lo anterior al
     // primer ' · '; si no hay separador, se escapa entero y no se colorea nada.
@@ -3199,6 +3219,36 @@ function _appendEventToHistoryPanel(type, line, sub, meta) {
     } catch(e) { console.warn('[_appendEventToHistoryPanel]', e); }
 }
 
+// ════════════════════════════════════════════════════════════════════
+//  💬 v690 · EL HISTORIAL, EN EL ORDEN DEL PARTIDO
+//
+//  Clave: la parte (1T antes que 2T) y el minuto:segundo de `matchTime`, que
+//  ya es acumulado (en la 2ª parte vale h1+h2). A igualdad, `createdAt`; y a
+//  igualdad de todo, el orden original.
+//  ⚠️ Un suceso SIN `matchTime` legible (partidos muy viejos) hereda la clave
+//  del anterior en el array: se queda junto a sus vecinos en vez de irse al
+//  principio o al final.
+//  ⚠️ Devuelve una COPIA: `events` es el array del snapshot y lo leen otros.
+// ════════════════════════════════════════════════════════════════════
+function _ordenCronologicoSucesos(events) {
+    if (!Array.isArray(events)) return [];
+    let claveAnterior = 0;
+    return events
+        .map((ev, i) => {
+            const mt = String((ev && ev.matchTime) || '');
+            const m = mt.match(/(\d+):(\d+)/);
+            let clave = claveAnterior;
+            if (m) {
+                const parte = /^\s*2T/i.test(mt) ? 1 : 0;
+                clave = parte * 100000 + parseInt(m[1], 10) * 60 + parseInt(m[2], 10);
+            }
+            claveAnterior = clave;
+            return { ev, i, clave, t: (ev && Number(ev.createdAt)) || 0 };
+        })
+        .sort((a, b) => (a.clave - b.clave) || (a.t - b.t) || (a.i - b.i))
+        .map(x => x.ev);
+}
+
 // v230: cargar historial de eventos desde el snapshot de Firestore.
 // Esto permite que un usuario que entre tarde al partido vea todos los
 // eventos anteriores (goles, tarjetas, lesiones, cambios).
@@ -3222,7 +3272,12 @@ window._loadMatchEventsFromSnapshot = function(events) {
     // suceso y volvería la fila duplicada, que es el bug que se está cerrando.
     _histVistos = new Set();
 
-    events.forEach(ev => {
+    // 💬 v690 · EN ORDEN DE PARTIDO, NO DE LLEGADA. `events` crece con
+    // arrayUnion, así que un suceso retroactivo —un comentario del minuto 30
+    // escrito en el 44— estaba al FINAL del array y salía después de todo lo
+    // demás, cuando el propio modal promete "se insertará cronológicamente".
+    // Ver _ordenCronologicoSucesos.
+    _ordenCronologicoSucesos(events).forEach(ev => {
         if (!ev) return;
         // Misma criba que en el anuncio: la telemetría táctica no se lista.
         if (!_esEventoVisible(ev)) return;
@@ -4256,6 +4311,11 @@ function detectAndAlert(matchId, matchData, fromCache) {
         }
         if (matchData.status === "active") {
             _evNuevos.forEach(ev => {
+                // 💬 v690 · Un COMENTARIO no se canta: es una nota, no un suceso
+                // de juego, y no merece destello, sonido ni vibración. Entra en
+                // el historial por la reconstrucción desde el documento del
+                // partido (_loadMatchEventsFromSnapshot), ya en su minuto.
+                if (ev.type === 'comment') return;
                 const _t = ev.type || 'sub';
                 // v424: TODO pasa por el formateador único, no sólo las
                 // sustituciones. Antes el resto se mostraba con el texto crudo, y
@@ -5814,7 +5874,10 @@ function _liveFeedItems(m, max) {
     // `tactical_move` se descarta SIEMPRE: su `text` es un JSON con las
     // coordenadas del arrastre, no una frase. Colarlo llenaría el feed de
     // ruido ilegible y taparía los goles, que es justo lo que se quiere ver.
-    const utiles = eventos.filter(e => e && e.type && e.type !== 'tactical_move');
+    // 💬 v690 · Y `comment` tampoco: esta sección son los ÚLTIMOS SUCESOS de
+    // juego, sólo caben tres, y una nota del entrenador desplazaría un gol. Los
+    // comentarios están en el historial del partido.
+    const utiles = eventos.filter(e => e && e.type && e.type !== 'tactical_move' && e.type !== 'comment');
     // Orden por createdAt DESCENDENTE: "lo último que ha pasado". No se usa el
     // orden del array porque un evento retroactivo se añade AHORA con un minuto
     // ANTIGUO, y por minuto quedaría enterrado justo cuando acaba de anotarse.
@@ -7225,9 +7288,9 @@ setInterval(function() {
 }
 </style>
 <!-- v434 · Inmutabilidad: antes de retroactive-modal.js, que la consulta. -->
-<script src="js/match/immutability.js?v=v689"></script>
-<script src="js/match/replay/replay-player.js?v=v689"></script>
-<script src="js/match/events/retroactive-modal.js?v=v689"></script>
+<script src="js/match/immutability.js?v=v690"></script>
+<script src="js/match/replay/replay-player.js?v=v690"></script>
+<script src="js/match/events/retroactive-modal.js?v=v690"></script>
 
 <!-- ══════════════════════════════════════════════════════════════════
      🟩 v577 · FRANJA DE VERSIÓN TAMBIÉN EN EL VISOR
@@ -7240,7 +7303,7 @@ setInterval(function() {
      El sello lo escribe `scripts/cache-bust.js` a partir del CACHE_NAME de
      sw.js, nunca a mano: un número puesto a mano miente en cuanto alguien
      olvida cambiarlo (v527 lo encontró mintiendo 185 versiones seguidas). -->
-<div id="cronos-version-badge" data-version="v689" style="position:fixed;bottom:calc(4px + env(safe-area-inset-bottom, 0px));right:6px;z-index:2147483000;pointer-events:none;background:rgba(0,0,0,0.55);color:#2ea043;font-family:monospace;font-size:0.6rem;font-weight:700;letter-spacing:0.5px;padding:2px 6px;border-radius:4px;">CHRONOS v689</div>
+<div id="cronos-version-badge" data-version="v690" style="position:fixed;bottom:calc(4px + env(safe-area-inset-bottom, 0px));right:6px;z-index:2147483000;pointer-events:none;background:rgba(0,0,0,0.55);color:#2ea043;font-family:monospace;font-size:0.6rem;font-weight:700;letter-spacing:0.5px;padding:2px 6px;border-radius:4px;">CHRONOS v690</div>
 <script>
 /* 🧪 v577 · Y DE QUÉ ENTORNO ES ESA VERSIÓN.
    El problema real del autor no era no ver la versión: era no saber si la

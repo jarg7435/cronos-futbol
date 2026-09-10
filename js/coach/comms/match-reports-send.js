@@ -645,6 +645,9 @@ window._executeReportsSend = async function(method) {
                                     type:          'staff_match_report',
                                     staffReport:   true,
                                     staffUids:     _manualStaffUids, // ← FIX: UIDs para reglas Firestore
+                                    // 💬 v690 · Comentarios del partido (sólo cuerpo técnico).
+                                    matchComments: (typeof window.cronosComentariosDelPartido === 'function')
+                                                     ? window.cronosComentariosDelPartido() : [],
                                     clubId:        me.clubId || null,
                                     coachUid:      me.uid,
                                     coachEmail:    me.email,
@@ -879,6 +882,9 @@ window._executeReportsSend = async function(method) {
                     minutesPlayed: window.formatTime ? window.formatTime(p.time||0) : String(p.time||0),
                     history: _parseHistoryForFirestore(p.history||[]),
                     _forCoach: true,
+                    // 💬 v690 · Comentarios del partido (sólo cuerpo técnico).
+                    matchComments: (typeof window.cronosComentariosDelPartido === 'function')
+                                     ? window.cronosComentariosDelPartido() : [],
                 });
             }
 

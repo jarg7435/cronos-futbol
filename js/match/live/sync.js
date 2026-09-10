@@ -583,7 +583,12 @@ function _recortaSuceso(ev, matchIdPorDefecto) {
 }
 if (typeof window !== 'undefined') window._cronosRecortaSuceso = _recortaSuceso;
 
-const _IDX_TIPOS_NO_VISIBLES = new Set(['tactical_move']);
+// 💬 v690 · `comment` tampoco: no se anuncia (va en silencio al historial) y
+// en el índice ocuparía uno de los 3 huecos, pudiendo empujar fuera un gol
+// casi simultáneo. Además el índice lo lee también el panel general de las
+// familias, y los comentarios son sólo del cuerpo técnico. El historial los
+// sigue teniendo: vienen en `events` del documento del partido.
+const _IDX_TIPOS_NO_VISIBLES = new Set(['tactical_move', 'comment']);
 const _IDX_MAX_EVENTOS = 3;
 
 function _buildLiveIndexDoc(snapshot, players) {

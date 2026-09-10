@@ -227,8 +227,10 @@ console.log('\n── PARTE 4 · el Informe Colectivo la muestra ──');
     ok('4a · existe la etiqueta de hora real', /const horaRealPill = \(hhmmss\) =>/.test(R));
     ok('4b · 🔑 el PANEL DE ROTACIONES la muestra',
        /const buildRotPanel = \(subs\)[\s\S]*?horaRealPill\(sub\.realTime\)/.test(R));
+    // v690 · la firma pasó a `(players, comentarios)` (los comentarios del
+    // partido entran en el mismo registro); lo que se vigila no cambia.
     ok('4c · 🔑 el REGISTRO CRONOLÓGICO también',
-       /const buildEventsList = players[\s\S]*?horaRealPill\(ev\.realTime\)/.test(R));
+       /const buildEventsList = \(?players[\s\S]*?horaRealPill\(ev\.realTime\)/.test(R));
     ok('4d · [DEFECTO D] sin hora no se pinta nada (informes anteriores)',
        /if \(!t\) return '';/.test(R));
     ok('4e · la hora viaja desde el historial hasta la fila de rotación',

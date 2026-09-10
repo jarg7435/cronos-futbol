@@ -128,6 +128,51 @@ window._registerSubHalf = function (player, subId, action) {
     }
 };
 
+// ════════════════════════════════════════════════════════════════════
+//  💬 v690 · LOS COMENTARIOS DEL PARTIDO, LISTOS PARA EL INFORME
+//
+//  Encargo del autor (implementar.txt + captura 10265): un suceso
+//  "Comentario" en "Registrar Evento Perdido" —notas tácticas o generales
+//  sobre el partido, de los dos equipos— que salga en orden en el historial
+//  y en el informe final.
+//
+//  El informe NO lee `live_matches.events` (se borra a las 10 h): se
+//  construye con los documentos `cronos_player_reports` que escriben los
+//  despachos al terminar. Por eso los tres escritores guardan el resultado
+//  de esta función en el campo `matchComments` de las copias del cuerpo
+//  técnico y del entrenador — NUNCA en las de las familias (decisión del
+//  autor: los comentarios son sólo del cuerpo técnico).
+//
+//  Se lee el campo estructurado `comment`, no el texto visible: el texto no
+//  es el contrato de datos (lección de v418-v421).
+// ════════════════════════════════════════════════════════════════════
+window.cronosComentariosDelPartido = function (eventos) {
+    var lista = Array.isArray(eventos) ? eventos
+              : (Array.isArray(window._cronosMatchEvents) ? window._cronosMatchEvents : []);
+    var vistos = {};
+    return lista
+        .filter(function (e) { return e && e.type === 'comment' && String(e.comment || '').trim(); })
+        .map(function (e) {
+            var mt = String(e.matchTime || '');
+            var mm = mt.match(/(\d+):(\d+)/);
+            return {
+                id:        String(e.eventId || ''),
+                minute:    (typeof e.minute === 'number' && e.minute >= 0) ? e.minute : (mm ? parseInt(mm[1], 10) : 0),
+                half:      (e.half === '2T' || e.half === '1T') ? e.half : (/^\s*2T/.test(mt) ? '2T' : '1T'),
+                text:      String(e.comment).trim().slice(0, 500),
+                realTime:  String(e.realTime || ''),
+                createdAt: Number(e.createdAt) || 0,
+            };
+        })
+        .filter(function (c) {
+            var k = c.id || (c.minute + '|' + c.text);
+            if (vistos[k]) return false;
+            vistos[k] = true;
+            return true;
+        })
+        .sort(function (a, b) { return (a.minute - b.minute) || (a.createdAt - b.createdAt); });
+};
+
 // `extra`: campos ESTRUCTURADOS que se mezclan en el evento.
 // 🔑 EXISTE PORQUE EL TEXTO NO PUEDE SER EL CONTRATO DE DATOS: el reproductor
 // de repeticiones (js/match/replay/replay-player.js) sacaba el nombre del
@@ -204,7 +249,16 @@ function _registerMatchEvent(type, text, icon, matchTimeOverride, extra, target)
         }
         window._cronosMatchEvents.push(eventEntry);
         if (window._cronosMatchEvents.length > 200) {
+            // 💬 v690 · LOS COMENTARIOS NO SE RECORTAN. De esta lista sale el
+            // informe al terminar (`cronosComentariosDelPartido`), y los
+            // `tactical_move` son el 75-90% de los sucesos: con el recorte a
+            // 200 a secas, una nota de la primera parte habría desaparecido
+            // antes de generar el informe. Son pocas y cortas.
+            var _notas = window._cronosMatchEvents.filter(function (e) { return e && e.type === 'comment'; });
             window._cronosMatchEvents = window._cronosMatchEvents.slice(-200);
+            _notas.forEach(function (n) {
+                if (window._cronosMatchEvents.indexOf(n) < 0) window._cronosMatchEvents.unshift(n);
+            });
         }
         console.log('[v246] Evento registrado:', type, '| Total local:', window._cronosMatchEvents.length);
 
