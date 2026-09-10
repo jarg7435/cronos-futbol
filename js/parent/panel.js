@@ -2351,18 +2351,23 @@ window.ppNotifsByType = async function(type) {
                 ? new Date(d.datetime).toLocaleString('es-ES',{weekday:'long',day:'numeric',month:'long',hour:'2-digit',minute:'2-digit'})
                 : '';
 
-            // Build weekly schedule HTML for planificacion_semanal
-            const weekPlanHTML = isPlan && Array.isArray(d.days)
-                ? d.days.map(dy => {
-                    const hasData = dy.time || dy.venue || dy.note;
-                    return '<div style="display:flex;gap:0.5rem;padding:0.4rem 0;border-bottom:1px solid rgba(255,255,255,0.05);">'
-                        + '<div style="font-weight:700;color:#f0883e;min-width:80px;font-size:0.85rem;">' + (typeof escapeHtml==='function'?escapeHtml(dy.day):dy.day) + '</div>'
-                        + '<div style="font-size:0.82rem;color:' + (hasData?'var(--text)':'#555') + ';">'
-                        + (hasData
-                            ? [dy.time?'🕐 '+dy.time:'', dy.venue?'📍 '+(typeof escapeHtml==='function'?escapeHtml(dy.venue):dy.venue):'', dy.note?'📝 '+(typeof escapeHtml==='function'?escapeHtml(dy.note):dy.note):''].filter(Boolean).join(' &nbsp;·&nbsp; ')
-                            : '_Descanso_')
-                        + '</div></div>';
-                }).join('')
+            // ══════════════════════════════════════════════════════════
+            //  📅 v689 · EL MISMO MOTOR QUE EL PANEL DE DIRECCIÓN
+            //
+            //  Reporte del autor (capturas 10260/10261): aquí la semana se
+            //  pintaba como una lista de renglones ("Lunes · 🕐 20:00 · 📍 …
+            //  · 📝 entrenamiento · CHANDAL · 90 MINUTOS"), y en Dirección
+            //  en tarjetas por día. Pidió «exactamente el mismo motor».
+            //
+            //  🔑 No se copia el diseño: se LLAMA a `cronosRenderPlanSemanal`
+            //  (js/coach/reports/events-tab.js), el mismo que usa el detalle
+            //  del Panel de Dirección. Con él llegan también lo que esta lista no
+            //  tenía: el día de partido en verde, un dato por línea, el
+            //  "Descanso" explícito de v604 y la ubicación/notas de la semana.
+            //  Un cambio de diseño allí se verá aquí sin tocar este fichero.
+            // ══════════════════════════════════════════════════════════
+            const planBody = isPlan && typeof window.cronosRenderPlanSemanal === 'function'
+                ? window.cronosRenderPlanSemanal(d)
                 : '';
 
             overlay.innerHTML = `
@@ -2380,6 +2385,7 @@ window.ppNotifsByType = async function(type) {
                 </div>
 
                 <!-- Datos principales -->
+                ${planBody ? planBody : `
                 <div style="background:rgba(${isC?'88,166,255':'240,136,62'},0.06);border:1px solid rgba(${isC?'88,166,255':'240,136,62'},0.2);border-radius:10px;padding:1rem;margin-bottom:0.8rem;">
                     ${isC ? `
                         ${d.matchDate?`<div style="font-size:0.95rem;margin-bottom:0.5rem;">📅 <strong>${typeof escapeHtml==='function'?escapeHtml(d.matchDate):d.matchDate}</strong></div>`:''}
@@ -2389,13 +2395,13 @@ window.ppNotifsByType = async function(type) {
                         ${d.kickoff ?`<div style="font-size:0.88rem;margin-bottom:0.4rem;">⚽ Inicio: <strong>${typeof escapeHtml==='function'?escapeHtml(d.kickoff):d.kickoff}h</strong></div>`:''}
                     ` : isPlan ? `
                         ${d.weekStartDate?`<div style="font-size:0.9rem;font-weight:700;color:#f0883e;margin-bottom:0.8rem;">📅 Semana del ${new Date(d.weekStartDate+'T12:00:00').toLocaleDateString('es-ES',{day:'numeric',month:'long',year:'numeric'})}</div>`:''}
-                        <div style="display:flex;flex-direction:column;gap:0;">${weekPlanHTML}</div>
+                        <div style="font-size:0.82rem;color:#7d8590;">No se pudo cargar el detalle de la semana. Recarga la aplicación.</div>
                     ` : `
                         <div style="font-size:0.95rem;margin-bottom:0.5rem;">📅 <strong>${typeof escapeHtml==='function'?escapeHtml(dtFmt):dtFmt}</strong></div>
                         ${d.location||d.venue?`<div style="font-size:0.88rem;margin-bottom:0.4rem;">📍 ${typeof escapeHtml==='function'?escapeHtml(d.location||d.venue):d.location||d.venue}</div>`:''}
                         ${d.notes?`<div style="font-size:0.85rem;margin-top:0.4rem;padding:0.5rem;background:rgba(255,255,255,0.04);border-radius:6px;">📝 ${typeof escapeHtml==='function'?escapeHtml(d.notes):d.notes}</div>`:''}
                     `}
-                </div>
+                </div>`}
 
                 ${isC && d.players?.length ? `
                 <div style="background:rgba(63,185,80,0.06);border:1px solid rgba(63,185,80,0.2);border-radius:10px;padding:1rem;margin-bottom:0.8rem;">

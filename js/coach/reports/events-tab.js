@@ -465,142 +465,9 @@ async function _sdLoadEvents(type) {
                 </div>`:''}
                 ${d.extra?`<div style="font-size:0.85rem;padding:0.8rem;background:rgba(240,136,62,0.06);border:1px solid rgba(240,136,62,0.2);border-radius:8px;font-style:italic;">💬 ${escapeHtml(d.extra)}</div>`:''}`;
             } else if (isPlan && (Array.isArray(d.days) || d.weekStartDate)) {
-                // ── Planificación Semanal: tarjetas EN FILA con scroll ───────
-                // Rediseño pedido por el autor (2026-07-30). Antes los siete
-                // días se apilaban en vertical y quedaban ilegibles en el móvil.
-                //
-                // ⚠️ CÓMO SE DETECTA UN DÍA DE PARTIDO, y es la limitación real
-                // de esto: un día es { day, time, venue, note } y NO HAY NINGÚN
-                // CAMPO que diga si hay partido — js/parent/panel.js lo compone
-                // leyendo tres inputs de texto libre. Así que se mira el TEXTO
-                // de la nota y del sitio. Se respeta además un `kind`
-                // estructurado por si algún día se añade al compositor, que es
-                // la solución buena; mientras no exista, la heurística es lo
-                // único que funciona sobre los planes YA guardados.
-                const _esPartido = (dy) => {
-                    const k = String(dy.kind || '').trim().toLowerCase();
-                    if (k) return k === 'partido' || k === 'liga' || k === 'amistoso' || k === 'match';
-                    const txt = (String(dy.note || '') + ' ' + String(dy.venue || '') + ' ' +
-                                 String(dy.tipo || '')).toLowerCase();
-                    return /\b(partido|amistoso|liga)\b/.test(txt);
-                };
-
-                // ⚠️ UN DATO POR LÍNEA: de dónde salen TIPO, MINUTOS y EQUIPACIÓN.
-                // El compositor de js/parent/panel.js sólo tiene UN input de texto
-                // libre por día, así que esos tres datos viajan juntos dentro de
-                // `note` separados por viñetas ("Partido liga • 90 MINUTOS •
-                // EQUIP. AZUL"). Por eso hora y lugar ya salían en su línea y
-                // estos tres no: no era el layout, era el dato.
-                // Se parte por • · | y se clasifica cada trozo por su contenido.
-                // Los campos ESTRUCTURADOS que ya usa js/coach/training/panel.js
-                // (tipo / duracion / equipaciones) mandan sobre el texto libre.
-                const _lineasDe = (dy) => {
-                    const out = [];
-                    if (dy.time)  out.push('🕐 ' + escapeHtml(dy.time));
-                    if (dy.venue) out.push('📍 ' + escapeHtml(dy.venue));
-
-                    const estructurado = dy.tipo || dy.duracion || dy.minutos || dy.equipaciones;
-                    if (estructurado) {
-                        if (dy.tipo)      out.push('📋 ' + escapeHtml(dy.tipo));
-                        const dur = dy.duracion || dy.minutos;
-                        if (dur)          out.push('⏱️ ' + escapeHtml(dur));
-                        if (dy.equipaciones) out.push('👕 ' + escapeHtml(dy.equipaciones));
-                        if (dy.note)      out.push('📝 ' + escapeHtml(dy.note));
-                        return out;
-                    }
-
-                    const trozos = String(dy.note || '').split(/\s*[•·|]\s*/)
-                        .map(s => s.trim()).filter(Boolean);
-                    // Una nota suelta es sólo una nota: se deja con 📝 y sin
-                    // interpretar (lo fija la aserción 5ac).
-                    if (trozos.length === 1) {
-                        out.push('📝 ' + escapeHtml(trozos[0]));
-                        return out;
-                    }
-                    trozos.forEach((t, i) => {
-                        const low = t.toLowerCase();
-                        const icono = /\bmin\w*\b|\bminutos?\b/.test(low) ? '⏱️'
-                                    : /equip/.test(low)                   ? '👕'
-                                    : i === 0                             ? '📋'
-                                    :                                       '📝';
-                        out.push(icono + ' ' + escapeHtml(t));
-                    });
-                    return out;
-                };
-
-                const weekDaysHTML = Array.isArray(d.days)
-                    ? d.days.map(dy => {
-                        // 💤 v604 · "Descanso" pasó a ser un TIPO explícito en la
-                        // Planificación Semanal. Se pinta con el mismo
-                        // "_Descanso_" de siempre en vez de listarlo como una
-                        // actividad más: para quien lee, un día de descanso y un
-                        // día vacío significan lo mismo, y mezclarlo con las
-                        // sesiones reales haría contar cuatro entrenamientos
-                        // donde hay tres.
-                        // ⚠️ El tipo viaja dentro de `note` (training-notify.js
-                        // lo une con ' · '), así que se mira también ahí.
-                        const _esDescanso = /^\s*descanso\b/i.test(String(dy.tipo || '')) ||
-                                            /^\s*descanso\s*(·|$)/i.test(String(dy.note || ''));
-                        const hasData = !_esDescanso && (dy.time || dy.venue || dy.note ||
-                                        dy.tipo || dy.duracion || dy.minutos || dy.equipaciones);
-                        const match   = hasData && _esPartido(dy);
-                        // Cada dato en SU línea. Se conservan los mismos emojis y
-                        // el mismo "_Descanso_" de siempre: hay guards que los
-                        // fijan y el contenido no es lo que se rediseña.
-                        const detalle = hasData
-                            ? _lineasDe(dy).map(l => '<div class="wp-line">' + l + '</div>').join('')
-                            : '<div class="wp-line wp-rest">_Descanso_</div>';
-                        // data-day identifica la tarjeta sin depender del texto
-                        // de dentro: es lo que permite comprobar en el guard qué
-                        // día concreto se ha marcado en verde.
-                        return '<div class="wp-day' + (match ? ' wp-day-match' : '') + '"'
-                            + ' data-day="' + escapeAttr(dy.day || '') + '">'
-                            + '<div class="wp-day-head">' + escapeHtml(dy.day || '')
-                            + (match ? '<span class="wp-badge">⚽ PARTIDO</span>' : '')
-                            + '</div>'
-                            + '<div class="wp-day-body">' + detalle + '</div>'
-                            + '</div>';
-                    }).join('')
-                    : '';
-
-                // CSS propio del modal: no hay hoja de estilos que cubra esto y
-                // el overlay se cuelga suelto del body.
-                const wpCss = '<style>'
-                    + '.wp-week{display:flex;flex-direction:row;gap:0.5rem;overflow-x:auto;'
-                        + 'padding-bottom:0.5rem;-webkit-overflow-scrolling:touch;}'
-                    + '.wp-week::-webkit-scrollbar{height:6px;}'
-                    + '.wp-week::-webkit-scrollbar-thumb{background:rgba(255,255,255,0.18);border-radius:3px;}'
-                    // flex-shrink:0 es lo que hace que el scroll exista: sin esto
-                    // los siete días se comprimen y no hay nada que desplazar.
-                    + '.wp-day{flex:0 0 auto;flex-shrink:0;min-width:152px;max-width:200px;'
-                        + 'border:1px solid rgba(255,255,255,0.10);border-radius:9px;'
-                        + 'background:rgba(255,255,255,0.03);overflow:hidden;}'
-                    + '.wp-day-head{font-weight:700;font-size:0.78rem;color:#f0883e;'
-                        + 'padding:0.4rem 0.55rem;background:rgba(240,136,62,0.10);'
-                        + 'border-bottom:1px solid rgba(255,255,255,0.08);white-space:nowrap;}'
-                    // Un dato por línea, pegados al borde izquierdo: align-items
-                    // flex-start es lo que impide que las líneas cortas se
-                    // centren dentro de la tarjeta.
-                    + '.wp-day-body{padding:0.45rem 0.55rem;display:flex;flex-direction:column;'
-                        + 'align-items:flex-start;text-align:left;gap:0.28rem;}'
-                    + '.wp-line{font-size:0.76rem;color:var(--text,#c9d1d9);word-break:break-word;'
-                        + 'text-align:left;width:100%;}'
-                    + '.wp-rest{color:#555;font-style:italic;}'
-                    // Día con partido: verde del proyecto, en el borde y en la cabecera.
-                    + '.wp-day-match{border-color:#3fb950;box-shadow:0 0 0 1px rgba(63,185,80,0.35);}'
-                    + '.wp-day-match .wp-day-head{color:#3fb950;background:rgba(63,185,80,0.16);}'
-                    + '.wp-badge{display:block;font-size:0.6rem;font-weight:800;letter-spacing:0.5px;'
-                        + 'color:#3fb950;margin-top:2px;}'
-                    + '</style>';
-
-                body = `
-                ${wpCss}
-                <div style="background:rgba(240,136,62,0.06);border:1px solid rgba(240,136,62,0.2);border-radius:10px;padding:1rem;margin-bottom:0.8rem;">
-                    ${d.weekStartDate?`<div style="font-size:0.9rem;font-weight:700;color:#f0883e;margin-bottom:0.8rem;">📅 Semana del ${new Date(d.weekStartDate+'T12:00:00').toLocaleDateString('es-ES',{day:'numeric',month:'long',year:'numeric'})}</div>`:''}
-                    <div class="wp-week">${weekDaysHTML}</div>
-                    ${d.location?`<div style="font-size:0.85rem;margin-top:0.5rem;">📍 ${escapeHtml(d.location)}</div>`:''}
-                    ${d.notes?`<div style="font-size:0.82rem;margin-top:0.4rem;padding:0.5rem;background:rgba(255,255,255,0.04);border-radius:6px;">📝 ${escapeHtml(d.notes)}</div>`:''}
-                </div>`;
+                // v689 · El motor vive en `cronosRenderPlanSemanal`, al final
+                // de este fichero, y lo usa TAMBIÉN el Área de Familias.
+                body = cronosRenderPlanSemanal(d);
             } else {
                 const dtFmt = d.datetime
                     ? new Date(d.datetime).toLocaleString('es-ES',{weekday:'long',day:'numeric',month:'long',hour:'2-digit',minute:'2-digit'})
@@ -667,3 +534,168 @@ async function _sdLoadEvents(type) {
         container.innerHTML = `<div style="text-align:center;padding:2rem;color:#ff5858;">⚠️ ${escapeHtml(e.message)}</div>`;
     }
 }
+
+// ════════════════════════════════════════════════════════════════════
+//  📅 v689 · EL MOTOR ÚNICO DE LA PLANIFICACIÓN SEMANAL
+//
+//  Reporte del autor (implementar.txt + capturas 10260/10261): la misma
+//  planificación se veía en tarjetas por día en el Panel de Dirección y
+//  como una lista de renglones en el Área de Familias. Pidió que Familias
+//  use «exactamente el mismo motor de renderizado».
+//
+//  🔑 Éste es ESE motor, sacado sin cambiar una línea del detalle de
+//  `sdViewEventDetail` (más arriba), y lo llaman los DOS modales:
+//    · Panel de Dirección → sdViewEventDetail (este fichero)
+//    · Área de Familias   → ppViewNotifDetail (js/parent/panel.js)
+//  Devuelve el bloque de la semana (su <style>, la cabecera "Semana del…",
+//  una tarjeta por día y la ubicación/notas si las hay). Cada modal pone su
+//  marco: logo, "Enviado…" y Cerrar.
+//
+//  ⚠️ NO DUPLICAR. La v688 y anteriores tenían TRES renderizadores de esto:
+//  éste, la lista propia de Familias y `_cronosRenderTrainingWeekCards`
+//  (shared/whatsapp-email.js), que se anunciaba como "fuente única" y no lo
+//  llamaba nadie. El que queda es éste porque es el que el autor señaló como
+//  bueno y el que tiene guard (test_events_tab_module.js, PARTE 5).
+//
+//  ⚠️ Va DESPUÉS de _sdLoadEvents a propósito: ese guard carga el fichero
+//  desde `async function _sdLoadEvents` hasta el final, así que el motor
+//  entra en su sandbox sin tocar el arnés.
+// ════════════════════════════════════════════════════════════════════
+function cronosRenderPlanSemanal(d) {
+    d = d || {};
+    // ⚠️ CÓMO SE DETECTA UN DÍA DE PARTIDO, y es la limitación real
+    // de esto: un día es { day, time, venue, note } y NO HAY NINGÚN
+    // CAMPO que diga si hay partido — js/parent/panel.js lo compone
+    // leyendo tres inputs de texto libre. Así que se mira el TEXTO
+    // de la nota y del sitio. Se respeta además un `kind`
+    // estructurado por si algún día se añade al compositor, que es
+    // la solución buena; mientras no exista, la heurística es lo
+    // único que funciona sobre los planes YA guardados.
+    const _esPartido = (dy) => {
+        const k = String(dy.kind || '').trim().toLowerCase();
+        if (k) return k === 'partido' || k === 'liga' || k === 'amistoso' || k === 'match';
+        const txt = (String(dy.note || '') + ' ' + String(dy.venue || '') + ' ' +
+                     String(dy.tipo || '')).toLowerCase();
+        return /\b(partido|amistoso|liga)\b/.test(txt);
+    };
+
+    // ⚠️ UN DATO POR LÍNEA: de dónde salen TIPO, MINUTOS y EQUIPACIÓN.
+    // El compositor de js/parent/panel.js sólo tiene UN input de texto
+    // libre por día, así que esos tres datos viajan juntos dentro de
+    // `note` separados por viñetas ("Partido liga • 90 MINUTOS •
+    // EQUIP. AZUL"). Por eso hora y lugar ya salían en su línea y
+    // estos tres no: no era el layout, era el dato.
+    // Se parte por • · | y se clasifica cada trozo por su contenido.
+    // Los campos ESTRUCTURADOS que ya usa js/coach/training/panel.js
+    // (tipo / duracion / equipaciones) mandan sobre el texto libre.
+    const _lineasDe = (dy) => {
+        const out = [];
+        if (dy.time)  out.push('🕐 ' + escapeHtml(dy.time));
+        if (dy.venue) out.push('📍 ' + escapeHtml(dy.venue));
+
+        const estructurado = dy.tipo || dy.duracion || dy.minutos || dy.equipaciones;
+        if (estructurado) {
+            if (dy.tipo)      out.push('📋 ' + escapeHtml(dy.tipo));
+            const dur = dy.duracion || dy.minutos;
+            if (dur)          out.push('⏱️ ' + escapeHtml(dur));
+            if (dy.equipaciones) out.push('👕 ' + escapeHtml(dy.equipaciones));
+            if (dy.note)      out.push('📝 ' + escapeHtml(dy.note));
+            return out;
+        }
+
+        const trozos = String(dy.note || '').split(/\s*[•·|]\s*/)
+            .map(s => s.trim()).filter(Boolean);
+        // Una nota suelta es sólo una nota: se deja con 📝 y sin
+        // interpretar (lo fija la aserción 5ac).
+        if (trozos.length === 1) {
+            out.push('📝 ' + escapeHtml(trozos[0]));
+            return out;
+        }
+        trozos.forEach((t, i) => {
+            const low = t.toLowerCase();
+            const icono = /\bmin\w*\b|\bminutos?\b/.test(low) ? '⏱️'
+                        : /equip/.test(low)                   ? '👕'
+                        : i === 0                             ? '📋'
+                        :                                       '📝';
+            out.push(icono + ' ' + escapeHtml(t));
+        });
+        return out;
+    };
+
+    const weekDaysHTML = Array.isArray(d.days)
+        ? d.days.map(dy => {
+            // 💤 v604 · "Descanso" pasó a ser un TIPO explícito en la
+            // Planificación Semanal. Se pinta con el mismo
+            // "_Descanso_" de siempre en vez de listarlo como una
+            // actividad más: para quien lee, un día de descanso y un
+            // día vacío significan lo mismo, y mezclarlo con las
+            // sesiones reales haría contar cuatro entrenamientos
+            // donde hay tres.
+            // ⚠️ El tipo viaja dentro de `note` (training-notify.js
+            // lo une con ' · '), así que se mira también ahí.
+            const _esDescanso = /^\s*descanso\b/i.test(String(dy.tipo || '')) ||
+                                /^\s*descanso\s*(·|$)/i.test(String(dy.note || ''));
+            const hasData = !_esDescanso && (dy.time || dy.venue || dy.note ||
+                            dy.tipo || dy.duracion || dy.minutos || dy.equipaciones);
+            const match   = hasData && _esPartido(dy);
+            // Cada dato en SU línea. Se conservan los mismos emojis y
+            // el mismo "_Descanso_" de siempre: hay guards que los
+            // fijan y el contenido no es lo que se rediseña.
+            const detalle = hasData
+                ? _lineasDe(dy).map(l => '<div class="wp-line">' + l + '</div>').join('')
+                : '<div class="wp-line wp-rest">_Descanso_</div>';
+            // data-day identifica la tarjeta sin depender del texto
+            // de dentro: es lo que permite comprobar en el guard qué
+            // día concreto se ha marcado en verde.
+            return '<div class="wp-day' + (match ? ' wp-day-match' : '') + '"'
+                + ' data-day="' + escapeAttr(dy.day || '') + '">'
+                + '<div class="wp-day-head">' + escapeHtml(dy.day || '')
+                + (match ? '<span class="wp-badge">⚽ PARTIDO</span>' : '')
+                + '</div>'
+                + '<div class="wp-day-body">' + detalle + '</div>'
+                + '</div>';
+        }).join('')
+        : '';
+
+    // CSS propio del modal: no hay hoja de estilos que cubra esto y
+    // el overlay se cuelga suelto del body.
+    // ⚠️ `.wp-day` NO choca con `.wp-day-row` del compositor de familias
+    // (parent/panel.js): un selector de clase casa con la palabra entera.
+    const wpCss = '<style>'
+        + '.wp-week{display:flex;flex-direction:row;gap:0.5rem;overflow-x:auto;'
+            + 'padding-bottom:0.5rem;-webkit-overflow-scrolling:touch;}'
+        + '.wp-week::-webkit-scrollbar{height:6px;}'
+        + '.wp-week::-webkit-scrollbar-thumb{background:rgba(255,255,255,0.18);border-radius:3px;}'
+        // flex-shrink:0 es lo que hace que el scroll exista: sin esto
+        // los siete días se comprimen y no hay nada que desplazar.
+        + '.wp-day{flex:0 0 auto;flex-shrink:0;min-width:152px;max-width:200px;'
+            + 'border:1px solid rgba(255,255,255,0.10);border-radius:9px;'
+            + 'background:rgba(255,255,255,0.03);overflow:hidden;}'
+        + '.wp-day-head{font-weight:700;font-size:0.78rem;color:#f0883e;'
+            + 'padding:0.4rem 0.55rem;background:rgba(240,136,62,0.10);'
+            + 'border-bottom:1px solid rgba(255,255,255,0.08);white-space:nowrap;}'
+        // Un dato por línea, pegados al borde izquierdo: align-items
+        // flex-start es lo que impide que las líneas cortas se
+        // centren dentro de la tarjeta.
+        + '.wp-day-body{padding:0.45rem 0.55rem;display:flex;flex-direction:column;'
+            + 'align-items:flex-start;text-align:left;gap:0.28rem;}'
+        + '.wp-line{font-size:0.76rem;color:var(--text,#c9d1d9);word-break:break-word;'
+            + 'text-align:left;width:100%;}'
+        + '.wp-rest{color:#555;font-style:italic;}'
+        // Día con partido: verde del proyecto, en el borde y en la cabecera.
+        + '.wp-day-match{border-color:#3fb950;box-shadow:0 0 0 1px rgba(63,185,80,0.35);}'
+        + '.wp-day-match .wp-day-head{color:#3fb950;background:rgba(63,185,80,0.16);}'
+        + '.wp-badge{display:block;font-size:0.6rem;font-weight:800;letter-spacing:0.5px;'
+            + 'color:#3fb950;margin-top:2px;}'
+        + '</style>';
+
+    return `
+                ${wpCss}
+                <div style="background:rgba(240,136,62,0.06);border:1px solid rgba(240,136,62,0.2);border-radius:10px;padding:1rem;margin-bottom:0.8rem;">
+                    ${d.weekStartDate?`<div style="font-size:0.9rem;font-weight:700;color:#f0883e;margin-bottom:0.8rem;">📅 Semana del ${new Date(d.weekStartDate+'T12:00:00').toLocaleDateString('es-ES',{day:'numeric',month:'long',year:'numeric'})}</div>`:''}
+                    <div class="wp-week">${weekDaysHTML}</div>
+                    ${d.location?`<div style="font-size:0.85rem;margin-top:0.5rem;">📍 ${escapeHtml(d.location)}</div>`:''}
+                    ${d.notes?`<div style="font-size:0.82rem;margin-top:0.4rem;padding:0.5rem;background:rgba(255,255,255,0.04);border-radius:6px;">📝 ${escapeHtml(d.notes)}</div>`:''}
+                </div>`;
+}
+window.cronosRenderPlanSemanal = cronosRenderPlanSemanal;
