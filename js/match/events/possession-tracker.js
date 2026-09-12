@@ -345,9 +345,32 @@
             // ── PC: los tres botones juntos, abajo al centro (sin cambios) ──
             '#cronos-pr-bar{position:fixed;left:50%;transform:translateX(-50%);',
             'bottom:calc(10px + env(safe-area-inset-bottom,0px));z-index:1002;',
-            'display:none;gap:8px;align-items:center;}',
+            'display:none;gap:8px;align-items:center;',
+            // ══════════════════════════════════════════════════════════════
+            //  🚨 v696 · LA BARRA NO PUEDE COMERSE LOS TOQUES DEL CÉSPED
+            //
+            //  Reporte del autor (IMG_4714/IMG_4715, óvalo amarillo): las
+            //  fichas de la franja inferior del campo se quedaban muertas —no
+            //  se podían mover ni seleccionar.
+            //
+            //  🔑 LA CAUSA ES LA COLOCACIÓN EN LAS ESQUINAS DE v694: para
+            //  repartir los botones a los extremos, la barra pasó a ocupar
+            //  TODO EL ANCHO (`left:0;right:0` + `space-between`). Un <div>
+            //  sin fondo SIGUE CAPTURANDO los eventos en toda su caja, así
+            //  que quedó una franja invisible de lado a lado por encima del
+            //  campo. Se veía transparente y se comportaba como una pared.
+            //
+            //  El arreglo es que la CAJA deje pasar y sólo los CONTROLES
+            //  reciban: nada de mover la barra ni de recortar el campo.
+            //  ⚠️ Va también en la regla base, no sólo en el @media de móvil:
+            //  en PC la barra es pequeña, pero su caja tapa igual la porción
+            //  de césped que hay bajo ella.
+            'pointer-events:none;}',
             '#cronos-pr-bar.on{display:flex;}',
-            '.cronos-pr-btn{min-width:62px;min-height:44px;border-radius:12px;font-weight:900;',
+            // Los botones SÍ son interactivos: el `none` del padre se hereda
+            // en cascada y hay que reponerlo explícitamente en cada control.
+            '.cronos-pr-btn{pointer-events:auto;',
+            'min-width:62px;min-height:44px;border-radius:12px;font-weight:900;',
             'font-size:0.82rem;letter-spacing:0.5px;cursor:pointer;color:#fff;',
             'display:flex;align-items:center;justify-content:center;gap:5px;',
             'backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);',

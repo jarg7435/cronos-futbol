@@ -24,6 +24,7 @@ const fs   = require('fs');
 const path = require('path');
 const vm   = require('vm');
 const { execFileSync } = require('child_process');
+const { parsearCSS, resolver } = require('./lib/css-cascada');
 
 const RAIZ = path.join(__dirname, '..');
 const leer = f => fs.readFileSync(path.join(RAIZ, f), 'utf8');
@@ -505,6 +506,64 @@ ok('el desplegable tiene anclaje a los dos lados en el CSS',
     if (typeof encendido._ref.tickVigia === 'function') encendido._ref.tickVigia();
     ok('…y al REANUDAR vuelven a encenderse',
        !encendido.document.getElementById('cronos-pr-loss').classList.contains('off'));
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  2 quater. v696 · LA BARRA NO PUEDE COMERSE LOS TOQUES DEL CÉSPED
+// ═══════════════════════════════════════════════════════════════════════════
+//  Reporte del autor (IMG_4714/IMG_4715, óvalo amarillo): las fichas de la
+//  franja inferior del campo no se podían mover ni seleccionar. Al repartir
+//  los botones a las esquinas (v694) la barra pasó a ocupar TODO EL ANCHO, y
+//  un <div> sin fondo captura los eventos igual en toda su caja: una pared
+//  invisible de lado a lado sobre el campo.
+//
+//  🔑 SE MIDE LA CASCADA DEL CSS QUE EL MÓDULO GENERA DE VERDAD (el <style>
+//  que crea al montarse), no el texto del fuente: la hoja se construye
+//  concatenando trozos y buscar "pointer-events:none" con un grep no dice
+//  sobre QUÉ selector acaba cayendo.
+{
+    const e = montaEntorno({ players: PLANTILLA, matchId: 'm_capas' });
+    const styleEl = e.document.getElementById('cronos-pr-css');
+    const cssReal = styleEl ? String(styleEl.textContent || '') : '';
+    ok('el módulo inyecta su hoja de estilos', cssReal.length > 100);
+
+    const REGLAS_PR = parsearCSS(cssReal);
+    const MOVIL = { ancho: 844, alto: 390 };
+    const PC    = { ancho: 1920, alto: 1080 };
+    const body  = { tag: 'body', clases: [] };
+    const barra = { tag: 'div', id: 'cronos-pr-bar', clases: ['on'], ancestros: [body] };
+    const btn   = (extra) => ({ tag: 'button', clases: ['cronos-pr-btn', extra], ancestros: [body, barra] });
+
+    ok('la barra deja PASAR los toques (pointer-events:none) en móvil',
+       resolver(REGLAS_PR, 'pointer-events', barra, MOVIL) === 'none');
+
+    // ⚠️ También en PC: allí la barra es pequeña, pero su caja tapa igual la
+    // porción de césped que hay debajo.
+    ok('…y también en PC',
+       resolver(REGLAS_PR, 'pointer-events', barra, PC) === 'none');
+
+    // 🔑 El `none` se hereda en cascada: si los botones no lo repusieran, el
+    // arreglo dejaría la barra intocable y la función entera muerta.
+    ok('los BOTONES sí reciben los toques (pointer-events:auto)',
+       resolver(REGLAS_PR, 'pointer-events', btn('loss'), MOVIL) === 'auto' &&
+       resolver(REGLAS_PR, 'pointer-events', btn('rec'),  MOVIL) === 'auto' &&
+       resolver(REGLAS_PR, 'pointer-events', btn('sum'),  MOVIL) === 'auto');
+
+    ok('…en PC también',
+       resolver(REGLAS_PR, 'pointer-events', btn('loss'), PC) === 'auto');
+
+    // La ventana de dorsales SÍ debe capturar: su caja es toda visible (tiene
+    // fondo y borde), así que ahí un toque es intencionado.
+    const asign = { tag: 'div', id: 'cronos-pr-assign', clases: ['on', 'desde-izq'], ancestros: [body] };
+    ok('la ventana de dorsales sigue siendo interactiva (tiene fondo visible)',
+       resolver(REGLAS_PR, 'pointer-events', asign, MOVIL) !== 'none');
+
+    // 🚨 Y la barra a todo el ancho sigue ahí (es lo que coloca los botones en
+    // las esquinas): el arreglo NO puede haber sido encogerla, porque eso
+    // habría devuelto los botones al centro.
+    ok('la barra sigue ocupando el ancho en móvil (los botones, en las esquinas)',
+       resolver(REGLAS_PR, 'left', barra, MOVIL) === '0' &&
+       resolver(REGLAS_PR, 'right', barra, MOVIL) === '0');
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
