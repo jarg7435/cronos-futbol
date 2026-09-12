@@ -106,6 +106,9 @@ function aparato(nube, op) {
     };
     ctx.window = {
         _cronosCurrentUser: { uid: o.uid, _activeRole: o.rol, clubId: o.club },
+        // v700 · La lectura única de extras del proyecto, con su regla real
+        // `!== false`: sin mapa, todo activo.
+        _cronosExtraEnabled: (k) => (o.extras ? o.extras[k] !== false : true),
         cronosMyTeamId: () => o.equipo,
         cronosMyTeam: () => ({ teamId: o.equipo, categoryLabel: 'Alevín', subcategory: 'C' }),
         addEventListener: () => {},
@@ -300,6 +303,38 @@ function aparato(nube, op) {
         ok('…y el latido lleva el uid (la regla de alta lo exige)',
            nube.docs[clave].uid === 'u1');
     }
+
+    // ═══ 7 bis. v700 · EL INTERRUPTOR DE EMERGENCIA POR CLUB ═══════════════
+    {
+        // Apagado el extra, el módulo queda INERTE: el segundo aparato entra
+        // con la misma plaza, como antes de v699.
+        const nube = crearNube();
+        const ipad = aparato(nube, { nombre: 'iPad', extras: { sesion_unica: false } });
+        const entro1 = await ipad.w.cronosSesionAlEntrar();
+        const movil = aparato(nube, { nombre: 'Windows', extras: { sesion_unica: false } });
+        const entro2 = await movil.w.cronosSesionAlEntrar();
+        ok('🔧 con el extra APAGADO, dos aparatos comparten la misma plaza',
+           entro1 === true && entro2 === true && movil.avisos.conflicto === null);
+        // 🔑 Y no sólo "no pregunta": no deja marca ninguna. Si la dejara, al
+        // volver a encender el extra el club se encontraría plazas ocupadas
+        // por aparatos que ya no están.
+        ok('…y no deja ninguna marca (queda inerte, no sólo silencioso)',
+           Object.keys(nube.docs).length === 0);
+    }
+    {
+        // ⚠️ La cara POSITIVA de la regla `!== false`, que es la que se olvida:
+        // un club sin el campo tiene el control ACTIVO, que es como está
+        // desplegado hoy. Con `=== true` se habría apagado para todos.
+        const nube = crearNube();
+        const a = aparato(nube, { extras: { otra_cosa: true } });
+        await a.w.cronosSesionAlEntrar();
+        const b = aparato(nube, { nombre: 'Windows', extras: { otra_cosa: true } });
+        const entro = await b.w.cronosSesionAlEntrar();
+        ok('🔑 extra AUSENTE = control ACTIVO (regla `!== false`)',
+           entro === false && !!b.avisos.conflicto);
+    }
+    ok('el extra está declarado en el panel del SuperAdmin',
+       /key:\s*'sesion_unica'/.test(leer('js/admin/superadmin/extras-toggle.js')));
 
     // ═══ 8. INTEGRACIÓN ════════════════════════════════════════════════════
     const roleLaunch = leer('js/services/auth/role-launch.js');

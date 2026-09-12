@@ -47,6 +47,13 @@ window._CRONOS_EXTRAS_DEF = [
     { key: 'semaforo',       icon: '🚦', label: 'Semáforo con Porcentajes', desc: 'Sistema de colores y umbrales de tiempos' },
     { key: 'informes_padres',icon: '📧', label: 'Enviar Informes a Familiares / Jugadores', desc: 'Informes individuales por jugador enviados a familiares y jugadores' },
     { key: 'actualizaciones', icon: '🔄', label: 'Actualizaciones de la App', desc: 'Permitir recibir actualizaciones automáticas' },
+    // v700 · Interruptor de emergencia del control de sesiones (v699).
+    // ⚠️ Va DESACTIVADO en el sentido de "apagar el candado": con el extra
+    // ACTIVO (lo normal, por la regla `!== false`) el control funciona, y
+    // apagarlo devuelve al club al comportamiento de antes de v699 —varios
+    // aparatos con la misma plaza— sin necesidad de desplegar nada. Es la
+    // palanca para un sábado por la mañana si algo fuera mal en un partido.
+    { key: 'sesion_unica',   icon: '🔒', label: 'Una plaza, un dispositivo', desc: 'Impedir que el mismo rol y equipo se abran a la vez en dos dispositivos. Al apagarlo, el club vuelve a poder usar varios aparatos con la misma plaza' },
     { key: 'partidos_terminados', icon: '🎬', label: 'Partidos Terminados', desc: 'Ver y reproducir el historial de partidos finalizados (director, coordinador, entrenador)' },
     { key: 'partidos_en_vivo', icon: '🔴', label: 'Partidos en Vivo', desc: 'Ver partidos en vivo del club (director, coordinador, familiares/jugadores, entrenador)' },
     // ════════════════════════════════════════════════════════════════

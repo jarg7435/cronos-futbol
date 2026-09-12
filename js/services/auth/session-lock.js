@@ -341,7 +341,23 @@
     //  PUERTA ÚNICA — la llama el arranque de rol
     // ════════════════════════════════════════════════════════════════
     //  Devuelve true si se puede seguir en esta plaza.
+    // ⚠️ v700 · INTERRUPTOR DE EMERGENCIA POR CLUB (`sesion_unica`).
+    //  Apagarlo devuelve al club al comportamiento de antes de v699 —varios
+    //  aparatos con la misma plaza— sin desplegar nada, que es lo que hace
+    //  falta un sábado por la mañana si esto estorbara en un partido real.
+    //  Se comprueba con `_cronosExtraEnabled`, la lectura ÚNICA de extras del
+    //  proyecto (v429), y por tanto hereda su regla `!== false`: un club sin
+    //  el campo lo tiene ACTIVO, que es como está desplegado hoy.
+    //  🔑 Apagado, no se reclama la plaza NI se deja marca NI se escucha: el
+    //  módulo queda inerte del todo, no sólo "sin preguntar".
+    function _controlActivo() {
+        if (typeof window._cronosExtraEnabled !== 'function') return true;
+        return window._cronosExtraEnabled('sesion_unica');
+    }
+    window.cronosSesionControlActivo = _controlActivo;
+
     window.cronosSesionAlEntrar = async function () {
+        if (!_controlActivo()) return true;
         var me = window._cronosCurrentUser;
         var clave = _claveDePlaza(me);
         if (!clave) return true;
