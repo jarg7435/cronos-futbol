@@ -291,7 +291,16 @@ function sortBenchUI(team) {
 // ════════════════════════════════════════════════════════════════════
 function createPlayerChip(player) {
     const div = document.createElement('div');
-    div.className = 'player-chip' + (player.cards === 'roja' ? ' expelled' : '');
+    // ── v691 · `chip-on-field` marca las fichas que están SOBRE EL CAMPO ──
+    //  No basta con el CSS `.pitch .player-chip`: el arrastre táctil clona la
+    //  ficha y cuelga el clon de `document.body` (ver handleTouchStart), fuera
+    //  del campo. Con un selector por ancestro el clon recuperaría el tamaño
+    //  grande justo al levantarlo — un salto visual en el gesto que este
+    //  cambio pretende facilitar. `cloneNode(true)` copia las clases, así que
+    //  marcando la propia ficha el clon conserva su tamaño esté donde esté.
+    div.className = 'player-chip' +
+        (player.status === 'field' ? ' chip-on-field' : '') +
+        (player.cards === 'roja' ? ' expelled' : '');
     div.id = `player-${player.id}`;
     div.draggable = (player.cards !== 'roja' || player.status === 'field');
     div.style.background = `linear-gradient(to bottom, ${player.color} 50%, ${player.shortsColor} 50%)`;

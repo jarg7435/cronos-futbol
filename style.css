@@ -1610,4 +1610,100 @@ input, select {
         z-index: 2;
     }
 }
+
+/* ══════════════════════════════════════════════════════════════════════
+   v691 · FICHAS COMPACTAS EN F11 CON LOS DOS EQUIPOS (móvil e iPad)
+
+   El encargo: en Fútbol 11 y con LOCAL y VISITANTE a la vez sobre el
+   campo, las 22 fichas ocupan casi todo el terreno. Como las fichas no
+   pueden superponerse (taparían los cronos), no queda hueco para
+   recolocarlas con el dedo. En Fútbol 7 el tamaño actual va bien, así
+   que la reducción NO debe tocarlo.
+
+   🔑 Las dos condiciones ya estaban en el <body> y no hay que inventar
+   ninguna señal nueva (setup-modal.js las pone al empezar y al retomar):
+     • `mode-f11`              → la modalidad es Fútbol 11
+     • SIN `hide-visitor`      → "Analizar Contrario" activo, o sea los
+                                 DOS equipos dibujados sobre el campo
+   Con `hide-visitor` (sólo mi equipo) el campo está medio vacío: ahí la
+   ficha grande se queda como está.
+
+   `chip-on-field` (render.js) acota el recorte a las fichas del campo;
+   las del banquillo conservan su tamaño, y el clon del arrastre táctil
+   —que cuelga de <body>, no del campo— se encoge igual porque hereda la
+   clase al clonarse.
+
+   ⚠️ Se recorta también la ETIQUETA (ancho máximo y tipografía): con
+   `max-width:110px` los nombres se solapan entre sí mucho antes que los
+   propios círculos, que es lo que de verdad satura la vista.
+   ══════════════════════════════════════════════════════════════════════ */
+
+/* ── Tablet / iPad (hasta 1366px = iPad Pro 12,9" apaisado) ── */
+@media (max-width: 1366px) {
+    body.mode-f11:not(.hide-visitor) .player-chip.chip-on-field {
+        width: 46px !important;
+        height: 46px !important;
+        border-width: 2px !important;
+    }
+
+    body.mode-f11:not(.hide-visitor) .player-chip.chip-on-field .player-number {
+        font-size: 0.95rem !important;
+    }
+
+    body.mode-f11:not(.hide-visitor) .player-chip.chip-on-field .player-timer,
+    body.mode-f11:not(.hide-visitor) .player-chip.chip-on-field .player-name {
+        font-size: 0.56rem !important;
+        max-width: 76px !important;
+        padding: 1px 3px !important;
+        line-height: 1.3 !important;
+    }
+
+    body.mode-f11:not(.hide-visitor) .player-chip.chip-on-field .player-timer {
+        top: -15px !important;
+    }
+
+    body.mode-f11:not(.hide-visitor) .player-chip.chip-on-field .player-name {
+        bottom: -15px !important;
+    }
+
+    /* Indicadores de gol y tarjeta, a la escala de la ficha reducida */
+    body.mode-f11:not(.hide-visitor) .player-chip.chip-on-field .player-card-indicator {
+        width: 11px;
+        height: 14px;
+        bottom: -4px;
+    }
+
+    body.mode-f11:not(.hide-visitor) .player-chip.chip-on-field .player-goal-indicator {
+        font-size: 0.55rem;
+        padding: 1px 3px;
+        right: -8px;
+    }
+}
+
+/* ── Móvil (≤950px): aquí `body.mode-f11 .player-chip` ya baja a 44px,
+      pero con los 22 jugadores hace falta un escalón más. ── */
+@media (max-width: 950px) {
+    body.mode-f11:not(.hide-visitor) .player-chip.chip-on-field {
+        width: 38px !important;
+        height: 38px !important;
+    }
+
+    body.mode-f11:not(.hide-visitor) .player-chip.chip-on-field .player-number {
+        font-size: 0.8rem !important;
+    }
+
+    body.mode-f11:not(.hide-visitor) .player-chip.chip-on-field .player-timer,
+    body.mode-f11:not(.hide-visitor) .player-chip.chip-on-field .player-name {
+        font-size: 0.5rem !important;
+        max-width: 62px !important;
+    }
+
+    body.mode-f11:not(.hide-visitor) .player-chip.chip-on-field .player-timer {
+        top: -13px !important;
+    }
+
+    body.mode-f11:not(.hide-visitor) .player-chip.chip-on-field .player-name {
+        bottom: -13px !important;
+    }
+}
     
