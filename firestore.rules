@@ -270,6 +270,36 @@ service cloud.firestore {
       );
     }
 
+    // ============================================================
+    // v702 · ¿EL USUARIO VIVE EN UN ENTE INDIVIDUAL?
+    // ============================================================
+    // En el Entorno Individual NO EXISTE el rol de Director Deportivo, asi que
+    // el entrenador administrador se quedaba sin nadie que pudiera borrar de
+    // verdad sus informes: la consola devolvia "Missing or insufficient
+    // permissions" al purgar. Regla del autor: alli la potestad es suya.
+    //
+    // Se mira el documento del usuario y no el token, porque los roles del ente
+    // no viajan en claims. Mismo vocabulario que `cronosRolDelEnte` en el
+    // cliente (utils.js): rol explicitamente individual, o plaza anclada a una
+    // entidad individual.
+    //
+    // ⚠️ ESTO NO DA ACCESO A NADA DE NINGUN CLUB: solo se usa combinado con
+    // `coachUid == request.auth.uid`, es decir, para que el AUTOR pueda borrar
+    // SUS PROPIAS copias. Un entrenador de club no cumple ninguna de las dos
+    // condiciones de aqui.
+    function esDeEnteIndividual() {
+      return isAuth()
+             && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+             && (
+               get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('isIndividual', false) == true
+               || get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('individualEntityId', '') != ''
+               || get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('individualOwnerId', '') != ''
+               || get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('role', '') == 'individual'
+               || get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('role', '') == 'admin_individual'
+               || get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('role', '') == 'entrenador_individual'
+             );
+    }
+
     // Mismo club por campo del documento
     function sameClubAsDoc(docClubId) {
       return isAuth() && ('clubId' in request.auth.token) && request.auth.token.clubId == docClubId;
@@ -1516,6 +1546,14 @@ service cloud.firestore {
         // compartido (staffReport) ya no: eso es del Director.
         (resource.data.get('staffReport', false) != true &&
          request.auth.uid == resource.data.get('coachUid', null)) ||
+        // v702 · ENTORNO INDIVIDUAL: el AUTOR borra TODAS sus copias, la
+        // colectiva incluida. Alli no hay Director Deportivo a quien reservarle
+        // el informe compartido, asi que la linea de arriba dejaba al ente sin
+        // forma de borrar nada de verdad (el error que reporto el autor).
+        // 🔑 Sigue exigiendo ser el AUTOR: esto no alcanza informes ajenos ni
+        // dentro del propio ente.
+        (request.auth.uid == resource.data.get('coachUid', null) &&
+         esDeEnteIndividual()) ||
         // FIX v2: padres pueden borrar informes individuales dirigidos a ellos
         (request.auth.uid == resource.data.get('parentUid', null) &&
          resource.data.get('type', '') == 'parent_player_report') ||

@@ -63,15 +63,48 @@
         var midValido = mid && mid !== 'undefined';
         var db = _fs();
         if (midValido && db) {
-            try {
-                var mod = await import(FS_URL);
-                var snap = await mod.getDocs(mod.query(
-                    mod.collection(db, 'cronos_player_reports'),
-                    mod.where('matchId', '==', mid)));
+            var mod = await import(FS_URL);
+            var col = mod.collection(db, 'cronos_player_reports');
+            var recoge = async function (q) {
+                var snap = await mod.getDocs(q);
                 snap.forEach(function (d) { ids[d.id] = true; });
+            };
+            try {
+                await recoge(mod.query(col, mod.where('matchId', '==', mid)));
             } catch (e) {
-                console.warn('[Purga] no se pudo consultar por matchId:',
-                             e && e.message ? e.message : e);
+                // ══════════════════════════════════════════════════════════
+                //  🚨 v702 · LA CONSULTA ANCHA LA DENIEGAN LAS REGLAS
+                //
+                //  `allow read` de cronos_player_reports es POR DOCUMENTO
+                //  (coachUid, parentUid, club…), y una consulta que no acota
+                //  por ninguno de esos campos se deniega ENTERA — no se
+                //  filtra, se rechaza. Es el mismo patrón que costó el 403 de
+                //  los informes colectivos (v635) y el del historial (v674).
+                //
+                //  🔑 Por eso se reintenta ACOTANDO POR EL AUTOR, que es la
+                //  rama de la regla que este usuario sí cumple. En el ente
+                //  alcanza el 100% de las copias del partido: las cuatro
+                //  —staff, entrenador, colectiva y familias— se escriben con
+                //  `coachUid: me.uid` (los tres despachos lo hacen).
+                //
+                //  ⚠️ Sin esto, la purga sólo borraba lo que el panel tenía
+                //  cargado —en Mis Informes, sólo las copias `_forCoach`— y
+                //  las demás quedaban vivas: justo los DATOS FANTASMA en el
+                //  acumulado que este encargo viene a evitar.
+                var _uid = (window._cronosCurrentUser || {}).uid || '';
+                if (_uid) {
+                    try {
+                        await recoge(mod.query(col,
+                            mod.where('matchId', '==', mid),
+                            mod.where('coachUid', '==', _uid)));
+                    } catch (e2) {
+                        console.warn('[Purga] no se pudo consultar por matchId+coachUid:',
+                                     e2 && e2.message ? e2.message : e2);
+                    }
+                } else {
+                    console.warn('[Purga] no se pudo consultar por matchId:',
+                                 e && e.message ? e.message : e);
+                }
             }
         }
         return Object.keys(ids);

@@ -222,7 +222,15 @@ window.openMisInformes = async function openMisInformes() {
         }) };
 
         const reports = [];
-        snap.forEach(d => reports.push({ id: d.id, ...d.data() }));
+        // 🚨🚨 v702 · `_id` ADEMÁS de `id`, Y NO ES COSMÉTICO.
+        //  La purga pide los documentos por `p._id` —así los carga el panel de
+        //  Dirección (`{ _id: docSnap.id, ... }`, reports-tab.js)— pero aquí se
+        //  guardaban como `id`. Resultado: `docIds` salía VACÍO y el borrado
+        //  terminaba con "No se encontró ningún documento que borrar" sin tocar
+        //  nada. Venía así desde el borrado masivo de v669, donde nunca llegó a
+        //  borrar un solo informe desde esta pantalla.
+        //  Se conservan LOS DOS nombres: `id` lo usa el resto de esta pantalla.
+        snap.forEach(d => reports.push({ id: d.id, _id: d.id, ...d.data() }));
 
         // Filtrar informes eliminados localmente
         const miDismissed = JSON.parse(localStorage.getItem('cronos_mi_dismissed_info') || '[]');
@@ -503,8 +511,12 @@ window.openMisInformes = async function openMisInformes() {
             // permiso: esto se puede invocar desde la consola. Mismo
             // razonamiento que sdPurgeMatch. La barrera real son las reglas.
             if (typeof window._sdPuedePurgar !== 'function' || !window._sdPuedePurgar(me)) {
-                const aviso = '⛔ El borrado permanente es exclusivo del Director Deportivo. ' +
-                              'Usa 🗑️ para ocultar los informes de tu panel.';
+                // ⚠️ v701 · El aviso ya no puede decir "exclusivo del Director"
+                // a secas: en el ENTE no hay Director y quien lo leyera se
+                // quedaría esperando a alguien que no existe. Aquí, si se llega
+                // a este punto, es que estamos en un CLUB.
+                const aviso = '⛔ En un club, el borrado permanente es exclusivo del Director Deportivo ' +
+                              '(o del Administrador del Club). Usa 🗑️ para ocultar los informes de tu panel.';
                 if (typeof showToast === 'function') showToast(aviso, 5000); else alert(aviso);
                 return null;
             }
@@ -569,9 +581,14 @@ window.openMisInformes = async function openMisInformes() {
         };
 
         const _miHayMS = !!(window.cronosMS && typeof window.cronosMS.chk === 'function');
-        const _miPuedePurgar = _miHayMS
-            && typeof window._sdPuedePurgar === 'function' && window._sdPuedePurgar(me)
+        // v701 · El botón 💣 POR INFORME no depende del motor de selección
+        // múltiple: si `cronosMS` no estuviera cargado, el entrenador del ente
+        // se quedaría igualmente sin poder borrar, que es justo lo que este
+        // encargo viene a arreglar. El masivo sí lo necesita (es su motor).
+        const _miPuedePurgar = typeof window._sdPuedePurgar === 'function'
+            && window._sdPuedePurgar(me)
             && typeof window.cronosPurgarPartido === 'function';
+        const _miPuedePurgarMasivo = _miHayMS && _miPuedePurgar;
 
         let _miBarraSel = '';
         if (_miHayMS) {
@@ -584,7 +601,7 @@ window.openMisInformes = async function openMisInformes() {
                 ejecutar: (ks, prog) => _miOcultarVarios(ks, prog),
                 alTerminar: () => { window.openMisInformes(); },
             }];
-            if (_miPuedePurgar) {
+            if (_miPuedePurgarMasivo) {
                 _acciones.push({
                     id: 'purgar',
                     icono: '💣',
@@ -640,7 +657,7 @@ window.openMisInformes = async function openMisInformes() {
                     <div style="font-size:0.62rem;color:var(--text-muted);text-align:right;flex-shrink:0;">
                         ${m.players.length} jugadores<br>▼ Ver Gantt
                     </div>
-                    <div style="display:flex;align-items:center;padding-left:0.5rem;border-left:1px solid rgba(255,255,255,0.08);">
+                    <div style="display:flex;align-items:center;gap:5px;padding-left:0.5rem;border-left:1px solid rgba(255,255,255,0.08);">
                         <button onclick="event.stopPropagation(); miEliminarInforme('${key64}')"
                                 title="Ocultar este informe de MI panel (los demás roles lo siguen viendo)"
                                 style="background:rgba(255,88,88,0.1);border:1px solid rgba(255,88,88,0.3);
@@ -648,6 +665,14 @@ window.openMisInformes = async function openMisInformes() {
                                        display:flex;align-items:center;justify-content:center;transition:all 0.2s;">
                             🗑️
                         </button>
+                        ${_miPuedePurgar ? `
+                        <button onclick="event.stopPropagation(); miPurgarInforme('${key64}')"
+                                title="BORRADO PERMANENTE: elimina el partido de la base de datos para todo el mundo y lo descuenta del acumulado de la temporada. No se puede deshacer."
+                                style="background:rgba(218,54,51,0.18);border:1px solid rgba(218,54,51,0.55);
+                                       color:#ff7b72;padding:0.4rem;border-radius:6px;cursor:pointer;
+                                       display:flex;align-items:center;justify-content:center;transition:all 0.2s;">
+                            💣
+                        </button>` : ''}
                     </div>
                 </div>
                 <div id="mi-rp-detail-${key64}"
@@ -692,6 +717,10 @@ window.openMisInformes = async function openMisInformes() {
                                 <button onclick="miEliminarInforme('${key64}')"
                                     style="padding:0.5rem 1rem;background:rgba(255,88,88,0.1);border:1px solid rgba(255,88,88,0.3);border-radius:8px;color:#ff5858;font-size:0.75rem;font-weight:700;cursor:pointer;display:flex;align-items:center;gap:5px;">
                                     🗑️ Ocultar de mi panel</button>
+                                ${(typeof window._sdPuedePurgar === 'function' && window._sdPuedePurgar(window._cronosCurrentUser) && typeof window.cronosPurgarPartido === 'function') ? `
+                                <button onclick="miPurgarInforme('${key64}')"
+                                    style="padding:0.5rem 1rem;background:rgba(218,54,51,0.18);border:1px solid rgba(218,54,51,0.55);border-radius:8px;color:#ff7b72;font-size:0.75rem;font-weight:700;cursor:pointer;display:flex;align-items:center;gap:5px;">
+                                    💣 Borrar definitivamente</button>` : ''}
                             </div>`;
                             
                             detail.innerHTML = fullReportHtml + btns;
@@ -852,6 +881,89 @@ window.openMisInformes = async function openMisInformes() {
             if (title) {
                 title.innerHTML = `${currentCount} partido${currentCount!==1?'s':''} · Informes actualizados`;
             }
+        };
+
+        // ══════════════════════════════════════════════════════════════
+        //  💣 v701 · BORRADO DEFINITIVO DE UN INFORME
+        //
+        //  Encargo del autor: en el ENTORNO INDIVIDUAL no hay Director
+        //  Deportivo, así que el entrenador administrador tiene que poder
+        //  borrar de verdad, no sólo ocultar. En un CLUB no cambia nada: la
+        //  puerta sigue siendo `_sdPuedePurgar`, que allí exige Director o
+        //  Administrador del Club.
+        //
+        //  🔑 LA PUERTA SE COMPRUEBA AQUÍ, no sólo al pintar el botón: esto se
+        //  puede llamar desde la consola, y es la misma lección de v596/v679
+        //  (la tarjeta bloqueada no cierra la ruta).
+        //
+        //  🔑 LA PURGA ES LA DE `match-purge.js`, la definición ÚNICA. Una
+        //  copia aquí haría que "borrar del todo" significara dos cosas según
+        //  por dónde entres, y el acumulado de la temporada quedaría sucio en
+        //  una de ellas — que es justo el "dato fantasma" que el autor pide
+        //  evitar. Al terminar se repinta el panel entero, así que el resumen
+        //  acumulado se recalcula sin el partido borrado.
+        // ══════════════════════════════════════════════════════════════
+        window.miPurgarInforme = async (key64) => {
+            const me2 = window._cronosCurrentUser;
+            if (typeof window._sdPuedePurgar !== 'function' || !window._sdPuedePurgar(me2)) {
+                const aviso = '⛔ En un club, el borrado permanente es exclusivo del Director Deportivo ' +
+                              '(o del Administrador del Club). Usa 🗑️ para ocultar el informe de tu panel.';
+                if (typeof showToast === 'function') showToast(aviso, 5000); else alert(aviso);
+                return;
+            }
+            if (typeof window.cronosPurgarPartido !== 'function') {
+                if (typeof showToast === 'function') showToast('⚠️ El motor de borrado no está disponible', 3000);
+                return;
+            }
+            const key = decodeURIComponent(escape(atob(key64)));
+            const m   = window._misInformesData?.[key];
+            if (!m) return;
+
+            if (!confirm(
+                '⚠️ BORRADO PERMANENTE\n\n' +
+                'Vas a eliminar de la base de datos el informe de este partido ' +
+                '(' + (m.players || []).length + ' informes de jugador).\n\n' +
+                'Se borrarán TODAS sus copias (entrenador, dirección y familiares/jugadores), ' +
+                'desaparecerá para todo el mundo y se descontará del acumulado de la temporada.\n\n' +
+                'ESTO NO SE PUEDE DESHACER. ¿Continuar?')) return;
+
+            // El mismo ritual que el masivo y que el panel de Dirección: aquí
+            // no se pide una palabra por capricho, es la última barrera de algo
+            // irreversible.
+            const t = prompt('Confirmación final.\n\nEscribe la palabra BORRAR para eliminar este partido PARA SIEMPRE:');
+            if (String(t || '').trim().toUpperCase() !== 'BORRAR') {
+                if (typeof showToast === 'function') showToast('Cancelado · no se ha borrado nada', 2500);
+                return;
+            }
+
+            try {
+                if (typeof showSpinner === 'function') showSpinner('Borrando definitivamente…');
+                const r = await window.cronosPurgarPartido({
+                    matchId: m.matchId,
+                    docIds: (m.players || []).map(p => p._id).filter(Boolean),
+                    borrarPartidoEnVivo: true,
+                });
+                if (typeof hideSpinner === 'function') hideSpinner();
+                if (r.borrados || r.partidoBorrado) {
+                    if (typeof showToast === 'function') {
+                        showToast('💣 Borrado definitivo · ' + (r.borrados || 0) + ' informe' +
+                                  ((r.borrados || 0) === 1 ? '' : 's') +
+                                  (r.denegados ? ' · ⚠️ ' + r.denegados + ' sin permiso (de otro entrenador)' : '') +
+                                  ' · el acumulado queda descontado', 5000);
+                    }
+                } else if (typeof showToast === 'function') {
+                    showToast(r.denegados
+                        ? '⛔ No se ha borrado nada: sólo el entrenador que creó el partido (o el SuperAdmin) puede eliminarlo.'
+                        : '⚠️ No se encontró ningún documento que borrar.', 5000);
+                }
+            } catch (err) {
+                if (typeof hideSpinner === 'function') hideSpinner();
+                console.error('[MisInformes] Error purgando:', err);
+                if (typeof showToast === 'function') showToast('⚠️ Error al borrar: ' + err.message, 4000);
+            }
+            // Se repinta entero: la lista Y el resumen acumulado de la
+            // temporada, que es de donde tienen que desaparecer los datos.
+            window.openMisInformes();
         };
 
         // ── DESCARGA DEL RESUMEN ACUMULADO (PDF / CSV) ────────────────

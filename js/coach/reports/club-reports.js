@@ -158,12 +158,49 @@ window._sdCanSeeConfigTab = _sdCanSeeConfigTab;
 //  COORDINADOR no puede purgar, aunque su documento diga director. Eso es
 //  exactamente "tener ACTIVO el rol".
 // ────────────────────────────────────────────────────────────────────
+// ────────────────────────────────────────────────────────────────────
+//  🧍 v701 · ¿ESTOY EN EL ENTORNO INDIVIDUAL?
+//
+//  Encargo del autor: en el ENTE no existe el rol de Director Deportivo, así
+//  que el entrenador administrador se queda sin nadie que pueda borrar de
+//  verdad. En esa estructura unipersonal la potestad es suya.
+//
+//  🔑 Se pregunta por el rol ACTIVO y por el ancla de la plaza, con el mismo
+//  vocabulario que ya usa `cronosRolDelEnte` (utils.js): los roles
+//  explícitamente individuales, o una plaza colgada de un ente
+//  (`individualEntityId` / `isIndividual`). Un entrenador de CLUB no entra
+//  por ninguna de las dos.
+// ────────────────────────────────────────────────────────────────────
+function _sdEsEntornoIndividual(user) {
+    const me = user || window._cronosCurrentUser;
+    if (!me) return false;
+    const activo = me._activeRole || me.role;
+    const rolesInd = window.CRONOS_ROLES_INDIVIDUALES ||
+        ['individual', 'admin_individual', 'parent_individual', 'entrenador_individual', 'padre_individual'];
+    if (rolesInd.indexOf(activo) >= 0) return true;
+    // Plaza de entrenador colgada de un ente: `_activeRoleData` es la plaza
+    // con la que se ha entrado (v560), y es la que manda sobre la raíz.
+    const plaza = me._activeRoleData || {};
+    if (plaza.individualEntityId || plaza.individualOwnerId) return true;
+    return !!(me.isIndividual && (me.individualEntityId || me.individualOwnerId));
+}
+window._sdEsEntornoIndividual = _sdEsEntornoIndividual;
+
 function _sdPuedePurgar(user) {
     const me = user || window._cronosCurrentUser;
     if (!me) return false;
     if (['superadmin', 'admin'].includes(me.role)) return true;
     const activo = me._activeRole || me.role;
-    return activo === 'director' || activo === 'club_admin';
+    if (activo === 'director' || activo === 'club_admin') return true;
+    // ⚠️ v701 · EL ENTORNO INDIVIDUAL, y SÓLO él. En un club la jerarquía se
+    // mantiene intacta: entrenador y coordinador ocultan, y el borrado
+    // definitivo sigue siendo del Director (o del Administrador del Club).
+    //
+    // 🔑 Esto NO abre la puerta a borrar informes ajenos: firestore.rules sólo
+    // deja borrar al AUTOR (`coachUid`) o al SuperAdmin, así que un segundo
+    // entrenador bajo el mismo ente vería el botón pero la base de datos le
+    // denegaría los documentos de otro. La barrera real sigue siendo la regla.
+    return _sdEsEntornoIndividual(me);
 }
 window._sdPuedePurgar = _sdPuedePurgar;
 
