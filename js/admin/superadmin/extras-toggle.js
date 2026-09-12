@@ -31,6 +31,12 @@ window._CRONOS_EXTRAS_DEF = [
     // (js/admin/individual/panel.js), que es el otro sitio donde se ve.
     { key: 'cuadrante',      icon: '🗓️', label: 'Cuadrante Semanal',        desc: 'Reparto de espacios del campo y horarios de la semana, y su envío a los entrenadores' },
     { key: 'informes',       icon: '📊', label: 'Recibir Informes',         desc: 'Informes colectivos y de partido' },
+    // v693 · Registro táctico de Pérdidas y Recuperaciones (fase de prueba).
+    // ⚠️ Tiene DOS puertas, y el interruptor es sólo la primera: además del
+    // extra, la categoría del partido debe ser Cadete, Juvenil o Regional
+    // (`cronosCategoriaConRegistroPR`, js/core/utils.js). Un club con el extra
+    // activo NO verá los botones en un Alevín, y eso es lo pedido.
+    { key: 'registro_pr',    icon: '🔄', label: 'Pérdidas y Recuperaciones', desc: 'Registro táctico rápido de pérdidas y recuperaciones durante el partido, para el equipo propio. Sólo en Cadete, Juvenil y Regional (incl. femeninas)' },
     // v429: 'mensajeria' es INDEPENDIENTE de 'comunicaciones'. Antes la
     // descripción de comunicaciones prometía "Mensajes", pero esa clave no la
     // leía nadie (censo de v429: era el único extra del panel sin un solo

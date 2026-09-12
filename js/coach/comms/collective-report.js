@@ -404,6 +404,13 @@ window._sendCollectiveReportNow = async function() {
                 // objeto lo comparten la copia del staff y la del entrenador.
                 matchComments:  (typeof window.cronosComentariosDelPartido === 'function')
                                   ? window.cronosComentariosDelPartido() : [],
+                // 🔵🔴 v693 · Pérdidas/Recuperaciones. Viaja con el MISMO
+                // criterio que los comentarios (cuerpo técnico y entrenador),
+                // y lleva el desglose `porDorsal`: con eso, el informe
+                // individual saca lo de cada jugador sin que haya que añadir
+                // campos a los once serializadores del jugador.
+                matchPR:        (typeof window.cronosPRDelPartido === 'function')
+                                  ? window.cronosPRDelPartido() : null,
                 clubId:         me.clubId || null,
                 coachUid:       me.uid,
                 coachEmail:     me.email,

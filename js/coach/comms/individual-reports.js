@@ -1032,6 +1032,17 @@ window.openIndividualReports = async function openIndividualReports() {
                     ${p.goals>0 ? `<span>⚽ <strong style="color:#ffa500;">${p.goals}</strong></span>` : ''}
                     ${p.cards&&p.cards!=='ninguna' ? `<span>${p.cards==='roja'||p.cards==='red'?'🟥':'🟨'}</span>` : ''}
                     ${p.injured ? '<span>🩹</span>' : ''}
+                    ${(() => {
+                        // 🔵🔴 v693 · Pérdidas/Recuperaciones del jugador. Sólo
+                        // aparece si se registró algo suyo: en un partido donde
+                        // no se usó la función, la tarjeta queda como estaba.
+                        const _pr = (typeof window.cronosPRDelPartido === 'function' &&
+                                     typeof window.cronosPRDeJugador === 'function')
+                                    ? window.cronosPRDeJugador(window.cronosPRDelPartido(), p.number) : null;
+                        if (!_pr || (!_pr.perdidas && !_pr.recuperaciones)) return '';
+                        return `<span>🔻 <strong style="color:#f85149;">${_pr.perdidas}</strong></span>` +
+                               `<span>🔺 <strong style="color:#3fb950;">${_pr.recuperaciones}</strong></span>`;
+                    })()}
                 </div>
                 <!-- Timeline individual -->
                 ${events.length ? `
@@ -1098,6 +1109,15 @@ window._sendAllIndividualReports = async function() {
                 `⚽ Goles: *${p.goals||0}*\n` +
                 `🎴 Tarjeta: *${p.cards&&p.cards!=='ninguna'?p.cards:'Ninguna'}*\n` +
                 `🚑 Lesión: *${p.injured?'SÍ':'NO'}*\n` +
+                // 🔵🔴 v693 · Sólo si hay registro suyo: si la función no se usó
+                // en ese partido, el informe enviado no cambia ni una línea.
+                ((() => {
+                    const _pr = (typeof window.cronosPRDelPartido === 'function' &&
+                                 typeof window.cronosPRDeJugador === 'function')
+                                ? window.cronosPRDeJugador(window.cronosPRDelPartido(), p.number) : null;
+                    if (!_pr || (!_pr.perdidas && !_pr.recuperaciones)) return '';
+                    return `🔻 Pérdidas: *${_pr.perdidas}*\n🔺 Recuperaciones: *${_pr.recuperaciones}*\n`;
+                })()) +
                 (events.length
                     ? `\n📋 *Acciones:*\n` + events.map(ev => `• ${ev.minute||'?'}' ${evIcon[ev.type]||ev.type}`).join('\n') + '\n'
                     : '') +

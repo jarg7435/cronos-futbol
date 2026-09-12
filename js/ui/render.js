@@ -258,6 +258,14 @@ function renderPlayers() {
     if (typeof colorAllTimers === 'function') {
         try { colorAllTimers(); } catch(e) { /* colorAllTimers puede no estar listo aún */ }
     }
+
+    // v693 · Botones de Pérdidas/Recuperaciones. Se decide AQUÍ porque este es
+    // el único punto por el que pasan todos los caminos de arranque y
+    // repintado del partido — la lección de v692, donde enganchar por camino
+    // dejó un gesto vivo sólo si entrabas desde la convocatoria.
+    if (typeof window.cronosPRActualiza === 'function') {
+        try { window.cronosPRActualiza(); } catch(e) { /* nunca debe tumbar el repintado */ }
+    }
 }
 
 function sortBenchUI(team) {

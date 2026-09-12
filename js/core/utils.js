@@ -1785,6 +1785,47 @@ if (typeof window.cronosCategoriaSinSemaforo !== 'function') {
 }
 
 // ════════════════════════════════════════════════════════════════════
+//  🔵🔴 v693 · CATEGORÍAS CON REGISTRO DE PÉRDIDAS Y RECUPERACIONES
+//
+//  Encargo del autor (implementar.txt, fase de prueba): el registro táctico
+//  de P/R sólo debe aparecer en **Cadete, Juvenil y Regional**, masculinas y
+//  femeninas. En las categorías inferiores, no.
+//
+//  🔑 Se escribe como `cronosCategoriaSinSemaforo` —y no con una lista de
+//  claves exactas— porque la categoría llega de sitios distintos y con
+//  formas distintas: 'f11_cadete', 'Cadete', 'cadete_b', 'Regional FEM'…
+//  Comparar contra un `Set` de valores exactos fallaría en cuanto alguien
+//  pasara la etiqueta visible en vez de la clave.
+//
+//  ⚠️ Aquí NO hace falta poner las FEM delante (la trampa de v511, donde
+//  'regional_fem'.includes('regional') es TRUE): este helper devuelve un
+//  booleano, no elige una rama, y el autor quiere DENTRO tanto Regional como
+//  Regional FEM. Se deja dicho para que nadie lo "arregle" al copiarlo.
+//
+//  ⚠️ FUTureFEM queda FUERA a propósito: es la categoría de formación
+//  femenina (F7, 2T x 35'), o sea de las "inferiores" que el encargo excluye.
+//  Si el autor la quiere dentro, se añade aquí y en ningún sitio más.
+// ════════════════════════════════════════════════════════════════════
+if (typeof window.cronosCategoriaConRegistroPR !== 'function') {
+    window.cronosCategoriaConRegistroPR = function () {
+        for (let i = 0; i < arguments.length; i++) {
+            const crudo = arguments[i];
+            if (crudo == null) continue;
+            // Acentos fuera POR CÓDIGO DE CARÁCTER, como en el helper de al
+            // lado: una clase de regex con el bloque combinante se destruye
+            // sin error en cuanto algo toca la codificación del fichero.
+            const n = String(crudo).normalize('NFD')
+                .split('').filter(_cronosNoEsAcento).join('').toLowerCase();
+            if (!n) continue;
+            if (n.indexOf('cadete')   !== -1) return true;
+            if (n.indexOf('juvenil')  !== -1) return true;
+            if (n.indexOf('regional') !== -1) return true;   // incluye Regional FEM
+        }
+        return false;
+    };
+}
+
+// ════════════════════════════════════════════════════════════════════
 //  🪪 v561 · LA IDENTIDAD DEL PARTIDO — UN SOLO RESOLUTOR
 //
 //  Reporte del autor (captura 9075): en "Recuperar Partido en Curso" salía el

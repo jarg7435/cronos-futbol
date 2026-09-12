@@ -648,6 +648,9 @@ window._executeReportsSend = async function(method) {
                                     // 💬 v690 · Comentarios del partido (sólo cuerpo técnico).
                                     matchComments: (typeof window.cronosComentariosDelPartido === 'function')
                                                      ? window.cronosComentariosDelPartido() : [],
+                                    // 🔵🔴 v693 · Pérdidas/Recuperaciones (mismo criterio).
+                                    matchPR:       (typeof window.cronosPRDelPartido === 'function')
+                                                     ? window.cronosPRDelPartido() : null,
                                     clubId:        me.clubId || null,
                                     coachUid:      me.uid,
                                     coachEmail:    me.email,
@@ -885,6 +888,9 @@ window._executeReportsSend = async function(method) {
                     // 💬 v690 · Comentarios del partido (sólo cuerpo técnico).
                     matchComments: (typeof window.cronosComentariosDelPartido === 'function')
                                      ? window.cronosComentariosDelPartido() : [],
+                    // 🔵🔴 v693 · Pérdidas/Recuperaciones (mismo criterio).
+                    matchPR:       (typeof window.cronosPRDelPartido === 'function')
+                                     ? window.cronosPRDelPartido() : null,
                 });
             }
 

@@ -998,6 +998,87 @@ const _RP = (() => {
         });
         return out.sort((a, b) => (a.minute - b.minute) || (a.createdAt - b.createdAt));
     };
+    // ════════════════════════════════════════════════════════════════
+    //  🔵🔴 v693 · PÉRDIDAS Y RECUPERACIONES
+    //
+    //  Llegan por el mismo camino que los comentarios: los despachos copian
+    //  `matchPR` en cada documento del cuerpo técnico, así que aquí viene
+    //  REPETIDO una vez por jugador. No se suman —serían 18 veces el mismo
+    //  dato—: se coge el ejemplar más completo y ya.
+    //
+    //  ⚠️ Se acepta `m.matchPR` además de `m.players[].matchPR`, igual que en
+    //  los comentarios, por si un agrupador lo sube al nivel del partido.
+    // ════════════════════════════════════════════════════════════════
+    const _prDelInforme = (mm) => {
+        const cands = [];
+        if (mm && mm.matchPR) cands.push(mm.matchPR);
+        ((mm && mm.players) || []).forEach(d => { if (d && d.matchPR) cands.push(d.matchPR); });
+        let mejor = null;
+        cands.forEach(c => {
+            const tot = ((c.perdidas || {}).total || 0) + ((c.recuperaciones || {}).total || 0);
+            const totMejor = mejor ? (((mejor.perdidas || {}).total || 0) + ((mejor.recuperaciones || {}).total || 0)) : -1;
+            if (tot > totMejor) mejor = c;
+        });
+        return mejor;
+    };
+
+    // El panel sólo se pinta si hubo registros: un partido donde no se usó la
+    // función no debe cargar con una sección vacía (la misma política que el
+    // resto de bloques opcionales del informe).
+    const buildPRPanel = (pr, players) => {
+        if (!pr) return '';
+        const perd = (pr.perdidas || {}), rec = (pr.recuperaciones || {});
+        const totP = perd.total || 0, totR = rec.total || 0;
+        if (!totP && !totR) return '';
+
+        const balance = totR - totP;
+        const colBal  = balance > 0 ? '#3fb950' : (balance < 0 ? '#f85149' : 'var(--text-muted)');
+
+        const dorsales = {};
+        Object.keys(perd.porDorsal || {}).forEach(d => { dorsales[d] = true; });
+        Object.keys(rec.porDorsal  || {}).forEach(d => { dorsales[d] = true; });
+
+        const nombreDe = (dorsal) => {
+            const p = (players || []).filter(x => String(x.playerNumber || '').trim() === String(dorsal))[0];
+            return p ? (p.playerAlias || ('#' + dorsal)) : ('#' + dorsal);
+        };
+
+        const filas = Object.keys(dorsales)
+            .sort((a, b) => (parseInt(a, 10) || 99) - (parseInt(b, 10) || 99))
+            .map(d => {
+                const np = (perd.porDorsal || {})[d] || 0;
+                const nr = (rec.porDorsal  || {})[d] || 0;
+                return `<div style="display:flex;align-items:center;gap:8px;padding:3px 0;font-size:0.75rem;">` +
+                       `<span style="min-width:26px;font-weight:800;color:var(--text-muted);">${esc(d)}</span>` +
+                       `<span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(nombreDe(d))}</span>` +
+                       `<span style="color:#f85149;font-weight:700;min-width:34px;text-align:right;">🔻 ${np}</span>` +
+                       `<span style="color:#3fb950;font-weight:700;min-width:34px;text-align:right;">🔺 ${nr}</span>` +
+                       `</div>`;
+            }).join('');
+
+        const sinAsignar = (perd.sinAsignar || 0) + (rec.sinAsignar || 0);
+        const pieColectivo = sinAsignar > 0
+            ? `<div style="font-size:0.68rem;color:var(--text-muted);margin-top:6px;">` +
+              `Registros a nivel colectivo (sin jugador asignado): ` +
+              `<strong>🔻 ${perd.sinAsignar || 0}</strong> · <strong>🔺 ${rec.sinAsignar || 0}</strong></div>`
+            : '';
+
+        return `<div style="font-size:0.67rem;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;margin:10px 0 7px;">` +
+               `Pérdidas y recuperaciones</div>` +
+               `<div style="border:1px solid rgba(255,255,255,0.07);border-radius:10px;padding:8px 10px;margin-bottom:4px;">` +
+               `<div style="display:flex;gap:14px;align-items:center;margin-bottom:8px;">` +
+               `<div><div style="font-size:1.2rem;font-weight:700;color:#f85149;">${totP}</div>` +
+               `<div style="font-size:0.6rem;color:var(--text-muted);text-transform:uppercase;">Pérdidas</div></div>` +
+               `<div><div style="font-size:1.2rem;font-weight:700;color:#3fb950;">${totR}</div>` +
+               `<div style="font-size:0.6rem;color:var(--text-muted);text-transform:uppercase;">Recuperaciones</div></div>` +
+               `<div><div style="font-size:1.2rem;font-weight:700;color:${colBal};">${balance > 0 ? '+' : ''}${balance}</div>` +
+               `<div style="font-size:0.6rem;color:var(--text-muted);text-transform:uppercase;">Balance</div></div>` +
+               `</div>` +
+               (filas || `<div style="font-size:0.7rem;color:var(--text-muted);">Sin desglose por jugador.</div>`) +
+               pieColectivo +
+               `</div>`;
+    };
+
     const filaComentario = (c) =>
         `<div style="display:flex;align-items:flex-start;gap:8px;padding:5px 0;font-size:0.76rem;" data-suceso="comment">` +
         `<span style="min-width:35px;font-size:0.69rem;font-weight:700;color:var(--text-muted);flex-shrink:0;">${formatTot(c.minute)}</span>` +
@@ -1259,6 +1340,7 @@ const _RP = (() => {
             buildLegend() +
             buildTimeSummary(players) +
             buildRotPanel(subs) +
+            buildPRPanel(_prDelInforme(m), players) +
             buildEventsList(players, _comentariosDelInforme(m)) +
             `</div>`
         );
