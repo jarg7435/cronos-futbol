@@ -78,9 +78,8 @@ function startDemo() {
     document.body.appendChild(badge);
 
     injectBenchScrollButtons('bench-list');
-    const pitch = document.getElementById('football-pitch');
-    pitch.addEventListener('click',      () => closeDrawers());
-    pitch.addEventListener('touchstart', () => closeDrawers(), { passive: true });
+    // v692: registro canónico en drag-drop.js (idempotente, cubre todo camino).
+    if (typeof attachPitchCloseDrawers === 'function') attachPitchCloseDrawers();
 
     // Mostrar toast de bienvenida al demo
     setTimeout(() => {

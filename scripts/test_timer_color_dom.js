@@ -49,10 +49,31 @@ const SOURCES = [
 ].map(n => extractFn(html, n)).join('\n\n');
 
 // ── DOM mockeado: getElementById devuelve elementos que capturan innerHTML ──
+// ⚠️ v692 · `classList` NO es adorno: desde la escala compacta del visor,
+// `renderField` marca el campo con `pitch.classList.toggle('pitch-compacto',…)`
+// antes de pintar. Un elemento simulado sin `classList` hacía REVENTAR el test
+// entero (TypeError) en vez de fallar una aserción — el mock estaba más pobre
+// que el DOM real, no el código equivocado.
 function makeDocument() {
     const els = {};
     function get(id) {
-        if (!els[id]) els[id] = { id, innerHTML: '', querySelectorAll: () => [] };
+        if (!els[id]) {
+            const clases = new Set();
+            els[id] = {
+                id, innerHTML: '',
+                querySelectorAll: () => [],
+                classList: {
+                    add:    c => clases.add(c),
+                    remove: c => clases.delete(c),
+                    contains: c => clases.has(c),
+                    toggle: (c, on) => {
+                        if (on === undefined) { clases.has(c) ? clases.delete(c) : clases.add(c); }
+                        else if (on) clases.add(c); else clases.delete(c);
+                    }
+                },
+                _clases: clases
+            };
+        }
         return els[id];
     }
     return { getElementById: get, _els: els };

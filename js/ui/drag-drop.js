@@ -52,6 +52,58 @@ function closeDrawers() {
     document.querySelector('.sidebar-right')?.classList.remove('open');
 }
 
+// ══════════════════════════════════════════════════════════════════
+//  🚪 v692 · TOCAR EL CAMPO CIERRA EL CAJÓN DEL BANQUILLO
+// ══════════════════════════════════════════════════════════════════
+//  Reporte del autor (capturas IMG_4710/IMG_4711, móvil apaisado): con el
+//  cajón de LOCAL o de VISITANTE abierto, la única forma de quitarlo de
+//  en medio era abrir el del equipo CONTRARIO —porque `toggleBench` cierra
+//  el otro— o volver a pulsar su propio botón. Tocar el campo no hacía nada.
+//
+//  🔑🔑 LA CADENA YA ESTABA ESCRITA, LE FALTABAN LOS CAMINOS. `closeDrawers`
+//  existe desde hace versiones y se enganchaba al campo en DOS sitios
+//  —`goToTitularSelection()` y `startMatchWithConvocation()` de import.js, más
+//  el modo demo—, o sea sólo si entrabas al partido DESDE LA CONVOCATORIA. El
+//  arranque normal desde el modal y el RETOMAR partido (setup-modal.js) nunca
+//  registraron el oyente, así que el gesto funcionaba o no según por dónde
+//  hubieras entrado. Por eso se engancha aquí UNA vez al cargar y no en cada
+//  camino de arranque: `#football-pitch` es estático en index.html —no lo
+//  recrea nadie, `renderPlayers()` sólo quita y repone sus fichas— así que un
+//  único registro cubre todos los caminos, los de hoy y los que se añadan.
+//
+//  ⚠️ SÓLO LA ZONA VACÍA. El oyente va en el campo y los toques de las fichas
+//  BURBUJEAN hasta él: sin este filtro, empezar a arrastrar un jugador
+//  cerraría el cajón del que quizá estás sacando al que entra.
+//
+//  🔑 No hace falta condicionar por tamaño de pantalla: la clase `open` sólo
+//  existe mientras las bandas son cajones (el CSS de `.sidebar` fixed vive
+//  bajo 950px). En escritorio esto no tiene nada que quitar.
+let _pitchCierraCajonesPuesto = false;
+
+function attachPitchCloseDrawers() {
+    if (_pitchCierraCajonesPuesto) return true;   // idempotente: nunca dos oyentes
+    const pitch = document.getElementById('football-pitch');
+    if (!pitch) return false;
+
+    const alTocarElCampo = (e) => {
+        // Una ficha no es "zona vacía": `closest` cubre también el dorsal y el
+        // nombre, que son hijos suyos y son lo que recibe el toque.
+        if (e.target && e.target.closest && e.target.closest('.player-chip')) return;
+        closeDrawers();
+    };
+
+    pitch.addEventListener('click', alTocarElCampo);
+    pitch.addEventListener('touchstart', alTocarElCampo, { passive: true });
+    _pitchCierraCajonesPuesto = true;
+    return true;
+}
+
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', attachPitchCloseDrawers);
+} else {
+    attachPitchCloseDrawers();
+}
+
 let _lastTacticalLog = {};
 
 function logTacticalMove(player, x, y) {

@@ -889,9 +889,11 @@ function goToTitularSelection() {
     if (analyzeAway) injectBenchScrollButtons('bench-list-away');
     renderStaffInBench();
 
-    const pitch = document.getElementById('football-pitch');
-    pitch.addEventListener('click', () => closeDrawers());
-    pitch.addEventListener('touchstart', () => closeDrawers(), { passive: true });
+    // v692: el oyente que cierra los cajones al tocar el campo se registra UNA
+    // vez en drag-drop.js (cubre todos los caminos de arranque, no sólo éste).
+    // La llamada se queda por si este camino corriera antes de que aquél se
+    // hubiera enganchado; es idempotente.
+    if (typeof attachPitchCloseDrawers === 'function') attachPitchCloseDrawers();
 
     return true;   // v506 - partido arrancado: los envoltorios pueden seguir
 }
@@ -1051,9 +1053,8 @@ function startMatchWithConvocation() {
     // Mostrar cuerpo técnico en el banquillo
     renderStaffInBench();
 
-    const pitch = document.getElementById('football-pitch');
-    pitch.addEventListener('click', () => closeDrawers());
-    pitch.addEventListener('touchstart', () => closeDrawers(), { passive: true });
+    // v692: ver la nota de arriba — el registro canónico vive en drag-drop.js.
+    if (typeof attachPitchCloseDrawers === 'function') attachPitchCloseDrawers();
 }
 
 // --- BOTONES DE SCROLL EN BANQUILLO ---

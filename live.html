@@ -1468,6 +1468,122 @@
             #live-header { padding: 0.3rem 0.8rem; }
             #scoreboard { font-size: 0.85em; }
         }
+
+        /* ══════════════════════════════════════════════════════════════════
+           v692 · ESCALA COMPACTA DEL VISOR CON LOS DOS EQUIPOS EN EL CAMPO
+
+           Mismo problema que el panel del entrenador cerró en v691, aquí:
+           con 22 fichas sobre el campo, los cronos y los nombres se pisan
+           unos con otros (captura IMG_0534, iPad). La diferencia es que el
+           visor NO es arrastrable, así que aquí el único objetivo es LEER.
+
+           `pitch-compacto` lo pone `renderField()` mirando el propio
+           snapshot: modalidad F11 **y** jugadores de los dos equipos sobre
+           el terreno. Con un solo equipo pintado el campo está medio vacío
+           y las fichas se quedan como están.
+
+           ⚠️ Esta hoja tiene CUATRO juegos de tamaños para la ficha (36px
+           base · 32px móvil · 48px tablet vertical · 64px pantalla ancha),
+           así que el recorte tiene que declararse en los CUATRO. Todos los
+           selectores de abajo llevan el id `#live-pitch`, de especificidad
+           mayor que los originales, así que ganan estén donde estén — pero
+           sólo cuando la clase está puesta.
+           ══════════════════════════════════════════════════════════════════ */
+
+        /* Base (y cualquier ancho no cubierto por los bloques de abajo) */
+        #live-pitch.pitch-compacto .live-player { gap: 1px; }
+        #live-pitch.pitch-compacto .live-player-chip {
+            width: 26px; height: 26px;
+            font-size: 0.58rem;
+            border-width: 2px;
+        }
+        #live-pitch.pitch-compacto .live-player-label {
+            font-size: 0.48rem;
+            max-width: 40px;
+            padding: 0 3px;
+        }
+        #live-pitch.pitch-compacto .live-player-time {
+            font-size: 0.46rem;
+            padding: 0 3px;
+        }
+        #live-pitch.pitch-compacto .chip-yellow::after,
+        #live-pitch.pitch-compacto .chip-red::after {
+            font-size: 0.7rem; bottom: -5px; right: -5px;
+        }
+        #live-pitch.pitch-compacto .chip-injured::before {
+            width: 13px; height: 13px; font-size: 0.5rem;
+            bottom: -5px; left: -5px; border-width: 1.5px;
+        }
+        #live-pitch.pitch-compacto .goal-badge {
+            font-size: 0.5rem !important;
+            right: -17px !important;
+            padding: 0 3px !important;
+        }
+
+        /* Móvil apaisado (originales: 32px) */
+        @media (orientation: landscape) and (max-width: 950px) {
+            #live-pitch.pitch-compacto .live-player-chip {
+                width: 24px; height: 24px; font-size: 0.54rem;
+            }
+            #live-pitch.pitch-compacto .live-player-label {
+                font-size: 0.45rem; max-width: 36px;
+            }
+            #live-pitch.pitch-compacto .live-player-time { font-size: 0.43rem; }
+        }
+
+        /* Móvil vertical (originales: 32px) */
+        @media (orientation: portrait) and (max-width: 600px) {
+            #live-pitch.pitch-compacto .live-player-chip {
+                width: 24px; height: 24px; font-size: 0.54rem;
+            }
+            #live-pitch.pitch-compacto .live-player-label {
+                font-size: 0.45rem; max-width: 38px;
+            }
+            #live-pitch.pitch-compacto .live-player-time { font-size: 0.43rem; }
+        }
+
+        /* Tablet vertical (originales: 48px) */
+        @media (orientation: portrait) and (min-width: 601px) and (max-width: 950px) {
+            #live-pitch.pitch-compacto .live-player-chip {
+                width: 34px; height: 34px; font-size: 0.75rem; border-width: 2.5px;
+            }
+            #live-pitch.pitch-compacto .live-player-label {
+                font-size: 0.58rem; max-width: 62px; padding: 1px 4px;
+            }
+            #live-pitch.pitch-compacto .live-player-time {
+                font-size: 0.55rem; padding: 1px 4px;
+            }
+            #live-pitch.pitch-compacto .goal-badge {
+                font-size: 0.58rem !important; right: -20px !important; padding: 1px 4px !important;
+            }
+            #live-pitch.pitch-compacto .chip-yellow::after,
+            #live-pitch.pitch-compacto .chip-red::after { font-size: 0.9rem; bottom: -7px; right: -7px; }
+            #live-pitch.pitch-compacto .chip-injured::before {
+                width: 17px; height: 17px; font-size: 0.65rem; bottom: -7px; left: -7px;
+            }
+        }
+
+        /* PC y tablet apaisada (originales: 64px) — es la captura IMG_0534 */
+        @media (min-width: 951px) {
+            #live-pitch.pitch-compacto .live-player { gap: 2px; }
+            #live-pitch.pitch-compacto .live-player-chip {
+                width: 44px; height: 44px; font-size: 0.98rem; border-width: 3px;
+            }
+            #live-pitch.pitch-compacto .live-player-label {
+                font-size: 0.7rem; padding: 1px 5px; max-width: 80px;
+            }
+            #live-pitch.pitch-compacto .live-player-time {
+                font-size: 0.66rem; padding: 1px 5px;
+            }
+            #live-pitch.pitch-compacto .goal-badge {
+                font-size: 0.62rem !important; right: -22px !important; padding: 1px 4px !important;
+            }
+            #live-pitch.pitch-compacto .chip-yellow::after,
+            #live-pitch.pitch-compacto .chip-red::after { font-size: 1rem; bottom: -8px; right: -8px; }
+            #live-pitch.pitch-compacto .chip-injured::before {
+                width: 20px; height: 20px; font-size: 0.75rem; bottom: -8px; left: -8px;
+            }
+        }
     </style>
 </head>
 <body>
@@ -5632,6 +5748,22 @@ function renderField(data) {
     const pitch   = document.getElementById('live-pitch');
     const players = (data.players || []).filter(p => p.status === 'field');
 
+    // ── v692 · ESCALA COMPACTA CON LOS DOS EQUIPOS SOBRE EL CAMPO ──
+    //  Se decide con el propio snapshot, que es lo único que el visor tiene:
+    //  no hay `body.mode-f11` ni `hide-visitor` aquí (eso vive en el panel del
+    //  entrenador; live.html es una página independiente).
+    //  · La modalidad se lee como en el rótulo del marcador — `mode === 'f7'`
+    //    es Fútbol 7 y CUALQUIER otra cosa es Fútbol 11 — para que el recorte y
+    //    lo que pone en pantalla no puedan contradecirse en partidos antiguos
+    //    sin `mode`.
+    //  · "Los dos equipos cargados" se mide sobre los jugadores que están EN EL
+    //    CAMPO, no sobre la plantilla: con el rival sólo en el banquillo el
+    //    terreno sigue medio vacío y no hay nada que recortar.
+    const esF11 = data.mode !== 'f7';
+    const hayLocal     = players.some(p => p.team === 'home');
+    const hayVisitante = players.some(p => p.team === 'away');
+    pitch.classList.toggle('pitch-compacto', esF11 && hayLocal && hayVisitante);
+
     pitch.innerHTML = players.map(p => {
         const isHome = p.team === 'home';
         // FIX: usar color individual del jugador (incluido en snapshot) con fallback al color del equipo
@@ -7288,9 +7420,9 @@ setInterval(function() {
 }
 </style>
 <!-- v434 · Inmutabilidad: antes de retroactive-modal.js, que la consulta. -->
-<script src="js/match/immutability.js?v=v691"></script>
-<script src="js/match/replay/replay-player.js?v=v691"></script>
-<script src="js/match/events/retroactive-modal.js?v=v691"></script>
+<script src="js/match/immutability.js?v=v692"></script>
+<script src="js/match/replay/replay-player.js?v=v692"></script>
+<script src="js/match/events/retroactive-modal.js?v=v692"></script>
 
 <!-- ══════════════════════════════════════════════════════════════════
      🟩 v577 · FRANJA DE VERSIÓN TAMBIÉN EN EL VISOR
@@ -7303,7 +7435,7 @@ setInterval(function() {
      El sello lo escribe `scripts/cache-bust.js` a partir del CACHE_NAME de
      sw.js, nunca a mano: un número puesto a mano miente en cuanto alguien
      olvida cambiarlo (v527 lo encontró mintiendo 185 versiones seguidas). -->
-<div id="cronos-version-badge" data-version="v691" style="position:fixed;bottom:calc(4px + env(safe-area-inset-bottom, 0px));right:6px;z-index:2147483000;pointer-events:none;background:rgba(0,0,0,0.55);color:#2ea043;font-family:monospace;font-size:0.6rem;font-weight:700;letter-spacing:0.5px;padding:2px 6px;border-radius:4px;">CHRONOS v691</div>
+<div id="cronos-version-badge" data-version="v692" style="position:fixed;bottom:calc(4px + env(safe-area-inset-bottom, 0px));right:6px;z-index:2147483000;pointer-events:none;background:rgba(0,0,0,0.55);color:#2ea043;font-family:monospace;font-size:0.6rem;font-weight:700;letter-spacing:0.5px;padding:2px 6px;border-radius:4px;">CHRONOS v692</div>
 <script>
 /* 🧪 v577 · Y DE QUÉ ENTORNO ES ESA VERSIÓN.
    El problema real del autor no era no ver la versión: era no saber si la
