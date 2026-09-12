@@ -153,6 +153,13 @@
         // que el defecto que venimos a arreglar. Se degrada a la salida de siempre.
         if (!show) return window.navExit();
 
+        // 🔒 v699 · Salir a los roles SUELTA la plaza: si no, quien vuelve al
+        // selector la seguiría teniendo ocupada para sus otros aparatos hasta
+        // que caducara sola.
+        if (typeof window.cronosSesionLibera === 'function') {
+            try { window.cronosSesionLibera(); } catch (e) {}
+        }
+
         _stack = [];
         ['setup-modal', 'main-header', 'main-container'].forEach(function(id) {
             var el = document.getElementById(id);

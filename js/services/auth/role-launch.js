@@ -1016,6 +1016,28 @@ function _launchWithRole(role) {
     } else {
         if (typeof init === 'function') init(activeRole);
     }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  🔒 v699 · UNA PLAZA, UN DISPOSITIVO
+    //
+    //  Va AQUÍ, al final y no en `selectOption`, porque la clave de la plaza
+    //  incluye el EQUIPO y el equipo no se conoce hasta que esta función ha
+    //  elegido la entrada de `allRoles` (todo el bloque de v540/v627 de
+    //  arriba). Preguntando antes, un entrenador con dos equipos se
+    //  bloquearía a sí mismo al abrir el segundo.
+    //
+    //  ⚠️ No se espera al resultado para pintar: la comprobación toca la red
+    //  y bloquear la entrada mientras llega dejaría la pantalla en blanco
+    //  justo al empezar un partido. Si el usuario decide no tomar el control,
+    //  se le devuelve al selector de roles.
+    // ══════════════════════════════════════════════════════════════════
+    if (typeof window.cronosSesionAlEntrar === 'function') {
+        window.cronosSesionAlEntrar().then(function (puede) {
+            if (puede) return;
+            if (typeof window.navExitToRoles === 'function') window.navExitToRoles();
+            else if (typeof window.showRoleSelector === 'function') window.showRoleSelector();
+        }).catch(function () { /* jamás impide entrar: ver la nota del módulo */ });
+    }
 }
 
 // ════════════════════════════════════════════════════════════════════

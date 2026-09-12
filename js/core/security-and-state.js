@@ -29,6 +29,12 @@ function showAuthError(msg) {
 // --- CERRAR SESIÓN ---
 async function cerrarSesion() {
     if (!confirm('¿Cerrar sesión?')) return;
+    // 🔒 v699 · Soltar la plaza ANTES de cerrar la sesión de Firebase: después
+    // ya no habría permiso para borrar la marca y quedaría ocupada hasta
+    // caducar, bloqueando al propio usuario si entra desde otro aparato.
+    try {
+        if (typeof window.cronosSesionLibera === 'function') await window.cronosSesionLibera();
+    } catch(e) { /* caducará sola */ }
     try {
         // Detener cronómetro si está en marcha
         if (typeof isRunning !== 'undefined' && isRunning) {

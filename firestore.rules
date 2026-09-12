@@ -2496,6 +2496,31 @@ service cloud.firestore {
     }
 
     // ============================================================
+    // v699 · MARCAS DE SESION POR PLAZA (una plaza, un dispositivo)
+    // ============================================================
+    // Cada documento dice que un aparato tiene abierta UNA plaza del usuario
+    // (uid + rol + entidad + equipo). Solo sirve para coordinar los aparatos
+    // del PROPIO usuario: no concede ni quita ningun permiso sobre partidos
+    // ni paneles, que siguen gobernados por sus reglas de siempre.
+    //
+    // Cada quien ve y escribe UNICAMENTE sus propias marcas.
+    // `get` y `list` van SEPARADOS a proposito: con `read` a secas, cualquier
+    // usuario podria volcar la coleccion entera y leer los correos y los
+    // equipos de todos los demas. Es la leccion de v633 (invitaciones) y de
+    // v674 (el 403 del historial): una consulta se prueba con el rol MAS
+    // ACOTADO, y aqui directamente no hay ninguna consulta que hacer — el
+    // cliente siempre lee un documento concreto por su id.
+    match /cronos_role_sessions/{sessionId} {
+      allow get:    if isAuth() && resource.data.get('uid', '') == request.auth.uid;
+      allow list:   if false;
+      allow create: if isAuth() && request.resource.data.get('uid', '') == request.auth.uid;
+      allow update: if isAuth()
+                    && resource.data.get('uid', '') == request.auth.uid
+                    && request.resource.data.get('uid', '') == request.auth.uid;
+      allow delete: if isAuth() && resource.data.get('uid', '') == request.auth.uid;
+    }
+
+    // ============================================================
     // CATCH-ALL — bloquear TODO lo no definido explícitamente
     // FIX CRÍTICO: antes era "allow read: if isAuth()"
     // ============================================================
