@@ -266,7 +266,104 @@ function renderPlayers() {
     if (typeof window.cronosPRActualiza === 'function') {
         try { window.cronosPRActualiza(); } catch(e) { /* nunca debe tumbar el repintado */ }
     }
+
+    // v697 · El marcador, alineado con la línea de medio campo (móvil).
+    if (typeof window.cronosAlineaMarcador === 'function') {
+        try { window.cronosAlineaMarcador(); } catch(e) { /* jamás tumba el repintado */ }
+    }
 }
+
+// ════════════════════════════════════════════════════════════════════
+//  📐 v697 · EL MARCADOR, ALINEADO CON LA LÍNEA DE MEDIO CAMPO
+// ════════════════════════════════════════════════════════════════════
+//  Reporte del autor (IMG_4716, móvil apaisado con los dos equipos): el
+//  botón GRUPAL del local se monta encima del cronómetro de la 2ª parte.
+//
+//  🔑 SE MIDE, NO SE ESTIMA. La tentación era empujar el bloque con un
+//  `margin-left` a ojo, pero el ancho del marcador NO es fijo: depende del
+//  nombre de los equipos ("ARINAGA REGIONAL" ocupa el triple que "LOCAL"),
+//  del número de dígitos del resultado y del tamaño de letra de cada
+//  aparato. Un número mágico encaja en la captura de hoy y se descoloca con
+//  el primer equipo de nombre largo. Aquí se mide dónde cae el «+» del local
+//  y dónde la línea de medio campo, y se desplaza exactamente esa
+//  diferencia — el criterio que pidió el autor.
+//
+//  ⚠️ TOPE POR LA DERECHA: desplazar hasta la alineación puede sacar el
+//  GRUPAL del visitante fuera de la pantalla en un móvil estrecho. Se
+//  recorta el empuje para que el bloque entero siga cabiendo: más vale
+//  quedarse corto en la alineación que perder un botón.
+//
+//  ⚠️ SÓLO EN MÓVIL Y CON LOS DOS EQUIPOS. Con `hide-visitor` el bloque es
+//  mucho más corto (el GRUPAL visitante no se pinta) y ya no solapa; y en
+//  pantallas anchas nunca hubo solape. En esos casos se devuelve el
+//  marcador a su centrado de siempre, para no arrastrar un ajuste que sólo
+//  tiene sentido en el caso reportado.
+//
+//  🚨 v698 · "MÓVIL" NO ES `max-width: 950px`. Con ese corte, el iPad EN
+//  VERTICAL (820 px de ancho) entraba y se le desplazaba el marcador, cuando
+//  el autor lo quiere centrado en iPad y en PC, y ajustado sólo en el móvil.
+//  El corte bueno es el que ya usa la hoja del proyecto para el móvil
+//  apaisado —`max-height: 500px`, "el caso real: el móvil apaisado en la
+//  banda"— más su equivalente en vertical:
+//     · móvil apaisado : 844 × 390 → alto ≤ 500 ✔
+//     · móvil vertical : 390 × 844 → ancho ≤ 500 ✔
+//     · iPad vertical  : 820 × 1180 → NI ancho NI alto ≤ 500 ✘
+//     · iPad apaisado  : 1180 × 820 → ✘      · PC: ✘
+//  Es decir: la pantalla pequeña se reconoce por su lado CORTO, no por el
+//  ancho, que es lo que confundía a la tableta con el teléfono.
+// ════════════════════════════════════════════════════════════════════
+window.cronosAlineaMarcador = function cronosAlineaMarcador() {
+    const area = document.querySelector('.score-area');
+    if (!area) return;
+
+    const mq = (q) => !!(window.matchMedia && window.matchMedia(q).matches);
+    const esMovil = mq('(max-width: 500px)') || mq('(max-height: 500px)');
+    const dosEquipos = !document.body.classList.contains('hide-visitor');
+
+    // Base: el centrado de toda la vida. Se restablece SIEMPRE antes de medir
+    // para que el cálculo no se apoye en el ajuste anterior y se vaya
+    // acumulando repintado tras repintado.
+    area.style.transform = 'translateX(-50%)';
+    if (!esMovil || !dosEquipos) return;
+
+    const pitch = document.getElementById('football-pitch');
+    const mas   = area.querySelector('.team-score .score-btn.success'); // el 1º es el del LOCAL
+    if (!pitch || !mas) return;
+
+    const rPitch = pitch.getBoundingClientRect();
+    const rMas   = mas.getBoundingClientRect();
+    const rArea  = area.getBoundingClientRect();
+    if (!rPitch.width || !rArea.width) return;   // aún sin pintar
+
+    const medioCampo = rPitch.left + rPitch.width / 2;
+    const centroMas  = rMas.left + rMas.width / 2;
+    let empuje = medioCampo - centroMas;
+
+    if (empuje <= 0) return;                     // ya está o habría que ir a la izquierda
+    const margen = 6;
+    const tope = (window.innerWidth - margen) - rArea.right;
+    if (tope < empuje) empuje = tope;
+    if (empuje <= 0) return;
+
+    area.style.transform = `translateX(calc(-50% + ${Math.round(empuje)}px))`;
+};
+
+// El ancho disponible cambia sin repintar las fichas: girar el aparato, abrir
+// el teclado o cambiar de ventana. Sin esto, el ajuste medido en vertical se
+// quedaría clavado en horizontal.
+(function () {
+    let _t = null;
+    const reajusta = () => {
+        clearTimeout(_t);
+        _t = setTimeout(() => {
+            if (typeof window.cronosAlineaMarcador === 'function') {
+                try { window.cronosAlineaMarcador(); } catch (e) {}
+            }
+        }, 150);
+    };
+    window.addEventListener('resize', reajusta);
+    window.addEventListener('orientationchange', reajusta);
+})();
 
 function sortBenchUI(team) {
     const listId = team === 'home' ? 'bench-list' : 'bench-list-away';
