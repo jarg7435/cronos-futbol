@@ -428,6 +428,15 @@ async function autoDispatchMatchReports() {
                 goals:         player.goals  || 0,
                 cards:         player.cards  || 'ninguna',
                 injured:       player.injured || false,
+                // 🔵🔴 v705 · Pérdidas y recuperaciones DE ESTE JUGADOR.
+                // ⚠️ NO viaja `matchPR`, que lleva el desglose de TODO el
+                // equipo: a la familia sólo le corresponde lo de su hijo, y
+                // esa es la misma política que ya rige el resto de su panel
+                // (la vista "pobre" de v619, justificada por RGPD).
+                prPropio:      (typeof window.cronosPRDelPartido === 'function' &&
+                                typeof window.cronosPRDeJugador === 'function')
+                                 ? window.cronosPRDeJugador(window.cronosPRDelPartido(), dorsal)
+                                 : null,
                 minutesPlayed: typeof formatTime === 'function' ? formatTime(player.time || 0) : String(player.time || 0),
                 wasStarter:    typeof window.cronosFueTitular === 'function' ? window.cronosFueTitular(player) : false,
                 history:       _parseHistoryForFirestore(player.history || []),

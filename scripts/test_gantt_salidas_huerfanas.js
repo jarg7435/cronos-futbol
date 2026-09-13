@@ -51,7 +51,14 @@ function cargarBuildTimeline() {
     const marca = PANEL.indexOf('return { svg, events, periods, playedSec };', ini);
     if (ini < 0 || marca < 0) throw new Error('no se encuentra _buildTimeline en js/parent/panel.js');
     const fin = PANEL.indexOf('\n            };', marca) + '\n            };'.length;
-    const sb = { Math, Array, Object, String, Number, JSON, Date, Map, Set, parseInt, parseFloat, isNaN, isFinite, console };
+    // ⚠️ v705 · `window` HACE FALTA. El bloque que se extrae arrastra las
+    // estadísticas acumuladas del panel, y desde que ahí se consulta el extra
+    // de Pérdidas/Recuperaciones (`window._cronosExtraEnabled`), un sandbox
+    // sin `window` revienta con "window is not defined" y este guard se queda
+    // sin generador que medir. Se da encendido: a este guard el extra le da
+    // igual, lo suyo es el Gantt.
+    const sb = { Math, Array, Object, String, Number, JSON, Date, Map, Set, parseInt, parseFloat, isNaN, isFinite, console,
+                 window: { _cronosExtraEnabled: () => true } };
     vm.createContext(sb);
     // El bloque arrastra las estadísticas acumuladas, que leen `reports`.
     vm.runInContext('const reports = [];\n' + PANEL.slice(ini, fin) + '\nthis.__bt = _buildTimeline;', sb);

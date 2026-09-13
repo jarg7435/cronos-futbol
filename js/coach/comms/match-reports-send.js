@@ -785,6 +785,12 @@ window._executeReportsSend = async function(method) {
                     goals: player.goals || 0,
                     cards: player.cards || 'ninguna',
                     injured: player.injured || false,
+                    // 🔵🔴 v705 · Sólo lo de ESTE jugador, nunca el desglose del
+                    // equipo entero (ver la nota en match-reports-auto.js).
+                    prPropio: (typeof window.cronosPRDelPartido === 'function' &&
+                               typeof window.cronosPRDeJugador === 'function')
+                                ? window.cronosPRDeJugador(window.cronosPRDelPartido(), dorsal)
+                                : null,
                     history: typeof _parseHistoryForFirestore === 'function'
                              ? _parseHistoryForFirestore(player.history || [])
                              : (player.history || []),

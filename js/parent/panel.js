@@ -1221,6 +1221,33 @@ async function openParentPanel(initialTab) {
             const totalSecs    = reports.reduce((s,r) => s + _mmssToSec(r.minutesPlayed), 0);
             const totalTimeStr = _fmtTotal(totalSecs);
 
+            // 🔵🔴 v705 · Pérdidas y recuperaciones del jugador, acumuladas.
+            //  El dato llega en `prPropio` —sólo lo SUYO, nunca el desglose del
+            //  equipo— porque a la familia le corresponde lo de su hijo y nada
+            //  más (misma política que el resto de este panel, v619).
+            //  ⚠️ Se acepta también `matchPR` por si el informe viniera de una
+            //  copia técnica: ahí se busca su dorsal, no el total del equipo.
+            const _prDeInforme = (r) => {
+                if (r && r.prPropio) return {
+                    p: Number(r.prPropio.perdidas) || 0,
+                    r: Number(r.prPropio.recuperaciones) || 0
+                };
+                if (r && r.matchPR && r.playerNumber != null) {
+                    const d = String(r.playerNumber).trim();
+                    return {
+                        p: Number(((r.matchPR.perdidas       || {}).porDorsal || {})[d]) || 0,
+                        r: Number(((r.matchPR.recuperaciones || {}).porDorsal || {})[d]) || 0
+                    };
+                }
+                return { p: 0, r: 0 };
+            };
+            const totalPerdidas = reports.reduce((s, r) => s + _prDeInforme(r).p, 0);
+            const totalRecup    = reports.reduce((s, r) => s + _prDeInforme(r).r, 0);
+            // Estrictamente condicional al extra, como pidió el autor: apagado,
+            // las tarjetas desaparecen por completo.
+            const _prVisible = (typeof window._cronosExtraEnabled === 'function')
+                ? window._cronosExtraEnabled('registro_pr') : false;
+
             // ── Función generadora de SVG de línea de tiempo ─────────────────
             const _buildTimeline = (r) => {
                 const playedSec  = _mmssToSec(r.minutesPlayed);
@@ -1563,7 +1590,10 @@ async function openParentPanel(initialTab) {
                     ['🟨', 'Amarillas',  totalYellow,   '#f0883e'],
                     ['🟥', 'Rojas',      totalRed,      '#ff5858'],
                     ['🚑', 'Lesiones',   totalInjured,  '#ffa500'],
-                ].map(([icon, label, val, color]) => `
+                ].concat(_prVisible ? [
+                    ['🔺', 'Recuperaciones', totalRecup,    '#3fb950'],
+                    ['🔻', 'Pérdidas',       totalPerdidas, '#f85149'],
+                ] : []).map(([icon, label, val, color]) => `
                     <div class="pp-stat">
                         <div style="font-size:1.3rem;margin-bottom:0.15rem;">${icon}</div>
                         <div style="font-size:1.1rem;font-weight:700;color:${color};line-height:1.1;">${val}</div>

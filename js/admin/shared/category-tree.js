@@ -1175,11 +1175,29 @@
     //   matches: los objetos agrupados por partido de reports-tab.js, cada uno
     //   con players[] (los documentos de cronos_player_reports de ese partido).
     //   fila = { number, alias, called, pj, seconds, minutes, goals, yellow, red, injuries }
+    // 🔵🔴 v705 · El resumen de Pérdidas/Recuperaciones de UN partido.
+    //  Viaja repetido en cada documento de jugador (así lo escriben los
+    //  despachos desde v693), así que vale con el primero que lo traiga; se
+    //  acepta también al nivel del partido por si un agrupador lo sube ahí.
+    function _ctMatchPR(m) {
+        if (!m) return null;
+        if (m.matchPR) return m.matchPR;
+        const ps = Array.isArray(m.players) ? m.players : [];
+        for (let i = 0; i < ps.length; i++) if (ps[i] && ps[i].matchPR) return ps[i].matchPR;
+        return null;
+    }
+
     window.ctAccumulatePlayerStats = function (matches) {
         const porJugador = new Map();
 
         (matches || []).forEach(function (m) {
             const players = (m && Array.isArray(m.players)) ? m.players : [];
+            // 🔑 UNA VEZ POR PARTIDO Y DORSAL. El desglose `porDorsal` es del
+            // PARTIDO entero, no del documento: si un jugador apareciera con
+            // dos copias en el mismo partido, sumarlo por documento doblaría
+            // sus pérdidas. Este registro lo impide.
+            const pr = _ctMatchPR(m);
+            const prYaSumado = {};
             players.forEach(function (p) {
                 if (!p) return;
                 const num   = String(p.playerNumber == null ? '' : p.playerNumber).trim();
@@ -1203,7 +1221,8 @@
                 let f = porJugador.get(key);
                 if (!f) {
                     f = { number: num, alias: alias, ficha: '', called: 0, pj: 0, pt: 0, seconds: 0,
-                          minutes: 0, goals: 0, yellow: 0, red: 0, injuries: 0 };
+                          minutes: 0, goals: 0, yellow: 0, red: 0, injuries: 0,
+                          prPerdidas: 0, prRecuperaciones: 0 };
                     porJugador.set(key, f);
                 }
                 // El alias puede llegar vacío en un partido y relleno en otro.
@@ -1237,6 +1256,17 @@
                 f.yellow  += _ctYellowsIn(p.history);
                 if (_ctIsRed(p.cards)) f.red += 1;
                 if (p.injured === true) f.injuries += 1;
+
+                // 🔵🔴 v705 · Pérdidas y recuperaciones acumuladas. El dato es
+                // del PARTIDO y se reparte por DORSAL, que es la clave con la
+                // que se registró en el campo. Un jugador sin dorsal (sólo
+                // alias) no puede casar con ese desglose, y atribuirle lo de
+                // otro sería peor que dejarlo a cero.
+                if (pr && num && !prYaSumado[num]) {
+                    prYaSumado[num] = true;
+                    f.prPerdidas       += Number(((pr.perdidas       || {}).porDorsal || {})[num]) || 0;
+                    f.prRecuperaciones += Number(((pr.recuperaciones || {}).porDorsal || {})[num]) || 0;
+                }
             });
         });
 
@@ -1478,6 +1508,35 @@
         }
         const cel = (n) => '<td' + (n ? '' : ' class="ct-stats-zero"') + '>' + n + '</td>';
 
+        // ══════════════════════════════════════════════════════════════
+        //  🔵🔴 v705 · LAS COLUMNAS DE PÉRDIDAS Y RECUPERACIONES
+        //
+        //  Encargo del autor: "estrictamente condicional al estado del extra.
+        //  Si está desactivado, estas columnas e indicadores deben desaparecer
+        //  POR COMPLETO".
+        //
+        //  🔑 Se pregunta a `_cronosExtraEnabled`, la lectura ÚNICA de extras
+        //  del proyecto (v429), así que hereda su regla `!== false`: un club
+        //  sin el campo lo tiene ACTIVO, igual que el módulo del partido.
+        //  Si esa función no existiera (pantalla cargada suelta), se esconden:
+        //  vale más una tabla como la de siempre que dos columnas a cero que
+        //  nadie sabe de dónde salen.
+        //
+        //  ⚠️ `opts.mostrarPR === false` permite apagarlas desde quien llama
+        //  (el PDF/CSV, por ejemplo) sin tocar el extra.
+        // ══════════════════════════════════════════════════════════════
+        const _prActivo = (opts.mostrarPR === false) ? false
+            : (typeof window._cronosExtraEnabled === 'function'
+                 ? window._cronosExtraEnabled('registro_pr') : false);
+        // Celdas de P/R: en rojo las pérdidas y en verde las recuperaciones,
+        // los mismos colores con los que se registran en el campo.
+        const celPR = (f) => _prActivo
+            ? ('<td' + (f.prRecuperaciones ? ' style="color:#3fb950;font-weight:700;"' : ' class="ct-stats-zero"') + '>' +
+                 (Number(f.prRecuperaciones) || 0) + '</td>' +
+               '<td' + (f.prPerdidas ? ' style="color:#f85149;font-weight:700;"' : ' class="ct-stats-zero"') + '>' +
+                 (Number(f.prPerdidas) || 0) + '</td>')
+            : '';
+
         // 🔑 LA FILA DE TOTALES NO SUMA LO QUE NO SE PUEDE SUMAR (ajuste del
         // autor, 2026-07-30, tras verlo en producción).
         //  · PJ: sumar los partidos de cada jugador daba 71 en un equipo que
@@ -1492,8 +1551,11 @@
         const tot = filas.reduce(function (t, f) {
             t.goals += f.goals; t.yellow += f.yellow;
             t.red += f.red; t.injuries += f.injuries;
+            // P/R SÍ son magnitudes del equipo (como los goles): se suman.
+            t.prP += Number(f.prPerdidas) || 0;
+            t.prR += Number(f.prRecuperaciones) || 0;
             return t;
-        }, { goals: 0, yellow: 0, red: 0, injuries: 0 });
+        }, { goals: 0, yellow: 0, red: 0, injuries: 0, prP: 0, prR: 0 });
         const totPj = (typeof opts.matchCount === 'number' && isFinite(opts.matchCount))
             ? String(opts.matchCount) : '-';
 
@@ -1527,6 +1589,7 @@
                 cel(f.yellow) +
                 cel(f.red) +
                 cel(f.injuries) +
+                celPR(f) +
             '</tr>';
         }).join('');
 
@@ -1536,7 +1599,10 @@
         // sumarlos al total del equipo falsearía su temporada.
         const invitadas = Array.isArray(opts.guestRows) ? opts.guestRows : [];
         const cuerpoInv = invitadas.length ? (
-            '<tr class="ct-stats-guest-head"><td colspan="8">' +
+            // ⚠️ El `colspan` tiene que seguir a las columnas: con las de P/R
+            // encendidas son 10, y dejarlo en 8 parte la fila de encabezado de
+            // colaboraciones sin que salte ningún error.
+            '<tr class="ct-stats-guest-head"><td colspan="' + (_prActivo ? 10 : 8) + '">' +
                 '&#8593; Colaboraciones con otros equipos del club ' +
                 '(no suman en el total de este equipo)' +
             '</td></tr>' +
@@ -1556,6 +1622,7 @@
                     cel(f.yellow) +
                     cel(f.red) +
                     cel(f.injuries) +
+                    celPR(f) +
                 '</tr>';
             }).join('')
         ) : '';
@@ -1583,6 +1650,12 @@
                 '<th title="Tarjetas amarillas">&#129000; Amarillas</th>' +
                 '<th title="Tarjetas rojas">&#128997; Rojas</th>' +
                 '<th title="Partidos con lesión">Lesiones</th>' +
+                // 🔵🔴 v705 · Recuperaciones en VERDE y pérdidas en ROJO, los
+                // mismos colores del registro en el campo.
+                (_prActivo
+                    ? '<th title="Recuperaciones de balón" style="color:#3fb950;">&#9650; R</th>' +
+                      '<th title="Pérdidas de balón" style="color:#f85149;">&#9660; P</th>'
+                    : '') +
             '</tr></thead>' +
             '<tbody>' + cuerpo + cuerpoInv + '</tbody>' +
             '<tfoot><tr class="ct-stats-total">' +
@@ -1598,6 +1671,10 @@
                 '<td>' + tot.yellow + '</td>' +
                 '<td>' + tot.red + '</td>' +
                 '<td>' + tot.injuries + '</td>' +
+                (_prActivo
+                    ? '<td style="color:#3fb950;">' + tot.prR + '</td>' +
+                      '<td style="color:#f85149;">' + tot.prP + '</td>'
+                    : '') +
             '</tr></tfoot>' +
         '</table></div>';
     };
