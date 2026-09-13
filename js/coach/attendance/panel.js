@@ -229,9 +229,11 @@ function _attRenderSemana() {
         var rMes = window.CronosAttendance.resumenJugador(marks, sesionesMes, p.ficha);
 
         var fondo = estado === 'P' ? 'rgba(63,185,80,0.08)'
+                  : estado === 'R' ? 'rgba(210,153,34,0.10)'
                   : estado === 'I' ? 'rgba(255,88,88,0.08)'
                   : estado === 'J' ? 'rgba(240,136,62,0.08)' : 'transparent';
         var borde = estado === 'P' ? 'rgba(63,185,80,0.35)'
+                  : estado === 'R' ? 'rgba(210,153,34,0.45)'
                   : estado === 'I' ? 'rgba(255,88,88,0.35)'
                   : estado === 'J' ? 'rgba(240,136,62,0.35)' : 'var(--glass-border)';
 
@@ -244,13 +246,24 @@ function _attRenderSemana() {
               (p.isGuest ? '<span style="margin-left:0.35rem; font-size:0.6rem; font-weight:700; color:#d2a8ff; background:rgba(210,168,255,0.12); border:1px solid rgba(210,168,255,0.3); padding:1px 5px; border-radius:5px;">' + _attEsc(p.origen.trim()) + '</span>' : '') +
             '</span>' +
             '<span title="Semana · Mes" style="flex-shrink:0; font-size:0.64rem; color:var(--text-muted); white-space:nowrap;">' +
-              'S ' + rSem.P + '/' + (rSem.registradas || 0) + ' · M ' + rMes.P + '/' + (rMes.registradas || 0) +
+              // ⏰ v703 · `asistencias` (puntuales + con retraso), no `P`: el
+              // que llegó tarde VINO, y un "S 0/1" para quien estuvo en el
+              // campo diría lo contrario de lo que pasó.
+              'S ' + (rSem.asistencias || 0) + '/' + (rSem.registradas || 0) +
+              ' · M ' + (rMes.asistencias || 0) + '/' + (rMes.registradas || 0) +
               (rMes.pct != null ? ' · ' + rMes.pct + '%' : '') +
             '</span>' +
             '<span style="flex-shrink:0; display:flex; gap:0.3rem;">' +
               '<button onclick="_attMarcar(\'' + _attEsc(p.ficha) + '\',\'P\')" title="Presente" style="cursor:pointer; border-radius:8px; padding:0.3rem 0.6rem; font-size:0.9rem;' +
                 'border:1px solid ' + (estado === 'P' ? '#3fb950' : 'var(--glass-border)') + ';' +
                 'background:' + (estado === 'P' ? 'rgba(63,185,80,0.25)' : 'transparent') + '; color:' + (estado === 'P' ? '#3fb950' : 'var(--text-muted)') + ';">✅</button>' +
+              // ⏰ v703 · RETRASO. Un toque lo marca ya (vino tarde y punto);
+              // la causa es opcional y se elige en el desplegable de abajo,
+              // igual que en la falta justificada. Va ENTRE presente y falta
+              // porque es lo que es: asistencia, pero no limpia.
+              '<button onclick="_attToggleRetraso(\'' + _attEsc(p.ficha) + '\')" title="' + (estado === 'R' ? 'Quitar el retraso' : 'Retraso (asistió, pero llegó tarde)') + '" style="cursor:pointer; border-radius:8px; padding:0.3rem 0.6rem; font-size:0.9rem;' +
+                'border:1px solid ' + (estado === 'R' ? '#d29922' : 'var(--glass-border)') + ';' +
+                'background:' + (estado === 'R' ? 'rgba(210,153,34,0.25)' : 'transparent') + '; color:' + (estado === 'R' ? '#d29922' : 'var(--text-muted)') + ';">⏰</button>' +
               '<button onclick="_attAbrirMotivo(\'' + _attEsc(p.ficha) + '\')" title="Falta" style="cursor:pointer; border-radius:8px; padding:0.3rem 0.6rem; font-size:0.9rem;' +
                 'border:1px solid ' + (estado === 'I' ? '#ff5858' : (estado === 'J' ? '#f0883e' : 'var(--glass-border)')) + ';' +
                 'background:' + (estado === 'I' ? 'rgba(255,88,88,0.25)' : (estado === 'J' ? 'rgba(240,136,62,0.25)' : 'transparent')) + ';' +
@@ -269,14 +282,40 @@ function _attRenderSemana() {
                     _attEsc(window.CronosAttendance.motivoIcon(m.m)) + ' ' +
                     _attEsc(window.CronosAttendance.motivoLabel(m.m)) + '</div>';
         }
+        // ⏰ v703 · El retraso se rotula SIEMPRE, con causa o sin ella: sin
+        // este renglón, un retraso sin motivo sólo se distinguía por el color
+        // del botón.
+        if (estado === 'R') {
+            html += '<div style="margin-top:0.3rem; font-size:0.68rem; color:#d29922;">⏰ Retraso' +
+                    (m && m.m ? ' · ' + _attEsc(window.CronosAttendance.motivoIcon(m.m)) + ' ' +
+                                _attEsc(window.CronosAttendance.motivoLabel(m.m)) : '') +
+                    '</div>';
+        }
 
         // Selector de causa, desplegado bajo la fila que se está marcando
         if (window._attMotivoFor === p.ficha) {
+            // ⏰ v703 · El MISMO desplegable sirve para las dos cosas: un
+            // segundo selector aparte habría duplicado la lista de causas, y
+            // dos listas acaban diciendo cosas distintas.
+            //
+            // 🚨 v704 · LO DECIDE EL BOTÓN QUE LO ABRIÓ, NO EL ESTADO ACTUAL.
+            // Derivarlo del estado dejaba al entrenador ATRAPADO: con un
+            // retraso puesto, pulsar ❌ para rectificar reabría el selector en
+            // modo retraso y sus causas volvían a marcar 'R', así que no había
+            // forma de pasar de retraso a falta. Es el bloqueo que reportó el
+            // autor (captura 10312).
+            var _esRetraso = (window._attMotivoModo === 'R');
             html += '<div style="margin-top:0.5rem; padding-top:0.5rem; border-top:1px dashed var(--glass-border); display:flex; gap:0.35rem; flex-wrap:wrap;">' +
-              '<span style="font-size:0.68rem; color:var(--text-muted); align-self:center; margin-right:0.2rem;">Causa:</span>' +
-              '<button onclick="_attMarcar(\'' + _attEsc(p.ficha) + '\',\'I\')" style="cursor:pointer; font-size:0.7rem; font-weight:700; padding:0.3rem 0.6rem; border-radius:8px; border:1px solid rgba(255,88,88,0.45); background:rgba(255,88,88,0.12); color:#ff5858;">Injustificada</button>';
+              '<span style="font-size:0.68rem; color:var(--text-muted); align-self:center; margin-right:0.2rem;">' +
+              (_esRetraso ? 'Causa del retraso:' : 'Causa:') + '</span>' +
+              (_esRetraso ? '' :
+              '<button onclick="_attMarcar(\'' + _attEsc(p.ficha) + '\',\'I\')" style="cursor:pointer; font-size:0.7rem; font-weight:700; padding:0.3rem 0.6rem; border-radius:8px; border:1px solid rgba(255,88,88,0.45); background:rgba(255,88,88,0.12); color:#ff5858;">Injustificada</button>');
             window.CronosAttendance.MOTIVOS.forEach(function (mo) {
-                html += '<button onclick="_attMarcar(\'' + _attEsc(p.ficha) + '\',\'J\',\'' + mo.id + '\')" style="cursor:pointer; font-size:0.7rem; padding:0.3rem 0.6rem; border-radius:8px; border:1px solid rgba(240,136,62,0.4); background:rgba(240,136,62,0.1); color:#f0883e;">' + mo.icon + ' ' + _attEsc(mo.label) + '</button>';
+                var _est = _esRetraso ? 'R' : 'J';
+                var _col = _esRetraso ? '#d29922' : '#f0883e';
+                var _bg  = _esRetraso ? 'rgba(210,153,34,0.12)' : 'rgba(240,136,62,0.1)';
+                var _bd  = _esRetraso ? 'rgba(210,153,34,0.45)' : 'rgba(240,136,62,0.4)';
+                html += '<button onclick="_attMarcar(\'' + _attEsc(p.ficha) + '\',\'' + _est + '\',\'' + mo.id + '\')" style="cursor:pointer; font-size:0.7rem; padding:0.3rem 0.6rem; border-radius:8px; border:1px solid ' + _bd + '; background:' + _bg + '; color:' + _col + ';">' + mo.icon + ' ' + _attEsc(mo.label) + '</button>';
             });
             if (estado) {
                 html += '<button onclick="_attDesmarcar(\'' + _attEsc(p.ficha) + '\')" title="Quitar la marca de este jugador" style="cursor:pointer; font-size:0.7rem; padding:0.3rem 0.6rem; border-radius:8px; border:1px solid var(--glass-border); background:transparent; color:var(--text-muted);">↺ Sin marcar</button>';
@@ -336,8 +375,30 @@ window._attElegirDia = async function (fecha) {
 // Abre el selector de causa. Si ya estaba abierto para ese jugador, lo cierra:
 // así el mismo botón sirve para desplegar y para arrepentirse.
 window._attAbrirMotivo = function (ficha) {
+    // v704 · Abrir desde el botón de FALTA fija el modo del selector: sus
+    // causas marcarán justificada, venga el jugador del estado que venga.
+    window._attMotivoModo = 'J';
     window._attMotivoFor = (window._attMotivoFor === ficha) ? null : ficha;
     _attRenderSemana();
+};
+
+// ⏰ v704 · EL RELOJ ES UN INTERRUPTOR, NO UN SELLO.
+//  Encargo del autor: "no puede quedarse bloqueado al pulsarlo; debe permitir
+//  marcar y desmarcar de forma limpia por si el cuerpo técnico se equivoca".
+//  Pulsarlo con el retraso YA puesto lo retira y devuelve al jugador a «sin
+//  marcar», desde donde se puede poner presente o falta con un solo toque.
+//  Antes volvía a escribir 'R' una y otra vez: el retraso no se podía quitar
+//  desde su propio botón.
+window._attToggleRetraso = function (ficha) {
+    var m = ((window._attMes && window._attMes.marks) || {})[window._attDayKey] || {};
+    var actual = m[ficha] && m[ficha].s;
+    if (actual === 'R') {
+        window._attMotivoFor = null;
+        window._attDesmarcar(ficha);
+        return;
+    }
+    window._attMotivoModo = 'R';
+    window._attMarcar(ficha, 'R');
 };
 
 window._attMarcar = function (ficha, estado, motivo) {
@@ -358,7 +419,15 @@ window._attMarcar = function (ficha, estado, motivo) {
         window._attMes = window.CronosAttendance._mesLocal(
             window.CronosAttendance.docId(eq.teamId, window.CronosAttendance.mesDe(window._attDayKey)));
     }
-    window._attMotivoFor = null;
+    // ⏰ v703 · Marcar RETRASO deja abierto el selector para poner la causa
+    // (trabajo, estudios…), que es opcional: el retraso ya ha quedado
+    // guardado con el primer toque. Elegir causa lo cierra, como siempre.
+    if (estado === 'R' && !motivo) {
+        window._attMotivoModo = 'R';   // v704 · y su selector, en modo retraso
+        window._attMotivoFor  = ficha;
+    } else {
+        window._attMotivoFor = null;
+    }
     _attRenderSemana();
 };
 

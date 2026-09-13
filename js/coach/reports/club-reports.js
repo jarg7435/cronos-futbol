@@ -862,21 +862,28 @@ async function _sdLoadAsistencia() {
         const d = e.doc || {};
         const marks = d.marks || {};
         const sesiones = Object.keys(d.sessions || {}).filter(k => /^\d{4}-\d{2}-\d{2}$/.test(k));
-        let P = 0, I = 0, J = 0, hoyP = 0, hoyMarcados = 0;
+        // ⏰ v703 · El RETRASO ('R') es asistencia: el jugador fue. Sin esta
+        // rama caía fuera de los tres contadores y desaparecía del total, así
+        // que el porcentaje del club se calculaba sobre menos sesiones de las
+        // que hubo — y el panel de Dirección diría algo distinto del parte
+        // mensual del entrenador, que es lo que no puede pasar.
+        let P = 0, R = 0, I = 0, J = 0, hoyP = 0, hoyMarcados = 0;
         Object.keys(marks).forEach(fecha => {
             const dia = marks[fecha] || {};
             Object.keys(dia).forEach(f => {
                 const s = dia[f] && dia[f].s;
-                if (s === 'P') P++; else if (s === 'I') I++; else if (s === 'J') J++;
+                if (s === 'P') P++; else if (s === 'R') R++;
+                else if (s === 'I') I++; else if (s === 'J') J++;
                 if (fecha === hoyKey && s) {
                     hoyMarcados++;
-                    if (s === 'P') hoyP++;
+                    if (s === 'P' || s === 'R') hoyP++;
                 }
             });
         });
-        const tot = P + I + J;
-        return { sesiones: sesiones.length, P, I, J, tot,
-                 pct: tot ? Math.round(P / tot * 100) : null,
+        const asistencias = P + R;
+        const tot = asistencias + I + J;
+        return { sesiones: sesiones.length, P: asistencias, R, I, J, tot,
+                 pct: tot ? Math.round(asistencias / tot * 100) : null,
                  hoyP, hoyMarcados };
     };
 

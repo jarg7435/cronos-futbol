@@ -654,13 +654,18 @@ async function openParentPanel(initialTab) {
             const days = f.days || {};
             const claves = Object.keys(days).filter(k => /^\d{4}-\d{2}-\d{2}$/.test(k)).sort();
 
-            let P = 0, I = 0, J = 0;
+            // ⏰ v703 · El RETRASO cuenta como asistencia, no como ausencia: el
+            // jugador fue. Sin esta rama caía en el `else` de más abajo y su
+            // hijo aparecía en "AUSENCIAS REGISTRADAS" por haber llegado tarde.
+            let P = 0, R = 0, I = 0, J = 0;
             claves.forEach(k => {
                 const s = days[k] && days[k].s;
-                if (s === 'P') P++; else if (s === 'I') I++; else if (s === 'J') J++;
+                if (s === 'P') P++; else if (s === 'R') R++;
+                else if (s === 'I') I++; else if (s === 'J') J++;
             });
-            const total = P + I + J;
-            const pct = total ? Math.round(P / total * 100) : null;
+            const asistencias = P + R;
+            const total = asistencias + I + J;
+            const pct = total ? Math.round(asistencias / total * 100) : null;
 
             // Color del porcentaje: informa, no juzga. Verde ≥80, ámbar ≥60.
             const colPct = pct == null ? '#7d8590' : (pct >= 80 ? '#3fb950' : (pct >= 60 ? '#f0883e' : '#ff5858'));
@@ -672,14 +677,18 @@ async function openParentPanel(initialTab) {
                 '<div style="font-size:0.72rem;color:#7d8590;">' + ea(f.category || '') + ' ' + ea(String(f.subcategory || '').toUpperCase()) + '</div>' +
               '</div>' +
               '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:0.5rem;margin-bottom:0.9rem;">' +
-                '<div class="pp-stat"><div style="font-size:1.3rem;font-weight:700;color:#3fb950;">' + P + '</div><div style="font-size:0.65rem;color:#7d8590;">ASISTENCIAS</div></div>' +
+                '<div class="pp-stat"><div style="font-size:1.3rem;font-weight:700;color:#3fb950;">' + asistencias +
+                  (R ? '<span style="font-size:0.7rem;color:#d29922;" title="' + R + ' con retraso"> ⏰' + R + '</span>' : '') +
+                  '</div><div style="font-size:0.65rem;color:#7d8590;">ASISTENCIAS</div></div>' +
                 '<div class="pp-stat"><div style="font-size:1.3rem;font-weight:700;color:#ff5858;">' + I + '</div><div style="font-size:0.65rem;color:#7d8590;">INJUSTIF.</div></div>' +
                 '<div class="pp-stat"><div style="font-size:1.3rem;font-weight:700;color:#f0883e;">' + J + '</div><div style="font-size:0.65rem;color:#7d8590;">JUSTIFIC.</div></div>' +
                 '<div class="pp-stat"><div style="font-size:1.3rem;font-weight:700;color:' + colPct + ';">' + (pct == null ? '—' : pct + '%') + '</div><div style="font-size:0.65rem;color:#7d8590;">ASISTENCIA</div></div>' +
               '</div>';
 
             // Faltas, de la más reciente a la más antigua.
-            const faltas = claves.filter(k => days[k] && days[k].s !== 'P').reverse();
+            // ⏰ v703 · Fuera los retrasos: esta lista se titula "AUSENCIAS
+            // REGISTRADAS" y un jugador que llegó tarde SÍ estuvo.
+            const faltas = claves.filter(k => days[k] && days[k].s !== 'P' && days[k].s !== 'R').reverse();
             if (faltas.length) {
                 html += '<div style="font-size:0.75rem;font-weight:700;color:#7d8590;margin-bottom:0.45rem;">AUSENCIAS REGISTRADAS</div>';
                 faltas.forEach(k => {

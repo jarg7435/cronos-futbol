@@ -187,7 +187,13 @@ ok('6e · lleva el título del parte', /Parte mensual de asistencia/.test(html))
 ok('6f · lleva el equipo', /Alevín C/.test(html));
 ok('6g · lista a TODOS los jugadores de la plantilla',
    /PEDRO/.test(html) && /LUIS/.test(html) && /TONI SAEZ/.test(html));
-ok('6h · una columna por sesión del mes', (html.match(/<th title=/g) || []).length === 3);
+// ⚠️ v703 · ANTES CONTABA `<th title=`, y eso no cuenta SESIONES: cuenta
+// cabeceras que tengan `title`. Al añadir la columna de RETRASOS —que lleva
+// `title="Retrasos"`— esta aserción se puso roja sin que hubiera ninguna
+// columna de sesión de más. Se mide ahora por lo que distingue de verdad a
+// una cabecera de sesión: su icono de tipo y el día bajo él.
+ok('6h · una columna por sesión del mes',
+   (html.match(/<th [^>]*>(?:⚽|🏃)<br>/g) || []).length === 3);
 ok('6i · presente en verde, injustificada en rojo, justificada en naranja',
    html.indexOf('✅') !== -1 && html.indexOf('❌') !== -1 && html.indexOf('🩹') !== -1);
 ok('6j · el motivo se dice en el title de la celda', /Justificada: /.test(html));

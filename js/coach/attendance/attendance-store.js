@@ -45,7 +45,21 @@
     var LS_KEY = 'cronos_attendance_cache';
 
     // ── Vocabulario ──────────────────────────────────────────────────
-    // 'P' presente · 'I' falta injustificada · 'J' falta justificada.
+    // 'P' presente · 'R' presente CON RETRASO · 'I' falta injustificada ·
+    // 'J' falta justificada.
+    //
+    // ⏰ v703 · EL RETRASO ES ASISTENCIA, NO UNA FALTA (encargo del autor:
+    // "contabilizándolo de forma independiente a las faltas o ausencias").
+    // El jugador VINO, así que:
+    //   · no suma en `faltas` ni en el desglose de faltas del mes;
+    //   · sí suma en `asistencias`, que es el numerador del porcentaje;
+    //   · y se cuenta aparte, en su propia columna y en su propio renglón.
+    // Meterlo en las faltas habría convertido "llegó tarde por trabajo" en
+    // una ausencia, que es justo lo contrario de lo que informa.
+    //
+    // 🔑 LLEVA MOTIVO, igual que la justificada: el autor lo pidió con
+    // "trabajo, estudios, etc.", y se reutiliza la MISMA lista `MOTIVOS` en
+    // vez de inventar otra — dos listas acabarían diciendo cosas distintas.
     //
     // ⚠️ NO EXISTE "ENFERMEDAD" A PROPÓSITO. El estado de salud de un menor
     // es categoría especial del RGPD (art. 9). Se dejó una causa genérica
@@ -284,13 +298,16 @@
             console.warn('[Asistencia] fecha o ficha no válidas para una ruta de Firestore:', fecha, ficha);
             return false;
         }
-        if (estado !== 'P' && estado !== 'I' && estado !== 'J') return false;
+        if (estado !== 'P' && estado !== 'R' && estado !== 'I' && estado !== 'J') return false;
 
         var mes = mesDe(fecha);
         var id  = docId(eq.teamId, mes);
 
         var marca = { s: estado };
-        if (estado === 'J' && motivo) marca.m = String(motivo);
+        // ⏰ v703 · El RETRASO admite motivo igual que la justificada: la causa
+        // ("trabajo", "estudios") es justo lo que el entrenador quiere ver
+        // luego en el desglose.
+        if ((estado === 'J' || estado === 'R') && motivo) marca.m = String(motivo);
 
         // 1. LOCAL PRIMERO — éxito garantizado, sin depender de la red.
         var datos = _mesLocal(id);
@@ -393,33 +410,53 @@
     //  falta injustificada del chaval, que es exactamente lo que no puede
     //  pasar cuando esto sirve de criterio para convocar.
     function resumenJugador(marks, sesiones, ficha) {
-        var r = { sesiones: sesiones.length, P: 0, I: 0, J: 0, sinMarcar: 0,
-                  faltasPartido: 0, faltasEntreno: 0, motivos: {} };
+        var r = { sesiones: sesiones.length, P: 0, R: 0, I: 0, J: 0, sinMarcar: 0,
+                  faltasPartido: 0, faltasEntreno: 0, motivos: {}, motivosRetraso: {} };
         sesiones.forEach(function (s) {
             var m = marks[s.fecha] && marks[s.fecha][ficha];
             if (!m || !m.s) { r.sinMarcar++; return; }
             if (m.s === 'P') { r.P++; return; }
+            // ⏰ v703 · EL RETRASO SALE ANTES DE LA RAMA DE FALTAS y hace
+            // `return`: el jugador vino, así que no puede sumar en
+            // `faltasPartido`/`faltasEntreno` ni en `motivos`, que es lo que
+            // alimenta el desglose de FALTAS del mes. Su causa va a un cajón
+            // propio (`motivosRetraso`).
+            if (m.s === 'R') {
+                r.R++;
+                if (m.m) r.motivosRetraso[m.m] = (r.motivosRetraso[m.m] || 0) + 1;
+                return;
+            }
             if (m.s === 'I') r.I++; else if (m.s === 'J') r.J++; else return;
             if (s.tipo === 'partido') r.faltasPartido++; else r.faltasEntreno++;
             if (m.s === 'J' && m.m) r.motivos[m.m] = (r.motivos[m.m] || 0) + 1;
         });
         r.faltas = r.I + r.J;
-        r.registradas = r.P + r.faltas;
+        // 🔑 `asistencias` = vino, puntual o tarde. Es lo que cuenta para el
+        // porcentaje: llegar tarde no es faltar. Se deja `P` con su
+        // significado de siempre (presente PUNTUAL) para no cambiarle el
+        // sentido a lo que ya lo leía.
+        r.asistencias = r.P + r.R;
+        r.registradas = r.asistencias + r.faltas;
         // El porcentaje se calcula sobre lo REGISTRADO, no sobre el total de
         // sesiones: si el entrenador no pasó lista un día, ese día no puede
         // bajarle el porcentaje a nadie.
-        r.pct = r.registradas ? Math.round((r.P / r.registradas) * 100) : null;
+        r.pct = r.registradas ? Math.round((r.asistencias / r.registradas) * 100) : null;
         return r;
     }
 
     function resumenSesion(marks, fecha, fichas) {
-        var r = { P: 0, I: 0, J: 0, sinMarcar: 0 };
+        var r = { P: 0, R: 0, I: 0, J: 0, sinMarcar: 0 };
         var dia = marks[fecha] || {};
         fichas.forEach(function (f) {
             var m = dia[f];
             if (!m || !m.s) { r.sinMarcar++; return; }
-            if (m.s === 'P') r.P++; else if (m.s === 'I') r.I++; else if (m.s === 'J') r.J++;
+            if (m.s === 'P') r.P++;
+            else if (m.s === 'R') r.R++;
+            else if (m.s === 'I') r.I++;
+            else if (m.s === 'J') r.J++;
         });
+        // Los que están en el campo ese día: puntuales y retrasados.
+        r.asistencias = r.P + r.R;
         return r;
     }
 
@@ -631,17 +668,21 @@
         var plantel = jugadores();
         if (!plantel.length) return '';
 
-        var totP = 0, totI = 0, totJ = 0, conDatos = 0;
+        var totP = 0, totR = 0, totI = 0, totJ = 0, conDatos = 0;
         var lineas = [];
         plantel.forEach(function (p) {
             var r = resumenJugador(marks, sesiones, p.ficha);
             if (!r.registradas) return;
             conDatos++;
-            totP += r.P; totI += r.I; totJ += r.J;
+            totP += r.P; totR += r.R; totI += r.I; totJ += r.J;
             var extra = [];
+            // ⏰ v703 · El retraso se nombra aparte y ANTES que las faltas: no
+            // lo es. El numerador pasa a ser `asistencias`, que es lo que el
+            // porcentaje mide.
+            if (r.R) extra.push(r.R + ' con retraso');
             if (r.I) extra.push(r.I + ' inj.');
             if (r.J) extra.push(r.J + ' just.');
-            lineas.push('• ' + (p.alias || p.nombre) + ' — ' + r.P + '/' + r.registradas +
+            lineas.push('• ' + (p.alias || p.nombre) + ' — ' + r.asistencias + '/' + r.registradas +
                         (r.pct != null ? ' (' + r.pct + '%)' : '') +
                         (extra.length ? ' · ' + extra.join(', ') : ''));
         });
@@ -649,15 +690,17 @@
 
         var nombreMes = new Date(parseInt(m.slice(0, 4), 10), parseInt(m.slice(5, 7), 10) - 1, 1)
             .toLocaleDateString('es-ES', { month: 'long', year: 'numeric' });
-        var registradas = totP + totI + totJ;
+        var totAsist   = totP + totR;
+        var registradas = totAsist + totI + totJ;
 
         var out = '\n✅ *ASISTENCIA — ' + nombreMes.toUpperCase() + '*\n';
         out += 'Sesiones del mes: ' + sesiones.length +
                ' (' + sesiones.filter(function (s) { return s.tipo === 'partido'; }).length + ' partidos)\n';
-        out += 'Total asistencias: ' + totP + '\n';
+        out += 'Total asistencias: ' + totAsist +
+               (totR ? '  (⏰ ' + totR + ' con retraso)' : '') + '\n';
         out += 'Total faltas: ' + (totI + totJ) +
                '  (injustificadas ' + totI + ' · justificadas ' + totJ + ')\n';
-        if (registradas) out += 'Media del equipo: ' + Math.round(totP / registradas * 100) + '%\n';
+        if (registradas) out += 'Media del equipo: ' + Math.round(totAsist / registradas * 100) + '%\n';
         out += lineas.join('\n') + '\n';
         return out;
     }
@@ -882,6 +925,10 @@
         });
 
         html += '<th style="padding:0.4rem 0.5rem; border-bottom:2px solid rgba(88,166,255,0.25); color:#3fb950; white-space:nowrap;">✅</th>' +
+                // ⏰ v703 · Columna propia para los retrasos, entre las
+                // asistencias y las faltas: ahí es donde se lee "vino, pero
+                // tarde" sin confundirlo con una ausencia.
+                '<th title="Retrasos" style="padding:0.4rem 0.5rem; border-bottom:2px solid rgba(88,166,255,0.25); color:#d29922; white-space:nowrap;">⏰</th>' +
                 '<th style="padding:0.4rem 0.5rem; border-bottom:2px solid rgba(88,166,255,0.25); color:#ff5858; white-space:nowrap;">❌</th>' +
                 '<th style="padding:0.4rem 0.5rem; border-bottom:2px solid rgba(88,166,255,0.25); color:#f0883e; white-space:nowrap;">🩹</th>' +
                 '<th style="padding:0.4rem 0.5rem; border-bottom:2px solid rgba(88,166,255,0.25); color:var(--primary); white-space:nowrap;">%</th>' +
@@ -908,9 +955,19 @@
                 // ⚠️ Sin motivo grabado, `motivoIcon` devuelve el 🩹 genérico:
                 // una justificada sin causa se sigue viendo como antes.
                 else if (m && m.s === 'J') { txt = motivoIcon(m.m); col = '#f0883e'; tit = 'Justificada: ' + motivoLabel(m.m); }
+                // ⏰ v703 · El retraso SIEMPRE con el reloj, aunque tenga causa:
+                // aquí el dato que hay que leer de un vistazo es "llegó tarde",
+                // y su motivo va en el `title` y en el desglose de abajo. Si
+                // pintara el icono de la causa (como hace la justificada) se
+                // confundiría en la rejilla con una ausencia justificada.
+                else if (m && m.s === 'R') {
+                    txt = '⏰'; col = '#d29922';
+                    tit = 'Retraso' + (m.m ? ' · ' + motivoLabel(m.m) : '') + ' (asistió)';
+                }
                 html += '<td title="' + esc(tit) + '" style="text-align:center; padding:0.3rem 0.2rem; color:' + col + ';">' + txt + '</td>';
             });
             html += '<td style="text-align:center; font-weight:700; color:#3fb950;">' + r.P + '</td>' +
+                    '<td style="text-align:center; font-weight:700; color:#d29922;">' + r.R + '</td>' +
                     '<td style="text-align:center; font-weight:700; color:#ff5858;">' + r.I + '</td>' +
                     '<td style="text-align:center; font-weight:700; color:#f0883e;">' + r.J + '</td>' +
                     '<td style="text-align:center; font-weight:700; color:var(--primary);">' + (r.pct == null ? '—' : r.pct + '%') + '</td>' +
@@ -919,30 +976,40 @@
 
         // ── Sumatoria final ─────────────────────────────────────────────
         var fichas = plantel.map(function (x) { return x.ficha; });
-        var totP = 0, totI = 0, totJ = 0;
+        var totP = 0, totR = 0, totI = 0, totJ = 0;
         html += '<tr style="background:rgba(88,166,255,0.06); border-top:2px solid rgba(88,166,255,0.25);">' +
                 '<td style="position:sticky; left:0; z-index:1; background:#12161c; padding:0.45rem 0.6rem; font-weight:700; white-space:nowrap;">TOTAL PRESENTES</td>';
         sesiones.forEach(function (s) {
             var rs = resumenSesion(marks, s.fecha, fichas);
-            totP += rs.P; totI += rs.I; totJ += rs.J;
-            html += '<td style="text-align:center; padding:0.35rem 0.2rem; font-weight:700; color:#58a6ff;">' + rs.P + '</td>';
+            totP += rs.P; totR += rs.R; totI += rs.I; totJ += rs.J;
+            // ⏰ El total del día cuenta a los RETRASADOS: estuvieron en el
+            // entrenamiento. Si sólo sumara los puntuales, la fila diría que
+            // faltó gente que sí fue.
+            html += '<td title="' + (rs.R ? rs.P + ' puntuales + ' + rs.R + ' con retraso' : '') + '" ' +
+                    'style="text-align:center; padding:0.35rem 0.2rem; font-weight:700; color:#58a6ff;">' + rs.asistencias + '</td>';
         });
+        var totAsist = totP + totR;
+        var totReg   = totAsist + totI + totJ;
         html += '<td style="text-align:center; font-weight:700; color:#3fb950;">' + totP + '</td>' +
+                '<td style="text-align:center; font-weight:700; color:#d29922;">' + totR + '</td>' +
                 '<td style="text-align:center; font-weight:700; color:#ff5858;">' + totI + '</td>' +
                 '<td style="text-align:center; font-weight:700; color:#f0883e;">' + totJ + '</td>' +
                 '<td style="text-align:center; font-weight:700; color:var(--primary);">' +
-                  ((totP + totI + totJ) ? Math.round(totP / (totP + totI + totJ) * 100) + '%' : '—') + '</td>' +
+                  (totReg ? Math.round(totAsist / totReg * 100) + '%' : '—') + '</td>' +
                 '</tr>';
 
         html += '</tbody></table></div>';
 
         // ── Desglose de faltas ──────────────────────────────────────────
-        var porMotivo = {}, faltasPartido = 0, faltasEntreno = 0;
+        var porMotivo = {}, faltasPartido = 0, faltasEntreno = 0, porMotivoRetraso = {};
         plantel.forEach(function (p) {
             var r = resumenJugador(marks, sesiones, p.ficha);
             faltasPartido += r.faltasPartido;
             faltasEntreno += r.faltasEntreno;
             Object.keys(r.motivos).forEach(function (k) { porMotivo[k] = (porMotivo[k] || 0) + r.motivos[k]; });
+            Object.keys(r.motivosRetraso).forEach(function (k) {
+                porMotivoRetraso[k] = (porMotivoRetraso[k] || 0) + r.motivosRetraso[k];
+            });
         });
 
         html += '<div style="margin-top:0.9rem; padding:0.8rem 1rem; border-radius:10px; background:var(--glass); border:1px solid var(--glass-border);">' +
@@ -961,6 +1028,28 @@
             .join(' &nbsp;·&nbsp; ');
         if (motivosTxt) {
             html += '<div style="margin-top:0.5rem; font-size:0.75rem; color:var(--text-muted);">' + motivosTxt + '</div>';
+        }
+
+        // ⏰ v703 · LOS RETRASOS, EN SU PROPIO RENGLÓN Y FUERA DE LAS FALTAS.
+        // Va dentro del mismo recuadro para leerlo de una pasada, pero
+        // separado por una línea y con su rótulo: el encargo pide justamente
+        // que no se mezcle con las ausencias. Sólo aparece si hubo alguno —un
+        // mes sin retrasos no gana una fila vacía.
+        if (totR) {
+            var retrasosTxt = MOTIVOS
+                .filter(function (mo) { return porMotivoRetraso[mo.id]; })
+                .map(function (mo) { return mo.icon + ' ' + esc(mo.label) + ': <strong>' + porMotivoRetraso[mo.id] + '</strong>'; })
+                .join(' &nbsp;·&nbsp; ');
+            var sinCausa = totR - MOTIVOS.reduce(function (n, mo) { return n + (porMotivoRetraso[mo.id] || 0); }, 0);
+            html += '<div style="margin-top:0.7rem; padding-top:0.6rem; border-top:1px dashed var(--glass-border); font-size:0.78rem;">' +
+                    '<span style="color:#d29922; font-weight:700;">⏰ Retrasos: ' + totR + '</span>' +
+                    '<span style="color:var(--text-muted); font-size:0.72rem; margin-left:0.5rem;">' +
+                      '(asistieron: no cuentan como falta)</span>' +
+                    (retrasosTxt
+                      ? '<div style="margin-top:0.35rem; font-size:0.75rem; color:var(--text-muted);">' + retrasosTxt +
+                        (sinCausa ? ' &nbsp;·&nbsp; sin causa: <strong>' + sinCausa + '</strong>' : '') + '</div>'
+                      : '') +
+                    '</div>';
         }
         html += '</div>';
 
