@@ -79,6 +79,14 @@ function montar({ servidor, local }) {
         liveMatchId:  'partido1',
         liveIsActive: true,
         updateMasterUI: () => {},
+        // ⚠️ v716 · EL ARNÉS TIENE QUE APORTAR `tick`. La adopción programa
+        // `setInterval(tick, 1000)` desde v638, pero entonces pintaba el botón
+        // ANTES de esa línea, así que el `ReferenceError: tick is not defined`
+        // quedaba tapado por el orden y lo tragaba el `catch` de
+        // `syncTimerWithServer`. Al mover el pintado delante del intervalo
+        // —que es lo correcto en el producto— el hueco del arnés salió a la
+        // luz. MEDIDO ejecutando la adopción suelta, no supuesto.
+        tick: () => {},
         setInterval: (fn, ms) => { intervalos.push(ms); return intervalos.length; },
         clearInterval: () => {},
         botones: { 'btn-play-pause': { textContent: local.isRunning ? 'PAUSAR' : 'REANUDAR',
@@ -110,6 +118,15 @@ function montar({ servidor, local }) {
         // arnés no hay ninguna, así que el contrato de v638 se mide igual.
         SRC.match(/const _GRACIA_PULSACION_MS = \d+;/)[0],
         extractFn('_mandaLaPulsacionLocal'),
+        // ⚠️ v716 · Y LAS TRES PIEZAS NUEVAS DEL RELOJ. La adopción ya no
+        // enciende el intervalo ni pinta el botón a mano: delega en la puerta
+        // única (`_cronosArrancaReloj`/`_cronosParaReloj`) y en el pintor
+        // (`cronosPintaBotonReloj`). Sin cargarlas aquí, la llamada lanza un
+        // ReferenceError que `syncTimerWithServer` se traga en su `catch`, y
+        // 2d-2f se ponen rojas SIN defecto — el mismo tropiezo que en v714.
+        extractFn('_cronosArrancaReloj'),
+        extractFn('_cronosParaReloj'),
+        extractFn('cronosPintaBotonReloj'),
         extractFn('_arrancarVigiaReloj'),
         extractFn('_adoptarMarchaDelServidor'),
         extractFn('syncTimerWithServer'),

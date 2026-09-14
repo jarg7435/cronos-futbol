@@ -142,7 +142,16 @@ function montar(faseInicial, opciones) {
         return { sb, boton, sinManejador: true };
     }
 
-    vm.runInContext(extractFn(CORE_SRC, 'toggleGame') + '\n' +
+    // ⚠️ v716 · Y LAS TRES PIEZAS NUEVAS DEL RELOJ. `toggleGame` ya no pinta
+    // el botón ni programa el intervalo a mano: delega en la puerta única
+    // (`_cronosArrancaReloj`/`_cronosParaReloj`) y en el pintor
+    // (`cronosPintaBotonReloj`), que es lo que unifica el estado del botón con
+    // el del cronómetro. Sin cargarlas, `toggleGame` lanza
+    // «cronosPintaBotonReloj is not defined» y este guard se cae entero.
+    vm.runInContext(extractFn(CORE_SRC, '_cronosArrancaReloj') + '\n' +
+                    extractFn(CORE_SRC, '_cronosParaReloj') + '\n' +
+                    extractFn(CORE_SRC, 'cronosPintaBotonReloj') + '\n' +
+                    extractFn(CORE_SRC, 'toggleGame') + '\n' +
                     cuerpoSetup.slice(iniEFH, finSSH) + '\n' +
                     cuerpoSetup.slice(iniClick, finClick), sb);
     return { sb, boton, sinManejador: false };

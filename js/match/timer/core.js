@@ -104,19 +104,116 @@ function _adoptarMarchaDelServidor(servidorCorre) {
         return;
     }
     isRunning = servidorCorre;
-    const btn = document.getElementById('btn-play-pause');
-    if (isRunning) {
-        if (btn) { btn.textContent = 'PAUSAR'; btn.classList.add('danger'); }
-        lastTickTime = Date.now();          // sin esto, el primer tick sumaría el hueco
-        clearInterval(timerInterval);
-        timerInterval = setInterval(tick, 1000);
-    } else {
-        if (btn) { btn.textContent = 'REANUDAR'; btn.classList.remove('danger'); }
-        clearInterval(timerInterval);
-    }
+    // 🔴 v716 · Mismo orden y mismas puertas que `toggleGame`: el botón sale
+    // del estado y se pinta ANTES de mover el reloj.
+    cronosPintaBotonReloj();
+    if (isRunning) _cronosArrancaReloj();
+    else           _cronosParaReloj();
     if (window._CRONOS_DEBUG) {
         console.warn('[Chronos] Reloj adoptado del servidor: ' + (isRunning ? 'EN MARCHA' : 'EN PAUSA'));
     }
+}
+
+// ══════════════════════════════════════════════════════════════════
+//  🔴🔴🔴 v716 · EL RELOJ TENÍA VARIOS DUEÑOS Y NINGUNO MANDABA
+// ══════════════════════════════════════════════════════════════════
+//  Reporte del autor (implementar.txt 2026-09-14, IMG_0583/0584, iPad, v715):
+//    · «el cronómetro sufre un comportamiento errático en bucle (retrocediendo
+//      de dos en dos o desincronizándose)»;
+//    · «el reloj puede estar corriendo en la interfaz táctica pero el sistema
+//      detecta falsamente que está detenido»;
+//    · «la aplicación impide registrar goles… arrojando el aviso de que el
+//      cronómetro está detenido».
+//
+//  📏 LO QUE SE VE EN LAS DOS CAPTURAS, y es la medición que lo explica todo:
+//  el crono de la cabecera va por 04:42 de 05:00 —o sea 18 s jugados— y las
+//  fichas de los jugadores marcan 02:02. Entre las dos capturas el maestro
+//  avanza 2 s y los jugadores 27 s. Los dos números los suma LA MISMA línea de
+//  `tick()` con el mismo delta, así que no pueden separarse... salvo que algo
+//  esté reescribiendo el maestro por detrás. Y el botón dice EMPEZAR: o sea
+//  `isRunning === false` MIENTRAS EL RELOJ CORRE.
+//
+//  🔑🔑 LA CAUSA: `tick()` NO MIRABA `isRunning`. Lo único que lo paraba era
+//  apagar su `setInterval`, y ese intervalo tenía CUATRO creadores
+//  (`toggleGame`, la adopción del servidor, el retomar del arranque y el
+//  `visibilitychange`) de los cuales **`toggleGame` no limpiaba el anterior**.
+//  Dos creaciones seguidas = dos intervalos vivos y una sola variable para
+//  guardarlos: al pausar se apaga el último y **el otro sigue latiendo con el
+//  partido en pausa**. Desde ahí, en cascada:
+//    · el latido en vivo sólo emite `if (liveIsActive && isRunning)`, así que
+//      con `isRunning` en false el documento se queda con el tiempo viejo;
+//    · el vigía de v638 sigue leyendo ese documento y CORRIGE LA DERIVA, o sea
+//      tira del maestro hacia atrás cada 5 s (el «de dos en dos»: el umbral es
+//      de 2 s) mientras las fichas siguen subiendo por el intervalo huérfano;
+//    · y los goles se bloquean con razón —`isRunning` es false— pero es un
+//      bloqueo FALSO, porque el partido está en marcha.
+//
+//  🔑 LO QUE SE ARREGLA, y por qué en este orden:
+//   1. `tick()` respeta el estado: sin `isRunning` no suma. Un huérfano deja
+//      de poder mover el reloj aunque exista.
+//   2. UN SOLO INTERVALO CON DUEÑO (`_cronosArrancaReloj`/`_cronosParaReloj`):
+//      siempre se apaga el anterior antes de encender. Ya no hay huérfanos.
+//   3. EL BOTÓN SE PINTA DEL ESTADO (`cronosPintaBotonReloj`), en vez de a
+//      mano en los ocho sitios que lo tocaban. Es lo que pide el autor:
+//      «estrictamente unificado y sincronizado con el estado real».
+//   4. Y LA CORRECCIÓN DE DERIVA NO PUEDE TIRAR DEL RELOJ HACIA ATRÁS con
+//      nuestro propio eco viejo (ver `syncTimerWithServer`).
+// ══════════════════════════════════════════════════════════════════
+function _cronosArrancaReloj() {
+    // ⚠️ APAGAR ANTES DE ENCENDER, SIEMPRE. Es la línea que faltaba en
+    // `toggleGame` y la que fabricaba el intervalo huérfano.
+    clearInterval(timerInterval);
+    lastTickTime = Date.now();          // sin esto el primer tick suma el hueco
+    timerInterval = setInterval(tick, 1000);
+    return timerInterval;
+}
+function _cronosParaReloj() {
+    clearInterval(timerInterval);
+    timerInterval = null;
+}
+// El botón dice lo que el reloj ES, no lo que creyó el último que lo tocó.
+//   · fase terminada      → P. FINALIZADO
+//   · en marcha           → PAUSAR
+//   · parado sin empezar  → EMPEZAR   (nada jugado todavía)
+//   · parado y empezado   → REANUDAR
+function cronosPintaBotonReloj() {
+    const btn = document.getElementById('btn-play-pause');
+    if (!btn) return '';
+    const fase = (typeof matchPhase !== 'undefined') ? matchPhase : '';
+    const h1 = (typeof masterTimeH1 !== 'undefined' && masterTimeH1) || 0;
+    const h2 = (typeof masterTimeH2 !== 'undefined' && masterTimeH2) || 0;
+    const corre = (typeof isRunning !== 'undefined') && isRunning === true;
+    // 🔑 «EMPEZAR» vs «REANUDAR» es «¿ha empezado el partido?», y eso NO se
+    // puede deducir del reloj a cero: al arrancar la app la fase ya es
+    // '1st_half' con el crono a 0, y si el entrenador pausa en el segundo 2 el
+    // partido SÍ ha empezado. Las señales, en orden de fiabilidad: tiempo
+    // jugado, fase posterior a la primera parte, y que el usuario haya pulsado
+    // ya en este partido (`_cronosUltimoToggleLocal`, v714 — `resetMatch` lo
+    // borra, porque un partido reiniciado vuelve a estar sin empezar).
+    const empezado = h1 > 0 || h2 > 0 || fase === '2nd_half' || fase === 'break' ||
+                     !!(typeof window !== 'undefined' && window._cronosUltimoToggleLocal);
+    let txt;
+    if (fase === 'finished')  txt = 'P. FINALIZADO';
+    else if (corre)           txt = 'PAUSAR';
+    else if (empezado)        txt = 'REANUDAR';
+    else                      txt = 'EMPEZAR';
+    btn.textContent = txt;
+    if (txt === 'PAUSAR') btn.classList.add('danger');
+    else                  btn.classList.remove('danger');
+    return txt;
+}
+// ¿Se pueden registrar goles, tarjetas o lesiones AHORA? Una sola respuesta
+// para los tres sitios que preguntaban por su cuenta (`!isRunning`): con el
+// reloj y el botón ya sincronizados, esto deja de dar falsos bloqueos.
+function cronosPartidoEnJuego() {
+    if (typeof matchPhase !== 'undefined' && matchPhase === 'finished') return false;
+    return (typeof isRunning !== 'undefined') && isRunning === true;
+}
+if (typeof window !== 'undefined') {
+    window._cronosArrancaReloj    = _cronosArrancaReloj;
+    window._cronosParaReloj       = _cronosParaReloj;
+    window.cronosPintaBotonReloj  = cronosPintaBotonReloj;
+    window.cronosPartidoEnJuego   = cronosPartidoEnJuego;
 }
 
 function toggleGame() {
@@ -125,17 +222,15 @@ function toggleGame() {
     // desfasado —o inexistente— le devuelva la pausa al entrenador cinco
     // segundos después de arrancar. Ver `_mandaLaPulsacionLocal`.
     window._cronosUltimoToggleLocal = Date.now();
-    const btn = document.getElementById('btn-play-pause');
-    if (isRunning) {
-        btn.textContent = 'PAUSAR';
-        btn.classList.add('danger');
-        lastTickTime = Date.now();
-        timerInterval = setInterval(tick, 1000);
-    } else {
-        btn.textContent = 'REANUDAR';
-        btn.classList.remove('danger');
-        clearInterval(timerInterval);
-    }
+    // 🔴 v716 · EL BOTÓN PRIMERO, EL RELOJ DESPUÉS. El botón se pinta DEL
+    // ESTADO (`cronosPintaBotonReloj`) en vez de a mano, y va DELANTE a
+    // propósito: si la programación del intervalo fallara, el botón ya dice la
+    // verdad de lo que el usuario acaba de decidir en vez de quedarse
+    // mintiendo. Y el reloj entra por la puerta única, que apaga antes de
+    // encender — aquí faltaba, y de ahí salía el intervalo huérfano.
+    cronosPintaBotonReloj();
+    if (isRunning) _cronosArrancaReloj();
+    else           _cronosParaReloj();
     // Push inmediato → live.html recibe pausa/reanuda en <1s
     if (liveIsActive) pushLiveSnapshot('active').catch(() => {});
     // ⏱️ v638 · y el vigía queda en pie tanto al pausar como al reanudar: es lo
@@ -145,6 +240,14 @@ function toggleGame() {
 }
 
 function tick() {
+    // 🔴🔴 v716 · SIN RELOJ EN MARCHA, NO SE SUMA NADA. Era la puerta que
+    // faltaba: hasta aquí, lo único que paraba el tiempo era apagar el
+    // `setInterval`, así que un intervalo huérfano —uno de los cuatro
+    // creadores dejaba el anterior vivo— seguía sumando minutos a las fichas
+    // CON EL PARTIDO EN PAUSA. Eso es lo que hacía que el sistema «detectara
+    // falsamente que está detenido»: no se equivocaba el estado, se equivocaba
+    // el reloj. Ver la nota larga sobre `toggleGame`.
+    if (typeof isRunning === 'undefined' || !isRunning) return;
     const now = Date.now();
     // FIX: Si lastTickTime es 0 (reset mal hecho), el delta sería ~1.7 billones de ms,
     // causando que el timer se congele al intentar sumar miles de segundos de golpe.
@@ -285,8 +388,37 @@ async function syncTimerWithServer() {
         const diffH1 = Math.abs((serverData.timeH1 || 0) - masterTimeH1);
         const diffH2 = Math.abs((serverData.timeH2 || 0) - masterTimeH2);
         
+        // ══════════════════════════════════════════════════════════════
+        //  🔴 v716 · EL RELOJ NO RETROCEDE POR NUESTRO PROPIO ECO
+        // ══════════════════════════════════════════════════════════════
+        //  El defecto del bucle: mientras ESTE aparato es el que escribe, el
+        //  documento es una foto de hace hasta 5 s, así que su `timeH1` va por
+        //  DETRÁS del nuestro por pura latencia. Adoptarlo tira del reloj hacia
+        //  atrás; al segundo siguiente el tick vuelve a sumar, y cinco segundos
+        //  después otra vez: el reloj oscila «de dos en dos» (el umbral es de
+        //  2 s) en vez de avanzar. Y si el latido se ha callado —pasa en cuanto
+        //  `isRunning` es false: el heartbeat emite `if (liveIsActive &&
+        //  isRunning)`— el documento se queda congelado y nos ancla ahí.
+        //
+        //  🔑 LA REGLA: con el reloj EN MARCHA sólo se aceptan correcciones
+        //  HACIA ADELANTE (ponerse al día con quien va más avanzado, que es el
+        //  caso real de v638: la tablet que se quedó atrás). Un salto hacia
+        //  atrás sólo se acepta si es GRANDE —más de 30 s—, porque entonces no
+        //  es latencia: es que alguien cambió la duración a mano (`editTimer`)
+        //  y hay que obedecer. En PAUSA se adopta lo que diga el servidor, sin
+        //  condiciones: ahí no hay nada corriendo que pueda ir por delante.
+        //  ⚠️ Esto NO desactiva v638: su caso —el aparato retrasado— es
+        //  precisamente una corrección hacia adelante.
+        const _SALTO_MANUAL = 30;
+        const _aceptaCorreccion = (servidor, local) => {
+            if (!isRunning) return true;
+            if (servidor >= local) return true;
+            return (local - servidor) > _SALTO_MANUAL;
+        };
+
         // Si la diferencia es significativa (> 1.5s), corregir
-        if (diffH1 > _maxDriftAllowed && matchPhase === '1st_half') {
+        if (diffH1 > _maxDriftAllowed && matchPhase === '1st_half' &&
+            _aceptaCorreccion(serverData.timeH1 || 0, masterTimeH1)) {
             const correction = serverData.timeH1 - masterTimeH1;
             masterTimeH1 = serverData.timeH1;
             if(window._CRONOS_DEBUG) console.warn(`Timer H1 ajustado: ${correction > 0 ? '+' : ''}${correction}s (drift corregido)`);
@@ -297,7 +429,8 @@ async function syncTimerWithServer() {
             }
         }
 
-        if (diffH2 > _maxDriftAllowed && matchPhase === '2nd_half') {
+        if (diffH2 > _maxDriftAllowed && matchPhase === '2nd_half' &&
+            _aceptaCorreccion(serverData.timeH2 || 0, masterTimeH2)) {
             const correction = serverData.timeH2 - masterTimeH2;
             masterTimeH2 = serverData.timeH2;
             if(window._CRONOS_DEBUG) console.warn(`Timer H2 ajustado: ${correction > 0 ? '+' : ''}${correction}s (drift corregido)`);
@@ -367,6 +500,16 @@ function updateMasterUI() {
     const cancelSubBtn = document.getElementById('btn-cancel-sub');
     actionsEl.innerHTML = '';
     if (cancelSubBtn) actionsEl.appendChild(cancelSubBtn);
+
+    // 🔴🔴 v716 · Y EL BOTÓN, AQUÍ, EN CADA REPINTADO. Es lo que hace que el
+    // estado del botón esté «estrictamente unificado y sincronizado con el
+    // estado real del cronómetro», como pide el autor: pasa por aquí el tick,
+    // el fin de parte, el retomar, el reinicio y la adopción del servidor, así
+    // que cualquiera que cambie el estado deja el botón al día SIN tener que
+    // acordarse de pintarlo. Antes lo pintaban a mano OCHO sitios distintos y
+    // bastaba con que uno se quedara atrás para que dijera EMPEZAR con el
+    // partido corriendo (IMG_0583).
+    cronosPintaBotonReloj();
 }
 
 // ════════════════════════════════════════════════════════════════════

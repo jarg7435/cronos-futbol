@@ -176,6 +176,12 @@ console.log('\n── PARTE 3 · [C] el tick, EJECUTADO con un pintado que revie
             half1MaxTime: 60, half2MaxTime: 60,     // el minuto por parte del autor
             currentMode: 'f11',
             lastTickTime: Date.now() - 1000,
+            // ⚠️ v716 · `tick` YA NO SUMA SIN RELOJ EN MARCHA (era la puerta
+            // que faltaba: un intervalo huérfano movía el reloj con el partido
+            // en pausa). El arnés tiene que declararlo en marcha, como en el
+            // navegador, o el tick se vuelve un no-op y estas aserciones se
+            // ponen rojas sin defecto.
+            isRunning: (o.parado === true) ? false : true,
             liveIsActive: true,
             _pintadoCrono: 0, _pintadoFicha: 0, _sincronizado: 0, _finParte: 0,
             players: [{ id: 1, status: 'field', time: 0 }, { id: 2, status: 'bench', time: 0 }],
@@ -262,7 +268,13 @@ console.log('\n── PARTE 4 · [D] un documento desfasado no devuelve la pausa
                 },
             };
             vm.createContext(ctx);
-            vm.runInContext('const _GRACIA_PULSACION_MS = 8000;\n' + pieza + '\n' + fn +
+            // ⚠️ v716 · La adopción delega ahora en la puerta única del reloj y
+            // en el pintor del botón: hay que cargarlos o lanza un
+            // ReferenceError que el `catch` de `syncTimerWithServer` se traga.
+            vm.runInContext('const _GRACIA_PULSACION_MS = 8000;\n' + pieza + '\n' +
+                            trozo(TIMER, 'function _cronosArrancaReloj()') + '\n' +
+                            trozo(TIMER, 'function _cronosParaReloj()') + '\n' +
+                            trozo(TIMER, 'function cronosPintaBotonReloj()') + '\n' + fn +
                             ';\n;globalThis.adoptar = _adoptarMarchaDelServidor;' +
                             'globalThis.manda = _mandaLaPulsacionLocal;', ctx);
             return ctx;

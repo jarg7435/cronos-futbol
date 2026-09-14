@@ -860,26 +860,21 @@ window._restoreActiveMatch = function() {
             // Si el partido estaba en una fase activa (1ª o 2ª parte), SIEMPRE reanudar.
             // El timer se puede haber parado por: INICIO, cambio de pestaña, cierre del navegador.
             // En todos los casos, "Retomar partido" debe continuar el cronómetro automáticamente.
+            // 🔴 v716 · Por la PUERTA ÚNICA del reloj y con el botón pintado
+            // del estado. Este camino y el de la recuperación desde la nube
+            // eran dos de los creadores del intervalo, y cada uno pintaba el
+            // botón a su manera: de ahí que una recarga pudiera dejar el botón
+            // diciendo una cosa y el reloj haciendo otra (IMG_0583).
             const shouldResume = (matchPhase === '1st_half' || matchPhase === '2nd_half');
+            isRunning = shouldResume;
+            if (typeof window.cronosPintaBotonReloj === 'function') window.cronosPintaBotonReloj();
             if (shouldResume) {
-                isRunning = true;
-                const btn = document.getElementById('btn-play-pause');
-                if (btn) {
-                    btn.textContent = 'PAUSAR';
-                    btn.classList.add('danger');
-                }
-                lastTickTime = Date.now();
-                clearInterval(timerInterval);
-                timerInterval = setInterval(tick, 1000);
+                if (typeof window._cronosArrancaReloj === 'function') window._cronosArrancaReloj();
+                else { lastTickTime = Date.now(); clearInterval(timerInterval); timerInterval = setInterval(tick, 1000); }
             } else {
                 // Descanso u otro estado: no arrancar automáticamente
-                isRunning = false;
-                const btn = document.getElementById('btn-play-pause');
-                if (btn) {
-                    btn.textContent = 'REANUDAR';
-                    btn.classList.remove('danger');
-                }
-                clearInterval(timerInterval);
+                if (typeof window._cronosParaReloj === 'function') window._cronosParaReloj();
+                else clearInterval(timerInterval);
             }
         }
 

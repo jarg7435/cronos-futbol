@@ -165,7 +165,10 @@ function setupEventListeners() {
         if (matchPhase !== '1st_half') return;
         if (!skipConfirm && !confirm("¿Finalizar 1ª Parte?")) return;
         isRunning = false;
-        clearInterval(timerInterval);
+        // 🔴 v716 · Puerta única: al cerrar la parte no puede quedar ningún
+        // intervalo vivo sumando tiempo con el partido parado.
+        if (typeof window._cronosParaReloj === 'function') window._cronosParaReloj();
+        else clearInterval(timerInterval);
         const timestamp1 = formatTime(masterTimeH1);
         players.filter(p => p.status === 'field').forEach(p => {
             p.history.push(`Sale a las ${timestamp1} (DESCANSO)`);
@@ -243,9 +246,18 @@ function setupEventListeners() {
                 }
                 // Reiniciar timerInterval (puede haber muerto por throttling)
                 // FIX: NO sobrescribir lastTickTime aquí — ya se ajustó arriba
-                clearInterval(timerInterval);
-                if (!lastTickTime || lastTickTime === 0) lastTickTime = Date.now();
-                timerInterval = setInterval(tick, 1000);
+                // 🔴 v716 · Puerta única (apaga antes de encender). Este
+                // camino ya limpiaba, pero ahora lo hace por el mismo sitio
+                // que los otros tres creadores: un solo intervalo, con dueño.
+                // ⚠️ `_cronosArrancaReloj` re-ancla `lastTickTime`, que es lo
+                // que aquí se quiere: los segundos perdidos ya se han sumado
+                // arriba y volver a contarlos los doblaría.
+                if (typeof window._cronosArrancaReloj === 'function') window._cronosArrancaReloj();
+                else {
+                    clearInterval(timerInterval);
+                    if (!lastTickTime || lastTickTime === 0) lastTickTime = Date.now();
+                    timerInterval = setInterval(tick, 1000);
+                }
             }
             // Empujar estado actualizado al live
             if (liveIsActive) pushLiveSnapshot('active').catch(() => {});

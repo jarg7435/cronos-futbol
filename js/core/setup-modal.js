@@ -2130,12 +2130,12 @@ async function _doResumeMatch(matchId) {
                 if (typeof isRunning !== 'undefined') {
                     isRunning = false; // Asegurarse de que esté pausado visual y lógicamente
                 }
-                const btn = document.getElementById('btn-play-pause');
-                if (btn) {
-                    btn.textContent = 'REANUDAR';
-                    btn.classList.remove('danger');
-                }
-                if (typeof timerInterval !== 'undefined') clearInterval(timerInterval);
+                // 🔴 v716 · El botón sale del estado y el reloj se apaga por la
+                // puerta única: así no queda ningún intervalo huérfano de un
+                // partido anterior sumando tiempo con el reloj en pausa.
+                if (typeof window.cronosPintaBotonReloj === 'function') window.cronosPintaBotonReloj();
+                if (typeof window._cronosParaReloj === 'function') window._cronosParaReloj();
+                else if (typeof timerInterval !== 'undefined') clearInterval(timerInterval);
             }
         }
 

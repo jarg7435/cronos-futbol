@@ -2644,8 +2644,8 @@
 // CACHE_NAME, los dos los pone `node scripts/cache-bust.js`. Se vuelve a
 // alinear aquí —iba por v399— para que un log de consola no mienta sobre qué
 // versión está sirviendo.
-const VERSION = 'v715';
-const CACHE_NAME = 'cronos-cache-v715';
+const VERSION = 'v716';
+const CACHE_NAME = 'cronos-cache-v716';
 
 const ASSETS = [
     './',

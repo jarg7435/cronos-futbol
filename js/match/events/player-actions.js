@@ -999,7 +999,11 @@ function changeGoals(amount) {
     if (p) {
         // ── E1: Goles SOLO a jugadores en el campo ──
         if (!_requireOnField(p, 'goles')) { closePlayerActionModal(); return; }
-        if (!isRunning) {
+        // 🔴 v716 · La misma pregunta única que en `changeScore` (ver la nota
+        // de js/match/timer/core.js): el aviso salía con el partido en marcha
+        // porque el reloj y `isRunning` se habían separado.
+        if (typeof window.cronosPartidoEnJuego === 'function'
+            ? !window.cronosPartidoEnJuego() : !isRunning) {
             alert("⚠️ No se pueden sumar o quitar goles con el cronómetro del partido detenido. Debe iniciar o reanudar el partido.");
             return;
         }
@@ -1065,7 +1069,9 @@ function clearPlayerActions() {
     if (!activeActionPlayerId) return;
     const p = players.find(x => x.id === activeActionPlayerId);
     if (p) {
-        if (!isRunning) {
+        // 🔴 v716 · Tercera y última copia del bloqueo, con la pregunta única.
+        if (typeof window.cronosPartidoEnJuego === 'function'
+            ? !window.cronosPartidoEnJuego() : !isRunning) {
             alert("⚠️ No se pueden modificar las acciones del jugador con el cronómetro del partido detenido. Debe iniciar o reanudar el partido.");
             return;
         }

@@ -85,9 +85,16 @@ function resetMatch() {
     }
 
     isRunning = false;
-    clearInterval(timerInterval);
+    // 🔴 v716 · Puerta única del reloj: un partido reiniciado no puede heredar
+    // un intervalo vivo del anterior.
+    if (typeof window._cronosParaReloj === 'function') window._cronosParaReloj();
+    else clearInterval(timerInterval);
     masterTimeH1 = 0; masterTimeH2 = 0;
     lastTickTime = 0; matchPhase = '1st_half';
+    // Y el partido vuelve a estar SIN EMPEZAR, así que el botón tiene que
+    // decir EMPEZAR otra vez: sin borrar esta marca, el pintor (que sale del
+    // estado) seguiría diciendo REANUDAR. Ver `cronosPintaBotonReloj`.
+    window._cronosUltimoToggleLocal = 0;
     // 🟨 Partido nuevo, cupo de cambios nuevo: si no se pusiera a cero, el
     //    Cadete de la segunda jornada arrancaría con los 7 cambios gastados.
     if (window.CronosSubRules && typeof window.CronosSubRules.reset === 'function') {
@@ -185,7 +192,13 @@ function _avisaGolDesdeMarcador(team, autor) {
 }
 
 function changeScore(team, delta) {
-    if (!isRunning) {
+    // 🔴 v716 · UNA SOLA PREGUNTA para los tres bloqueos («partido en juego»),
+    // en vez de tres `!isRunning` por su cuenta. El bloqueo en sí es correcto
+    // —un gol necesita un minuto— y lo que fallaba era la RESPUESTA: el reloj
+    // corría con `isRunning` en false, así que el aviso salía con el partido en
+    // marcha (IMG_0584). Ver la nota larga en js/match/timer/core.js.
+    if (typeof window.cronosPartidoEnJuego === 'function'
+        ? !window.cronosPartidoEnJuego() : !isRunning) {
         alert("⚠️ No se pueden sumar o quitar goles con el cronómetro del partido detenido. Debe iniciar o reanudar el partido.");
         return;
     }
