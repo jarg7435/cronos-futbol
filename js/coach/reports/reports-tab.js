@@ -664,11 +664,18 @@ async function _sdLoadReports() {
                 ? new Date(m.matchDate).toLocaleDateString('es-ES', { day:'2-digit', month:'long', year:'numeric' })
                 : '—';
             const sh = m.scoreHome, sa = m.scoreAway;
-            const score = (sh != null && sa != null) ? `${sh} – ${sa}` : '—';
-            // Resultado según myTeamRole; sin el campo (informes antiguos) → fallback 'home', comportamiento previo.
-            const _mine   = m.myTeamRole === 'away' ? sa : sh;
-            const _theirs = m.myTeamRole === 'away' ? sh : sa;
-            const res   = (sh != null && sa != null) ? (_mine > _theirs ? 'VICTORIA' : _mine < _theirs ? 'DERROTA' : 'EMPATE') : '';
+            // 🏠✈️ v712 · EL ENFRENTAMIENTO EN ORDEN DE LOCALÍA. Nombres,
+            // marcador y veredicto salen de `cronosEnfrentamiento`
+            // (js/core/utils.js), la única definición: la tarjeta ponía «vs
+            // Rival» a secas y el marcador es LOCAL–VISITANTE, así que un 0-2
+            // ganado fuera se leía como una derrota. Todos los informes que ve
+            // el Director son de SU club, de ahí el nombre propio.
+            const _enf = (typeof window.cronosEnfrentamiento === 'function')
+                ? window.cronosEnfrentamiento(m, (me && me.clubName) || 'Mi equipo')
+                : null;
+            const score = _enf && _enf.marcador ? _enf.marcador.replace('-', ' – ')
+                        : ((sh != null && sa != null) ? `${sh} – ${sa}` : '—');
+            const res   = _enf ? _enf.veredicto : '';
             const rCol  = res === 'VICTORIA' ? '#3fb950' : res === 'DERROTA' ? '#ff5858' : '#eab308';
             const key64 = _sdKey64(m);
 
@@ -680,7 +687,12 @@ async function _sdLoadReports() {
                         estilo: 'margin-top:0.15rem;' }) : ''}
                     <div style="flex:1;min-width:0;">
                         <div style="font-weight:700;font-size:1rem;display:flex;align-items:center;gap:0.5rem;flex-wrap:wrap;">
-                            🆚 vs <span style="color:var(--primary);">${escapeHtml(m.rival||'Sin rival')}</span>
+                            🆚 ${_enf
+                                ? `<span style="color:${_enf.fuera?'var(--primary)':'#e6edf3'};">${escapeHtml(_enf.local)}</span>
+                                   <span style="color:var(--text-muted);font-weight:600;">vs</span>
+                                   <span style="color:${_enf.fuera?'#e6edf3':'var(--primary)'};">${escapeHtml(_enf.visitante)}</span>
+                                   ${_enf.fuera?'<span style="font-size:0.62rem;color:var(--text-muted);" title="Jugado fuera de casa">✈️</span>':'<span style="font-size:0.62rem;color:var(--text-muted);" title="Jugado en casa">🏠</span>'}`
+                                : `vs <span style="color:var(--primary);">${escapeHtml(m.rival||'Sin rival')}</span>`}
                             ${res ? `<span style="font-size:0.65rem;font-weight:700;letter-spacing:0.5px;color:${rCol};">${res}</span>` : ''}
                         </div>
                         <div style="font-size:0.75rem;color:var(--text-muted);margin-top:2px;display:flex;flex-wrap:wrap;gap:0.3rem 0.8rem;">

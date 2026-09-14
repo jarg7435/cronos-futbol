@@ -65,8 +65,44 @@ function _arrancarVigiaReloj() {
 
 // Adopta el estado del servidor SIN volver a escribirlo: `toggleGame()` haría
 // un push y dos aparatos podrían quedarse rebotándose la pausa el uno al otro.
+//
+// ══════════════════════════════════════════════════════════════════
+//  🔴 v714 · NO SE ADOPTA LA MARCHA DE UN DOCUMENTO QUE NO PODEMOS ESCRIBIR
+// ══════════════════════════════════════════════════════════════════
+//  Esto es la otra mitad de «los botones de inicio/reanudación se quedan
+//  bloqueados» (captura 10409). El mecanismo de v638 es correcto —manda el
+//  documento de `live_matches`, y así convergen los aparatos— pero da por
+//  supuesto que NUESTROS latidos llegan. Cuando no llegan (reglas, red, o el
+//  partido nunca se creó: MEDIDO, ver sync.js v714), el documento se queda con
+//  el `isRunning: false` de antes de la pulsación y este adoptador **le
+//  devuelve la pausa al entrenador cada 5 segundos**. Desde fuera es
+//  exactísimamente «le doy a REANUDAR y no responde».
+//
+//  🔑 DOS PUERTAS, las dos necesarias:
+//   · LA PULSACIÓN MANDA durante unos segundos. El usuario acaba de decidir;
+//     el servidor todavía no puede saberlo.
+//   · Y si nuestro último latido BUENO es anterior a esa pulsación, el
+//     documento es un espejo DESFASADO: no tiene autoridad para pausarnos.
+//  Con las dos, dos tablets sincronizadas siguen convergiendo (sus latidos
+//  llegan), y un panel incomunicado deja de pelearse con su propio dueño.
+const _GRACIA_PULSACION_MS = 8000;
+function _mandaLaPulsacionLocal() {
+    const t = window._cronosUltimoToggleLocal || 0;
+    if (!t) return false;
+    if (Date.now() - t < _GRACIA_PULSACION_MS) return true;
+    // Nuestras escrituras no están llegando: el servidor no se ha enterado de
+    // la pulsación y nunca lo hará.
+    return (window._cronosUltimoLatidoOk || 0) < t;
+}
 function _adoptarMarchaDelServidor(servidorCorre) {
     if (typeof servidorCorre !== 'boolean' || servidorCorre === isRunning) return;
+    if (_mandaLaPulsacionLocal()) {
+        if (window._CRONOS_DEBUG) {
+            console.warn('[v714] No se adopta la marcha del servidor: manda la pulsación local ' +
+                         '(último latido bueno: ' + (window._cronosUltimoLatidoOk || 'ninguno') + ').');
+        }
+        return;
+    }
     isRunning = servidorCorre;
     const btn = document.getElementById('btn-play-pause');
     if (isRunning) {
@@ -85,6 +121,10 @@ function _adoptarMarchaDelServidor(servidorCorre) {
 
 function toggleGame() {
     isRunning = !isRunning;
+    // 🔴 v714 · SELLO DE LA PULSACIÓN. Es lo que impide que un documento
+    // desfasado —o inexistente— le devuelva la pausa al entrenador cinco
+    // segundos después de arrancar. Ver `_mandaLaPulsacionLocal`.
+    window._cronosUltimoToggleLocal = Date.now();
     const btn = document.getElementById('btn-play-pause');
     if (isRunning) {
         btn.textContent = 'PAUSAR';
@@ -138,22 +178,62 @@ function tick() {
             }
         }
 
-        // ⚡ SOLUCIÓN #2: Usar RenderOptimizer para batching de updates
-        if (window.renderOptimizer) {
-            window.renderOptimizer.scheduleRender(updateMasterUI, 'high');
-        } else {
-            updateMasterUI();
-        }
-
-        // Actualizar timers de jugadores con render optimization
-        players.forEach(p => {
-            if (p.status === 'field') { 
-                p.time += clampedDeltaSec;
-                if (window.renderOptimizer) {
-                    window.renderOptimizer.scheduleRender(() => updatePlayerUI(p), 'normal');
-                } else {
-                    updatePlayerUI(p);
+        // ══════════════════════════════════════════════════════════════
+        //  🔴🔴 v714 · NADA DE LO QUE VIENE DEBAJO PUEDE CONGELAR EL RELOJ
+        // ══════════════════════════════════════════════════════════════
+        //  Reporte del autor (implementar.txt 2026-09-14, captura 10409): «el
+        //  cronómetro y los botones de inicio/reanudación se quedan
+        //  completamente congelados y bloqueados».
+        //
+        //  🔑 ESTE `tick` ES UNA SOLA ESCALERA SIN PASAMANOS, y corre dentro de
+        //  un `setInterval`: si CUALQUIERA de sus pasos lanza —el optimizador de
+        //  pintado, la ficha de un jugador, el semáforo, el envío— la excepción
+        //  escapa del callback y se pierde TODO lo que venía detrás. Los
+        //  segundos ya se habían sumado arriba, así que el partido sigue
+        //  corriendo por dentro mientras **la pantalla se queda clavada** y las
+        //  comprobaciones de fin de parte (el final del bloque) no se evalúan
+        //  nunca. Eso es exactamente «congelado»: el reloj no se para, deja de
+        //  pintarse.
+        //
+        //  ⚠️ Y NO SE ARREGLA CON UN `try` GRANDE ALREDEDOR DE TODO: eso
+        //  convertiría el fallo de una ficha en la pérdida del auto-fin de la
+        //  parte. Cada paso lleva el suyo, en orden de importancia, y el reloj
+        //  y el fin de parte quedan por encima del pintado.
+        const _paso = (etiqueta, fn) => {
+            try { fn(); }
+            catch (e) {
+                // Una sola línea por causa: repetida cada segundo, un aviso por
+                // tick llenaría la consola y taparía lo demás.
+                if (window._cronosTickFallo !== etiqueta + '|' + e.message) {
+                    window._cronosTickFallo = etiqueta + '|' + e.message;
+                    console.warn('[v714] Fallo en el tick (' + etiqueta + '), el reloj sigue:', e.message);
                 }
+            }
+        };
+
+        // ⚡ SOLUCIÓN #2: Usar RenderOptimizer para batching de updates
+        _paso('crono', () => {
+            if (window.renderOptimizer) {
+                window.renderOptimizer.scheduleRender(updateMasterUI, 'high');
+            } else {
+                updateMasterUI();
+            }
+        });
+
+        // Actualizar timers de jugadores con render optimization.
+        // ⚠️ El tiempo del jugador se suma FUERA del pintado: es un dato del
+        // partido, no un adorno, y una ficha que no se puede pintar no puede
+        // costarle sus minutos al jugador.
+        players.forEach(p => {
+            if (p.status === 'field') {
+                p.time += clampedDeltaSec;
+                _paso('ficha', () => {
+                    if (window.renderOptimizer) {
+                        window.renderOptimizer.scheduleRender(() => updatePlayerUI(p), 'normal');
+                    } else {
+                        updatePlayerUI(p);
+                    }
+                });
             }
         });
 
@@ -163,10 +243,14 @@ function tick() {
         // frecuente y acorta la ventana mientras el reloj corre.
         if (now - _lastServerSync > _SERVER_SYNC_INTERVAL_MS) {
             _lastServerSync = now;
-            syncTimerWithServer();  // Llamada asíncrona (no esperar)
-            if (liveIsActive) _arrancarVigiaReloj();
+            _paso('sync', () => {
+                syncTimerWithServer();  // Llamada asíncrona (no esperar)
+                if (liveIsActive) _arrancarVigiaReloj();
+            });
         }
 
+        // El fin de parte va al final pero NO puede depender de que el pintado
+        // haya ido bien: con el `_paso` de arriba, aquí se llega siempre.
         if (shouldAutoEnd1) {
             if (typeof window.endFirstHalf === 'function') window.endFirstHalf(true);
         } else if (shouldAutoEnd2) {

@@ -81,15 +81,23 @@ let recortado = null;
 // ═══════ PARTE 2 · el feed de la tarjeta lo lee ═══════
 console.log('\n── PARTE 2 · la tarjeta pinta esos sucesos ──');
 {
-    // Se ejecuta el feed REAL de live.html.
-    const ini = LIVE.indexOf('const _LIVE_FEED_ICONOS = {');
-    const fin = LIVE.indexOf('function _liveFeedHtml');
-    ok('2a · se encuentra el bloque del feed en live.html', ini !== -1 && fin > ini);
+    // Se ejecuta el feed REAL. ⚠️ v706 · ya no se extrae de live.html: la
+    // lógica se mudó a js/shared/live-feed.js para que el Área de Familias
+    // pinte el MISMO bloque sin copiarlo (ver la nota de ese fichero). El
+    // guard hace lo mismo que antes; sólo cambia de dónde lo carga.
+    const FEED = fs.readFileSync(path.join(ROOT, 'js', 'shared', 'live-feed.js'), 'utf8');
+    const _sbMod = { window: {}, console: { log() {}, warn() {} } };
+    vm.createContext(_sbMod);
+    vm.runInContext(FEED, _sbMod);
+    const API = _sbMod.window.cronosLiveFeed;
+    ok('2a · el módulo del feed se carga y expone la selección',
+       !!API && typeof API.items === 'function');
 
-    if (ini !== -1 && fin > ini && recortado) {
-        const sandbox = { Array, String, Object, Math, escapeHtml: (s) => String(s) };
-        vm.createContext(sandbox);
-        vm.runInContext(LIVE.slice(ini, fin), sandbox);
+    if (API && recortado) {
+        const sandbox = {
+            _liveFeedItems: API.items,
+            _liveFeedTexto: API.texto,
+        };
 
         const gol = {
             eventId: 'ev9', matchId: 'M1', type: 'goal',
@@ -141,9 +149,19 @@ console.log('\n── PARTE 3 · nadie mas se queda mirando `events` ──');
        /Array\.isArray\(matchData\.events\)[\s\S]{0,220}?matchData\.lastEvents/.test(LIVE),
        'detectAndAlert es el consumidor que SI funcionaba');
 
+    // ⚠️ v706 · el mini-feed se mide en js/shared/live-feed.js, que es donde
+    // vive desde que lo comparten live.html y el Area de Familias.
+    const FEED2 = fs.readFileSync(path.join(ROOT, 'js', 'shared', 'live-feed.js'), 'utf8');
     ok('3b · 🔑 y el mini-feed de la tarjeta tambien',
-       /Array\.isArray\(m && m\.events\)[\s\S]{0,220}?m\.lastEvents/.test(LIVE),
+       /Array\.isArray\(m && m\.events\)[\s\S]{0,260}?m\.lastEvents/.test(FEED2),
        'era el que se quedo atras: "Sin sucesos todavia" con el partido en juego');
+
+    // 🔑 Y EL TERCER CONSUMIDOR, el que el reporte de v706 encontro a oscuras:
+    // la tarjeta del Area de Familias. Que no vuelva a quedarse fuera.
+    const PP2 = fs.readFileSync(path.join(ROOT, 'js', 'parent', 'panel.js'), 'utf8');
+    ok('3c · 🔑 y la tarjeta del Area de Familias pinta con el MISMO modulo',
+       /cronosLiveFeed\.html\(m\)/.test(PP2),
+       'capturas 10347/10348: el panel de familias no ensenaba ningun suceso');
 }
 
 console.log('\n' + pass + ' PASS / ' + fail + ' FAIL');

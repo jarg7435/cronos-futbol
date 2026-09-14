@@ -58,7 +58,13 @@ console.log('── equipo en las incidencias y hora real en los informes (v445)
 console.log('── PARTE 1 · de qué equipo es cada incidencia ──');
 {
     // Se extraen el resolutor de v439 y las piezas nuevas, y se ejecutan.
-    const iniFeed = LIVE.indexOf('const _LIVE_FEED_ICONOS');
+    // ⚠️ v706 · el mini-feed en el que se apoya `_equipoDeSuceso` (a través de
+    // `_liveFeedLado`/`_liveFeedNombreEquipo`) se mudó a
+    // js/shared/live-feed.js, porque lo comparten el listado de live.html y la
+    // tarjeta del Área de Familias. Aquí se carga el módulo y DESPUÉS los
+    // envoltorios de live.html, que es exactamente el orden del navegador.
+    const FEED    = fs.readFileSync(path.join(ROOT, 'js/shared/live-feed.js'), 'utf8');
+    const iniFeed = LIVE.indexOf('let _feedAvisado = false;');
     const finFeed = LIVE.indexOf('// ── Show history');
     const iniEq   = LIVE.indexOf('function _equipoDeSuceso(m, ev)');
     const finEq   = LIVE.indexOf('function _appendEventToHistoryPanel');
@@ -66,13 +72,14 @@ console.log('── PARTE 1 · de qué equipo es cada incidencia ──');
        iniFeed !== -1 && finFeed > iniFeed && iniEq !== -1 && finEq > iniEq);
 
     const sb = {
+        window: {},
         escapeHtml: (s) => String(s == null ? '' : s)
             .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
             .replace(/"/g, '&quot;').replace(/'/g, '&#39;'),
         console: { log() {}, warn() {} },
     };
     vm.createContext(sb);
-    vm.runInContext(LIVE.slice(iniFeed, finFeed) + '\n' + LIVE.slice(iniEq, finEq) +
+    vm.runInContext(FEED + '\n' + LIVE.slice(iniFeed, finFeed) + '\n' + LIVE.slice(iniEq, finEq) +
         '\n;globalThis.eq   = _equipoDeSuceso;' +
         '\n;globalThis.chip = _chipEquipoHtml;' +
         '\n;globalThis.sinPre = _sinPrefijoEquipo;', sb);

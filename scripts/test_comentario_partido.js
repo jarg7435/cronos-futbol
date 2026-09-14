@@ -291,7 +291,12 @@ console.log('\n── PARTE 6 · el visor en vivo ──');
        /_evNuevos\.forEach\(ev => \{\s*if \(ev\.type === 'comment'\) return;/.test(L));
     ok('6h · la reconstrucción del historial usa el orden de partido',
        /_ordenCronologicoSucesos\(events\)\.forEach\(ev =>/.test(L));
-    ok('6i · el mini-feed "ÚLTIMOS SUCESOS" no lo cuenta', /e\.type !== 'tactical_move' && e\.type !== 'comment'/.test(L));
+    // ⚠️ v706 · el mini-feed se mudó a js/shared/live-feed.js (lo comparten el
+    // listado de live.html y la tarjeta del Área de Familias), así que el
+    // filtro se mide allí. El criterio no ha cambiado: un comentario no puede
+    // ocupar una de las tres líneas de ÚLTIMOS SUCESOS.
+    ok('6i · el mini-feed "ÚLTIMOS SUCESOS" no lo cuenta',
+       /e\.type !== 'tactical_move' && e\.type !== 'comment'/.test(leer('js/shared/live-feed.js')));
     ok('6j · el índice ligero tampoco (sync.js)',
        /const _IDX_TIPOS_NO_VISIBLES = new Set\(\['tactical_move', 'comment'\]\);/.test(leer('js/match/live/sync.js')));
 }

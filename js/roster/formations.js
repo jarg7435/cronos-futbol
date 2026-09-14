@@ -93,23 +93,31 @@ function applyFormationPreset(key) {
         return (a.number || 0) - (b.number || 0);
     });
 
+    // ══════════════════════════════════════════════════════════════
+    //  🏠✈️ v707 · EL CAMPO ENTERO ES PARA MI EQUIPO, SEA LOCAL O VISITANTE
+    // ══════════════════════════════════════════════════════════════
+    //  `preset.full` son las posiciones para cuando NO se dibuja al contrario:
+    //  el equipo se reparte por todo el campo. Estaba reservado a `p.team ===
+    //  'home'`, así que un entrenador que juega FUERA sin analizar al rival
+    //  veía a sus once apretados en media cancha, con la otra mitad vacía
+    //  (capturas 10360/10361). Es el mismo «mi equipo == el local» que
+    //  provocaba el resto de esta tanda.
+    const _miLado = (typeof window.cronosMiLado === 'function')
+        ? window.cronosMiLado()
+        : ((window._userTeamRole === 'away') ? 'away' : 'home');
     let homeIdx = 0, awayIdx = 0;
     sortedPlayers.forEach(p => {
         if (p.status !== 'field') return;
-        if (p.team === 'home') {
-            const positions = useFullField ? preset.full : preset.home;
-            if (positions[homeIdx]) {
-                const pos = clampToField(positions[homeIdx].x, positions[homeIdx].y);
-                p.x = pos.x; p.y = pos.y;
-                homeIdx++;
-            }
-        } else if (p.team === 'away') {
-            const positions = preset.away;
-            if (positions && positions[awayIdx]) {
-                const pos = clampToField(positions[awayIdx].x, positions[awayIdx].y);
-                p.x = pos.x; p.y = pos.y;
-                awayIdx++;
-            }
+        if (p.team !== 'home' && p.team !== 'away') return;
+        // Con el campo entero manda `full`; con los dos equipos, el lado que
+        // ocupa cada uno.
+        const positions = (p.team === _miLado && useFullField) ? preset.full : preset[p.team];
+        if (!positions) return;
+        const idx = (p.team === 'home') ? homeIdx : awayIdx;
+        if (positions[idx]) {
+            const pos = clampToField(positions[idx].x, positions[idx].y);
+            p.x = pos.x; p.y = pos.y;
+            if (p.team === 'home') homeIdx++; else awayIdx++;
         }
     });
 

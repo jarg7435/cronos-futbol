@@ -339,10 +339,23 @@ window._showPostMatchOptions = function _showPostMatchOptions() {
     const scoreA = (typeof scoreAway  !== 'undefined') ? scoreAway  : '—';
 
     // Estadísticas rápidas del partido
-    const totalPlayers  = (players || []).filter(p => p.team === 'home').length;
-    const totalGoals    = (players || []).filter(p => p.team === 'home').reduce((s, p) => s + (p.goals || 0), 0);
-    const totalCards    = (players || []).filter(p => p.team === 'home' && p.cards && p.cards !== 'ninguna').length;
-    const totalInjured  = (players || []).filter(p => p.team === 'home' && p.injured).length;
+    // ══════════════════════════════════════════════════════════════
+    //  🏠✈️ v707 · SON LAS DE MI EQUIPO, QUE NO SIEMPRE ES EL LOCAL
+    // ══════════════════════════════════════════════════════════════
+    //  Reporte del autor (captura 10355): tras ganar 0-3 fuera, este resumen
+    //  decía «18 jugadores · 0 goles · 1 lesión»… y eran los de la plantilla
+    //  GENÉRICA DEL RIVAL ("Local 1…18"), que es la que dibuja «Analizar
+    //  Contrario». Mismo criterio que los informes (`_cMyTeamKey`) y que el
+    //  registro de pérdidas/recuperaciones: una sola definición de «mi lado»
+    //  (`cronosMiLado`, js/core/utils.js).
+    const _miLado = (typeof window.cronosMiLado === 'function')
+        ? window.cronosMiLado()
+        : ((window._userTeamRole === 'away') ? 'away' : 'home');
+    const _mios = (players || []).filter(p => p && p.team === _miLado);
+    const totalPlayers  = _mios.length;
+    const totalGoals    = _mios.reduce((s, p) => s + (p.goals || 0), 0);
+    const totalCards    = _mios.filter(p => p.cards && p.cards !== 'ninguna').length;
+    const totalInjured  = _mios.filter(p => p.injured).length;
     const h1min = Math.floor((masterTimeH1 || 0) / 60);
     const h2min = Math.floor((masterTimeH2 || 0) / 60);
 

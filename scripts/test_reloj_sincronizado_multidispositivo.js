@@ -102,6 +102,14 @@ function montar({ servidor, local }) {
         'const _SERVER_SYNC_INTERVAL_MS = 5000;',
         SRC.match(/let _maxDriftAllowed = \d+;/)[0],
         'let _vigiaReloj = null;',
+        // ⚠️ v714 · LA ADOPCIÓN SE PARTIÓ EN DOS y este arnés se quedó
+        // desfasado: al no cargar `_mandaLaPulsacionLocal`, la llamada lanzaba
+        // un ReferenceError que el `catch` de `syncTimerWithServer` se tragaba
+        // —así que 2c-2f se ponían rojas SIN defecto en el código—. La puerta
+        // nueva sólo se cierra si hay una pulsación local reciente; en este
+        // arnés no hay ninguna, así que el contrato de v638 se mide igual.
+        SRC.match(/const _GRACIA_PULSACION_MS = \d+;/)[0],
+        extractFn('_mandaLaPulsacionLocal'),
         extractFn('_arrancarVigiaReloj'),
         extractFn('_adoptarMarchaDelServidor'),
         extractFn('syncTimerWithServer'),

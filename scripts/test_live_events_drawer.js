@@ -403,6 +403,15 @@ console.log('\n── PARTE 3 · el motor, ejecutado sobre un DOM sin panel ─�
 
     let arrancó = null;
     try {
+        // 🔊 v709 · Las melodías de cada suceso se mudaron a
+        // js/shared/live-sound.js (las comparte con el panel en vivo del Área
+        // de Familias, que antes sonaba con la campana general de los avisos).
+        // El visor las llama a través de su envoltorio `_playSeq`, así que el
+        // sandbox tiene que cargar el módulo igual que lo carga live.html — si
+        // no, «sigue sonando» daría rojo por pobreza del simulacro y no por un
+        // defecto.
+        vm.runInContext(fs.readFileSync(path.join(ROOT, 'js', 'shared', 'live-sound.js'), 'utf8'),
+                        sb, { filename: 'live-sound.js' });
         vm.runInContext(MODULO
             .replace(/^\s*import\s[^;]*;?$/gm, '')
             .replace(/import\s*{[^}]*}\s*from\s*['"][^'"]*['"];/g, '') +

@@ -54,30 +54,44 @@ const ok = (name, cond, extra) => {
 };
 
 const LIVE = fs.readFileSync(path.join(ROOT, 'live.html'), 'utf8');
+// ⚠️ v706 · EL FEED YA NO VIVE DENTRO DE live.html. Se mudó a
+// js/shared/live-feed.js porque el Área de Familias (js/parent/panel.js, en
+// index.html) pinta EXACTAMENTE el mismo bloque y una segunda copia del
+// criterio habría divergido al primer cambio de tipos de suceso — v433, v532 y
+// v578 son tres facturas ya pagadas por eso. Este guard sigue haciendo lo
+// mismo: EJECUTAR el feed real contra partidos fabricados. Sólo cambia de
+// fichero; y ahora comprueba además que los DOS consumidores lo usan en vez de
+// tener cada uno el suyo.
+const FEED = fs.readFileSync(path.join(ROOT, 'js', 'shared', 'live-feed.js'), 'utf8');
+const PP   = fs.readFileSync(path.join(ROOT, 'js', 'parent', 'panel.js'), 'utf8');
 
-console.log('── mini-feed de sucesos en la tarjeta (v432) ──\n');
+console.log('── mini-feed de sucesos en la tarjeta (v432, compartido en v706) ──\n');
 
-// ═══════ Se extrae el bloque del feed y se ejecuta de verdad ═══════
-const ini = LIVE.indexOf('const _LIVE_FEED_ICONOS');
-const fin = LIVE.indexOf('// ── Show history');
-ok('0a · el bloque del feed sigue existiendo en live.html', ini !== -1 && fin > ini);
-
-const sandbox = {
-    escapeHtml: (s) => String(s == null ? '' : s)
-        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;').replace(/'/g, '&#39;'),
-    console: { log() {}, warn() {} },
-};
+// ═══════ Se carga el módulo compartido y se ejecuta de verdad ═══════
+const sandbox = { window: {}, console: { log() {}, warn() {} } };
 vm.createContext(sandbox);
-vm.runInContext(LIVE.slice(ini, fin) +
-    '\n;globalThis.items = _liveFeedItems;' +
-    '\n;globalThis.html  = _liveFeedHtml;' +
-    '\n;globalThis.minuto= _liveFeedMinuto;' +
-    '\n;globalThis.texto = _liveFeedTexto;' +
-    '\n;globalThis.lado  = _liveFeedLado;' +
-    '\n;globalThis.nomEq = _liveFeedNombreEquipo;', sandbox);
+vm.runInContext(FEED, sandbox);
 
-const { items, html, minuto, texto, lado, nomEq } = sandbox;
+const API = sandbox.window.cronosLiveFeed;
+ok('0a · el módulo compartido expone el feed',
+   !!API && typeof API.items === 'function' && typeof API.html === 'function');
+
+ok('0b · 🔑 live.html lo CARGA y delega en él (no tiene su propia copia)',
+   /src="js\/shared\/live-feed\.js/.test(LIVE) &&
+   /window\.cronosLiveFeed/.test(LIVE) &&
+   !/const _LIVE_FEED_ICONOS = \{[\s\S]{0,80}goal:/.test(LIVE),
+   'dos copias del mismo criterio acaban divergiendo (v433, v532, v578)');
+
+ok('0c · 🔑 y el Área de Familias pinta con el MISMO módulo',
+   /window\.cronosLiveFeed\s*&&/.test(PP) && /cronosLiveFeed\.html\(m\)/.test(PP),
+   'era el panel del reporte (capturas 10347/10348): sin los tres últimos sucesos');
+
+const items  = API.items;
+const html   = API.html;
+const minuto = API.minuto;
+const texto  = API.texto;
+const lado   = API.lado;
+const nomEq  = API.nombreEquipo;
 
 // Eventos con la forma REAL que escribe js/match/events/player-actions.js.
 const ev = (o) => Object.assign({

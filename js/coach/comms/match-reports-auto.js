@@ -91,7 +91,12 @@ async function autoDispatchMatchReports() {
 
         const scoreHome = document.getElementById('score-home')?.textContent || '0';
         const scoreAway = document.getElementById('score-away')?.textContent || '0';
-        const rivalName = TEAM_NAMES.away || 'Rival';
+        // 🏠✈️ v707 · EL RIVAL ES EL OTRO LADO, NO «EL VISITANTE».
+        // `TEAM_NAMES.away` es el equipo VISITANTE del encuentro, que jugando
+        // fuera es el MÍO: los informes salían «vs ARINAGA REGIONAL» contra
+        // uno mismo (captura 10358). Mismo criterio que `_cMyTeamKey()`.
+        const rivalName = ((typeof window.cronosNombreRival === 'function')
+            ? window.cronosNombreRival() : (TEAM_NAMES.away || '')) || 'Rival';
         const matchDate = new Date().toLocaleDateString('es-ES', { weekday:'long', day:'numeric', month:'long' });
         const homePlayers = window.players.filter(p => p.team === _cMyTeamKey());
         console.log('autoDispatch ejecutándose | teamKey:', _cMyTeamKey(),
@@ -121,7 +126,11 @@ async function autoDispatchMatchReports() {
         const globalText = `📊 *INFORME GLOBAL DE PARTIDO*\n` +
                           `━━━━━━━━━━━━━━━━\n` +
                           `📅 ${matchDate}\n` +
-                          `⚽ ${TEAM_NAMES.home} ${scoreHome} - ${scoreAway} ${rivalName}\n\n` +
+                          // v707 · El marcador se lee LOCAL - VISITANTE, así que
+                          // los nombres van por LADO (no «yo» y «el rival»): con
+                          // `TEAM_NAMES.home … rivalName` un 0-3 ganado fuera se
+                          // leía como si lo hubiera marcado el rival.
+                          `⚽ ${TEAM_NAMES.home} ${scoreHome} - ${scoreAway} ${TEAM_NAMES.away}\n\n` +
                           `Informes individuales generados y enviados a familiares / jugadores autorizados.\n` +
                           `_Cronos Fútbol_`;
 
@@ -574,8 +583,14 @@ async function autoDispatchMatchReports() {
                     createdBy:   me.uid,
                     coachUid:    me.uid,
                     coachEmail:  me.email,
+                    // ⚠️ v707 · ESTOS DOS SON LADOS DEL ENCUENTRO, NO «yo» y «el
+                    // rival»: la lista de Partidos Terminados pinta
+                    // «homeName vs awayName». Antes `awayName` recibía
+                    // `rivalName`, que coincide con el visitante SÓLO jugando en
+                    // casa; fuera, el índice quedaba con mi nombre en los dos
+                    // lados o con el del rival en el sitio equivocado.
                     homeName:    (typeof TEAM_NAMES !== 'undefined' && TEAM_NAMES.home) || 'LOCAL',
-                    awayName:    rivalName,
+                    awayName:    (typeof TEAM_NAMES !== 'undefined' && TEAM_NAMES.away) || 'VISITANTE',
                     scoreHome, scoreAway,
                     category:    _catIdx,
                     subcategory: _cMatchSubcatFor(me, _catIdx),

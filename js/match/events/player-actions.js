@@ -162,6 +162,13 @@ window.cronosComentariosDelPartido = function (eventos) {
                 text:      String(e.comment).trim().slice(0, 500),
                 realTime:  String(e.realTime || ''),
                 createdAt: Number(e.createdAt) || 0,
+                // 🟠 v715 · Y SI SE APUNTÓ A POSTERIORI, SE DICE. El suceso lo
+                // marca `_registerMatchEvent` con `isRetroactive` al recibir un
+                // minuto manual, pero aquí se perdía: el comentario llegaba al
+                // informe sin distinguirse de uno escrito en directo, y el
+                // autor los nombra PRIMEROS en su lista de lo que tiene que
+                // salir en naranja.
+                retro:     e.isRetroactive === true,
             };
         })
         .filter(function (c) {

@@ -444,11 +444,43 @@ function _saveMatchStateToStorage() {
             players:      JSON.parse(JSON.stringify(window.players || [])),
             COLORS:       typeof COLORS !== 'undefined' ? COLORS : {},
             category:     document.getElementById('match-category')?.value || window._currentMatchCategory || '',
+            // 🔑 v711 · LA PAREJA VIAJA ENTERA. La categoría se guardaba sola y
+            // la letra no, así que al retomar un partido la subcategoría se
+            // perdía y los informes salían sellados con la clave de equipo a
+            // medias (`club__regional__` en vez de `club__regional__b`) — y con
+            // ella se iban del resumen acumulado todos los datos de ese
+            // partido. Es la misma lección de v562: la pareja se toma —y se
+            // guarda— de UNA sola fuente.
+            subcategory:  document.getElementById('match-subcategory')?.value ||
+                          window._currentMatchSubcategory || '',
             extraGoals:   window._cronosExtraGoals || { home: 0, away: 0 },
             // v557 · EL SELLO DE EQUIPO. Es lo que permite que el Alevín y el
             // Regional del mismo entrenador sean dos partidos separados
             // aunque compartan pestaña.
             teamId:       _teamId || '',
+            // ══════════════════════════════════════════════════════════════
+            //  🏠✈️ v707 · LA LOCALÍA VIAJA CON EL PARTIDO
+            // ══════════════════════════════════════════════════════════════
+            //  🔑🔑 AQUÍ NACÍA EL DEFECTO GORDO DEL REPORTE (CAPTURAS
+            //  10355-10359). Esta ranura guardaba los nombres de los equipos,
+            //  pero NO quién de los dos era el del entrenador ni si se estaba
+            //  analizando al contrario. Al retomar el partido —una recarga, un
+            //  «RECUPERAR PARTIDO», el paso por INICIO— `_userTeamRole` volvía
+            //  a valer 'home' por omisión, y a partir de ahí, en cadena y sin
+            //  un solo error visible:
+            //    · `_cMyTeamKey()` devolvía 'home', así que los informes se
+            //      generaban con la plantilla GENÉRICA DEL RIVAL ("Local 1…18")
+            //      en vez de con la suya;
+            //    · `myTeamRole` se sellaba como 'home' en cada informe, y un
+            //      0-3 ganado fuera se leía como DERROTA;
+            //    · las pérdidas/recuperaciones se asignaban a los dorsales del
+            //      contrario (possession-tracker mira el mismo interruptor);
+            //    · y la banca y el campo se pintaban del revés.
+            //  El documento de la nube SÍ lo llevaba (`myTeamRole`, sync.js) y
+            //  la recuperación por nube SÍ lo restauraba: eran dos caminos para
+            //  lo mismo y sólo uno estaba completo.
+            myTeamRole:   window._userTeamRole === 'away' ? 'away' : 'home',
+            analyzeAway:  typeof analyzeAway !== 'undefined' ? !!analyzeAway : false,
         };
         S.guardar(slotId, state);
     } catch(e) { /* silencioso */ }
@@ -720,6 +752,41 @@ window._restoreActiveMatch = function() {
             TEAM_NAMES.away = state.teamNames?.away;
         }
 
+        // ══════════════════════════════════════════════════════════════
+        //  🏠✈️ v707 · Y LA LOCALÍA CON ELLOS (ver la nota de
+        //  `_saveMatchStateToStorage`, que es donde se guarda).
+        // ══════════════════════════════════════════════════════════════
+        //  ⚠️ SIN `state.myTeamRole` NO SE TOCA NADA. Las ranuras guardadas
+        //  antes de v707 no lo llevan, y un partido de visitante retomado desde
+        //  una de ellas se comporta como antes; machacar el valor que ya
+        //  estuviera en memoria sería peor, porque en la misma sesión SÍ es
+        //  correcto (lo puso `confirmSetup`).
+        const _sabeLocalia = (state.myTeamRole === 'home' || state.myTeamRole === 'away');
+        const _sabeAnalyze = (typeof state.analyzeAway === 'boolean');
+        if (_sabeLocalia) window._userTeamRole = state.myTeamRole;
+        if (_sabeAnalyze && typeof analyzeAway !== 'undefined') analyzeAway = state.analyzeAway;
+        // Las tres clases que describen el partido en el <body>. La
+        // recuperación por NUBE ya las ponía (setup-modal.js) y esta no: un
+        // partido de F11 retomado desde el dispositivo se pintaba con el campo
+        // de F7, y uno de visitante con la banca en el lado del rival.
+        // ⚠️ La modalidad se lee del ESTADO GUARDADO, no de `currentMode`: esa
+        // variable se restaura veinte líneas más abajo y aquí todavía tiene la
+        // del partido anterior.
+        // ⚠️ LAS DOS QUE DEPENDEN DE CAMPOS NUEVOS SÓLO SE TOCAN SI EL CAMPO
+        // ESTÁ. Una ranura guardada antes de v707 no dice si se analizaba al
+        // contrario: dar por hecho que no le escondería la banca del rival a un
+        // partido que sí la tiene pintada, y eso es peor que dejarla como
+        // estaba.
+        document.body.classList.toggle('mode-f11',
+            (state.currentMode || (typeof currentMode !== 'undefined' ? currentMode : 'f7')) === 'f11');
+        if (_sabeLocalia) {
+            document.body.classList.toggle('role-away', window._userTeamRole === 'away');
+        }
+        if (_sabeAnalyze) {
+            if (!state.analyzeAway) document.body.classList.add('hide-visitor');
+            else document.body.classList.remove('hide-visitor');
+        }
+
         const rawPlayers = state.players || [];
         window.players = rawPlayers.map(p => {
             if (activeAddedSec > 0 && p.status === 'field') {
@@ -750,6 +817,13 @@ window._restoreActiveMatch = function() {
             window._currentMatchCategory = state.category;
             const catSelect = document.getElementById('match-category');
             if (catSelect) catSelect.value = state.category;
+        }
+        // v711 · Y su letra con ella (ver la nota del autoguardado). Sin esto,
+        // un partido retomado escribía sus informes sin subcategoría.
+        if (state.subcategory) {
+            window._currentMatchSubcategory = state.subcategory;
+            const subSelect = document.getElementById('match-subcategory');
+            if (subSelect) subSelect.value = state.subcategory;
         }
 
         // Restaurar goles extra (No asignados)
@@ -816,6 +890,13 @@ window._restoreActiveMatch = function() {
         if (state.liveMatchId && matchPhase !== 'finished') {
             liveMatchId  = state.liveMatchId;
             liveIsActive = true;
+            // 🔴 v714 · Y ESTA PESTAÑA RECLAMA EL PARTIDO, como hace
+            // `startLiveSync` (v465). Sin esto, si la pestaña tenía reclamado
+            // OTRO partido en su sessionStorage, la puerta estanca de v469
+            // bloquea todos los latidos de este —con un `console.error` y sin
+            // documento— y el partido se juega sin transmitir. Es la otra mitad
+            // de los «errores de sincronización» de la captura 10409.
+            try { window._cronosMatchSlots?.setTabMatchId(liveMatchId); } catch (e) {}
             if (liveSyncTimer) clearInterval(liveSyncTimer);
             liveSyncTimer = setInterval(() => {
                 if (liveIsActive) pushLiveSnapshot('active');
@@ -1828,6 +1909,27 @@ function _cronosNuevoPartidoDeEquipo() {
             // mismo informe.
             window._cronosMatchEvents = [];
             window._cronosLastDispatchedMatch = null;
+        }
+
+        // ── 2b · 🔵🔴 v707 · EL REGISTRO DE PÉRDIDAS Y RECUPERACIONES, A CERO ──
+        //  Encargo del autor: «al inicializar y crear un nuevo partido, todos
+        //  los contadores de estadísticas tácticas comiencen estrictamente
+        //  desde cero».
+        //
+        //  🔑 NO BASTABA CON QUE EL MÓDULO SE RESTAURE POR `matchId`: su clave
+        //  es `liveMatchId`, que NO EXISTE hasta que arranca la retransmisión
+        //  (~800 ms después de pintar la plantilla) y que no existe nunca si el
+        //  entrenador no retransmite. Con la clave vacía, `_restaura()` salía
+        //  por su primera línea y los apuntes del partido ANTERIOR seguían en
+        //  memoria, contando para el informe del nuevo.
+        //
+        //  ⚠️ VA FUERA DEL `if (huboPartido || cambiaDeEquipo)`: el registro se
+        //  pone a cero SIEMPRE que nace un partido, igual que el marcador y los
+        //  goles no asignados. Reconfirmar la convocatoria del mismo partido a
+        //  los diez segundos no puede traerse las P/R del anterior sólo porque
+        //  no se haya jugado nada todavía.
+        if (typeof window.cronosPRNuevoPartido === 'function') {
+            try { window.cronosPRNuevoPartido(); } catch (e) { /* nunca tumba el arranque */ }
         }
 
         // ── 3 · el dueño del partido que nace ────────────────────────────

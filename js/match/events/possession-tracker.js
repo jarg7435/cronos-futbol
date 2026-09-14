@@ -60,19 +60,78 @@
         } catch (e) { /* cuota o modo privado: el registro sigue vivo en memoria */ }
     }
 
+    // ════════════════════════════════════════════════════════════════
+    //  🔵🔴 v707 · UN PARTIDO NUEVO EMPIEZA A CERO, Y LA RECARGA NO PIERDE NADA
+    // ════════════════════════════════════════════════════════════════
+    //  Encargo del autor (implementar.txt 2026-09-13): «asegurar que al
+    //  inicializar y crear un nuevo partido, todos los contadores de
+    //  estadísticas tácticas comiencen estrictamente desde cero».
+    //
+    //  🔑 LA VERSIÓN ANTERIOR TENÍA DOS AGUJEROS, LOS DOS EN LA MISMA LÍNEA
+    //  (`if (!id || …) return;`), y los dos por lo mismo: `liveMatchId` NO
+    //  EXISTE al principio del partido (la retransmisión lo asigna ~800 ms
+    //  después de pintar la plantilla) y puede no existir nunca si el
+    //  entrenador no retransmite.
+    //    · SIN id NO SE RESTAURABA NADA: los apuntes guardados bajo la clave
+    //      `sin_id` no volvían jamás, así que una recarga a media parte los
+    //      perdía — justo lo que la persistencia venía a evitar.
+    //    · Y NO SE LIMPIABA NADA: los del partido ANTERIOR seguían en memoria
+    //      y contaban en el informe del nuevo.
+    //
+    //  🔑 EL CAMBIO DE CLAVE NO TIRA LOS APUNTES: cuando el id pasa de vacío a
+    //  real —que es lo que ocurre en cada partido, a los 800 ms— se MIGRAN al
+    //  nuevo cajón en vez de vaciarse. Sin esto, todo lo registrado en el
+    //  primer minuto de un partido sin retransmisión previa desaparecería al
+    //  empezar a retransmitir.
+    //
+    //  ⚠️ La puesta a cero de un partido NUEVO no se adivina aquí: la pide
+    //  `_cronosNuevoPartidoDeEquipo()` (app-init.js), que es el único sitio que
+    //  SABE que nace un partido. Deducirlo de un id vacío sería confundir «aún
+    //  no retransmito» con «otro partido».
     function _restaura() {
-        var id = _idPartido();
-        if (!id || window._cronosPR.matchId === id) return;
+        var id = _idPartido() || 'sin_id';
+        if (window._cronosPR.matchId === id) return;
+
+        var previo    = window._cronosPR.matchId || '';
+        var enMemoria = Array.isArray(window._cronosPR.items) ? window._cronosPR.items : [];
         window._cronosPR.matchId = id;
         window._cronosPR.items = [];
+
+        var guardados = null;
         try {
             var crudo = localStorage.getItem(_clave());
             if (crudo) {
                 var d = JSON.parse(crudo);
-                if (d && Array.isArray(d.items)) window._cronosPR.items = d.items;
+                if (d && Array.isArray(d.items)) guardados = d.items;
             }
         } catch (e) { /* json corrupto: se empieza de cero, no se rompe el partido */ }
+
+        if (guardados && guardados.length) {
+            window._cronosPR.items = guardados;
+            return;
+        }
+        // Migración `sin_id` → id real del MISMO partido: el cajón nuevo está
+        // vacío y lo que hay en memoria es de este partido, no de otro.
+        if (previo === 'sin_id' && id !== 'sin_id' && enMemoria.length) {
+            window._cronosPR.items = enMemoria;
+            _guarda();
+            try { localStorage.removeItem('cronos_pr::sin_id'); } catch (e) {}
+            return;
+        }
+        if (guardados) window._cronosPR.items = guardados;
     }
+
+    // Lo llama `_cronosNuevoPartidoDeEquipo()` (app-init.js) al nacer un
+    // partido. Borra la memoria Y el cajón sin identificar, que es el que se
+    // heredaría entre partidos del mismo dispositivo.
+    window.cronosPRNuevoPartido = function () {
+        window._cronosPR.matchId = '';
+        window._cronosPR.items   = [];
+        try { localStorage.removeItem('cronos_pr::sin_id'); } catch (e) {}
+        if (typeof window.cronosPRActualiza === 'function') {
+            try { window.cronosPRActualiza(); } catch (e) {}
+        }
+    };
 
     // ── Las dos puertas ──────────────────────────────────────────────
     function _categoriaDelPartido() {
@@ -127,7 +186,12 @@
     // VISITANTE — el entrenador elige su rol al crear el partido (v-role),
     // así que dar por hecho 'home' habría dejado la función inservible justo
     // en los partidos fuera de casa.
+    //  🏠✈️ v707 · Y la decisión la toma `cronosMiLado()` (js/core/utils.js),
+    //  que es la MISMA que usan los informes (`_cMyTeamKey`). Con dos
+    //  expresiones equivalentes escritas aparte, el día que una cambie el
+    //  registro y el informe hablarán de equipos distintos.
     function _miEquipo() {
+        if (typeof window.cronosMiLado === 'function') return window.cronosMiLado();
         return (window._userTeamRole === 'away') ? 'away' : 'home';
     }
 

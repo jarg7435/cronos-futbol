@@ -117,6 +117,12 @@ function _campana() {
         console.warn('[PushSA] no se pudo sonar:', e && e.message);
     }
 }
+// 🔔 v708 · SE EXPONE PARA QUE NO HAYA UNA SEGUNDA CAMPANA. El panel en vivo
+// del Área de Familias tiene que sonar cuando entra un suceso, y sintetizar
+// otro aviso allí daría a la misma app DOS sonidos de «atención» distintos —
+// además de repetir la trampa del contexto suspendido, que aquí ya está
+// resuelta (`resume()` cuando el navegador lo ha dormido).
+if (typeof window !== 'undefined') window.cronosCampana = _campana;
 
 // ══════════════════════════════════════════════════════════════════
 //  LA INSIGNIA DEL ICONO

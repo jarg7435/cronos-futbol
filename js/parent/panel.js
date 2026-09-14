@@ -118,6 +118,28 @@ async function openParentPanel(initialTab) {
             text-align:center;
         }
         @keyframes ppPulse{0%,100%{opacity:1}50%{opacity:0.35}}
+        /* 🔔 v709 · Avisos de suceso DENTRO de su tarjeta de partido. Con
+           varios encuentros a la vez, cada uno tiene que ver los suyos «a la
+           altura exacta de su panel»: por eso están aquí y no en una pila
+           global de la esquina. */
+        #parent-panel .pp-live-avisos:not(:empty) {
+            margin-top:0.7rem;
+            display:flex;
+            flex-direction:column;
+            gap:0.3rem;
+        }
+        #parent-panel .pp-live-aviso {
+            background:rgba(255,88,88,0.14);
+            border:1px solid rgba(255,88,88,0.45);
+            border-left:4px solid #ff5858;
+            border-radius:8px;
+            padding:0.4rem 0.6rem;
+            font-size:0.8rem;
+            font-weight:700;
+            color:#fff;
+            animation:ppAvisoEntra 0.25s ease-out;
+        }
+        @keyframes ppAvisoEntra{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:none}}
     </style>
 
     <!-- TOPBAR -->
@@ -187,6 +209,13 @@ async function openParentPanel(initialTab) {
     };
 
     window.ppTab = (tab, btn) => {
+        // 🔴 v708 · EL OYENTE DEL DIRECTO SE CIERRA AL CAMBIAR DE PESTAÑA.
+        // Es el camino normal de salida; los demás los cubre la comprobación
+        // de presencia que hace cada snapshot (ver la nota larga en `ppLive`).
+        // Va ANTES del cerrojo de extras: si la pestaña se rechaza, el oyente
+        // de la anterior tiene que quedar cerrado igual.
+        if (typeof window._ppLiveCierra === 'function') window._ppLiveCierra();
+
         // v429 · Cerrojo del router. El botón deshabilitado ya impide el click,
         // pero aquí se llega TAMBIÉN desde la pila de navegación —que repinta
         // con la pestaña guardada como argumento de la raíz— y desde cualquier
@@ -303,39 +332,317 @@ async function openParentPanel(initialTab) {
     // ══════════════════════════════════════════════════════════════
     // TAB 1 · EN VIVO
     // ══════════════════════════════════════════════════════════════
+    //  🔴 v706 · LOS TRES ÚLTIMOS SUCESOS, TAMBIÉN AQUÍ
+    // ══════════════════════════════════════════════════════════════
+    //  Encargo del autor (capturas 10347/10348): «el panel de seguimiento en
+    //  vivo para familiares no está mostrando los tres últimos sucesos /
+    //  eventos cronológicos recientes del partido. Debe pintar la información
+    //  detallada exactamente igual que en el sistema de clubes».
+    //
+    //  La tarjeta de esta pestaña llevaba SÓLO marcador y cronómetro: para
+    //  saber qué había pasado en el campo había que salir a `live.html`. El
+    //  bloque ÚLTIMOS SUCESOS que pinta el listado del visor desde v432 se
+    //  pinta ahora también aquí, con el MISMO HTML, las MISMAS clases y los
+    //  MISMOS estilos.
+    //
+    //  🔑 «EXACTAMENTE IGUAL» SE CONSIGUE CON UNA SOLA FUNCIÓN, NO COPIANDO
+    //  LA SUYA: `window.cronosLiveFeed` (js/shared/live-feed.js) es la que usa
+    //  live.html. Una copia empezaría idéntica y divergiría al primer cambio
+    //  de tipos de suceso — lo que ya pasó con `_userCanFollow` (v433) y con
+    //  la forma del suceso del índice (v578).
+    //
+    //  🔑 Y NO CUESTA NI UNA LECTURA MÁS: esta pestaña ya se descarga los
+    //  documentos de `live_matches`, que traen `events`. El módulo acepta las
+    //  dos formas (`events` del documento gordo y `lastEvents` del índice).
+    //
+    //  ⚠️ Los comentarios del cuerpo técnico NO entran en el feed (v690), así
+    //  que una nota del entrenador no puede asomar en el panel de la familia.
+    // ══════════════════════════════════════════════════════════════
+    // ══════════════════════════════════════════════════════════════
+    //  🔴🔴 v708 · EL PANEL EN VIVO ESCUCHA DE VERDAD
+    // ══════════════════════════════════════════════════════════════
+    //  Encargo del autor (capturas 10362-10371): «los eventos sucesivos
+    //  (sustituciones, tarjetas o nuevos goles tras el primero) no se
+    //  actualizan de forma fluida en el bloque de ÚLTIMOS SUCESOS del panel
+    //  general hasta que el usuario entra explícitamente en la vista detallada
+    //  del partido».
+    //
+    //  🔑🔑 LA CAUSA: esta pestaña leía con `getDocs`, que es UNA FOTO. No
+    //  había oyente ninguno. Todo lo que se ve aquí —marcador, cronómetro y el
+    //  mini-feed que estrenó v706— se quedaba congelado en el instante en que
+    //  se abrió la pestaña, y la única forma de refrescarlo era salir y volver
+    //  a entrar… o abrir el visor, que SÍ tiene `onSnapshot` desde v433. De ahí
+    //  la sensación de que «hay que entrar en el partido para que se actualice»:
+    //  no era el visor el que arreglaba nada, era el repintado al volver.
+    //
+    //  🔑 Y SE ESCUCHA AL ÍNDICE LIGERO, NO AL DOCUMENTO GORDO. Un partido
+    //  activo pesa 17-23 KB y Firestore NO manda deltas: con `live_matches`,
+    //  cada familia se bajaría el partido ENTERO cada 5 segundos — el cuello de
+    //  botella que midió v576. `live_index` trae ~1 KB con marcador, reloj,
+    //  fase y los 3 últimos sucesos, que es EXACTAMENTE lo que pinta esta
+    //  tarjeta, y es la misma colección que escucha la lista del visor.
+    //
+    //  ⚠️ CON DOS REDES, porque aquí no hay otra ventana al partido:
+    //    · si la CONSULTA al índice falla (falta un índice compuesto, reglas),
+    //      se cae al documento gordo, igual que hace live.html;
+    //    · si el índice viene VACÍO, se comprueba UNA vez con `live_matches`
+    //      por si el partido empezó antes de que su índice existiera. Vacío no
+    //      es un error, así que el respaldo por error no lo cubriría.
+    //
+    //  ⚠️ LA BAJA DEL OYENTE NO SE ENGANCHA A CADA SALIDA, SE COMPRUEBA. Del
+    //  panel se sale por cinco sitios (otra pestaña, «Volver al Menú», Salir,
+    //  el selector de roles, la pila de navegación) y enganchar cinco es la
+    //  receta para olvidar el sexto (lección de v692). Cada snapshot mira si su
+    //  contenedor sigue en pantalla y, si no, se da de baja él mismo. Además
+    //  `ppTab` cierra el oyente al cambiar de pestaña, que es el camino normal.
+    //
+    //  ⚠️ SIEMBRA SILENCIOSA POR PARTIDO (lección de v676): la primera vez que
+    //  se ve un partido, sus sucesos se dan por VISTOS sin anunciarlos. Sin
+    //  esto, abrir la pestaña en el minuto 80 cantaría el partido entero de
+    //  golpe.
+    // ══════════════════════════════════════════════════════════════
+    window._ppLiveVistos = window._ppLiveVistos || null;
+    window._ppLiveUnsub  = window._ppLiveUnsub  || null;
+
+    window._ppLiveCierra = function () {
+        try {
+            if (typeof window._ppLiveUnsub === 'function') window._ppLiveUnsub();
+        } catch (e) { /* una baja que falla no puede impedir navegar */ }
+        window._ppLiveUnsub  = null;
+        window._ppLiveVistos = null;
+        // v709 · Los avisos por tarjeta y su reloj de caducidad se van con el
+        // oyente: si no, un temporizador seguiría corriendo contra un DOM que
+        // ya no existe y los avisos de la visita anterior reaparecerían al
+        // volver a entrar.
+        window._ppAvisos = null;
+        if (window._ppAvisosTimer) {
+            clearInterval(window._ppAvisosTimer);
+            window._ppAvisosTimer = null;
+        }
+    };
+
+    // 🔔 El sonido se puede silenciar, y la decisión se recuerda. Un aviso que
+    // no se puede callar acaba con el usuario cerrando la pestaña entera.
+    const _PP_LIVE_MUDO = 'cronos_pp_live_mudo';
+    const _ppLiveMudo = () => {
+        try { return localStorage.getItem(_PP_LIVE_MUDO) === '1'; } catch (e) { return false; }
+    };
+    window.ppLiveToggleSonido = function () {
+        let mudo = _ppLiveMudo();
+        try { localStorage.setItem(_PP_LIVE_MUDO, mudo ? '0' : '1'); } catch (e) {}
+        mudo = !mudo;
+        const b = document.getElementById('pp-live-sound');
+        if (b) {
+            b.textContent = mudo ? '🔇 Silenciado' : '🔔 Avisos';
+            b.style.color = mudo ? '#7d8590' : '#3fb950';
+            b.style.borderColor = mudo ? 'rgba(255,255,255,0.15)' : 'rgba(63,185,80,0.45)';
+        }
+        // Primer toque CON gesto del usuario: es el momento en que el navegador
+        // permite desbloquear el audio (después los sucesos llegan por
+        // Firestore, sin gesto, y ya no habría ocasión). Al activarlo suena una
+        // vez para que se note que funciona, igual que hace live.html.
+        // v709 · Y suena una de las melodías del partido, no un pitido general:
+        // el encargo pide que el sonido característico sea el único que se oiga.
+        if (!mudo && window.cronosLiveSound) {
+            try {
+                window.cronosLiveSound.desbloquea();
+                window.cronosLiveSound.reproduce('sub');
+            } catch (e) { /* sin audio: los avisos se siguen viendo */ }
+        }
+    };
+
     window.ppLive = async () => {
         const body = document.getElementById('pp-body');
+        // Nunca dos oyentes sobre la misma pestaña.
+        if (typeof window._ppLiveCierra === 'function') window._ppLiveCierra();
         try {
-            const { collection, getDocs, query, where } = await import(
+            const { collection, onSnapshot, getDocs, query, where } = await import(
                 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
 
-            const q = clubId
-                ? query(collection(fa.db,'live_matches'),
+            // Los estilos del feed viven en el módulo compartido: index.html no
+            // declara `.live-feed` (live.html sí, embebido desde v432), así que
+            // se inyectan la primera vez que se pinta la tarjeta.
+            if (window.cronosLiveFeed &&
+                typeof window.cronosLiveFeed.inyectaCss === 'function') {
+                window.cronosLiveFeed.inyectaCss();
+            }
+
+            const _consulta = (coleccion) => clubId
+                ? query(collection(fa.db, coleccion),
                         where('clubId','==',clubId),
                         where('status','==','active'))
-                : query(collection(fa.db,'live_matches'),
+                : query(collection(fa.db, coleccion),
                         where('status','==','active'));
 
-            const snap = await getDocs(q);
-            const matches = [];
-            snap.forEach(d => matches.push({ _id: d.id, ...d.data() }));
+            const _mudoTxt = _ppLiveMudo() ? '🔇 Silenciado' : '🔔 Avisos';
+            const _mudoCol = _ppLiveMudo() ? '#7d8590' : '#3fb950';
+            const _mudoBrd = _ppLiveMudo() ? 'rgba(255,255,255,0.15)' : 'rgba(63,185,80,0.45)';
+            body.innerHTML =
+                '<div id="pp-live-wrap">' +
+                  '<div style="display:flex;align-items:center;justify-content:space-between;' +
+                              'gap:0.6rem;margin-bottom:0.7rem;flex-wrap:wrap;">' +
+                    '<span style="font-size:0.72rem;color:#7d8590;">' +
+                      '🔴 Se actualiza automáticamente' +
+                    '</span>' +
+                    '<button id="pp-live-sound" onclick="ppLiveToggleSonido()" ' +
+                      'style="background:transparent;border:1px solid ' + _mudoBrd + ';' +
+                             'color:' + _mudoCol + ';padding:0.3rem 0.7rem;border-radius:6px;' +
+                             'cursor:pointer;font-size:0.72rem;font-weight:700;">' +
+                      _mudoTxt +
+                    '</button>' +
+                  '</div>' +
+                  '<div id="pp-live-cards">' +
+                    '<p style="color:#7d8590;text-align:center;padding:2rem;">⏳ Cargando…</p>' +
+                  '</div>' +
+                '</div>';
 
-            if (!matches.length) {
-                body.innerHTML = `<div class="pp-empty">
+            const _vivo = () => !!document.getElementById('pp-live-cards');
+            window._ppLiveVistos = new Map();
+
+            const _vacio = `<div class="pp-empty">
                     🔴 No hay ningún partido en vivo ahora mismo.<br>
                     <span style="font-size:0.8rem;color:#555;">
                         Cuando empiece el partido aparecerá aquí automáticamente.
                     </span>
                 </div>`;
-                return;
-            }
 
-            body.innerHTML = matches.map(m => {
+            // ── Los sucesos NUEVOS: aviso en pantalla y campana ──────────
+            const _claveSuceso = (ev) => {
+                if (!ev) return '';
+                if (ev.eventId) return String(ev.eventId);
+                const ts = ev.createdAt || ev.timestamp || '';
+                const tx = ev.text || '';
+                return (ts || tx) ? ('legacy|' + ts + '|' + tx) : '';
+            };
+            const _textoAviso = (m, ev) => {
+                const F = window.cronosLiveFeed;
+                if (!F) return String((ev && ev.text) || '');
+                const ico  = (F.ICONOS && F.ICONOS[ev.type]) || '•';
+                const min  = F.minuto(ev);
+                const lado = F.lado(m, ev);
+                const eq   = lado ? (' · ' + F.nombreEquipo(m, lado, ev)) : '';
+                return ico + ' ' + (min ? min + ' ' : '') + F.texto(ev) + eq;
+            };
+            // ══════════════════════════════════════════════════════════
+            //  🔔 v709 · CADA TARJETA, SU AVISO Y SU SONIDO
+            // ══════════════════════════════════════════════════════════
+            //  Encargo del autor (implementar.txt 2026-09-14): «cada tarjeta de
+            //  partido debe mostrar de forma independiente sus tres últimos
+            //  sucesos y su aviso visual específico A LA ALTURA EXACTA DE SU
+            //  PANEL, con su respectiva alerta sonora individualizada» — y que
+            //  «prevalezca siempre el sonido característico del evento».
+            //
+            //  🔑 EL AVISO SE GUARDA EN ESTADO, NO SE INYECTA EN EL DOM. Esta
+            //  lista se repinta ENTERA en cada latido (cada ~5 s): un aviso
+            //  metido a mano en la tarjeta se destruiría antes de poder leerse.
+            //  Es la trampa nº1 de este diseño, la misma que documenta el guard
+            //  de los avisos por tarjeta del visor (v466). Aquí los avisos
+            //  VIVEN en `_ppAvisos` (matchId → lista con caducidad) y `pinta`
+            //  los vuelve a dibujar dentro de SU tarjeta en cada repintado: el
+            //  repintado no puede perderlos porque no son suyos.
+            //
+            //  🔊 Y SUENA UNO POR TANDA, EL QUE MÁS PESA (`masImportante`, en
+            //  js/shared/live-sound.js). Tres melodías a la vez se solapan y no
+            //  se reconoce ninguna: eso es exactamente la «interferencia» que
+            //  el encargo pide quitar. Se cambió la CAMPANA GENERAL de los
+            //  avisos push —lo que sonaba en v708— por el sonido del suceso.
+            // ══════════════════════════════════════════════════════════
+            const _AVISO_MS   = 7000;   // cuánto se queda cada aviso en su tarjeta
+            const _AVISOS_MAX = 3;      // y cuántos caben a la vez
+
+            const _ppAvisosDe = (id) => {
+                const lista = (window._ppAvisos && window._ppAvisos.get(id)) || [];
+                const ahora = Date.now();
+                return lista.filter(a => a && a.hasta > ahora);
+            };
+
+            // Pinta (o limpia) la pila de avisos DENTRO de su tarjeta.
+            const _ppPintaAvisos = (id) => {
+                const hueco = document.getElementById('pp-av-' + id);
+                if (!hueco) return;
+                const vivos = _ppAvisosDe(id);
+                if (!vivos.length) { hueco.innerHTML = ''; return; }
+                hueco.innerHTML = vivos.map(a =>
+                    '<div class="pp-live-aviso">' +
+                        (typeof escapeHtml === 'function' ? escapeHtml(a.txt) : a.txt) +
+                    '</div>').join('');
+            };
+            const _ppPintaTodosLosAvisos = () => {
+                if (!window._ppAvisos) return;
+                Array.from(window._ppAvisos.keys()).forEach(_ppPintaAvisos);
+            };
+
+            const anuncia = (matches) => {
+                const F = window.cronosLiveFeed;
+                if (!F || typeof F.items !== 'function' || !window._ppLiveVistos) return;
+                if (!window._ppAvisos) window._ppAvisos = new Map();
+                const tipos = [];
+                let algunNuevo = false;
+                matches.forEach(m => {
+                    let vistos = window._ppLiveVistos.get(m._id);
+                    const primeraVez = !vistos;
+                    if (primeraVez) { vistos = new Set(); window._ppLiveVistos.set(m._id, vistos); }
+                    const nuevos = [];
+                    // `items` ya descarta la telemetría táctica y los
+                    // comentarios del cuerpo técnico, y ordena por lo más
+                    // reciente: se recorre al revés para anunciar en el orden
+                    // en que pasaron.
+                    F.items(m, 12).slice().reverse().forEach(ev => {
+                        const k = _claveSuceso(ev);
+                        if (!k || vistos.has(k)) return;
+                        vistos.add(k);
+                        nuevos.push(ev);
+                    });
+                    if (primeraVez) return;          // siembra silenciosa
+                    if (!nuevos.length) return;
+                    algunNuevo = true;
+                    // ⚠️ La pila es POR PARTIDO y con tope: al recuperar la
+                    // cobertura pueden entrar varios sucesos de golpe y una
+                    // tarjeta con diez avisos no se lee (cascada de v676).
+                    const pila = _ppAvisosDe(m._id);
+                    nuevos.forEach(ev => {
+                        tipos.push(ev.type);
+                        pila.push({ txt: _textoAviso(m, ev), hasta: Date.now() + _AVISO_MS });
+                    });
+                    window._ppAvisos.set(m._id, pila.slice(-_AVISOS_MAX));
+                    _ppPintaAvisos(m._id);
+                });
+                if (!algunNuevo) return;
+                // 🔊 UN sonido por tanda, el del suceso que más pesa.
+                if (!_ppLiveMudo() && window.cronosLiveSound &&
+                    typeof window.cronosLiveSound.reproduce === 'function') {
+                    const tipo = window.cronosLiveSound.masImportante(tipos);
+                    if (tipo) { try { window.cronosLiveSound.reproduce(tipo); } catch (e) {} }
+                }
+            };
+
+            // Los avisos caducan solos, aunque no llegue ningún latido nuevo.
+            if (window._ppAvisosTimer) clearInterval(window._ppAvisosTimer);
+            window._ppAvisosTimer = setInterval(() => {
+                if (!document.getElementById('pp-live-cards')) {
+                    clearInterval(window._ppAvisosTimer);
+                    window._ppAvisosTimer = null;
+                    return;
+                }
+                _ppPintaTodosLosAvisos();
+            }, 1000);
+
+            const pinta = (matches) => {
+            const cont = document.getElementById('pp-live-cards');
+            if (!cont) return;
+            if (!matches.length) { cont.innerHTML = _vacio; return; }
+            cont.innerHTML = matches.map(m => {
                 const liveUrl = location.origin +
                     location.pathname.replace('index.html','') +
                     'live.html?match=' + m._id;
                 const elapsed = (typeof formatTime === 'function')
                     ? formatTime((m.timeH1||0) + (m.timeH2||0)) : '';
+                // ⚠️ SI EL MÓDULO NO ESTUVIERA (caché vieja tras el despliegue),
+                // la tarjeta se pinta como antes en vez de romperse: el feed es
+                // información añadida, no la tarjeta.
+                const feedHtml = (window.cronosLiveFeed &&
+                                  typeof window.cronosLiveFeed.html === 'function')
+                    ? window.cronosLiveFeed.html(m) : '';
 
                 return `
                 <div class="pp-card" style="border-color:rgba(255,88,88,0.4);
@@ -371,8 +678,71 @@ async function openParentPanel(initialTab) {
                             👁️ Ver partido
                         </a>
                     </div>
+                    <!-- 🔔 v709 · EL HUECO DE LOS AVISOS DE ESTE PARTIDO. Va
+                         DENTRO de su tarjeta —«a la altura exacta de su
+                         panel»— y lo rellena _ppPintaAvisos desde el ESTADO,
+                         no el repintado: así el latido de 5 s no puede
+                         borrarlo (ver la nota de anuncia).
+                         ⚠️ SIN BACKTICKS: este comentario va DENTRO del
+                         template literal de la tarjeta y uno solo lo cerraría,
+                         rompiendo el fichero entero (la misma advertencia que
+                         la cabecera de este panel lleva desde v590). -->
+                    <div id="pp-av-${typeof escapeAttr==='function'?escapeAttr(m._id):m._id}"
+                         class="pp-live-avisos"></div>
+                    ${feedHtml ? `<div style="margin-top:0.9rem;">${feedHtml}</div>` : ''}
                 </div>`;
             }).join('');
+            // 🔑 Tras CADA repintado se vuelven a dibujar los avisos vivos: son
+            // estado, no DOM, así que sobreviven al latido que acaba de borrar
+            // las tarjetas enteras.
+            _ppPintaTodosLosAvisos();
+            };   // ── fin de pinta() ──
+
+            // ── El oyente ────────────────────────────────────────────────
+            let respaldoVacioPedido = false;
+            const alRecibir = (snap) => {
+                // 🔑 La baja se comprueba, no se engancha: si el contenedor ya
+                // no está en pantalla, esta pestaña se cerró por CUALQUIER
+                // camino y el oyente se retira solo.
+                if (!_vivo()) { window._ppLiveCierra(); return; }
+                const matches = [];
+                snap.forEach(d => matches.push({ _id: d.id, ...d.data() }));
+                pinta(matches);
+                anuncia(matches);
+
+                // Red de seguridad para un partido SIN índice ligero (empezó
+                // antes de que existiera). Vacío no es un error, así que el
+                // respaldo por error de abajo no lo vería. Se pregunta UNA vez.
+                if (!matches.length && !respaldoVacioPedido) {
+                    respaldoVacioPedido = true;
+                    getDocs(_consulta('live_matches')).then(s2 => {
+                        if (!_vivo() || !s2.size) return;
+                        const m2 = [];
+                        s2.forEach(d => m2.push({ _id: d.id, ...d.data() }));
+                        console.warn('[v708] Partido sin índice ligero: se pinta desde live_matches.');
+                        pinta(m2);
+                        anuncia(m2);
+                    }).catch(() => {});
+                }
+            };
+
+            let unsubIdx = null;
+            const alFallar = (err) => {
+                console.warn('[v708] La consulta al índice no está disponible, ' +
+                             'se usa el documento del partido:', err && err.message);
+                try { if (unsubIdx) unsubIdx(); } catch (e) {}
+                if (!_vivo()) return;
+                window._ppLiveUnsub = onSnapshot(_consulta('live_matches'), alRecibir, (e2) => {
+                    const cont = document.getElementById('pp-live-cards');
+                    if (cont) {
+                        cont.innerHTML = '<div class="pp-empty">⚠️ ' +
+                            (typeof escapeHtml === 'function' ? escapeHtml(e2.message) : e2.message) +
+                            '</div>';
+                    }
+                });
+            };
+            unsubIdx = onSnapshot(_consulta('live_index'), alRecibir, alFallar);
+            window._ppLiveUnsub = () => { try { if (unsubIdx) unsubIdx(); } catch (e) {} };
 
         } catch(e) {
             body.innerHTML = `<div class="pp-empty">⚠️ ${typeof escapeHtml==='function'?escapeHtml(e.message):e.message}</div>`;
@@ -1227,19 +1597,27 @@ async function openParentPanel(initialTab) {
             //  más (misma política que el resto de este panel, v619).
             //  ⚠️ Se acepta también `matchPR` por si el informe viniera de una
             //  copia técnica: ahí se busca su dorsal, no el total del equipo.
+            //  🔵🔴 v710 · `hay` DICE SI ESE PARTIDO TRAE EL DATO, y no es lo
+            //  mismo que traerlo a cero: un partido anterior al registro de
+            //  P/R no lleva los campos, y uno donde el jugador no perdió ni
+            //  recuperó ningún balón sí. Con esa distinción, el desglose de
+            //  cada partido puede enseñar «0» cuando el dato existe y callarse
+            //  cuando no — en vez de pintar ceros en todo el histórico.
             const _prDeInforme = (r) => {
                 if (r && r.prPropio) return {
                     p: Number(r.prPropio.perdidas) || 0,
-                    r: Number(r.prPropio.recuperaciones) || 0
+                    r: Number(r.prPropio.recuperaciones) || 0,
+                    hay: true
                 };
                 if (r && r.matchPR && r.playerNumber != null) {
                     const d = String(r.playerNumber).trim();
                     return {
                         p: Number(((r.matchPR.perdidas       || {}).porDorsal || {})[d]) || 0,
-                        r: Number(((r.matchPR.recuperaciones || {}).porDorsal || {})[d]) || 0
+                        r: Number(((r.matchPR.recuperaciones || {}).porDorsal || {})[d]) || 0,
+                        hay: true
                     };
                 }
-                return { p: 0, r: 0 };
+                return { p: 0, r: 0, hay: false };
             };
             const totalPerdidas = reports.reduce((s, r) => s + _prDeInforme(r).p, 0);
             const totalRecup    = reports.reduce((s, r) => s + _prDeInforme(r).r, 0);
@@ -1247,6 +1625,25 @@ async function openParentPanel(initialTab) {
             // las tarjetas desaparecen por completo.
             const _prVisible = (typeof window._cronosExtraEnabled === 'function')
                 ? window._cronosExtraEnabled('registro_pr') : false;
+
+            // ATENCION: COMENTARIO DENTRO DE LA MISMA FUNCION QUE LAS
+            // PLANTILLAS. SIN BACKTICKS.
+            // v715 · LO REGISTRADO A POSTERIORI, TAMBIEN AQUI Y TAMBIEN EN
+            // NARANJA. Encargo del autor (capturas 10411-10414): "tanto en los
+            // informes colectivos como en los INDIVIDUALES". El Area de
+            // Familias ignoraba la marca por completo: un gol apuntado dos
+            // horas despues se veia igual que uno cantado en el minuto 30.
+            // La regla es la de js/core/utils.js (cronosEsRetro) y acepta las
+            // tres formas en que viaja la marca; el respaldo local mantiene la
+            // pantalla viva si utils.js no estuviera cargado.
+            const _COLOR_RETRO_PP = (typeof window.CRONOS_COLOR_RETRO === 'string')
+                ? window.CRONOS_COLOR_RETRO : '#f5a623';
+            const _esRetroPP = (ev) => {
+                if (typeof window.cronosEsRetro === 'function') return window.cronosEsRetro(ev);
+                if (!ev) return false;
+                if (ev.retro === true || ev.isRetroactive === true) return true;
+                return /\(RETRO\)|\(RETROACTIVO\)/i.test(String(ev.note || '') + ' ' + String(ev.text || ''));
+            };
 
             // ── Función generadora de SVG de línea de tiempo ─────────────────
             const _buildTimeline = (r) => {
@@ -1316,13 +1713,16 @@ async function openParentPanel(initialTab) {
                         // adelantar `lastSec` ACORTABA la barra azul.
                         const abre = !inField && !esFase(ev);
                         if (abre) { inField = true; lastSec = t; }
-                        events.push({type:'sub_in', timeSec:t, note: ev.note||'', orphan: !abre});
+                        events.push({type:'sub_in', timeSec:t, note: ev.note||'', orphan: !abre,
+                                     retro: _esRetroPP(ev)});
                     } else if (ev.type === 'sub_out') {
                         const cierra = inField && !esFase(ev);
                         if (cierra) { periods.push({startSec:lastSec, endSec:t}); inField = false; }
-                        events.push({type:'sub_out', timeSec:t, note: ev.note||'', orphan: !cierra});
+                        events.push({type:'sub_out', timeSec:t, note: ev.note||'', orphan: !cierra,
+                                     retro: _esRetroPP(ev)});
                     } else if (['goal','yellow','red','injury'].includes(ev.type)) {
-                        events.push({type:ev.type, timeSec:t, note: ev.note||ev.timeStr||''});
+                        events.push({type:ev.type, timeSec:t, note: ev.note||ev.timeStr||'',
+                                     retro: _esRetroPP(ev)});
                     }
                 });
 
@@ -1476,9 +1876,16 @@ async function openParentPanel(initialTab) {
                     goal: 'GOL', yellow: 'TARJETA AMARILLA', red: 'TARJETA ROJA', injury: 'LESIÓN',
                 };
 
+                // v712 · Encuentro en orden de localia, igual que la tarjeta:
+                // el marcador de abajo es LOCAL - VISITANTE.
+                const _enfTxt = (typeof window.cronosEnfrentamiento === 'function')
+                    ? window.cronosEnfrentamiento(r, (link && link.teamName) || clubName || 'Mi equipo')
+                    : null;
+
                 const L = [];
                 L.push('INFORME INDIVIDUAL DE PARTIDO');
                 L.push('='.repeat(46));
+                if (_enfTxt) L.push(`Encuentro:    ${_enfTxt.titulo}`);
                 L.push(`Jugador:      ${r.playerAlias || r.playerName || '—'}`
                      + (r.playerNumber ? `  (dorsal ${r.playerNumber})` : ''));
                 L.push(`Rival:        ${r.rival || '—'}`);
@@ -1493,14 +1900,33 @@ async function openParentPanel(initialTab) {
                 L.push(`Goles:         ${r.goals || 0}`);
                 L.push(`Tarjetas:      ${r.cards && r.cards !== 'ninguna' ? r.cards : 'ninguna'}`);
                 L.push(`Lesión:        ${r.injured ? 'sí' : 'no'}`);
+                // ATENCION: COMENTARIO DENTRO DE UNA PLANTILLA. SIN BACKTICKS.
+                // v713 · PERDIDAS Y RECUPERACIONES EN EL FICHERO.
+                // Encargo del autor (implementar.txt 2026-09-14, captura
+                // 10401): la tarjeta de ese partido ya ensena "2
+                // recuperaciones / 1 perdidas" y el TXT descargado no las
+                // llevaba. Con LAS MISMAS DOS PUERTAS que la pantalla: el
+                // extra encendido y que ESE partido traiga el dato (v710) -un
+                // informe anterior al registro no puede escribir ceros-. Si
+                // divergiera, el fichero contradiria a la tarjeta que lo
+                // ofrece.
+                const _prTxt = _prDeInforme(r);
+                if (_prVisible && _prTxt.hay) {
+                    L.push(`Pérdidas:      ${_prTxt.p}`);
+                    L.push(`Recuperaciones: ${_prTxt.r}`);
+                }
 
                 if (evts && evts.length) {
                     L.push('');
                     L.push('CRONOLOGÍA');
                     L.push('-'.repeat(46));
                     [...evts].sort((a, b) => a.timeSec - b.timeSec).forEach(ev => {
+                        // v715 · En un TXT no hay color: la trazabilidad se
+                        // escribe con palabras o no existe.
                         L.push(`  ${String(_secToLabel(ev.timeSec)).padStart(5)}  `
-                             + `${etiqueta[ev.type] || ev.type}${ev.note ? ' · ' + ev.note : ''}`);
+                             + `${etiqueta[ev.type] || ev.type}`
+                             + (ev.retro === true ? '  [RETROACTIVO]' : '')
+                             + `${ev.note ? ' · ' + ev.note : ''}`);
                     });
                 }
 
@@ -1611,10 +2037,23 @@ async function openParentPanel(initialTab) {
                 const { svg: tlSvg, events: tlEvts, periods: tlPeriods, playedSec: tlSec } = _buildTimeline(r);
                 const tlLabel = tlSec > 0 ? _secToLabel(tlSec) : '0\'';
                 const sh = r.scoreHome, sa = r.scoreAway;
+                // ATENCION: COMENTARIO DENTRO DE UNA PLANTILLA. SIN BACKTICKS.
+                // v712 · EL ENFRENTAMIENTO EN ORDEN DE LOCALIA. Los nombres, el
+                // marcador y el veredicto salen de cronosEnfrentamiento
+                // (js/core/utils.js), la misma que ordena las tarjetas del
+                // entrenador y las del Director: aqui se leia "vs Rival 0-2
+                // VICTORIA", que con el marcador en orden LOCAL-VISITANTE no se
+                // podia atribuir a nadie. El nombre propio es el del EQUIPO del
+                // hijo (el vinculo), no el del club, porque el ente individual
+                // no tiene club.
+                const _enf = (typeof window.cronosEnfrentamiento === 'function')
+                    ? window.cronosEnfrentamiento(r, (link && link.teamName) || clubName || 'Mi equipo')
+                    : null;
                 // Resultado desde la perspectiva del equipo (myTeamRole). Sin el campo (informes antiguos) → 'home', comportamiento previo.
                 const _mine   = r.myTeamRole === 'away' ? Number(sa) : Number(sh);
                 const _theirs = r.myTeamRole === 'away' ? Number(sh) : Number(sa);
-                const resultNum = (sh != null && sa != null) ? (_mine > _theirs ? 'VICTORIA' : _mine < _theirs ? 'DERROTA' : 'EMPATE') : '';
+                const resultNum = _enf ? _enf.veredicto
+                                : ((sh != null && sa != null) ? (_mine > _theirs ? 'VICTORIA' : _mine < _theirs ? 'DERROTA' : 'EMPATE') : '');
                 const rCol = resultNum === 'VICTORIA' ? '#3fb950' : resultNum === 'DERROTA' ? '#ff5858' : '#eab308';
 
                 // v218: etiquetas en MAYÚSCULAS. Lesión cambia a rojo (#ef4444).
@@ -1630,12 +2069,19 @@ async function openParentPanel(initialTab) {
                 const allEvts = [...tlEvts].sort((a,b) => a.timeSec - b.timeSec);
                 const evRows = allEvts.length ? allEvts.map(ev => {
                     const info = evIcons[ev.type] || {icon:'•', col:'#7d8590', txt: ev.type};
+                    // v715 · SIN BACKTICKS EN ESTE COMENTARIO. En naranja lo
+                    // apuntado a posteriori, y con la palabra al lado: la
+                    // familia tambien tiene derecho a saber que ese gol se
+                    // registro mas tarde. Se conserva el icono del suceso.
+                    const _r = ev.retro === true;
                     return `<div style="display:flex;align-items:center;gap:8px;font-size:0.75rem;
                                 padding:5px 0;border-bottom:1px solid rgba(255,255,255,0.04);">
-                        <span style="min-width:38px;color:rgba(255,255,255,0.4);font-weight:700;
+                        <span style="min-width:38px;color:${_r ? _COLOR_RETRO_PP : 'rgba(255,255,255,0.4)'};font-weight:700;
                                      font-variant-numeric:tabular-nums;">${_secToLabel(ev.timeSec)}</span>
                         <span style="font-size:1rem;line-height:1;">${info.icon}</span>
-                        <span style="color:${info.col};font-weight:600;">${info.txt}</span>
+                        <span style="color:${_r ? _COLOR_RETRO_PP : info.col};font-weight:600;">${info.txt}</span>
+                        ${_r ? `<span style="font-size:0.56rem;font-weight:800;letter-spacing:0.5px;color:${_COLOR_RETRO_PP};
+                                     border:1px dashed ${_COLOR_RETRO_PP};border-radius:4px;padding:0 3px;">RETROACTIVO</span>` : ''}
                         ${ev.note ? `<span style="color:rgba(255,255,255,0.25);font-size:0.7rem;">${_esc(ev.note)}</span>` : ''}
                     </div>`;
                 }).join('') : '';
@@ -1655,7 +2101,12 @@ async function openParentPanel(initialTab) {
                     <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:0.5rem;margin-bottom:0.8rem;">
                         <div style="flex:1;min-width:0;">
                             <div style="font-weight:700;font-size:0.95rem;margin-bottom:0.2rem;display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
-                                vs <span style="color:#58a6ff;">${_esc(r.rival||'Rival')}</span>
+                                ${_enf
+                                    ? `<span style="color:${_enf.fuera?'#58a6ff':'#e6edf3'};">${_esc(_enf.local)}</span>
+                                       <span style="color:#7d8590;font-weight:600;">vs</span>
+                                       <span style="color:${_enf.fuera?'#e6edf3':'#58a6ff'};">${_esc(_enf.visitante)}</span>
+                                       <span style="font-size:0.6rem;color:#7d8590;" title="${_enf.fuera?'Jugado fuera de casa':'Jugado en casa'}">${_enf.fuera?'✈️':'🏠'}</span>`
+                                    : `vs <span style="color:#58a6ff;">${_esc(r.rival||'Rival')}</span>`}
                                 ${sh != null && sa != null ? `<span style="color:white;opacity:0.9;">${sh}-${sa}</span>` : ''}
                                 ${resultNum ? `<span style="font-size:0.65rem;font-weight:800;letter-spacing:0.5px;color:${rCol};">${resultNum}</span>` : ''}
                                 ${miniStats ? `<span style="font-size:0.75rem;margin-left:4px;">${miniStats}</span>` : ''}
@@ -1704,6 +2155,45 @@ async function openParentPanel(initialTab) {
                         <span><span style="display:inline-block;width:10px;height:6px;background:rgba(255,255,255,0.08);border-radius:2px;vertical-align:middle;"></span> Banquillo</span>
                         <span>▼ Entra  ▲ Sale</span>
                     </div>
+
+                    <!-- 🔵🔴 v710 · PÉRDIDAS Y RECUPERACIONES DE ESTE PARTIDO
+                         Encargo del autor (implementar.txt 2026-09-14): «en la
+                         vista del informe individual de cada jugador no
+                         aparecen reflejadas EN ABSOLUTO las pérdidas ni las
+                         recuperaciones; es necesario añadirlas de forma
+                         explícita en el desglose de cada informe de partido».
+                         El dato ya viajaba en el documento (prPropio, y el
+                         desglose por dorsal como respaldo): lo que faltaba era
+                         pintarlo. De aquí salen también las dos tarjetas del
+                         acumulado de arriba, con la MISMA función, para que no
+                         puedan decir cosas distintas.
+                         ⚠️ Sólo si el partido TRAE el dato (ver la bandera
+                         «hay»): el histórico anterior al registro no lleva los
+                         campos y llenarlo de ceros sería inventar.
+                         ⚠️ SIN BACKTICKS en este comentario: va DENTRO del
+                         template literal de la tarjeta y uno solo lo cerraría
+                         (la advertencia de la cabecera del panel, pagada dos
+                         veces: v590 y v709). -->
+                    ${(_prVisible && _prDeInforme(r).hay) ? (() => {
+                        const _pr = _prDeInforme(r);
+                        return `
+                    <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;
+                                background:rgba(255,255,255,0.03);border-radius:8px;
+                                padding:0.55rem 0.7rem;margin-top:0.4rem;">
+                        <span style="font-size:0.6rem;color:rgba(255,255,255,0.3);font-weight:700;
+                                     letter-spacing:0.8px;text-transform:uppercase;">
+                            Pérdidas y recuperaciones
+                        </span>
+                        <span style="font-size:0.82rem;font-weight:800;color:#3fb950;">
+                            &#9650; ${_pr.r}
+                            <span style="font-size:0.62rem;font-weight:600;color:#7d8590;">recuperaciones</span>
+                        </span>
+                        <span style="font-size:0.82rem;font-weight:800;color:#f85149;">
+                            &#9660; ${_pr.p}
+                            <span style="font-size:0.62rem;font-weight:600;color:#7d8590;">pérdidas</span>
+                        </span>
+                    </div>`;
+                    })() : ''}
 
                     <!-- Eventos cronológicos -->
                     ${allEvts.length ? `

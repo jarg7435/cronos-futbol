@@ -1807,6 +1807,27 @@
 })();
 </script>
 
+<!-- ══════════════════════════════════════════════════════════════════
+     🔴 v706 · EL MINI-FEED DE «ÚLTIMOS SUCESOS», COMPARTIDO
+     ══════════════════════════════════════════════════════════════════
+     La selección y el pintado de los 3 últimos sucesos salieron de este
+     fichero a js/shared/live-feed.js, porque el Área de Familias
+     (js/parent/panel.js, en index.html) pinta EXACTAMENTE el mismo bloque y
+     dos copias del criterio acabarían divergiendo (v433, v532, v578).
+
+     ⚠️ VA ANTES DEL MÓDULO DE FIREBASE, que es donde viven los envoltorios
+     (`_liveFeedHtml`…). Un script de tipo módulo está DIFERIDO: se ejecuta
+     cuando la página ya está parseada, o sea después de este script clásico,
+     así que `window.cronosLiveFeed` existe para cuando alguien lo llama. Aun
+     así los envoltorios lo resuelven en cada llamada y no al cargar, para que
+     un cambio de orden no los deje mirando a `undefined` para siempre.
+     ══════════════════════════════════════════════════════════════════ -->
+<script src="js/shared/live-feed.js?v=v715"></script>
+<!-- 🔊 v709 · Las melodías de cada suceso (gol, amarilla, roja, cambio,
+     lesión), compartidas con el panel en vivo del Área de Familias. Este visor
+     le presta su AudioContext, que es el que lleva el keep-alive de iOS. -->
+<script src="js/shared/live-sound.js?v=v715"></script>
+
 <!-- ══ FIREBASE ══════════════════════════════════════════════════ -->
 <script type="module">
 import { initializeApp }
@@ -1956,8 +1977,15 @@ window.doLiveAuth = async () => {
 //  conserva su función de siempre (salir del visor): si no, sería un botón
 //  que no hace nada justo en la pantalla donde más se mira.
 // ════════════════════════════════════════════════════════════════════
-const _LIVE_ROLES_MULTIPARTIDO = ['user', 'director', 'coordinator',
-                                  'club_admin', 'superadmin', 'admin'];
+// v706 · Y las plazas del ENTE INDIVIDUAL, que son su entrenador y su
+// administrador: el dueño de un ente puede llevar DOS equipos (medido en el
+// perfil del reporte: Regional A y Prebenjamín A), o sea dos partidos a la
+// vez, exactamente el caso para el que se hizo este botón. La familia sigue
+// fuera a propósito, igual que 'parent': entra al partido de su jugador.
+const _LIVE_ROLES_MULTIPARTIDO = ['user', 'coach', 'director', 'coordinator',
+                                  'club_admin', 'superadmin', 'admin',
+                                  'individual', 'admin_individual',
+                                  'entrenador_individual'];
 
 function _liveEnDetalleDePartido() {
     if (!currentMatchId) return false;
@@ -2171,9 +2199,16 @@ const _TIPOS_NO_VISIBLES = new Set(['tactical_move']);
 // ⚠️ Es una puerta de PANTALLA, como el resto de la separación entre cuerpo
 // técnico y familias en los informes: las reglas no distinguen el tipo de
 // suceso dentro de `events`.
+// ⚠️ v706 · LOS TRES NOMBRES DE LA PLAZA DE FAMILIA. Al abrir el visor al ente
+// individual, una familia de ente entra aquí con el rol 'parent_individual' (o
+// 'padre_individual', la clave histórica), que NO es 'parent': con la
+// comparación anterior habría empezado a leer las notas del cuerpo técnico
+// —justo lo contrario de «igual que en el sistema de clubes»—. Es la misma
+// trampa de v668: al renombrar un valor hay que buscar QUIÉN LO COMPARA.
+const _ROLES_DE_FAMILIA = ['parent', 'parent_individual', 'padre_individual'];
 function _veComentariosDePartido() {
     const rol = (typeof userData !== 'undefined' && userData && userData.role) || '';
-    return !!rol && rol !== 'parent';
+    return !!rol && _ROLES_DE_FAMILIA.indexOf(rol) === -1;
 }
 function _esEventoVisible(ev) {
     if (!ev || _TIPOS_NO_VISIBLES.has(ev.type)) return false;
@@ -2495,47 +2530,35 @@ function playEventSound(type) {
     }
 }
 
-// Programa las 3 repeticiones de la secuencia leyendo currentTime en el momento
-// (con el contexto ya 'running', para que los tiempos no esten congelados).
+// ══════════════════════════════════════════════════════════════════
+//  🔊 v709 · LAS MELODÍAS VIVEN EN js/shared/live-sound.js
+// ══════════════════════════════════════════════════════════════════
+//  Encargo del autor: que el sonido que prevalezca sea SIEMPRE el
+//  característico del suceso (gol, amarilla, lesión, cambio). El panel en vivo
+//  del Área de Familias —que estrenó oyente en v708— sonaba con la CAMPANA
+//  GENERAL de los avisos, o sea el «sonido general» del encargo: dos pantallas
+//  del mismo producto anunciando lo mismo con sonidos distintos.
+//
+//  Las cinco secuencias se mudaron al módulo compartido —NO se copiaron, la
+//  misma decisión que el mini-feed en v706— y aquí queda el envoltorio con su
+//  nombre de siempre.
+//
+//  ⚠️ SE LE PRESTA EL CONTEXTO DE ESTE VISOR. `_audioCtx` lleva su keep-alive
+//  (el bucle de silencio que evita que iOS lo suspenda) y su botón de
+//  desbloqueo; si el módulo creara otro, un iPhone acabaría con DOS contextos y
+//  el segundo mudo.
+// ══════════════════════════════════════════════════════════════════
 function _playSeq(ctx, type) {
-    const now = ctx.currentTime;
-    // [frecuencia(Hz), inicio(s), duracion(s)]
-    // Secuencia CORTA original (melodia reconocible de cada evento). En lugar de
-    // alargar cada nota (que sonaba a golpe + silencio por el decay exponencial),
-    // repetimos la secuencia completa 3 veces (mas abajo) manteniendo su melodia.
-    // Cada nota usa envolvente sostenida (sin huecos internos).
-    const SEQ = {
-        goal:   [[660,0,0.12],[880,0.12,0.12],[1175,0.24,0.22]],   // fanfarria ascendente
-        yellow: [[520,0,0.18]],                                     // pitido medio
-        red:    [[400,0,0.18],[300,0.20,0.30]],                    // doble grave
-        sub:    [[700,0,0.10],[900,0.12,0.12]],                    // dos notas suaves
-        injury: [[300,0,0.25],[260,0.27,0.35]]                     // tono descendente
-    };
-    const seq = SEQ[type] || SEQ.sub;
-    const REPS = 3;                                     // 3 repeticiones fijas
-    const GAP  = 0.06;                                  // pausa entre repeticiones
-    // Duracion de una pasada = fin de su ultima nota.
-    const seqDur = Math.max.apply(null, seq.map(function(n){ return n[1] + n[2]; }));
-    const step   = seqDur + GAP;
-    for (let r = 0; r < REPS; r++) {
-        const base = r * step;
-        seq.forEach(([freq, start, dur]) => {
-            const osc  = ctx.createOscillator();
-            const gain = ctx.createGain();
-            osc.type = (type === "goal") ? "triangle" : "sine";
-            osc.frequency.value = freq;
-            const t0  = now + base + start;
-            const atk = 0.012;                            // ataque
-            const rel = Math.min(0.05, dur * 0.35);       // release corto al final
-            const sus = t0 + Math.max(atk, dur - rel);
-            gain.gain.setValueAtTime(0.0001, t0);
-            gain.gain.exponentialRampToValueAtTime(0.22, t0 + atk);   // ataque
-            gain.gain.setValueAtTime(0.22, sus);                      // sostenido pleno
-            gain.gain.exponentialRampToValueAtTime(0.0001, t0 + dur); // release corto
-            osc.connect(gain); gain.connect(ctx.destination);
-            osc.start(t0); osc.stop(t0 + dur + 0.02);
-        });
+    const S = (typeof window !== 'undefined') && window.cronosLiveSound;
+    if (!S) {
+        // js/shared/live-sound.js no cargó: el aviso se ve igual, sin sonido.
+        if (!window._avisoSinSonido) {
+            window._avisoSinSonido = true;
+            console.warn('[v709] js/shared/live-sound.js no disponible: los avisos van sin sonido.');
+        }
+        return;
     }
+    S.reproduce(type, ctx);
 }
 
 // Vibración en móvil (si está disponible).
@@ -3009,7 +3032,16 @@ function _soyDestinatarioDe(m) {
     }
     // Staff técnico del club: director deportivo, coordinador y admin del club.
     // La regla los nombra EXPRESAMENTE como destinatarios de todos sus equipos.
-    if (rol === 'director' || rol === 'coordinator' || rol === 'club_admin') {
+    //
+    // v706 · Y EL DUEÑO DEL ENTE INDIVIDUAL, que en su entidad es las dos cosas
+    // a la vez (administrador y entrenador). Sin esta rama sólo le llegaban los
+    // avisos de los partidos que hubiera creado ÉL —por `createdBy`/
+    // `coachEmail`, más abajo—, así que el partido que lleve un entrenador
+    // suyo pasaba en silencio dentro de su propio ente. El `clubId` del ente es
+    // el mismo campo que el de un club (medido: individual_mt8l6zp8_whwd), así
+    // que el aislamiento entre entidades no cambia.
+    if (rol === 'director' || rol === 'coordinator' || rol === 'club_admin' ||
+        rol === 'individual' || rol === 'admin_individual') {
         return !!(userData.clubId && m.clubId === userData.clubId);
     }
     // Entrenador y padre: sólo lo suyo. Un entrenador del Regional no recibe
@@ -4638,9 +4670,67 @@ async function checkUserAccess(user) {
         userData = { uid: user.uid, ...snap.data() };
         if (!userData.isAuthorized) { errEl.textContent = 'Cuenta pendiente de autorización.'; await signOut(auth); return; }
         
-        // Roles con acceso: superadmin, admin, club_admin, director, coordinator, user, parent
-        const AUTHORIZED_ROLES = ['superadmin', 'admin', 'club_admin', 'director', 'coordinator', 'user', 'parent'];
-        if (!AUTHORIZED_ROLES.includes(userData.role)) {
+        // ══════════════════════════════════════════════════════════════
+        //  🔴🔴 v706 · «NO TIENES PERMISO PARA VER PARTIDOS EN VIVO»
+        //             EN TODO EL ENTE INDIVIDUAL
+        // ══════════════════════════════════════════════════════════════
+        //  Reporte del autor (captura 10344, producción v705): entra en el
+        //  visor con la cuenta de su ente individual y sale el mensaje rojo.
+        //  Lo sufren TODAS las plazas del ente —el administrador/entrenador y
+        //  la familia—, así que el panel en vivo del ente no existía.
+        //
+        //  🔑 LA CAUSA, MEDIDA CONTRA PRODUCCIÓN (users/{uid} del reporte):
+        //     RAÍZ role = 'individual'   ·  clubId = individual_mt8l6zp8_whwd
+        //  y esta lista blanca sólo nombraba los roles de CLUB. Ningún rol del
+        //  ente ('individual', 'admin_individual', 'entrenador_individual',
+        //  'parent_individual', 'padre_individual') estaba en ella, y como el
+        //  ente se creó DESPUÉS de esta pantalla, nadie la revisó. No era un
+        //  problema de reglas ni de datos: el `clubId` del ente ya casaba con
+        //  el de sus partidos, así que en cuanto se entra, la lista, las
+        //  alertas y el historial funcionan sin tocar nada más.
+        //
+        //  🔑🔑 Y SE JUZGA POR PLAZA, NO SÓLO POR EL ROL RAÍZ. «La unidad es la
+        //  PLAZA, no el rol» (v540/v547): la raíz de un perfil multi-plaza es
+        //  sólo una de sus plazas —la que quedó escrita la última— y hay
+        //  perfiles cuya raíz se quedó en un rol antiguo mientras la plaza viva
+        //  está en `allRoles`. Con la lista blanca sobre la raíz a secas, a esa
+        //  gente el visor le decía que no tiene permiso teniendo una plaza
+        //  perfectamente válida.
+        //
+        //  ⚠️ ESTO NO AFLOJA NADA: lo que se puede VER sigue decidiéndolo el
+        //  `clubId`/`createdBy`/`coachEmail` de cada partido —en el cliente
+        //  (`_userCanFollow`, `_followableQueries`) y, sobre todo, en las
+        //  reglas de `live_matches`/`live_index`, que son por documento—. Esta
+        //  puerta sólo dice «esta cuenta usa el visor», no «qué ve».
+        // ══════════════════════════════════════════════════════════════
+        const AUTHORIZED_ROLES = [
+            // Club
+            'superadmin', 'admin', 'club_admin', 'director', 'coordinator',
+            'user', 'coach', 'parent',
+            // Ente individual (v706). Los cinco nombres son los que usan
+            // ROLE_META (js/shared/admin-shared.js) y el alta del ente; los
+            // dos últimos son la MISMA plaza de familia con claves históricas
+            // distintas (ver _EXTRA_DE_ROL en js/core/setup-modal.js).
+            'individual', 'admin_individual', 'entrenador_individual',
+            'parent_individual', 'padre_individual'
+        ];
+        // Plazas VIVAS de la cuenta + su rol raíz. Las entradas de legado no
+        // traen `status`/`isAuthorized`: se aceptan, como hace el arranque de
+        // la app (js/services/auth/role-launch.js), para no quitarle el acceso
+        // a un perfil antiguo sin decirle por qué.
+        const _rolesDeLaCuenta = (u) => {
+            const out = u && u.role ? [String(u.role)] : [];
+            const plazas = Array.isArray(u && u.allRoles) ? u.allRoles : [];
+            plazas.forEach(r => {
+                if (!r || !r.role) return;
+                if (r.isAuthorized === false) return;
+                if (r.status && r.status !== 'active') return;
+                out.push(String(r.role));
+            });
+            return out;
+        };
+        const _misRoles = _rolesDeLaCuenta(userData);
+        if (!_misRoles.some(r => AUTHORIZED_ROLES.includes(r))) {
             errEl.textContent = 'No tienes permiso para ver partidos en vivo. Contacta con el administrador.';
             await signOut(auth); return;
         }
@@ -5865,200 +5955,83 @@ function renderBench(data) {
 //  Para esos, el texto es la única fuente y se recorta por el separador ' · '.
 //  Si el recorte falla se muestra el texto entero: peor estética, nunca una
 //  línea vacía.
-const _LIVE_FEED_ICONOS = {
-    goal:    '⚽',
-    yellow:  '🟨',
-    red:     '🟥',
-    sub:     '🔄',
-    sub_in:  '🔄',
-    sub_out: '🔄',
-    injury:  '🚑'
-};
+// ══════════════════════════════════════════════════════════════════
+//  🔑🔑 v706 · EL CRITERIO VIVE EN js/shared/live-feed.js
+// ══════════════════════════════════════════════════════════════════
+//  Encargo del autor (capturas 10344-10348): el Área de Familias tiene que
+//  pintar estos MISMOS «últimos sucesos». Ese panel vive en index.html
+//  (js/parent/panel.js), o sea en OTRO documento, así que no puede llamar a
+//  una función privada de este módulo. La selección y el pintado se mudaron a
+//  js/shared/live-feed.js —NO se copiaron— y aquí quedan los MISMOS nombres
+//  como envoltorios: ni un llamador de este visor cambia.
+//
+//  ⚠️ POR QUÉ NO UNA COPIA: este proyecto ya sabe cómo acaba el mismo criterio
+//  escrito dos veces —`_userCanFollow` duplicado (v433), el badge de
+//  solicitudes en dos implementaciones (v532), la forma del suceso del índice
+//  unificada en v578—. Empiezan idénticas y divergen al primer cambio.
+//
+//  ⚠️ SI EL MÓDULO NO CARGARA (despliegue a medias, caché vieja): el feed es
+//  información AÑADIDA, no la tarjeta. Se avisa UNA vez por consola y la
+//  tarjeta se pinta sin la sección, en vez de tumbar el listado entero.
+// ══════════════════════════════════════════════════════════════════
+let _feedAvisado = false;
+function _feedMod() {
+    const f = (typeof window !== 'undefined') && window.cronosLiveFeed;
+    if (!f) {
+        if (!_feedAvisado) {
+            _feedAvisado = true;
+            console.warn('[v706] js/shared/live-feed.js no disponible: ' +
+                         'la tarjeta se pinta sin ÚLTIMOS SUCESOS.');
+        }
+        return null;
+    }
+    return f;
+}
 
-// "1T 10:00" / "2T 50:00" -> "10'" / "50'".
-// El minuto de matchTime ya viene ACUMULADO desde el principio del partido,
-// también en la 2ª parte: el prefijo 1T/2T es solo una etiqueta, no un origen
-// de coordenadas (documentado en replay-player.js, defecto B de v394). Así que
-// se muestra tal cual, sin sumarle la duración de la primera parte.
 function _liveFeedMinuto(ev) {
-    const m = typeof ev.matchTime === 'string' ? ev.matchTime.match(/(\d+):(\d+)/) : null;
-    if (m) return parseInt(m[1], 10) + "'";
-    return '';
+    const f = _feedMod();
+    return f ? f.minuto(ev) : '';
 }
 
-// Descripción corta y legible de un evento.
 function _liveFeedTexto(ev) {
-    const trasSeparador = (t) => {
-        const s = String(t || '');
-        const i = s.indexOf(' · ');
-        return i === -1 ? s : s.slice(i + 3).trim();
-    };
-    if (ev.type === 'sub' && ev.subOutName && ev.subInName) {
-        return 'Sale ' + ev.subOutName + ' · Entra ' + ev.subInName;
-    }
-    if (ev.type === 'sub_in')  return 'Entra ' + (ev.playerName || trasSeparador(ev.text));
-    if (ev.type === 'sub_out') return 'Sale '  + (ev.playerName || trasSeparador(ev.text));
-    if (ev.type === 'goal' || ev.type === 'yellow' || ev.type === 'red' || ev.type === 'injury') {
-        return trasSeparador(ev.text) || String(ev.text || '');
-    }
-    return String(ev.text || '');
+    const f = _feedMod();
+    return f ? f.texto(ev) : String((ev && ev.text) || '');
 }
 
-// ════════════════════════════════════════════════════════════════════
-//  v439 · DE QUÉ EQUIPO ES CADA SUCESO
-//
-//  Petición del autor: en la tarjeta del panel general los sucesos decían la
-//  acción y el jugador, pero no el equipo, así que en un club con los dos
-//  equipos sobre el mismo campo no se sabía quién había marcado.
-//
-//  🔑 EL ORDEN DE LAS FUENTES IMPORTA, y las dos últimas son un RESPALDO para
-//  los partidos que ya estén en juego cuando esto se despliegue (sus eventos
-//  ya están escritos y no se pueden reescribir: el documento se congela y
-//  `events` sólo admite arrayUnion):
-//    1 · `ev.team` — el contrato, escrito por _datosEquipoDe en
-//        js/match/events/player-actions.js. Es lo único fiable.
-//    2 · el prefijo del texto de las SUSTITUCIONES ("CHRONOS | ▲ SALE: …"),
-//        que sí llevaba el equipo desde v424.
-//    3 · el nombre del protagonista, buscado en la plantilla del partido.
-//  Si ninguna resuelve, NO se inventa: la fila se pinta sin etiqueta. Una
-//  etiqueta equivocada es peor que ninguna — el director tomaría por propio
-//  un gol del rival.
-// ════════════════════════════════════════════════════════════════════
+// v439 · DE QUÉ EQUIPO ES CADA SUCESO. Las tres fuentes, su orden y el motivo
+// por el que no se inventa ninguna etiqueta están documentados en
+// js/shared/live-feed.js, donde vive la lógica desde v706.
 function _liveFeedNombreEquipo(m, lado, ev) {
-    const t = lado === 'away' ? (m && m.awayTeam) : (m && m.homeTeam);
-    // El nombre del DOCUMENTO manda sobre el guardado en el evento: si el club
-    // renombra el equipo, la tarjeta debe decir el nombre de ahora. `teamName`
-    // sólo entra cuando el documento no lo trae.
-    return (t && t.name) || (ev && ev.teamName) ||
-           (lado === 'away' ? 'VISITANTE' : 'LOCAL');
+    const f = _feedMod();
+    return f ? f.nombreEquipo(m, lado, ev)
+             : (lado === 'away' ? 'VISITANTE' : 'LOCAL');
 }
 
-// Nombre del protagonista, para poder buscarlo en la plantilla.
-// Se limpia el paréntesis final: "Luis (doble amarilla)", "Pedro (Retroactivo)".
 function _liveFeedNombreJugador(ev) {
-    if (!ev) return '';
-    if (ev.playerName) return String(ev.playerName);
-    if (ev.subOutName) return String(ev.subOutName);
-    if (ev.subInName)  return String(ev.subInName);
-    const s = String(ev.text || '');
-    const i = s.indexOf(' · ');
-    if (i === -1) return '';
-    return s.slice(i + 3).replace(/\s*\([^)]*\)\s*$/, '').trim();
+    const f = _feedMod();
+    return f ? f.nombreJugador(ev) : '';
 }
 
 function _liveFeedLado(m, ev) {
-    // 1 · el contrato.
-    if (ev && (ev.team === 'home' || ev.team === 'away')) return ev.team;
-
-    const norm = (s) => String(s == null ? '' : s).trim().toLowerCase();
-
-    // 2 · el prefijo del texto de las sustituciones.
-    const texto = String((ev && ev.text) || '');
-    const corte = texto.indexOf('|');
-    if (corte > 0) {
-        const prefijo = norm(texto.slice(0, corte));
-        const home = norm(((m && m.homeTeam) || {}).name);
-        const away = norm(((m && m.awayTeam) || {}).name);
-        if (prefijo && prefijo === home && prefijo !== away) return 'home';
-        if (prefijo && prefijo === away && prefijo !== home) return 'away';
-    }
-
-    // 3 · el jugador, buscado en la plantilla del partido.
-    const nombre = norm(_liveFeedNombreJugador(ev));
-    if (nombre) {
-        const plantilla = Array.isArray(m && m.players) ? m.players : [];
-        let lado = null;
-        for (const p of plantilla) {
-            if (!p || norm(p.name) !== nombre) continue;
-            const suyo = p.team === 'away' ? 'away' : (p.team === 'home' ? 'home' : null);
-            if (!suyo) continue;
-            // Mismo nombre en los DOS equipos: ambiguo, y adivinar sería peor
-            // que callar.
-            if (lado && lado !== suyo) return null;
-            lado = suyo;
-        }
-        if (lado) return lado;
-    }
-    return null;
+    const f = _feedMod();
+    return f ? f.lado(m, ev) : null;
 }
 
 // Los N sucesos más recientes que merece la pena enseñar.
+// Los N sucesos más recientes que merece la pena enseñar. La selección —qué
+// tipos entran, de qué campo se leen (`events` del documento gordo o
+// `lastEvents` del índice ligero, v578) y en qué orden— está en
+// js/shared/live-feed.js.
 function _liveFeedItems(m, max) {
-    // ══════════════════════════════════════════════════════════════
-    //  🚨 v578 · "SIN SUCESOS TODAVÍA" CON EL PARTIDO EN LA 2ª PARTE
-    // ══════════════════════════════════════════════════════════════
-    //  Reporte del autor (captura 9246): en el panel general, la sección
-    //  ÚLTIMOS SUCESOS de cada tarjeta salía vacía aunque hubiera goles, pero
-    //  los avisos flotantes sonaban perfectamente.
-    //
-    //  🔑 ESA ASIMETRÍA ERA EL DIAGNÓSTICO. Los dos leen lo mismo, así que si
-    //  uno funciona el dato SÍ está llegando: lo que falla es quien lo lee.
-    //  P2 (v572) mudó la lista a `live_index`, que trae los sucesos en
-    //  `lastEvents`; `detectAndAlert` se adaptó para aceptar los dos nombres y
-    //  **este segundo consumidor se quedó atrás**, mirando un `events` que en
-    //  el índice no existe. Migrar una fuente de datos obliga a repasar TODOS
-    //  sus consumidores, no sólo el que uno tiene en la cabeza.
-    //
-    //  Se aceptan los dos: `events` del documento gordo (visor de detalle y
-    //  respaldo por escaneo) y `lastEvents` del índice (panel general).
-    const eventos = Array.isArray(m && m.events) ? m.events
-                  : (Array.isArray(m && m.lastEvents) ? m.lastEvents : []);
-    // `tactical_move` se descarta SIEMPRE: su `text` es un JSON con las
-    // coordenadas del arrastre, no una frase. Colarlo llenaría el feed de
-    // ruido ilegible y taparía los goles, que es justo lo que se quiere ver.
-    // 💬 v690 · Y `comment` tampoco: esta sección son los ÚLTIMOS SUCESOS de
-    // juego, sólo caben tres, y una nota del entrenador desplazaría un gol. Los
-    // comentarios están en el historial del partido.
-    const utiles = eventos.filter(e => e && e.type && e.type !== 'tactical_move' && e.type !== 'comment');
-    // Orden por createdAt DESCENDENTE: "lo último que ha pasado". No se usa el
-    // orden del array porque un evento retroactivo se añade AHORA con un minuto
-    // ANTIGUO, y por minuto quedaría enterrado justo cuando acaba de anotarse.
-    // Sin createdAt (eventos viejos) se conserva la posición original.
-    return utiles
-        .map((e, i) => ({ e, i }))
-        .sort((a, b) => ((b.e.createdAt || 0) - (a.e.createdAt || 0)) || (b.i - a.i))
-        .slice(0, max || 3)
-        .map(x => x.e);
+    const f = _feedMod();
+    return f ? f.items(m, max) : [];
 }
 
+// El bloque ÚLTIMOS SUCESOS de la tarjeta. Mismo HTML y mismas clases que
+// pinta el Área de Familias, porque lo pinta la MISMA función.
 function _liveFeedHtml(m) {
-    const items = _liveFeedItems(m, 3);
-    const fase = m.phase === 'break' || m.phase === 'halftime' ? 'DESCANSO'
-               : m.phase === 'finished' ? 'FINALIZADO'
-               : m.phase === '2nd_half' ? '2ª PARTE'
-               : '1ª PARTE';
-    const chip = '<span class="live-feed-fase">⏱️ ' + fase + '</span>';
-
-    if (!items.length) {
-        return '<div class="live-feed">' +
-               '<div class="live-feed-head"><span>ÚLTIMOS SUCESOS</span>' + chip + '</div>' +
-               '<div class="live-feed-vacio">Sin sucesos todavía</div>' +
-               '</div>';
-    }
-
-    const filas = items.map(ev => {
-        const icono = _LIVE_FEED_ICONOS[ev.type] || '•';
-        const min   = _liveFeedMinuto(ev);
-        // v439 · el equipo, delante del texto. Además del nombre lleva el color
-        // del marcador (local azul / visitante rojo), para que la distinción se
-        // vea también de un vistazo y no sólo leyendo.
-        const lado  = _liveFeedLado(m, ev);
-        const eq    = lado
-            ? '<span class="lf-eq lf-eq-' + lado + '">' +
-              escapeHtml(_liveFeedNombreEquipo(m, lado, ev)) + '</span>'
-            : '';
-        return '<div class="live-feed-fila">' +
-               '<span class="lf-min">' + escapeHtml(min) + '</span>' +
-               '<span class="lf-ico">' + icono + '</span>' +
-               eq +
-               '<span class="lf-txt">' + escapeHtml(_liveFeedTexto(ev)) + '</span>' +
-               '</div>';
-    }).join('');
-
-    return '<div class="live-feed">' +
-           '<div class="live-feed-head"><span>ÚLTIMOS SUCESOS</span>' + chip + '</div>' +
-           filas +
-           '</div>';
+    const f = _feedMod();
+    return f ? f.html(m) : '';
 }
 
 // ── v463 · Etiqueta de CATEGORÍA/SUBCATEGORÍA de la tarjeta en vivo ─────
@@ -6328,6 +6301,42 @@ window.showLiveNow = async function() {
             // Partidos sin clubId (datos legacy/test) solo los ve superadmin/admin
             // arriba; no se exponen al resto por privacidad.
         });
+
+        // ══════════════════════════════════════════════════════════════
+        //  🔔 v708 · UN PARTIDO QUE SE VE EN LA LISTA TIENE QUE SONAR YA
+        // ══════════════════════════════════════════════════════════════
+        //  Encargo del autor: que el panel «escuche y pinte los cambios de
+        //  manera totalmente automática y continua… visual Y SONORAMENTE».
+        //
+        //  🔑 AQUÍ HABÍA DOS RELOJES DISTINTOS y sólo uno era instantáneo:
+        //    · LO QUE SE PINTA sale de los `onSnapshot` de esta lista, que
+        //      llegan en el acto (v433);
+        //    · LO QUE SUENA sale de los VIGILANTES por partido (`_bgWatchers`),
+        //      y esos sólo se daban de alta en el sondeo de **30 segundos** de
+        //      `startBackgroundWatch`.
+        //  O sea que un partido recién aparecido podía estar hasta medio minuto
+        //  pintando sucesos EN SILENCIO. Y peor: cuando por fin se le ponía
+        //  vigilante, `detectAndAlert` SIEMBRA sin anunciar (v676), así que los
+        //  sucesos de esos 30 s no se anunciaban nunca.
+        //
+        //  Se pide el alta en cuanto la lista ve un partido sin vigilante. No
+        //  es un sondeo nuevo: sólo dispara cuando falta alguno, así que en
+        //  régimen normal no se ejecuta jamás.
+        //
+        //  ⚠️ CON FRENO. `refreshBackgroundWatchers` hace tres consultas, y
+        //  esta lista se repinta en CADA latido de CADA partido: sin el freno,
+        //  un club con diez partidos lo llamaría decenas de veces por minuto.
+        try {
+            const _faltaVigilante = liveMatches.some(m =>
+                m && m.id && typeof _bgWatchers !== 'undefined' && !_bgWatchers[m.id]);
+            const _ahora = Date.now();
+            if (_faltaVigilante &&
+                typeof refreshBackgroundWatchers === 'function' &&
+                (_ahora - (window._cronosUltimoAltaVigilantes || 0) > 3000)) {
+                window._cronosUltimoAltaVigilantes = _ahora;
+                refreshBackgroundWatchers();
+            }
+        } catch (e) { /* la lista se pinta igual: esto sólo adelanta el sonido */ }
 
         listEl.innerHTML = '';
 
@@ -7420,9 +7429,9 @@ setInterval(function() {
 }
 </style>
 <!-- v434 · Inmutabilidad: antes de retroactive-modal.js, que la consulta. -->
-<script src="js/match/immutability.js?v=v705"></script>
-<script src="js/match/replay/replay-player.js?v=v705"></script>
-<script src="js/match/events/retroactive-modal.js?v=v705"></script>
+<script src="js/match/immutability.js?v=v715"></script>
+<script src="js/match/replay/replay-player.js?v=v715"></script>
+<script src="js/match/events/retroactive-modal.js?v=v715"></script>
 
 <!-- ══════════════════════════════════════════════════════════════════
      🟩 v577 · FRANJA DE VERSIÓN TAMBIÉN EN EL VISOR
@@ -7435,7 +7444,7 @@ setInterval(function() {
      El sello lo escribe `scripts/cache-bust.js` a partir del CACHE_NAME de
      sw.js, nunca a mano: un número puesto a mano miente en cuanto alguien
      olvida cambiarlo (v527 lo encontró mintiendo 185 versiones seguidas). -->
-<div id="cronos-version-badge" data-version="v705" style="position:fixed;bottom:calc(4px + env(safe-area-inset-bottom, 0px));right:6px;z-index:2147483000;pointer-events:none;background:rgba(0,0,0,0.55);color:#2ea043;font-family:monospace;font-size:0.6rem;font-weight:700;letter-spacing:0.5px;padding:2px 6px;border-radius:4px;">CHRONOS v705</div>
+<div id="cronos-version-badge" data-version="v715" style="position:fixed;bottom:calc(4px + env(safe-area-inset-bottom, 0px));right:6px;z-index:2147483000;pointer-events:none;background:rgba(0,0,0,0.55);color:#2ea043;font-family:monospace;font-size:0.6rem;font-weight:700;letter-spacing:0.5px;padding:2px 6px;border-radius:4px;">CHRONOS v715</div>
 <script>
 /* 🧪 v577 · Y DE QUÉ ENTORNO ES ESA VERSIÓN.
    El problema real del autor no era no ver la versión: era no saber si la

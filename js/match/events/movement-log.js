@@ -46,10 +46,44 @@ function logEvent(player, eventType) {
 
 function resetMatch() {
     if (!confirm("¿Reiniciar partido? Se perderá el tiempo y las estadísticas, pero se mantendrán los jugadores.")) return;
-    
-    // Detener sincronización en vivo si está activa
-    if (typeof stopLiveSync === 'function') stopLiveSync();
-    
+
+    // ══════════════════════════════════════════════════════════════════
+    //  🔴🔴 v714 · REINICIAR APAGABA EL DIRECTO Y NO LO VOLVÍA A ENCENDER
+    // ══════════════════════════════════════════════════════════════════
+    //  `stopLiveSync()` pone `liveIsActive = false`, y a partir de ahí
+    //  `toggleGame()` no emite NADA —sus dos líneas de envío cuelgan de
+    //  `if (liveIsActive)`— ni arranca el vigía del reloj. O sea que el partido
+    //  reiniciado se jugaba entero SIN TRANSMITIR: sin documento nuevo, sin
+    //  visor, sin avisos a las familias, y con el documento viejo quedándose
+    //  con el último latido del partido anterior.
+    //
+    //  📏 Encaja con lo MEDIDO en producción (inspect_live_matches.js): tres
+    //  documentos para una mañana de pruebas y NINGUNO del partido de la
+    //  captura 10409.
+    //
+    //  🔑 UN PARTIDO REINICIADO ES UN PARTIDO NUEVO: cronómetros a cero,
+    //  historiales vacíos y cupo de cambios nuevo. Así que le toca un `id`
+    //  NUEVO —`liveMatchId = null` es lo que hace que `startLiveSync` lo trate
+    //  como nuevo— y no reclamar el del partido anterior, que ya tiene sus
+    //  sucesos escritos.
+    //
+    //  ⚠️ EL ORDEN IMPORTA: el cierre del anterior se deja terminar antes de
+    //  soltar el `id`, porque `stopLiveSync` lo usa para su último latido; si
+    //  se anula por delante, ese latido se va sin escribir (`if (!liveMatchId)
+    //  return`) y el partido viejo se queda sin cerrar.
+    const _estabaEnVivo = (typeof liveIsActive !== 'undefined') && liveIsActive;
+    const _cierreAnterior = (typeof stopLiveSync === 'function') ? stopLiveSync() : null;
+    if (_estabaEnVivo) {
+        Promise.resolve(_cierreAnterior).catch(() => {}).then(() => {
+            try {
+                liveMatchId = null;
+                if (typeof startLiveSync === 'function') startLiveSync();
+            } catch (e) {
+                console.warn('[v714] No se pudo reanudar la transmisión tras reiniciar:', e.message);
+            }
+        });
+    }
+
     isRunning = false;
     clearInterval(timerInterval);
     masterTimeH1 = 0; masterTimeH2 = 0;

@@ -457,7 +457,11 @@ window._executeReportsSend = async function(method) {
 
     const scoreHome = document.getElementById('score-home')?.textContent || '0';
     const scoreAway = document.getElementById('score-away')?.textContent || '0';
-    const rivalName = (typeof TEAM_NAMES !== 'undefined' && TEAM_NAMES && TEAM_NAMES.away) ? TEAM_NAMES.away : 'Rival';
+    // 🏠✈️ v707 · El rival es el lado CONTRARIO al mío, no «el visitante»
+    // (ver la nota en match-reports-auto.js).
+    const rivalName = ((typeof window.cronosNombreRival === 'function')
+        ? window.cronosNombreRival()
+        : ((typeof TEAM_NAMES !== 'undefined' && TEAM_NAMES && TEAM_NAMES.away) || '')) || 'Rival';
     const matchDate = new Date().toLocaleDateString('es-ES', {weekday:'long', day:'numeric', month:'long'});
     const homePlayers = window.players.filter(p => p.team === _cMyTeamKey());
     
@@ -913,8 +917,10 @@ window._executeReportsSend = async function(method) {
                     createdBy:   me.uid,
                     coachUid:    me.uid,
                     coachEmail:  me.email,
+                    // ⚠️ v707 · LADOS DEL ENCUENTRO, no «yo» y «el rival»
+                    // (misma nota que en match-reports-auto.js).
                     homeName:    (typeof TEAM_NAMES !== 'undefined' && TEAM_NAMES.home) || 'LOCAL',
-                    awayName:    rivalName,
+                    awayName:    (typeof TEAM_NAMES !== 'undefined' && TEAM_NAMES.away) || 'VISITANTE',
                     scoreHome, scoreAway,
                     category:    _catIdx,
                     subcategory: _cMatchSubcatFor(me, _catIdx),

@@ -604,8 +604,15 @@ const inCol = (written, col) => written.filter(w => w.col === col);
         const txt = t.blobs[0] || '';
         ok('3f4 · el TXT empieza por el BOM (si no, el Bloc de notas rompe los acentos)',
             txt.charCodeAt(0) === 0xFEFF, txt.charCodeAt(0));
-        ok('3f5 · el TXT lleva cabecera, rival, resultado y la lista de jugadores',
-            txt.includes('INFORME DE PARTIDO') && txt.includes('Rival:')
+        // ⚠️ v713 · ESTA ASERCION EXIGIA UNA LINEA «Rival:» Y SE PUSO ROJA SIN
+        // DEFECTO. Esa linea se retiro a proposito: desde v712 la cabecera abre
+        // con «Encuentro: <local> vs <visitante>», que nombra a los DOS
+        // contendientes y en el orden de la localia — mas informacion, no menos,
+        // y sin repetir el nombre del rival dos veces en cuatro lineas. Lo que
+        // se sigue exigiendo es lo que de verdad importaba: que el fichero diga
+        // CONTRA QUIEN se jugo.
+        ok('3f5 · el TXT lleva cabecera, el rival nombrado, resultado y la lista de jugadores',
+            txt.includes('INFORME DE PARTIDO') && /Encuentro:.*CD Rival/.test(txt)
             && txt.includes('Resultado:') && txt.includes('JUGADORES'), txt.slice(0, 160));
         ok('3f6 · incluye al jugador con su dorsal, minutos y goles',
             /#\s*7 /.test(txt) && /Minutos:/.test(txt) && /Goles:/.test(txt), txt);

@@ -66,8 +66,24 @@ window.openCollectiveReport = async function openCollectiveReport() {
     const hasLiveData = !!(window.players && window.players.length);
     const scoreHome = document.getElementById('score-home')?.textContent || '?';
     const scoreAway = document.getElementById('score-away')?.textContent || '?';
-    const rival     = (typeof TEAM_NAMES !== 'undefined' && TEAM_NAMES.away) || 'Rival';
+    // 🏠✈️ v707 · El rival es el lado CONTRARIO al mío (ver la nota en
+    // js/core/utils.js): `TEAM_NAMES.away` jugando fuera soy YO.
+    const rival     = ((typeof window.cronosNombreRival === 'function')
+        ? window.cronosNombreRival()
+        : ((typeof TEAM_NAMES !== 'undefined' && TEAM_NAMES.away) || '')) || 'Rival';
     const matchDate = new Date().toLocaleDateString('es-ES',{day:'2-digit',month:'long',year:'numeric'});
+
+    // 🏠✈️ v712 · LOS DOS NOMBRES, EN ORDEN DE LOCALÍA. El texto de abajo decía
+    // «🆚 <mi club> 0 – 2 <rival>» SIEMPRE, y el marcador del panel es
+    // LOCAL – VISITANTE: jugando fuera, ese informe atribuía mis goles al rival
+    // y los del rival a mí. El reparto lo hace `cronosEnfrentamiento`
+    // (js/core/utils.js), la misma función que ordena las tarjetas de informes
+    // y la cabecera del motor.
+    const _enf = (typeof window.cronosEnfrentamiento === 'function')
+        ? window.cronosEnfrentamiento(
+            { rival: rival, myTeamRole: (typeof _cMyTeamKey === 'function' ? _cMyTeamKey() : 'home') },
+            (me && me.clubName) || 'Nuestro equipo')
+        : { local: (me && me.clubName) || 'Nuestro equipo', visitante: rival, fuera: false };
 
     // Si no hay datos en vivo, intentar leer últimos informes de Firestore
     let playerData = [];
@@ -104,7 +120,7 @@ window.openCollectiveReport = async function openCollectiveReport() {
         let msg = `📊 *INFORME COLECTIVO DE PARTIDO*\n`;
         msg += `━━━━━━━━━━━━━━━━\n`;
         msg += `📅 ${matchDate}\n`;
-        msg += `🆚 ${me.clubName||'Nuestro equipo'} ${scoreHome} – ${scoreAway} ${rival}\n\n`;
+        msg += `🆚 ${_enf.local} ${scoreHome} – ${scoreAway} ${_enf.visitante}\n\n`;
 
         // Línea de tiempo global (todos los eventos ordenados)
         const evIcon = { goal:'⚽ GOL', yellow:'🟨 TARJETA', red:'🟥 TARJETA', sub_in:'▼ CAMBIO·Entra', sub_out:'▲ CAMBIO·Sale', injury:'🚑 LESIÓN' };
@@ -188,7 +204,10 @@ window.openCollectiveReport = async function openCollectiveReport() {
                         border-radius:8px;padding:0.75rem;margin-bottom:0.9rem;">
                 <div style="font-size:0.72rem;color:var(--text-muted);margin-bottom:0.3rem;">Partido</div>
                 <div style="font-weight:700;font-size:0.95rem;">
-                    🆚 vs ${typeof escapeHtml==='function'?escapeHtml(rival):rival}
+                    🆚 ${typeof escapeHtml==='function'?escapeHtml(_enf.local):_enf.local}
+                    <span style="color:var(--text-muted);font-weight:600;">vs</span>
+                    ${typeof escapeHtml==='function'?escapeHtml(_enf.visitante):_enf.visitante}
+                    ${_enf.fuera?'<span style="font-size:0.62rem;color:var(--text-muted);" title="Jugado fuera de casa">✈️</span>':'<span style="font-size:0.62rem;color:var(--text-muted);" title="Jugado en casa">🏠</span>'}
                     <span style="color:var(--primary);margin-left:0.5rem;">${scoreHome}–${scoreAway}</span>
                 </div>
                 <div style="font-size:0.72rem;color:var(--text-muted);margin-top:0.2rem;">📅 ${matchDate}</div>
@@ -350,7 +369,10 @@ window._sendCollectiveReportNow = async function() {
         const now       = new Date();
         const matchDate = now.toLocaleDateString('es-ES',{day:'2-digit',month:'long',year:'numeric'});
         const matchDateISO = now.toISOString().split('T')[0];
-        const rival     = (typeof TEAM_NAMES!=='undefined'&&TEAM_NAMES.away)||'Rival';
+        // 🏠✈️ v707 · el lado contrario al mío, no «el visitante».
+        const rival     = ((typeof window.cronosNombreRival === 'function')
+            ? window.cronosNombreRival()
+            : ((typeof TEAM_NAMES!=='undefined'&&TEAM_NAMES.away)||'')) || 'Rival';
         const scoreHome = document.getElementById('score-home')?.textContent||'0';
         const scoreAway = document.getElementById('score-away')?.textContent||'0';
         const createdAt = now.toISOString();
@@ -497,8 +519,10 @@ window._sendCollectiveReportNow = async function() {
                 createdBy:   me.uid,
                 coachUid:    me.uid,
                 coachEmail:  me.email,
+                // ⚠️ v707 · LADOS DEL ENCUENTRO, no «yo» y «el rival»
+                // (misma nota que en match-reports-auto.js).
                 homeName:    (typeof TEAM_NAMES !== 'undefined' && TEAM_NAMES.home) || 'LOCAL',
-                awayName:    rival,
+                awayName:    (typeof TEAM_NAMES !== 'undefined' && TEAM_NAMES.away) || 'VISITANTE',
                 scoreHome, scoreAway,
                 category:    _catIdx,
                 subcategory: _cMatchSubcatFor(me, _catIdx),

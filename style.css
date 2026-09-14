@@ -481,6 +481,41 @@ header {
     display: none !important;
 }
 
+/* ══════════════════════════════════════════════════════════════════
+   🔴🔴 v709 · «EL BOTÓN GRUPAL NO SELECCIONA A LOS JUGADORES»
+   ══════════════════════════════════════════════════════════════════
+   Reporte del autor (implementar.txt + captura 10373, ente individual):
+   pulsa GRUPAL y al tocar a sus jugadores no se selecciona ninguno.
+
+   🔑 LA CAUSA ESTABA AQUÍ ARRIBA, en una regla de v-anterior escrita
+   cuando «mi equipo» y «el local» eran lo mismo (el mismo supuesto que
+   costó la tanda v707). Jugando de VISITANTE y sin analizar al
+   contrario, `hide-visitor` + `role-away`:
+     · se ESCONDÍA el GRUPAL de visitante… que es **el mío**;
+     · y quedaba visible el GRUPAL de LOCAL, que apunta al equipo que
+       NO TIENE NI UN JUGADOR.
+   Así que el modo grupal se activaba para 'home' y
+   `handleGroupSubClick` descartaba cada toque por su primera guarda
+   (`player.team !== groupSubTeam`): el botón «no hacía nada», sin un
+   solo error en consola.
+
+   ⚠️ NO SE TOCA EL `onclick` DE LOS BOTONES: cada uno sigue siendo el de
+   su lado del marcador. Lo que se corrige es CUÁL SE VE, que es lo que
+   estaba del revés. Con el rival dibujado (sin `hide-visitor`) siguen
+   estando los dos, porque entonces los dos equipos tienen jugadores.
+
+   🔑 Las sidebars de la banca ya tenían esta corrección desde que se
+   introdujo `role-away` (ver «HIDE VISITOR» más abajo). Los botones
+   GRUPAL se quedaron atrás: al añadir una señal nueva hay que repasar
+   TODO lo que decide por el lado, no sólo lo que se ve primero.
+   ══════════════════════════════════════════════════════════════════ */
+.hide-visitor.role-away #btn-group-sub-away {
+    display: inline-block !important;
+}
+.hide-visitor.role-away #btn-group-sub {
+    display: none !important;
+}
+
 /* ── Selección visual: titular sale (amarillo) ── */
 .player-chip.group-sub-out {
     outline: 3px solid #ffde59 !important;
@@ -1149,7 +1184,12 @@ input, select {
         margin: 0 auto;
     }
 
-    .hide-visitor .mobile-toggle.home { display: none !important; }
+    /* El botón de la banca que ya está fija como columna no hace falta; el
+       otro equipo no existe. v709 · Y jugando de VISITANTE la columna fija es
+       la DERECHA, así que el que sobra es el de VISIT., no el de LOCAL (misma
+       corrección que los GRUPAL: lo que decide es el LADO, no «home»). */
+    .hide-visitor:not(.role-away) .mobile-toggle.home { display: none !important; }
+    .hide-visitor.role-away .mobile-toggle.away { display: none !important; }
 }
 
 /* --- ROSTER TABLE --- */

@@ -282,6 +282,18 @@ window.openMisInformes = async function openMisInformes() {
             // FIX: adoptar myTeamRole si el objeto agrupado aún no lo tiene.
             if (matches[key].myTeamRole == null && r.myTeamRole != null)
                 matches[key].myTeamRole = r.myTeamRole;
+            // 🔵🔴 v710 · Y el desglose de P/R, que es del PARTIDO y viaja
+            // repetido en cada documento de jugador. `ctAccumulatePlayerStats`
+            // y el informe saben buscarlo dentro de `players`, pero subirlo al
+            // nivel del partido lo deja donde lo esperan los dos y ahorra el
+            // recorrido. Se queda el ejemplar con más registros: un documento
+            // escrito antes de que se registrara nada traería el resumen a
+            // cero y taparía al bueno.
+            if (r.matchPR) {
+                const _tot = (x) => (((x || {}).perdidas || {}).total || 0) +
+                                    (((x || {}).recuperaciones || {}).total || 0);
+                if (_tot(r.matchPR) > _tot(matches[key].matchPR)) matches[key].matchPR = r.matchPR;
+            }
         });
         Object.values(matches).forEach(m => {
             m.players = Object.values(m._playerMap)
@@ -314,11 +326,59 @@ window.openMisInformes = async function openMisInformes() {
             return (p && typeof window.cronosTeamIdOfDoc === 'function')
                 ? window.cronosTeamIdOfDoc(p, me.clubId) : '';
         };
+        // ══════════════════════════════════════════════════════════════
+        //  🔴🔴 v711 · SUS PARTIDOS NO PUEDEN QUEDARSE FUERA DE SU RESUMEN
+        // ══════════════════════════════════════════════════════════════
+        //  Reporte del autor: las pérdidas y recuperaciones «no llegan» al
+        //  resumen acumulado de la temporada.
+        //
+        //  🔑 MEDIDO EN PRODUCCIÓN (scripts/ops/inspect_pr_informes.js): el
+        //  dato ESTABA en los informes —P=16 R=23 con su desglose por dorsal—,
+        //  pero esos partidos se sellaron con la clave de equipo INCOMPLETA,
+        //  sin subcategoría (`club__regional__` frente a `club__regional__b`),
+        //  porque la subcategoría se perdía al escribirlos (el resolutor de
+        //  subcategoría del panel de comunicaciones comparaba la categoría del
+        //  desplegable con la del perfil letra a letra, y la del desplegable
+        //  lleva la modalidad delante).
+        //  ⚠️ Sin nombrar esa función: el guard de este módulo mide su
+        //  acoplamiento con panel.js buscando los nombres en el TEXTO, y una
+        //  cita en un comentario le crea una dependencia que no existe.
+        //  Con la comparación exacta, este
+        //  filtro los tiraba y con ellos TODO lo suyo: sus P/R, sus goles y
+        //  sus minutos.
+        //
+        //  Arreglar el escritor sirve para los partidos NUEVOS. Para los que
+        //  ya están escritos hace falta que el lector no los pierda, y la
+        //  regla ya existía en esta misma pantalla para el LISTADO (v507):
+        //  **lo que él firmó no se le puede ocultar nunca**. Aquí se aplica al
+        //  resumen: un partido SUYO cuya clave no se puede resolver del todo
+        //  —o no se puede resolver— cuenta como de su equipo.
+        //
+        //  ⚠️ NO SE CUELA EL PARTIDO DE OTRO EQUIPO SUYO. Si la clave del
+        //  informe SÍ está completa y es de otro equipo (su Alevín C), queda
+        //  fuera como hasta ahora: sólo entra la clave incompleta, y sólo si
+        //  su categoría es la misma.
+        // ══════════════════════════════════════════════════════════════
+        const _miCatDe = (clave) => String(clave || '').split('__')[1] || '';
+        const _miSubDe = (clave) => String(clave || '').split('__')[2] || '';
+        const _catMia  = _miCatDe(equipoAsignado);
+        const _esFirmadoPorMi = (m) => (m.players || []).some(p =>
+            p && p.coachUid && me.uid && p.coachUid === me.uid);
+        const _esDeMiEquipo = (m) => {
+            const clave = _miEquipoDe(m);
+            if (clave === equipoAsignado) return true;
+            if (!_esFirmadoPorMi(m)) return false;
+            // Sin clave resoluble: es suyo y no se puede clasificar (v507).
+            if (!clave) return true;
+            // Clave a medias (sin subcategoría) y de MI categoría.
+            return !_miSubDe(clave) && _miCatDe(clave) === _catMia;
+        };
+
         // El acumulado es DE SU EQUIPO. Si el filtro no deja nada (por
         // ejemplo, informes antiguos sin categoría), se acumula todo lo que
         // se está listando: mejor un acumulado real que una tabla vacía.
         const _miDelEquipo = puedeFiltrarPorEquipo
-            ? sorted.filter(m => _miEquipoDe(m) === equipoAsignado)
+            ? sorted.filter(_esDeMiEquipo)
             : sorted;
         const _miParaResumen = _miDelEquipo.length ? _miDelEquipo : sorted;
 
@@ -621,11 +681,19 @@ window.openMisInformes = async function openMisInformes() {
         body.innerHTML = _miResumenHtml + `<div id="mi-contador-lista" style="font-size:0.74rem;color:var(--text-muted);margin:0.9rem 0 0.8rem;">
             ${sorted.length} partido${sorted.length!==1?'s':''} · ${reports.length} informes de jugadores
         </div>` + _miBarraSel + sorted.map(m => {
+            // 🏠✈️ v712 · EL ENFRENTAMIENTO EN ORDEN DE LOCALÍA. El orden de los
+            // nombres, el marcador y el veredicto salen de una sola función
+            // (`cronosEnfrentamiento`, js/core/utils.js), la misma que usan las
+            // tarjetas del Director, el Área de Familias y la cabecera del
+            // informe: la tarjeta decía «vs Rival» a secas y un 0-2 ganado
+            // fuera no se podía atribuir a nadie.
             const sh=m.scoreHome, sa=m.scoreAway;
-            const score=(sh!=null&&sa!=null)?`${sh}–${sa}`:'—';
-            // Resultado segun myTeamRole; sin el campo (informes antiguos) -> fallback 'home', comportamiento previo.
-            const _mine=m.myTeamRole==='away'?sa:sh, _theirs=m.myTeamRole==='away'?sh:sa;
-            const res=(sh!=null&&sa!=null)?(_mine>_theirs?'VICTORIA':_mine<_theirs?'DERROTA':'EMPATE'):'';
+            const _enf = (typeof window.cronosEnfrentamiento === 'function')
+                ? window.cronosEnfrentamiento(m, (me && me.clubName) || 'Mi equipo')
+                : null;
+            const score=_enf && _enf.marcador ? _enf.marcador.replace('-', '–')
+                      : ((sh!=null&&sa!=null)?`${sh}–${sa}`:'—');
+            const res=_enf ? _enf.veredicto : '';
             const rCol=res==='VICTORIA'?'#3fb950':res==='DERROTA'?'#ff5858':'#eab308';
             const dateStr=m.matchDate
                 ?new Date(m.matchDate+'T12:00:00').toLocaleDateString('es-ES',{day:'2-digit',month:'long',year:'numeric'}):'—';
@@ -644,7 +712,12 @@ window.openMisInformes = async function openMisInformes() {
                         estilo: 'margin-right:0.15rem;' }) : ''}
                     <div style="flex:1;min-width:0;">
                         <div style="font-weight:700;font-size:0.95rem;display:flex;align-items:center;gap:0.4rem;flex-wrap:wrap;">
-                            🆚 vs <span style="color:#3fb950;">${typeof escapeHtml==='function'?escapeHtml(m.rival||'Sin rival'):m.rival||'Sin rival'}</span>
+                            🆚 ${_enf
+                                ? `<span style="color:${_enf.fuera?'#3fb950':'#e6edf3'};">${typeof escapeHtml==='function'?escapeHtml(_enf.local):_enf.local}</span>
+                                   <span style="color:var(--text-muted);font-weight:600;">vs</span>
+                                   <span style="color:${_enf.fuera?'#e6edf3':'#3fb950'};">${typeof escapeHtml==='function'?escapeHtml(_enf.visitante):_enf.visitante}</span>
+                                   ${_enf.fuera?'<span style="font-size:0.6rem;color:var(--text-muted);" title="Jugado fuera de casa">✈️</span>':'<span style="font-size:0.6rem;color:var(--text-muted);" title="Jugado en casa">🏠</span>'}`
+                                : `vs <span style="color:#3fb950;">${typeof escapeHtml==='function'?escapeHtml(m.rival||'Sin rival'):m.rival||'Sin rival'}</span>`}
                             ${res?`<span style="font-size:0.62rem;font-weight:700;color:${rCol};">${res}</span>`:''}
                         </div>
                         <div style="font-size:0.72rem;color:var(--text-muted);margin-top:2px;display:flex;gap:0.5rem 0.9rem;flex-wrap:wrap;">
@@ -775,36 +848,150 @@ window.openMisInformes = async function openMisInformes() {
                     { day: '2-digit', month: 'long', year: 'numeric' })
                 : '—';
 
+            // v712 · El titulo del fichero repite el orden de la pantalla
+            // (local primero) para que el marcador de abajo, que es
+            // LOCAL - VISITANTE, se pueda atribuir sin adivinar.
+            const _enfTxt = (typeof window.cronosEnfrentamiento === 'function')
+                ? window.cronosEnfrentamiento(m, (me && me.clubName) || 'Mi equipo') : null;
+
+            // ═══════════════════════════════════════════════════════════
+            //  🔵🔴 v713 · PÉRDIDAS Y RECUPERACIONES DEL PARTIDO
+            // ═══════════════════════════════════════════════════════════
+            //  El dato viaja REPETIDO, una copia por documento de jugador (asi
+            //  lo escriben los despachos desde v693), y el agrupador de este
+            //  fichero ya se queda con el ejemplar mas completo en
+            //  `m.matchPR`. Se acepta tambien al nivel del documento por si el
+            //  informe llegara de otra via.
+            //  ⚠️ NO se suman las copias: serian 18 veces el mismo dato. La
+            //  regla es una sola y vive en js/core/utils.js.
+            const _prPartido = (typeof window.cronosPRDelInforme === 'function')
+                ? window.cronosPRDelInforme(m)
+                : (m.matchPR || null);
+            const _prPerd = (_prPartido && _prPartido.perdidas)       || {};
+            const _prRec  = (_prPartido && _prPartido.recuperaciones) || {};
+            const _prTotP = Number(_prPerd.total) || 0;
+            const _prTotR = Number(_prRec.total)  || 0;
+            const _prHay  = !!(_prTotP || _prTotR);
+            const _prDe   = (dorsal) => ({
+                p: Number((_prPerd.porDorsal || {})[String(dorsal).trim()]) || 0,
+                r: Number((_prRec.porDorsal  || {})[String(dorsal).trim()]) || 0,
+            });
+            // En singular no se escribe «1 pérdidas». Un informe oficial que se
+            // imprime y se reparte no puede tener faltas de concordancia.
+            const _prTxtP = n => `${n} ${n === 1 ? 'pérdida' : 'pérdidas'}`;
+            const _prTxtR = n => `${n} ${n === 1 ? 'recuperación' : 'recuperaciones'}`;
+
+            const jug = [...m.players].sort((a, b) =>
+                (parseInt(a.playerNumber) || 99) - (parseInt(b.playerNumber) || 99));
+
+            // Los contadores del resumen, con EL MISMO CRITERIO que las cuatro
+            // tarjetas de la pantalla (report-engine.js, `buildStats`, v458):
+            // las amarillas salen del HISTORIAL —`cards` es un campo unico y la
+            // segunda amarilla lo sobrescribe a 'roja'— y las rojas de `cards`,
+            // que cubre la directa y la doble exactamente una vez. Contar las
+            // dos del mismo sitio duplicaria las rojas directas.
+            const _amarillasDe = p => ((p.history || []).filter(e =>
+                e && ((typeof e === 'object' && e.type === 'yellow') ||
+                      (typeof e === 'string' && e.toLowerCase().indexOf('amarilla') !== -1))).length);
+            const golesTotales = jug.reduce((s, p) => s + (p.goals || 0), 0);
+            const amarillas    = jug.reduce((s, p) => s + _amarillasDe(p), 0);
+            const rojas        = jug.filter(p => p.cards === 'roja' || p.cards === 'red').length;
+            const lesiones     = jug.filter(p => p.injured).length;
+
             const L = [];
             L.push('INFORME DE PARTIDO');
             L.push('='.repeat(46));
-            L.push(`Rival:        ${m.rival || '—'}`);
+            if (_enfTxt) L.push(`Encuentro:    ${_enfTxt.titulo}`);
             L.push(`Fecha:        ${fecha}${m.matchTime ? ' · ' + m.matchTime : ''}`);
             if (m.competition) L.push(`Competición:  ${m.competition}`);
-            if (m.category)    L.push(`Categoría:    ${m.category}`);
+            if (m.category)    L.push(`Categoría:    ${m.category}${m.subcategory ? ' ' + m.subcategory : ''}`);
             if (m.venue)       L.push(`Campo:        ${m.venue}`);
             L.push(`Localía:      ${m.myTeamRole === 'away' ? 'Visitante' : 'Local'}`);
             L.push(`Resultado:    ${hayResultado ? `${sh} - ${sa}` : '—'}${veredicto ? '  (' + veredicto + ')' : ''}`);
             if (m.coachEmail) L.push(`Entrenador:   ${m.coachEmail}`);
             L.push('');
 
-            const jug = [...m.players].sort((a, b) =>
-                (parseInt(a.playerNumber) || 99) - (parseInt(b.playerNumber) || 99));
-            const golesTotales = jug.reduce((s, p) => s + (p.goals || 0), 0);
-            L.push(`JUGADORES (${jug.length})${golesTotales ? ` · ${golesTotales} goles` : ''}`);
+            // ── RESUMEN: las mismas cuatro cifras que encabezan el informe de
+            //    pantalla, para que el fichero se lea igual que el panel.
+            L.push('RESUMEN');
+            L.push('-'.repeat(46));
+            L.push(`Convocados:      ${typeof m.participantsCount === 'number' ? m.participantsCount : jug.length}`
+                 + (typeof m.playedCount === 'number' ? `  (${m.playedCount} jugaron)` : ''));
+            L.push(`Goles:           ${golesTotales}`);
+            L.push(`Tarjetas:        ${amarillas} amarilla${amarillas === 1 ? '' : 's'}`
+                 + (rojas ? ` · ${rojas} roja${rojas === 1 ? '' : 's'}` : ''));
+            L.push(`Lesiones:        ${lesiones}`);
+            if (_prHay) {
+                const bal = _prTotR - _prTotP;
+                L.push(`Pérdidas:        ${_prTotP}`);
+                L.push(`Recuperaciones:  ${_prTotR}  (balance ${bal > 0 ? '+' : ''}${bal})`);
+            }
+            L.push('');
+
+            L.push(`JUGADORES (${jug.length})`);
             L.push('-'.repeat(46));
             jug.forEach(p => {
                 const tarjeta = p.cards && p.cards !== 'ninguna' ? p.cards : 'ninguna';
                 L.push(`#${String(p.playerNumber || '?').padStart(2)} ${(p.playerAlias || 'Jugador')}`);
                 L.push(`     Minutos: ${p.minutesPlayed || '0'} | Goles: ${p.goals || 0}`
                      + ` | Tarjeta: ${tarjeta} | Lesión: ${p.injured ? 'sí' : 'no'}`);
-                // el historial lleva los eventos con su minuto (gol, tarjeta,
-                // lesion), que es justo lo que un TXT puede aportar y el Gantt
-                // de la pantalla no deja copiar.
-                if (Array.isArray(p.history) && p.history.length) {
-                    p.history.forEach(h => L.push(`     · ${h}`));
+                // 🔵🔴 Lo suyo, y solo si ese partido trae el dato: un informe
+                // anterior al registro de P/R no puede pintar ceros.
+                if (_prHay) {
+                    const mio = _prDe(p.playerNumber);
+                    L.push(`     Pérdidas: ${mio.p} | Recuperaciones: ${mio.r}`);
+                }
+                // 📄 v713 · Las incidencias, EN ESPAÑOL Y UNA POR LÍNEA. Antes
+                // se interpolaba el apunte crudo y salia «· [object Object]»
+                // (capturas 10402/10403): desde v531 son objetos. La
+                // traduccion —con el matiz de gol anulado, doble amarilla o
+                // roja revertida, y sin la contabilidad de fase— es la del
+                // modulo de descargas, la misma que usa el CSV.
+                const inc = (typeof window.rxLineasIncidencias === 'function')
+                    ? window.rxLineasIncidencias(p)
+                    : [];
+                if (inc.length) {
+                    L.push('     Incidencias:');
+                    inc.forEach(t => L.push(`       · ${t}`));
                 }
             });
+
+            // ── 🔵🔴 EL DESGLOSE DE PÉRDIDAS Y RECUPERACIONES, como en la
+            //    pantalla (report-engine.js, `buildPRPanel`): totales, balance,
+            //    una fila por dorsal y los registros sin jugador asignado.
+            if (_prHay) {
+                const bal = _prTotR - _prTotP;
+                // Igual que en la pantalla: si ese dorsal no está entre los
+                // convocados del informe, se queda el dorsal SOLO. Inventarle
+                // un nombre o plantarle una raya sería ruido.
+                const etiquetaDe = (dorsal) => {
+                    const p = jug.filter(x => String(x.playerNumber || '').trim() === String(dorsal))[0];
+                    const nom = p ? (p.playerAlias || 'Jugador') : '';
+                    return `#${String(dorsal).padStart(2)}${nom ? ' ' + nom : ''}`;
+                };
+                const dorsales = {};
+                Object.keys(_prPerd.porDorsal || {}).forEach(d => { dorsales[d] = true; });
+                Object.keys(_prRec.porDorsal  || {}).forEach(d => { dorsales[d] = true; });
+
+                L.push('');
+                L.push('PÉRDIDAS Y RECUPERACIONES');
+                L.push('-'.repeat(46));
+                L.push(`Total: ${_prTxtP(_prTotP)} · ${_prTxtR(_prTotR)}`
+                     + ` · balance ${bal > 0 ? '+' : ''}${bal}`);
+                Object.keys(dorsales)
+                    .sort((a, b) => (parseInt(a, 10) || 99) - (parseInt(b, 10) || 99))
+                    .forEach(d => {
+                        const np = Number((_prPerd.porDorsal || {})[d]) || 0;
+                        const nr = Number((_prRec.porDorsal  || {})[d]) || 0;
+                        L.push(`${etiquetaDe(d)}  ·  ${_prTxtP(np)}  ·  ${_prTxtR(nr)}`);
+                    });
+                const sinP = Number(_prPerd.sinAsignar) || 0;
+                const sinR = Number(_prRec.sinAsignar)  || 0;
+                if (sinP || sinR) {
+                    L.push(`Registros a nivel colectivo (sin jugador asignado):`
+                         + ` ${_prTxtP(sinP)} · ${_prTxtR(sinR)}`);
+                }
+            }
 
             L.push('');
             L.push('-'.repeat(46));
@@ -1187,10 +1374,23 @@ window._sendAllIndividualReports = async function() {
 
     try {
         const { db, doc, setDoc, updateDoc, getDoc, arrayUnion } = await _cFS();
-        const rival     = (typeof TEAM_NAMES!=='undefined'&&TEAM_NAMES.away)||'Rival';
+        // 🏠✈️ v707 · el lado contrario al mío, no «el visitante» (ver
+        // js/core/utils.js): jugando fuera, `TEAM_NAMES.away` soy yo.
+        const rival     = ((typeof window.cronosNombreRival === 'function')
+            ? window.cronosNombreRival()
+            : ((typeof TEAM_NAMES!=='undefined'&&TEAM_NAMES.away)||'')) || 'Rival';
         const scoreHome = document.getElementById('score-home')?.textContent||'?';
         const scoreAway = document.getElementById('score-away')?.textContent||'?';
         const matchDate = new Date().toLocaleDateString('es-ES',{day:'2-digit',month:'long',year:'numeric'});
+        // 🏠✈️ v712 · El encabezado del mensaje llevaba «🆚 vs <rival>
+        // (0-2)» y ese marcador es LOCAL-VISITANTE: sin los dos nombres en ese
+        // mismo orden, la familia no puede saber de quién es cada gol.
+        const _enf = (typeof window.cronosEnfrentamiento === 'function')
+            ? window.cronosEnfrentamiento(
+                { rival: rival, myTeamRole: (typeof _cMyTeamKey === 'function' ? _cMyTeamKey() : 'home') },
+                (me && me.clubName) || 'Nuestro equipo')
+            : { local: (me && me.clubName) || 'Nuestro equipo', visitante: rival, fuera: false };
+        const _titulo = _enf.local + ' vs ' + _enf.visitante;
         // v218: palabras en MAYÚSCULAS + flechas ▲/▼ coherentes con el feed en vivo.
         const evIcon    = { goal:'⚽ GOL', yellow:'🟨 TARJETA', red:'🟥 TARJETA',
                             sub_in:'▼ CAMBIO·Entra', sub_out:'▲ CAMBIO·Sale', injury:'🚑 LESIÓN' };
@@ -1216,7 +1416,7 @@ window._sendAllIndividualReports = async function() {
 
             const text = `📊 *INFORME INDIVIDUAL: ${p.name}*\n` +
                 `━━━━━━━━━━━━━━━━\n` +
-                `📅 ${matchDate} · 🆚 vs ${rival} (${scoreHome}-${scoreAway})\n\n` +
+                `📅 ${matchDate} · 🆚 ${_titulo} (${scoreHome}-${scoreAway})\n\n` +
                 `⏱ Minutos: *${mins}*\n` +
                 `⚽ Goles: *${p.goals||0}*\n` +
                 `🎴 Tarjeta: *${p.cards&&p.cards!=='ninguna'?p.cards:'Ninguna'}*\n` +

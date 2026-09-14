@@ -339,19 +339,60 @@ async function startLiveSync() {
             initialFormation: (typeof activeFormationKey !== 'undefined' && activeFormationKey) || ''
         };
 
+        // ════════════════════════════════════════════════════════════════
+        //  🔴🔴 v714 · EL ARRANQUE NACÍA CON DOS ESCRITURAS CONDENADAS
+        // ════════════════════════════════════════════════════════════════
+        //  Reporte del autor (implementar.txt 2026-09-14, captura 10409):
+        //  «el sistema salta errores de permisos y sincronización en Firestore
+        //  al intentar limpiar o registrar los eventos iniciales».
+        //
+        //  📏 MEDIDO (scripts/ops/inspect_live_matches.js, sólo lectura): la
+        //  colección `live_matches` tenía TRES documentos y NINGUNO era el
+        //  partido de la captura. O sea que ese partido no se transmitió nunca,
+        //  y los dos errores de permisos del arranque no eran un aviso
+        //  inofensivo: eran la primera señal de que el documento no existía.
+        //
+        //  🔑 LAS DOS ESCRITURAS DE ANTES NO PODÍAN FUNCIONAR, NUNCA:
+        //    1 · `updateDoc({events: []})` sobre un documento que AÚN NO
+        //        EXISTE. Y no da «not-found»: las reglas evalúan
+        //        `resource.data`, que es nulo, así que la condición LANZA y
+        //        Firestore responde «Missing or insufficient permissions». De
+        //        ahí el error de permisos que parecía un problema de roles.
+        //    2 · el respaldo `setDoc({events: []}, {merge:true})` lo DENIEGA
+        //        `allow create`: la rama que admite un documento sin `clubId`
+        //        exige `createdBy` o `coachEmail`, y ese payload mínimo no
+        //        lleva ninguno de los tres. Está escrito en firestore.rules y
+        //        el propio comentario de v434 lo daba por sabido.
+        //
+        //  🔑 EL ARREGLO: se crea el documento CON SUS LLAVES DE PERTENENCIA
+        //  —las mismas que manda `pushLiveSnapshot`— en una sola escritura que
+        //  las reglas SÍ admiten, y con `events: []` ya limpio. Así el partido
+        //  nuevo queda inicializado (la «ranura» del autor) antes del primer
+        //  latido, en vez de depender de que ese latido consiga crearlo.
+        //
+        //  ⚠️ `events: []` va en ESTA escritura y en ninguna otra: `setDoc
+        //  merge` REEMPLAZA arrays enteros, así que repetirlo en un latido
+        //  posterior borraría el historial (la prohibición de v246).
         try {
-            const { doc, updateDoc } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
-            await updateDoc(doc(fa.db, 'live_matches', liveMatchId), { events: [] });
-            console.log('[v265] Array events limpiado para nuevo partido:', liveMatchId);
-        } catch(e) {
-            // Si el documento no existe, updateDoc falla. Crearlo con setDoc.
-            try {
-                const { doc, setDoc } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
-                await setDoc(doc(fa.db, 'live_matches', liveMatchId), { events: [] }, { merge: true });
-                console.log('[v265] Array events limpiado (setDoc fallback):', liveMatchId);
-            } catch(e2) {
-                console.warn('[v265] Error limpiando events:', e2);
+            const { doc, setDoc, serverTimestamp } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
+            const _u = window._cronosCurrentUser || {};
+            await setDoc(doc(fa.db, 'live_matches', liveMatchId), {
+                id:         liveMatchId,
+                status:     'active',
+                events:     [],
+                createdBy:  _u.uid   || '',
+                coachEmail: _u.email || '',
+                clubId:     _u.clubId || null,
+                createdAt:  serverTimestamp(),
+                updatedAt:  serverTimestamp(),
+            }, { merge: true });
+            if (window._CRONOS_DEBUG) {
+                console.log('[v714] Partido nuevo inicializado con sus llaves:', liveMatchId);
             }
+        } catch (e) {
+            // Si ni siquiera esto pasa, el partido se juega igual: el reloj y
+            // los botones NO dependen de Firestore (v714). Se avisa y sigue.
+            console.warn('[v714] No se pudo inicializar el partido en la nube (se juega sin transmitir):', e.message);
         }
     }
 
@@ -1210,6 +1251,14 @@ async function pushLiveSnapshot(status = 'active') {
         }
 
         await setDoc(doc(fa.db, 'live_matches', liveMatchId), snapshot, { merge: true });
+
+        // 🔴 v714 · SELLO DEL ÚLTIMO LATIDO BUENO. Lo lee el reloj
+        // (js/match/timer/core.js, `_mandaLaPulsacionLocal`) para saber si el
+        // documento del servidor es un espejo VIVO —y entonces manda, como en
+        // v638— o un espejo desfasado que no puede devolverle la pausa al
+        // entrenador. Va aquí, DESPUÉS de la escritura: si falló, no hubo
+        // latido bueno.
+        window._cronosUltimoLatidoOk = Date.now();
 
         // Vaciado DESPUÉS de que la escritura haya ido bien, y sólo de lo que
         // se mandó: si mientras tanto entró un movimiento nuevo, se queda para

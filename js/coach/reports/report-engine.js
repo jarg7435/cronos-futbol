@@ -388,9 +388,42 @@ const _RP = (() => {
     //  SECCIÓN 1: CABECERA DEL ENCUENTRO
     // ════════════════════════════════════════════════════════════════
     const buildHeader = (m, clubName, totMin, stopMin) => {
-        const home  = esc(clubName || 'CD Local');
-        const away  = esc(m.rival || 'Sin rival');
+        // ══════════════════════════════════════════════════════════════
+        //  🏠✈️ v707 · CADA NOMBRE, EN SU LADO DEL MARCADOR
+        // ══════════════════════════════════════════════════════════════
+        //  Reporte del autor (captura 10359): informe de un partido ganado 0-3
+        //  FUERA, y la cabecera decía «LOCAL: <mi club> · VISITANTE: <mi
+        //  rival>» con el veredicto DERROTA debajo.
+        //
+        //  🔑 El marcador `sh – sa` es LOCAL – VISITANTE, siempre. Poner mi
+        //  club en el hueco de LOCAL sin mirar `myTeamRole` deja el 0 debajo de
+        //  mi nombre y el 3 debajo del rival, o sea el partido AL REVÉS. El
+        //  veredicto ya se calculaba bien (dos líneas más abajo), así que la
+        //  cabecera se contradecía con su propia etiqueta.
+        //
+        //  ⚠️ Sin `myTeamRole` (informes anteriores a v526) se mantiene el
+        //  comportamiento de siempre: mi club de local.
+        //
+        //  🏠✈️ v712 · ⚠️⚠️ ESTA CABECERA NO LLAMA A `cronosEnfrentamiento`
+        //  (js/core/utils.js), QUE ES LA FUENTE ÚNICA DEL RESTO DE LA APP, Y ES
+        //  A PROPÓSITO: este motor es AUTOCONTENIDO —no toca el objeto global
+        //  del navegador, ni el DOM, ni la consola— y por eso se puede ejecutar
+        //  en un sandbox desnudo. La aserción 1c de
+        //  scripts/test_report_engine_module.js lo vigila (y se pone roja
+        //  incluso si el nombre prohibido aparece en un COMENTARIO como éste,
+        //  que es lo que acaba de pasarme), así que romper esa autocontención
+        //  para no repetir cinco líneas sería un mal cambio. Lo que impide que
+        //  las dos versiones se separen es scripts/test_cabecera_localia.js:
+        //  ejecuta LAS DOS con los mismos datos y exige el MISMO reparto
+        //  (nombres, marcador y veredicto).
+        const _yoSoyVisitante = m.myTeamRole === 'away';
+        const _miNombre  = esc(clubName || 'CD Local');
+        const _suNombre  = esc(m.rival || 'Sin rival');
+        const home  = _yoSoyVisitante ? _suNombre : _miNombre;
+        const away  = _yoSoyVisitante ? _miNombre : _suNombre;
         const sh = m.scoreHome, sa = m.scoreAway;
+        // ⚠️ EL MARCADOR NO SE DA LA VUELTA: es LOCAL – VISITANTE, igual que la
+        // pareja de nombres de arriba.
         const score = (sh != null && sa != null) ? `${sh} – ${sa}` : '— : —';
         // Resultado desde la perspectiva del equipo del usuario (myTeamRole).
         // Sin myTeamRole (informes antiguos) → fallback 'home' (sh = mi equipo): comportamiento previo intacto.
@@ -838,6 +871,28 @@ const _RP = (() => {
     // añadió después por pérdida de batería o cobertura.
     const RETRO_COLOR = '#f5a623';
 
+    // ══════════════════════════════════════════════════════════════════
+    //  🟠 v715 · ¿ES UN SUCESO REGISTRADO A POSTERIORI?
+    // ══════════════════════════════════════════════════════════════════
+    //  La marca viaja en TRES formas según por dónde haya pasado el dato:
+    //  `retro` (el suceso ya parseado del informe), `isRetroactive` (el de
+    //  `live_matches.events[]`) y el TEXTO `(RETRO)`/`(Retroactivo)` (los
+    //  informes anteriores a v531 y el historial en crudo). Se aceptan las
+    //  tres: decidir con una sola dejaría fuera lo ya escrito.
+    //
+    //  ⚠️ ES UNA COPIA DE `cronosEsRetro` (js/core/utils.js) Y SE QUEDA AQUÍ:
+    //  este motor es AUTOCONTENIDO —no toca el objeto global del navegador— y
+    //  su guard 1c lo vigila hasta en los comentarios (lección de v713). Que
+    //  las dos no se separen lo prueba scripts/test_retroactivo_naranja.js,
+    //  que EJECUTA las dos con los mismos sucesos y exige el mismo veredicto.
+    const esRetroEv = (ev) => {
+        if (!ev) return false;
+        if (ev.retro === true || ev.isRetroactive === true) return true;
+        const texto = String(ev.note == null ? '' : ev.note) + ' ' +
+                      String(ev.text == null ? '' : ev.text);
+        return /\(RETRO\)/i.test(texto) || /\(RETROACTIVO\)/i.test(texto);
+    };
+
     // ── Leyenda (actualizada para el nuevo formato) ───────────────────
     const buildLegend = () =>
         `<div style="display:flex;gap:6px 14px;flex-wrap:wrap;margin:6px 0 0.85rem;font-size:0.66rem;color:var(--text-muted);">` +
@@ -994,7 +1049,12 @@ const _RP = (() => {
             const k = c.id ? ('i:' + c.id) : ('m:' + minute + '|' + text);
             if (vistos[k]) return;
             vistos[k] = true;
-            out.push({ minute, text, realTime: String(c.realTime || ''), createdAt: Number(c.createdAt) || 0 });
+            // 🟠 v715 · La marca de retroactivo viaja con el comentario. Sin
+            // esto, la nota apuntada a posteriori —que es el caso más común—
+            // se pintaba igual que una escrita en directo.
+            out.push({ minute, text, realTime: String(c.realTime || ''),
+                       createdAt: Number(c.createdAt) || 0,
+                       retro: esRetroEv(c) });
         });
         return out.sort((a, b) => (a.minute - b.minute) || (a.createdAt - b.createdAt));
     };
@@ -1079,14 +1139,24 @@ const _RP = (() => {
                `</div>`;
     };
 
-    const filaComentario = (c) =>
-        `<div style="display:flex;align-items:flex-start;gap:8px;padding:5px 0;font-size:0.76rem;" data-suceso="comment">` +
-        `<span style="min-width:35px;font-size:0.69rem;font-weight:700;color:var(--text-muted);flex-shrink:0;">${formatTot(c.minute)}</span>` +
+    // 🟠 v715 · Y EL COMENTARIO RETROACTIVO TAMBIÉN. El autor los nombra
+    // primeros en su lista («comentarios, goles, tarjetas, lesiones,
+    // cambios»), y son justo los que más se apuntan tarde: son la nota de lo
+    // que no se pudo registrar en su momento.
+    const filaComentario = (c) => {
+        const _retro = esRetroEv(c);
+        return `<div style="display:flex;align-items:flex-start;gap:8px;padding:5px 0;font-size:0.76rem;" data-suceso="comment"${_retro ? ' data-retro="1"' : ''}>` +
+        `<span style="min-width:35px;font-size:0.69rem;font-weight:700;color:${_retro ? RETRO_COLOR : 'var(--text-muted)'};flex-shrink:0;">${formatTot(c.minute)}</span>` +
         horaRealPill(c.realTime) +
         `<span style="font-size:0.8rem;line-height:1.2;flex-shrink:0;">💬</span>` +
-        `<span style="color:#d2a8ff;min-width:0;"><strong style="letter-spacing:0.5px;">COMENTARIO</strong> &middot; ` +
-        `<span style="color:var(--text,#c9d1d9);white-space:pre-wrap;word-break:break-word;">${esc(c.text)}</span></span>` +
+        `<span style="color:${_retro ? RETRO_COLOR : '#d2a8ff'};min-width:0;"><strong style="letter-spacing:0.5px;">COMENTARIO</strong> &middot; ` +
+        `<span style="color:${_retro ? RETRO_COLOR : 'var(--text,#c9d1d9)'};white-space:pre-wrap;word-break:break-word;">${esc(c.text)}</span></span>` +
+        (_retro
+            ? `<span style="font-size:0.58rem;font-weight:800;letter-spacing:0.5px;color:${RETRO_COLOR};` +
+              `border:1px dashed ${RETRO_COLOR};border-radius:4px;padding:0 3px;flex-shrink:0;">RETROACTIVO</span>`
+            : '') +
         `</div>`;
+    };
 
     const buildEventsList = (players, comentarios) => {
         const notas = Array.isArray(comentarios) ? comentarios : [];
@@ -1161,13 +1231,34 @@ const _RP = (() => {
                 txt  = `<strong style="letter-spacing:0.5px;color:#58a6ff;">CAMBIO</strong> · <span style="color:#ff5858;">Sale</span> &middot; ${name}`;
             }
 
+            // ══════════════════════════════════════════════════════════
+            //  🟠 v715 · LO RETROACTIVO, EN NARANJA Y DICHO CON PALABRAS
+            // ══════════════════════════════════════════════════════════
+            //  Encargo del autor (capturas 10411-10414): el director tiene que
+            //  distinguir de un vistazo qué se apuntó a posteriori. El aro
+            //  naranja del cronograma (v531) ya lo decía ARRIBA; este registro
+            //  —que es lo que se lee de verdad— lo ignoraba.
+            //
+            //  🔑 SE CONSERVA EL ICONO Y EL TIPO del suceso: el naranja dice de
+            //  DÓNDE salió el dato, no lo sustituye. Y va también la palabra
+            //  RETROACTIVO, porque un informe se imprime en blanco y negro y
+            //  ahí el color no existe.
+            //  ⚠️ `esRetroEv` es la copia local de `cronosEsRetro` (utils.js):
+            //  este motor es autocontenido y no puede nombrarla. El guard
+            //  ejecuta las dos y exige el mismo veredicto.
+            const _retro = esRetroEv(ev);
+            const _col   = _retro ? RETRO_COLOR : col;
             return (
                 `<div style="display:flex;align-items:center;gap:8px;padding:5px 0;` +
-                `font-size:0.76rem;" data-suceso="${esc(ev.type)}">` +
-                `<span style="min-width:35px;font-size:0.69rem;font-weight:700;color:var(--text-muted);flex-shrink:0;">${ev.timeStr || formatTot((ev.minute||0) + (ev.second||0)/60)}</span>` +
+                `font-size:0.76rem;" data-suceso="${esc(ev.type)}"${_retro ? ' data-retro="1"' : ''}>` +
+                `<span style="min-width:35px;font-size:0.69rem;font-weight:700;color:${_retro ? RETRO_COLOR : 'var(--text-muted)'};flex-shrink:0;">${ev.timeStr || formatTot((ev.minute||0) + (ev.second||0)/60)}</span>` +
                 horaRealPill(ev.realTime) +
                 icon +
-                `<span style="color:${col};">${txt}</span>` +
+                `<span style="color:${_col};">${txt}</span>` +
+                (_retro
+                    ? `<span style="font-size:0.58rem;font-weight:800;letter-spacing:0.5px;color:${RETRO_COLOR};` +
+                      `border:1px dashed ${RETRO_COLOR};border-radius:4px;padding:0 3px;flex-shrink:0;">RETROACTIVO</span>`
+                    : '') +
                 `</div>`
             );
         });

@@ -261,6 +261,92 @@
         }
     }
 
+    // ════════════════════════════════════════════════════════════════════
+    //  ⚽🟠 v715 · Y EL INFORME DEL PARTIDO SE CORRIGE TAMBIÉN
+    // ════════════════════════════════════════════════════════════════════
+    //  Encargo del autor (implementar.txt 2026-09-14): «cuando se añade un gol
+    //  mediante este formulario retroactivo, el sistema debe actualizar de
+    //  inmediato el tanteo global del partido y modificar el resultado final
+    //  del marcador (y las estadísticas asociadas)».
+    //
+    //  🔑 EL MARCADOR NO VIVE EN UN SOLO SITIO. v531 ya corregía
+    //  `live_matches` —`homeTeam.score` / `awayTeam.score` y la ficha de los
+    //  jugadores—, que es lo que pinta el VISOR. Pero el resultado que se ve en
+    //  Mis Informes, en el Panel de Dirección y en el Área de Familias sale de
+    //  OTRA colección: `cronos_player_reports`, con una copia por jugador y por
+    //  destinatario, escrita al terminar el partido. Ese lado no lo tocaba
+    //  nadie, así que el visor decía 0-3 y el informe seguía diciendo 0-2.
+    //
+    //  🔑 POR ESO SE ESCRIBEN TODAS LAS COPIAS DEL PARTIDO, no una: el marcador
+    //  está DESNORMALIZADO en cada documento, y corregir sólo algunas deja el
+    //  resultado dependiendo de cuál lea primero el agrupador. Va en UN LOTE
+    //  (`writeBatch`): o se corrige el partido entero o no se corrige nada.
+    //
+    //  ⚠️ LA MARCA `(RETRO)` VIAJA EN EL APUNTE. Entra en el `history` del
+    //  jugador con `retro: true` —la misma forma que deja
+    //  `_parseHistoryForFirestore`— para que el informe individual lo pinte en
+    //  naranja (v715) y no como un suceso cantado en directo.
+    //
+    //  ⚠️ LOS COMENTARIOS NO VAN A LAS FAMILIAS. Es la política de v690: son
+    //  notas del cuerpo técnico. Se añaden sólo a las copias de staff y del
+    //  entrenador.
+    //
+    //  ⚠️ Si el partido no tiene informes (nunca se despacharon), no hay nada
+    //  que corregir y eso NO es un fallo: se devuelve éxito.
+    // ════════════════════════════════════════════════════════════════════
+    async function _corrigeInformesDelPartido(cambio) {
+        if (!_targetMatchId || !cambio) return true;
+        const fa = window._cronos_auth;
+        if (!fa || !fa.db) return false;
+        try {
+            const fsm = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
+            const snap = await fsm.getDocs(fsm.query(
+                fsm.collection(fa.db, 'cronos_player_reports'),
+                fsm.where('matchId', '==', _targetMatchId)));
+            if (snap.empty) return true;
+
+            const lote = fsm.writeBatch(fa.db);
+            let escrituras = 0;
+            snap.forEach(d => {
+                const r = d.data() || {};
+                const upd = {};
+
+                // 1 · EL MARCADOR, en todas las copias.
+                if (cambio.ladoGol) {
+                    const campo = cambio.ladoGol === 'away' ? 'scoreAway' : 'scoreHome';
+                    upd[campo] = (Number(r[campo]) || 0) + 1;
+                }
+
+                // 2 · LA FICHA DEL JUGADOR, sólo en sus copias.
+                const esSuyo = cambio.dorsal != null && String(r.playerNumber || '').trim() !== '' &&
+                               String(r.playerNumber).trim() === String(cambio.dorsal).trim();
+                if (esSuyo) {
+                    if (cambio.tipo === 'goal')   upd.goals = (Number(r.goals) || 0) + 1;
+                    if (cambio.tipo === 'yellow') upd.cards = (r.cards === 'amarilla' || r.cards === 'roja') ? 'roja' : 'amarilla';
+                    if (cambio.tipo === 'red')    upd.cards = 'roja';
+                    if (cambio.tipo === 'injury') upd.injured = true;
+                    if (cambio.apunte)            upd.history = fsm.arrayUnion(cambio.apunte);
+                }
+
+                // 3 · EL COMENTARIO, sólo a staff y entrenador (v690).
+                if (cambio.comentario && r.type !== 'parent_player_report') {
+                    upd.matchComments = fsm.arrayUnion(cambio.comentario);
+                }
+
+                if (Object.keys(upd).length) { lote.update(d.ref, upd); escrituras++; }
+            });
+            if (!escrituras) return true;
+            await lote.commit();
+            if (window._CRONOS_DEBUG) {
+                console.log('[v715] Informes corregidos:', escrituras, 'documentos de', _targetMatchId);
+            }
+            return true;
+        } catch (e) {
+            console.warn('[v715] No se pudieron corregir los informes del partido:', e && e.message);
+            return false;
+        }
+    }
+
     window._setRetroEventType = function(type) {
         _selectedEventType = type;
         const types = ['goal', 'sub', 'yellow', 'red', 'injury', 'comment'];
@@ -367,16 +453,33 @@
                                     { comment: nota, half: half, minute: minute, staffOnly: true },
                                     { matchId: _targetMatchId, matchData: _targetMatchData });
             }
-            // El informe de un partido YA TERMINADO se generó al acabar y no se
-            // reescribe desde aquí (su id no es el del partido en vivo): la nota
-            // queda en el historial de ese partido. Se dice, en vez de dejar
-            // creer que el informe ya la lleva.
             const _enCurso = (typeof liveMatchId !== 'undefined') ? liveMatchId : null;
             const _esElEnCurso = !_targetMatchId || _targetMatchId === _enCurso;
+            // 💬🟠 v715 · EL INFORME YA GENERADO TAMBIÉN SE CORRIGE. Antes esto
+            // avisaba de que la nota «no se modifica» — honesto, pero el autor
+            // pide ahora trazabilidad DENTRO de los informes, y una nota que no
+            // llega al informe no se puede pintar de naranja. Se añade a
+            // `matchComments` de las copias de staff y entrenador (a las de las
+            // familias NO: v690) y se marca como retroactiva.
+            let _enInforme = true;
+            if (!_esElEnCurso) {
+                _enInforme = await _corrigeInformesDelPartido({
+                    tipo: 'comment',
+                    comentario: {
+                        id: 'retro_' + Date.now(),
+                        minute: minute, half: half, text: nota,
+                        realTime: (typeof window._horaRealAhora === 'function') ? window._horaRealAhora() : '',
+                        createdAt: Date.now(),
+                        retro: true,
+                    },
+                });
+            }
             if (typeof showToast === 'function') {
                 showToast(_esElEnCurso
                     ? '💬 Comentario añadido al historial. Saldrá en el informe del partido.'
-                    : '💬 Comentario añadido al historial de este partido. Su informe ya estaba generado y no se modifica.',
+                    : (_enInforme
+                        ? '💬 Comentario añadido al historial y al informe de ese partido (marcado como retroactivo).'
+                        : '💬 Comentario añadido al historial. No se ha podido añadir al informe ya generado.'),
                     _esElEnCurso ? 3500 : 6500);
             }
             window.closeRetroactiveEventModal();
@@ -516,11 +619,47 @@
         // servidor lo rechaza (partido terminado: ver _persisteCorreccionDestino)
         // se dice claramente, en vez de dar por bueno algo que no se ha guardado.
         const _corregido = await _persisteCorreccionDestino();
+
+        // ⚽🟠 v715 · Y EL INFORME, que es donde el entrenador y la familia
+        // leen el resultado. El lado del gol se resuelve con la MISMA cuenta
+        // que el marcador del documento (arriba): si divergieran, el informe
+        // sumaría el gol al equipo contrario.
+        const _ladoGol = (eventType === 'goal')
+            ? (function () {
+                const miRol = (_targetMatchData && _targetMatchData.myTeamRole) || 'home';
+                return esRival ? (miRol === 'away' ? 'home' : 'away')
+                               : (p ? (p.team || miRol) : miRol);
+              })()
+            : null;
+        const _apunteInforme = p ? {
+            type:     eventType === 'sub' ? 'sub_out' : eventType,
+            minute:   minute,
+            second:   0,
+            timeStr:  minStr + ':00',
+            subId:    null,
+            note:     (eventType === 'goal' ? 'GOL' : eventType === 'yellow' ? 'TARJETA AMARILLA'
+                      : eventType === 'red' ? 'TARJETA ROJA' : eventType === 'injury' ? 'LESIÓN' : 'Sale')
+                      + ' a las ' + minStr + ':00 (' + _faseHist + ') (RETRO)',
+            phase:    false,
+            realTime: _horaReal || '',
+            retro:    true,
+        } : null;
+        const _informes = await _corrigeInformesDelPartido({
+            tipo:    eventType,
+            ladoGol: _ladoGol,
+            dorsal:  p ? p.number : null,
+            apunte:  _apunteInforme,
+        });
+
         if (typeof showToast === 'function') {
-            showToast(_corregido
-                ? '✅ Evento perdido registrado con éxito'
-                : '⚠️ Suceso registrado, pero no se han podido corregir las estadísticas del partido terminado.',
-                _corregido ? 3500 : 7000);
+            showToast(!_corregido
+                ? '⚠️ Suceso registrado, pero no se han podido corregir las estadísticas del partido terminado.'
+                : (!_informes
+                    ? '⚠️ Suceso y marcador corregidos, pero el informe del partido no se ha podido actualizar.'
+                    : (eventType === 'goal'
+                        ? '✅ Gol retroactivo registrado: marcador e informe actualizados'
+                        : '✅ Evento perdido registrado con éxito')),
+                (_corregido && _informes) ? 3500 : 7000);
         }
 
         window.closeRetroactiveEventModal();

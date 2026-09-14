@@ -319,6 +319,62 @@ if (base) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
+//  1 bis. v707 · UN PARTIDO NUEVO EMPIEZA A CERO, Y SIN id NO SE PIERDE NADA
+// ═══════════════════════════════════════════════════════════════════════════
+//  Encargo del autor (implementar.txt 2026-09-13, punto 4): «al inicializar y
+//  crear un nuevo partido, todos los contadores de estadísticas tácticas
+//  (pérdidas y recuperaciones) deben comenzar estrictamente desde cero».
+//
+//  🔑 LO QUE FALLABA, y por qué no se veía: la clave del registro es
+//  `liveMatchId`, que NO EXISTE hasta que arranca la retransmisión (~800 ms
+//  después de pintar la plantilla) y que no existe NUNCA si el entrenador no
+//  retransmite. Con la clave vacía, `_restaura()` salía por su primera línea:
+//    · no restauraba (una recarga perdía lo registrado), y
+//    · no limpiaba (los apuntes del partido anterior seguían en memoria y
+//      contaban en el informe del siguiente).
+{
+    // 🔑🔑 EL CASO QUE DE VERDAD HEREDABA: dos partidos SEGUIDOS sin
+    // retransmitir. Los dos comparten la clave `sin_id`, así que el cambio de
+    // partido no se nota por el identificador y sólo la puesta a cero
+    // explícita puede separarlos. (Si el partido anterior SÍ retransmitió, el
+    // id cambia y `_restaura` ya limpia por su cuenta.)
+    const e = montaEntorno({ players: PLANTILLA, matchId: 'm_cero' });
+    e.liveMatchId = '';
+    e.window.cronosPRActualiza();
+    e.window.cronosPRRegistra('recovery');
+    e.window.cronosPRRegistra('recovery');
+    ok('CONTROL · dos recuperaciones registradas en el partido anterior',
+       e.window.cronosPRDelPartido().recuperaciones.total === 2);
+
+    // Nace el partido nuevo: `_cronosNuevoPartidoDeEquipo()` pide la puesta a
+    // cero (y el id sigue siendo el mismo «vacío» que el del anterior).
+    e.window.cronosPRNuevoPartido();
+    const r = e.window.cronosPRDelPartido();
+    ok('🔑 v707 · el partido NUEVO arranca con los contadores a cero',
+       r.recuperaciones.total === 0 && r.perdidas.total === 0,
+       'recuperaciones=' + r.recuperaciones.total + ' pérdidas=' + r.perdidas.total);
+    ok('…y el cajón sin identificar queda vacío (era el que se heredaba)',
+       !e._almacen['cronos_pr::sin_id']);
+}
+{
+    // Y lo contrario: registrar ANTES de que exista el id no puede perderse
+    // cuando el id aparece.
+    const e = montaEntorno({ players: PLANTILLA, matchId: 'm_mig' });
+    e.liveMatchId = '';
+    e.window.cronosPRActualiza();
+    e.window.cronosPRRegistra('loss');
+    ok('sin id de retransmisión, lo registrado se guarda igualmente',
+       !!e._almacen['cronos_pr::sin_id'] && e.window.cronosPRDelPartido().perdidas.total === 1);
+
+    e.liveMatchId = 'm_real';            // la retransmisión arranca después
+    e.window.cronosPRActualiza();
+    ok('🔑 y al aparecer el id, los apuntes se MIGRAN en vez de vaciarse',
+       e.window.cronosPRDelPartido().perdidas.total === 1 &&
+       !!e._almacen['cronos_pr::m_real'] && !e._almacen['cronos_pr::sin_id'],
+       JSON.stringify(Object.keys(e._almacen)));
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
 //  2 bis. v694 · RECTIFICAR, LIMPIAR, ESQUINAS Y PANEL DE RESUMEN
 // ═══════════════════════════════════════════════════════════════════════════
 {

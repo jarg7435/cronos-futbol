@@ -2385,15 +2385,74 @@ function cronosTeamSlug(valor) {
         .replace(/^-+|-+$/g, '');          // sin guiones sueltos en los bordes
 }
 
+// ════════════════════════════════════════════════════════════════════
+//  🔴🔴 v710 · LA MODALIDAD NO ES PARTE DE LA IDENTIDAD DEL EQUIPO
+// ════════════════════════════════════════════════════════════════════
+//  Reporte del autor (implementar.txt 2026-09-14, capturas 10378-10384): en
+//  SU panel, las columnas de pérdidas y recuperaciones del resumen acumulado
+//  salían a CERO, «a diferencia del comportamiento correcto que ya tienen en
+//  los visores del director deportivo y coordinador».
+//
+//  🔑🔑 LA CAUSA NO ERA LA SUMA, ERA LA IDENTIDAD DEL EQUIPO. La misma
+//  categoría llega escrita de dos maneras según de dónde venga:
+//    · del PERFIL del entrenador →  'regional'        → club__regional__b
+//    · del DESPLEGABLE del panel →  'f11_regional'    → club__f11-regional__b
+//  Los informes sellan su `teamId` con la del PANEL y el filtro «mi equipo»
+//  compara con la del PERFIL: **no casan**. Resultado, medido en sus propias
+//  capturas: los partidos recientes —los únicos con P/R— quedaban FUERA del
+//  resumen acumulado del entrenador (seguían saliendo en el listado de abajo
+//  porque ahí rige la excepción de v507: «lo que él firmó no se le oculta»).
+//  Y no eran sólo las P/R: los goles y los minutos de esos partidos tampoco
+//  contaban.
+//
+//  🔑 POR QUÉ EL DIRECTOR SÍ LO VEÍA: su árbol normaliza la categoría con
+//  `ctNormCat`, que QUITA el prefijo `f7_/f8_/f11_` desde el principio
+//  (category-tree.js). La clave canónica de equipo no lo quitaba, así que las
+//  dos pantallas agrupaban distinto el mismo partido. Esa asimetría era el
+//  diagnóstico.
+//
+//  ⚠️ SE QUITA AQUÍ, EN LA CLAVE, Y NO EN CADA LLAMADA. `sync.js` ya lo
+//  arrancaba a mano desde v561 (`_sinPrefijo`) justo por este motivo —el
+//  partido quedaba huérfano de su plantilla— y aquello dejó escrito que el
+//  problema era de la clave, no de un llamador. Con la poda dentro:
+//    · los llamadores que pasan la categoría del PERFIL no cambian de clave
+//      (la expresión no encuentra nada que quitar), así que ni las plantillas
+//      (`team_rosters/{teamId}`) ni el cuadrante ni las ranuras de partido se
+//      mueven de sitio;
+//    · y los que pasan la del panel empiezan a producir la clave canónica.
+//
+//  ⚠️ 'f7'/'f11' NO SE TOCAN COMO CATEGORÍA SUELTA: la poda exige un separador
+//  detrás (`f11_regional`, `f11-regional`, `f11 regional`). Sin él no hay nada
+//  que quitar y una categoría que se llamara literalmente «F7» se respeta.
+// ════════════════════════════════════════════════════════════════════
+function cronosSinModalidad(category) {
+    return String(category == null ? '' : category)
+        .replace(/^\s*f(?:7|8|11)[_\-\s]+/i, '');
+}
+
 // Clave canónica del equipo. Un equipo SIN subcategoría es legítimo (algunos
 // clubes sólo usan categoría), y entonces la clave queda con el tramo vacío:
 // eso es deliberado, para que "Alevín" y "Alevín/A" NO sean el mismo equipo.
 function cronosTeamId(clubId, category, subcategory) {
     const c = cronosTeamSlug(clubId);
-    const cat = cronosTeamSlug(category);
+    const cat = cronosTeamSlug(cronosSinModalidad(category));
     const sub = cronosTeamSlug(subcategory);
     if (!c || !cat) return '';   // sin club o sin categoría no hay equipo
     return c + '__' + cat + '__' + sub;
+}
+
+// Normaliza una clave de equipo YA GUARDADA. Hace falta porque el histórico de
+// informes lleva escrito `teamId: 'club__f11-regional__b'` y hay que poder
+// compararlo con la clave canónica sin reescribir un solo documento de
+// producción (la promesa de la cabecera de arriba: función pura, cero
+// migraciones).
+function cronosTeamIdNorm(teamId) {
+    const s = String(teamId == null ? '' : teamId).trim();
+    if (!s) return '';
+    const partes = s.split('__');
+    if (partes.length < 2) return s;
+    partes[1] = cronosTeamSlug(cronosSinModalidad(partes[1]));
+    return partes.join('__');
 }
 
 // ════════════════════════════════════════════════════════════════════
@@ -2550,7 +2609,11 @@ if (typeof window !== 'undefined') {
 //    necesita saber cuál de los dos casos tiene delante.
 function cronosTeamIdOfDoc(datos, clubIdPorDefecto) {
     if (!datos) return '';
-    if (datos.teamId) return String(datos.teamId);
+    // v710 · El `teamId` guardado se NORMALIZA al leerlo: el histórico lo
+    // lleva sellado con la modalidad delante (`club__f11-regional__b`) y así
+    // casa con la clave canónica sin migrar nada. Ver la nota de
+    // `cronosSinModalidad`.
+    if (datos.teamId) return cronosTeamIdNorm(datos.teamId);
     return cronosTeamId(
         datos.clubId || clubIdPorDefecto || '',
         datos.category || '',
@@ -2707,11 +2770,214 @@ function cronosFueTitular(p) {
     return false;
 }
 
+// ════════════════════════════════════════════════════════════════════
+//  🏠✈️ v707 · LA LOCALÍA, EN UN SOLO SITIO
+// ════════════════════════════════════════════════════════════════════
+//  Encargo del autor (implementar.txt 2026-09-13, CAPTURAS 10352-10361):
+//  «revisar y corregir DE RAÍZ la logística de creación de partidos». Jugando
+//  de VISITANTE, su nombre se duplicaba en el bando local, el informe contaba
+//  una DERROTA habiendo ganado 0-3, y las pérdidas/recuperaciones se
+//  asignaban a la plantilla del rival.
+//
+//  🔑🔑 LA CAUSA COMÚN: «mi equipo» y «el local» eran lo mismo en una docena
+//  de sitios. `TEAM_NAMES.home`/`TEAM_NAMES.away` son los dos lados DEL
+//  ENCUENTRO —local y visitante—, no «yo» y «el rival»; quién es quién lo dice
+//  `window._userTeamRole`, que fija el interruptor 🏠 LOCAL / ✈️ VISITA del
+//  menú de arranque. Cada consumidor que escribió `TEAM_NAMES.away` queriendo
+//  decir «el rival» acertaba en casa y fallaba fuera, sin un solo error.
+//
+//  🔑 POR ESO VA AQUÍ Y NO EN CADA MÓDULO: `_cMyTeamKey()` (panel.js) ya era
+//  la versión buena de «mi lado» y aun así el resto del proyecto siguió
+//  suponiendo 'home'. Con una sola definición, arreglar la localía es
+//  arreglarla en todas las pantallas a la vez.
+//
+//  ⚠️ `cronosNombreRival()` DEVUELVE '' CUANDO EL OTRO LADO SIGUE CON SU
+//  RÓTULO DE FÁBRICA ('LOCAL' / 'VISITANTE'). Eso es lo que impide que el
+//  campo «Rival» de la convocatoria se autorellene con un nombre que no es de
+//  nadie — y, sobre todo, que se autorellene con EL MÍO, que es como nacía la
+//  duplicación del reporte.
+// ════════════════════════════════════════════════════════════════════
+function _cronosNombresDeEquipo() {
+    if (window.TEAM_NAMES && typeof window.TEAM_NAMES === 'object') return window.TEAM_NAMES;
+    return { home: '', away: '' };
+}
+
+// Rótulos de fábrica: son un HUECO, no el nombre de un equipo.
+function cronosNombreDeFabrica(nombre) {
+    return /^(local|visitante)$/i.test(String(nombre == null ? '' : nombre).trim());
+}
+
+// 'home' | 'away' — el lado que ocupa el equipo del entrenador.
+function cronosMiLado() {
+    return (window._userTeamRole === 'away') ? 'away' : 'home';
+}
+
+// El lado del RIVAL, que es siempre el otro.
+function cronosLadoRival() {
+    return cronosMiLado() === 'away' ? 'home' : 'away';
+}
+
+function cronosMiNombreEquipo() {
+    const n = _cronosNombresDeEquipo()[cronosMiLado()];
+    return String(n == null ? '' : n);
+}
+
+// El nombre del rival, o '' si en ese lado no hay nombre de verdad todavía.
+function cronosNombreRival() {
+    const n = String(_cronosNombresDeEquipo()[cronosLadoRival()] || '');
+    return cronosNombreDeFabrica(n) ? '' : n;
+}
+
+window.cronosNombreDeFabrica  = cronosNombreDeFabrica;
+window.cronosMiLado           = cronosMiLado;
+window.cronosLadoRival        = cronosLadoRival;
+window.cronosMiNombreEquipo   = cronosMiNombreEquipo;
+window.cronosNombreRival      = cronosNombreRival;
+
+// ════════════════════════════════════════════════════════════════════
+//  🏠✈️ v712 · EL ENFRENTAMIENTO, EN ORDEN DE LOCALÍA
+// ════════════════════════════════════════════════════════════════════
+//  Encargo del autor (implementar.txt 2026-09-14, captura 10396):
+//    · jugando en CASA   →  [Nuestro Equipo] vs [Rival]
+//    · jugando FUERA     →  [Rival] vs [Nuestro Equipo]
+//  «evitando que aparezcan marcadores o nombres invertidos (como mostrar un
+//  0-2 de victoria pero con el orden del título descolocado respecto a quién
+//  metió los goles)».
+//
+//  🔑 ESE «0-2 VICTORIA» NO ERA UN ERROR DE CUENTAS: el veredicto ya se
+//  calcula desde `myTeamRole` (v707) y era correcto —ganó 0-2 fuera—. Lo que
+//  chirriaba es que la tarjeta decía «vs Rival» a secas: sin el nombre propio
+//  y sin orden, el 0 y el 2 no se podían atribuir a nadie.
+//
+//  🔑 LA REGLA QUE LO HACE COHERENTE: el marcador SIEMPRE es LOCAL–VISITANTE
+//  (así se guarda), así que basta con que el TÍTULO vaya en el mismo orden. El
+//  primer nombre es el local y le corresponde el primer número. Con eso, «Rival
+//  vs ARINAGA REGIONAL 0-2 VICTORIA» se lee solo.
+//
+//  ⚠️ UNA SOLA DEFINICIÓN. Esto lo pintan CUATRO sitios (las tarjetas del
+//  entrenador, las del Director, las del Área de Familias y la cabecera del
+//  informe) más las descargas. Escrito cuatro veces, divergen: es la factura de
+//  v433 (`_userCanFollow`), v532 (el badge) y v578 (la forma del suceso).
+//
+//  ⚠️ SIN `myTeamRole` (informes anteriores a v526) SE SUPONE LOCAL, que es el
+//  comportamiento de siempre: un informe viejo no puede cambiar de orden por
+//  una suposición nueva.
+// ════════════════════════════════════════════════════════════════════
+function cronosEnfrentamiento(datos, miNombre) {
+    const d     = datos || {};
+    const mio   = String(miNombre == null ? '' : miNombre).trim() || 'Mi equipo';
+    const suyo  = String(d.rival == null ? '' : d.rival).trim() || 'Rival';
+    const fuera = d.myTeamRole === 'away';
+
+    const sh = d.scoreHome, sa = d.scoreAway;
+    const hay = (sh !== null && sh !== undefined && sa !== null && sa !== undefined &&
+                 sh !== '' && sa !== '');
+    const golesMios  = hay ? Number(fuera ? sa : sh) : null;
+    const golesSuyos = hay ? Number(fuera ? sh : sa) : null;
+
+    return {
+        fuera:      fuera,
+        local:      fuera ? suyo : mio,
+        visitante:  fuera ? mio  : suyo,
+        // El título, ya ordenado. El separador va como argumento porque cada
+        // pantalla usa el suyo ('vs', '–', un icono…).
+        titulo:     (fuera ? suyo : mio) + ' vs ' + (fuera ? mio : suyo),
+        // ⚠️ EL MARCADOR NO SE DA LA VUELTA: es LOCAL–VISITANTE, igual que el
+        // título. Invertirlo «para que mis goles vayan primero» es justo lo que
+        // descoloca la lectura.
+        marcador:   hay ? (String(sh) + '-' + String(sa)) : '',
+        golesMios:  golesMios,
+        golesSuyos: golesSuyos,
+        veredicto:  hay ? (golesMios > golesSuyos ? 'VICTORIA'
+                         : golesMios < golesSuyos ? 'DERROTA' : 'EMPATE') : '',
+    };
+}
+window.cronosEnfrentamiento = cronosEnfrentamiento;
+
+// ════════════════════════════════════════════════════════════════════
+//  🔵🔴 v713 · EL RESUMEN DE P/R DE UN PARTIDO, DE UNA SOLA FORMA
+// ════════════════════════════════════════════════════════════════════
+//  `matchPR` viaja REPETIDO: los despachos lo copian en CADA documento de
+//  jugador del cuerpo técnico (v693), así que un partido de 18 convocados
+//  trae 18 copias del mismo desglose.
+//
+//  🔑 NO SE SUMAN —serían 18 veces lo mismo—: se coge el ejemplar MÁS
+//  COMPLETO. Y se acepta también al nivel del partido (`m.matchPR`) por si un
+//  agrupador lo sube ahí, que es lo que hace el de Mis Informes.
+//
+//  ⚠️ HAY DOS COPIAS PRIVADAS DE ESTA MISMA REGLA Y SE QUEDAN DONDE ESTÁN:
+//  `_prDelInforme` en report-engine.js (ese motor es AUTOCONTENIDO: no puede
+//  nombrar nada de aquí, y su guard 1c lo vigila) y `_ctMatchPR` en
+//  category-tree.js (funciona y tiene sus propias pruebas). Lo que impide que
+//  se separen es scripts/test_txt_informes.js, que ejecuta la de aquí y la del
+//  motor con los mismos datos y exige el MISMO resultado.
+// ════════════════════════════════════════════════════════════════════
+function cronosPRDelInforme(datos) {
+    const d = datos || {};
+    const cands = [];
+    if (d.matchPR) cands.push(d.matchPR);
+    (Array.isArray(d.players) ? d.players : []).forEach(doc => {
+        if (doc && doc.matchPR) cands.push(doc.matchPR);
+    });
+    let mejor = null, totMejor = -1;
+    cands.forEach(c => {
+        const tot = (((c.perdidas || {}).total) || 0) + (((c.recuperaciones || {}).total) || 0);
+        if (tot > totMejor) { mejor = c; totMejor = tot; }
+    });
+    return mejor;
+}
+window.cronosPRDelInforme = cronosPRDelInforme;
+
+// ════════════════════════════════════════════════════════════════════
+//  🟠 v715 · LO REGISTRADO A POSTERIORI SE VE, Y SE VE NARANJA
+// ════════════════════════════════════════════════════════════════════
+//  Encargo del autor (implementar.txt 2026-09-14, capturas 10411-10414):
+//  «cualquier suceso añadido a posteriori (comentarios, goles, tarjetas,
+//  lesiones, cambios) debe mostrarse obligatoriamente en color naranja tanto
+//  en los informes colectivos como en los individuales, para que el cuerpo
+//  técnico y la dirección deportiva identifiquen claramente qué datos se
+//  introdujeron de forma retroactiva».
+//
+//  🔑 LA MARCA YA VIAJABA; LO QUE FALTABA ERA MIRARLA. v531 la dejó en tres
+//  formas distintas según por dónde pase el dato:
+//    · `retro: true`          — el suceso ya parseado del informe
+//      (`_parseHistoryForFirestore`, que lo conserva entre re-parseos);
+//    · `isRetroactive: true`  — el suceso de `live_matches.events[]`
+//      (lo pone `_registerMatchEvent` al recibir un minuto manual);
+//    · el TEXTO `(RETRO)` / `(Retroactivo)` — los informes viejos y el
+//      historial en crudo del jugador.
+//  Y sólo UN sitio la leía: el cronograma del motor de informes. El registro
+//  de incidencias, los comentarios, el Área de Familias y las descargas la
+//  ignoraban por completo.
+//
+//  ⚠️ SE ACEPTAN LAS TRES FORMAS A PROPÓSITO: un informe guardado antes de
+//  v531 sólo tiene el texto, y decidir con una sola señal dejaría fuera media
+//  temporada de datos ya escritos.
+//
+//  ⚠️ EL NARANJA ES EL MISMO que el aro discontinuo del cronograma
+//  (`RETRO_COLOR` en report-engine.js). Ese motor es AUTOCONTENIDO y no puede
+//  nombrar nada de aquí, así que conserva su propia constante: que las dos no
+//  se separen lo vigila scripts/test_retroactivo_naranja.js.
+// ════════════════════════════════════════════════════════════════════
+const CRONOS_COLOR_RETRO = '#f5a623';
+function cronosEsRetro(ev) {
+    if (!ev) return false;
+    if (ev.retro === true || ev.isRetroactive === true) return true;
+    const texto = String(ev.note == null ? '' : ev.note) + ' ' +
+                  String(ev.text == null ? '' : ev.text);
+    return /\(RETRO\)/i.test(texto) || /\(RETROACTIVO\)/i.test(texto);
+}
+window.cronosEsRetro       = cronosEsRetro;
+window.CRONOS_COLOR_RETRO  = CRONOS_COLOR_RETRO;
+
 window.cronosFueTitular   = cronosFueTitular;
 window.cronosCupoConvocatoria = cronosCupoConvocatoria;
 window.cronosTeamSlug     = cronosTeamSlug;
 window.cronosTeamId       = cronosTeamId;
 window.cronosTeamIdOfDoc  = cronosTeamIdOfDoc;
+// v710 · la poda de la modalidad y la normalización de una clave ya guardada.
+window.cronosSinModalidad = cronosSinModalidad;
+window.cronosTeamIdNorm   = cronosTeamIdNorm;
 window.cronosDocEsDeEquipo = cronosDocEsDeEquipo;
 window.cronosMyTeam       = cronosMyTeam;
 window.cronosMyTeamId     = cronosMyTeamId;

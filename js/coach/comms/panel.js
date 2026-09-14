@@ -16,7 +16,15 @@ async function _cFS() {
 // FIX: cuando el entrenador dirige de visitante (_userTeamRole==='away'),
 // SU convocatoria se etiqueta team:'away'. Filtrar rígido 'home' dejaba
 // homePlayers vacío → ningún informe (staffReport) llegaba al staff.
+// 🏠✈️ v707 · UNA SOLA DEFINICIÓN DE «MI LADO». `cronosMiLado()`
+// (js/core/utils.js) es ahora la fuente; este nombre se conserva porque lo
+// llaman veinte sitios de los informes. La expresión de siempre queda como
+// respaldo por si utils.js no hubiera cargado: sin ella, un orden de scripts
+// distinto dejaría los informes SIN jugadores.
 function _cMyTeamKey() {
+    if (typeof window !== 'undefined' && typeof window.cronosMiLado === 'function') {
+        return window.cronosMiLado();
+    }
     return (typeof window !== 'undefined' && window._userTeamRole === 'away') ? 'away' : 'home';
 }
 if (typeof window !== 'undefined') window._cMyTeamKey = _cMyTeamKey;
@@ -347,15 +355,68 @@ if (typeof window !== 'undefined') window._cStaffThreadId = _cStaffThreadId;
 // Busca en me.allRoles la entrada de entrenador ('user'/'coach') cuya
 // category coincida con la del partido ya calculada y devuelve su
 // subcategory. Fallback '' (mismo estilo que category). No lanza.
+// ════════════════════════════════════════════════════════════════════
+//  🔴🔴 v711 · LA SUBCATEGORÍA QUE NO SE ESCRIBÍA NUNCA
+// ════════════════════════════════════════════════════════════════════
+//  Reporte del autor (implementar.txt 2026-09-14): las pérdidas y
+//  recuperaciones «no llegan» al resumen acumulado de la temporada.
+//
+//  🔑🔑 MEDIDO CONTRA PRODUCCIÓN (scripts/ops/inspect_pr_informes.js) antes de
+//  tocar una línea — y esto tumbó el diagnóstico de v710, que era incompleto:
+//
+//     fecha        category        subcategory   teamId sellado          P/R
+//     2026-09-12   regional        B             …__regional__b          (sin usar)
+//     2026-09-13   f11_regional    (VACÍA)       …__f11-regional__       SÍ
+//     2026-09-14   f11_regional    (VACÍA)       …__regional__           SÍ
+//
+//  El dato de P/R **estaba en los documentos** (P=16 R=23 con su desglose por
+//  dorsal). Lo que fallaba es que esos partidos quedaban FUERA del resumen:
+//  su clave de equipo va SIN SUBCATEGORÍA (`…__regional__`) y la del
+//  entrenador es `…__regional__b`.
+//
+//  🔑 Y LA SUBCATEGORÍA SE PERDÍA AQUÍ: esta función comparaba la categoría
+//  del PARTIDO —que viene del desplegable, `f11_regional`— con la del PERFIL
+//  —`regional`— con un `===` a pelo. No casaban NUNCA en cuanto el
+//  desplegable ponía la modalidad delante, y devolvía ''. Es la misma familia
+//  que v707/v710: la modalidad no es parte de la identidad del equipo.
+//
+//  EL ORDEN NUEVO, y por qué:
+//   1 · LA DEL PARTIDO (`_currentMatchSubcategory`). Es la que `confirmSetup`
+//       selló JUNTO a la categoría, y la lección de v562 es que la pareja se
+//       toma de UNA sola fuente: con la categoría del panel y la letra del
+//       perfil salía el híbrido «Regional C» de un Regional A.
+//   2 · La plaza del entrenador cuya categoría coincida, ya NORMALIZADA.
+//   3 · Y si sólo tiene UNA plaza con subcategoría, ésa: sin ambigüedad
+//       posible, mejor eso que dejar el informe huérfano de equipo. Con dos
+//       plazas NO se adivina (v675: «si no se resuelve, no se inventa»).
+// ════════════════════════════════════════════════════════════════════
 function _cMatchSubcatFor(me, cat) {
     try {
+        const _norm = (x) => {
+            const s = String(x == null ? '' : x).trim().toLowerCase();
+            return (typeof window !== 'undefined' && typeof window.cronosSinModalidad === 'function')
+                ? window.cronosSinModalidad(s)
+                : s.replace(/^f(?:7|8|11)[_\-\s]+/, '');
+        };
+
+        // 1) La del PARTIDO en curso, sellada con su categoría.
+        const viva = (typeof window !== 'undefined' && window._currentMatchSubcategory) || '';
+        if (viva) return String(viva).trim();
+
         const roles = (me && Array.isArray(me.allRoles)) ? me.allRoles : [];
-        const c = (cat || '').toString().trim().toLowerCase();
         const isCoach = r => r && (r.role === 'user' || r.role === 'coach');
-        // 1) Coincidencia exacta de categoría entre roles de entrenador
-        const hit = roles.find(r => isCoach(r) &&
-            (r.category || '').toString().trim().toLowerCase() === c);
-        if (hit && hit.subcategory) return hit.subcategory;
+        const c = _norm(cat);
+
+        // 2) La plaza con la MISMA categoría, comparada sin la modalidad.
+        const hit = roles.find(r => isCoach(r) && _norm(r.category) === c);
+        if (hit && hit.subcategory) return String(hit.subcategory).trim();
+
+        // 3) Plaza única con subcategoría: no hay a quién confundir.
+        const conSub = roles.filter(r => isCoach(r) && r.subcategory);
+        if (conSub.length === 1) return String(conSub[0].subcategory).trim();
+
+        // Y el perfil, como último recurso, sólo si no lleva dos equipos.
+        if (me && me.subcategory && conSub.length === 0) return String(me.subcategory).trim();
         return '';
     } catch (_) { return ''; }
 }

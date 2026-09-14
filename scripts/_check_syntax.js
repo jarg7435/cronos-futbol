@@ -69,6 +69,12 @@ const COBERTURA_DECLARADA = [
   'js/shared/multi-select.js',
   // v672 · Pases de regalo, dentro de la Secretaría del SuperAdmin.
   'js/admin/superadmin/gift-passes.js',
+  // v706 · Mini-feed de «últimos sucesos». Lo cargan los DOS documentos
+  // (index.html y live.html), que es justo el motivo de que exista.
+  'js/shared/live-feed.js',
+  // v709 · Las melodías de cada suceso. Mismo caso: la cargan los DOS
+  // documentos (index.html y live.html).
+  'js/shared/live-sound.js',
 ];
 
 const files = (argFiles.length

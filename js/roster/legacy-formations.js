@@ -13,8 +13,24 @@ function placeOnField(chip, player) {
                 return (a.number || 0) - (b.number || 0);
             });
         const index = fieldPlayers.indexOf(player);
-        const formationSet = (!analyzeAway && player.team === 'home') ? FORMATIONS_FULL : FORMATIONS;
-        const formation = formationSet[currentMode]?.[player.team];
+        // ══════════════════════════════════════════════════════════════
+        //  🏠✈️ v707 · EL CAMPO ENTERO ES DE MI EQUIPO, JUEGUE DONDE JUEGUE
+        // ══════════════════════════════════════════════════════════════
+        //  Sin analizar al contrario, el equipo propio se reparte por el campo
+        //  COMPLETO. La condición decía `player.team === 'home'`, así que
+        //  jugando FUERA mis once salían apiñados en media cancha y la otra
+        //  mitad vacía (capturas 10360/10361).
+        //
+        //  ⚠️ `FORMATIONS_FULL` SÓLO TIENE LA CLAVE 'home': no son «las
+        //  posiciones del local», son las del CAMPO ENTERO. Pedirle
+        //  `['away']` devolvería undefined y los jugadores caerían todos al
+        //  centro (50/50), que es peor que el defecto que se viene a arreglar.
+        const _miLado = (typeof window.cronosMiLado === 'function')
+            ? window.cronosMiLado()
+            : ((window._userTeamRole === 'away') ? 'away' : 'home');
+        const _campoEntero = (!analyzeAway && player.team === _miLado);
+        const formationSet = _campoEntero ? FORMATIONS_FULL : FORMATIONS;
+        const formation = formationSet[currentMode]?.[_campoEntero ? 'home' : player.team];
         if (formation && formation[index]) {
             const pos = clampToField(formation[index].x, formation[index].y);
             player.x = pos.x; player.y = pos.y;

@@ -2639,8 +2639,13 @@
 //        + test_reject_request_rules.js: faltaban los mocks de /users/, asi que
 //          las ramas de director y coordinador que anadio v610/v611 se AVERIABAN
 //          en el simulador y nadie las probaba. 8 casos nuevos -> 46/46.
-const VERSION = 'v399';
-const CACHE_NAME = 'cronos-cache-v705';
+// ⚠️ SÓLO PARA LOS LOGS DEL SERVICE WORKER (`[SW v715] …`). El sello que ve el
+// usuario y el que invalida la caché son otros: el badge de index.html y
+// CACHE_NAME, los dos los pone `node scripts/cache-bust.js`. Se vuelve a
+// alinear aquí —iba por v399— para que un log de consola no mienta sobre qué
+// versión está sirviendo.
+const VERSION = 'v715';
+const CACHE_NAME = 'cronos-cache-v715';
 
 const ASSETS = [
     './',
@@ -2695,6 +2700,12 @@ const ASSETS = [
     './js/shared/whatsapp-email.js',
     './js/shared/admin-shared.js',
     './js/shared/multi-select.js',
+    // 🔴 v706 · El mini-feed de «últimos sucesos», compartido por el listado
+    // de live.html y la pestaña 🔴 En Vivo del Área de Familias.
+    './js/shared/live-feed.js',
+    // 🔊 v709 · Las melodías de cada suceso, compartidas por el visor y el
+    // panel en vivo del Área de Familias.
+    './js/shared/live-sound.js',
     './js/ai/import.js',
     './js/admin/superadmin/superadmin.panel.js',
     './js/admin/superadmin/diagnostico.js',

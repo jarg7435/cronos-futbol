@@ -195,13 +195,47 @@ function openConvocationModal() {
         if (elT) elT.textContent = 'min ' + minForMatch + ' · max ' + maxTitulares;
     }
 
+    // ════════════════════════════════════════════════════════════════
+    //  🏠✈️ v707 · LA CONVOCATORIA ES DE MI EQUIPO, Y EL RIVAL ES EL OTRO
+    // ════════════════════════════════════════════════════════════════
+    //  🔑🔑 AQUÍ NACÍA LA DUPLICACIÓN DEL NOMBRE (CAPTURAS 10352-10354). El
+    //  campo «Rival» se autorellenaba con `TEAM_NAMES.away`, o sea «el equipo
+    //  visitante»… que cuando el entrenador juega FUERA es EL SUYO. Y de ahí
+    //  seguía solo: `_convHeredarRivalAlPartido()` escribe el rival en el lado
+    //  contrario al mío, así que su propio nombre acababa TAMBIÉN en el bando
+    //  local, y el marcador rotulaba «ARINAGA REGIONAL — ARINAGA REGIONAL».
+    //
+    //  🔑 Y el título decía el nombre del LOCAL sobre una lista que siempre es
+    //  MI plantilla: jugando fuera, la convocatoria salía con el nombre del
+    //  rival en la cabecera.
+    //
+    //  ⚠️ `cronosNombreRival()` devuelve '' si el otro lado sigue con su
+    //  rótulo de fábrica ('LOCAL'/'VISITANTE'): el campo se queda VACÍO para
+    //  que el entrenador escriba el nombre real, que es justo lo que se pidió.
+    function _convMiNombre() {
+        var n = (typeof window.cronosMiNombreEquipo === 'function')
+            ? window.cronosMiNombreEquipo() : (TEAM_NAMES && TEAM_NAMES.home) || '';
+        return (typeof escapeHtml === 'function') ? escapeHtml(n) : n;
+    }
+
+    function _convRivalPorDefecto(guardado) {
+        var g = String((guardado && guardado.rival) || '').trim();
+        var mio = (typeof window.cronosMiNombreEquipo === 'function')
+            ? String(window.cronosMiNombreEquipo() || '').trim() : '';
+        // ⚠️ Ni lo guardado puede colar MI nombre como rival: una convocatoria
+        //    anterior pudo haberlo guardado ya con el defecto de antes de v707,
+        //    y esa cadena sigue en `cronos_conv_data`.
+        if (g && !(mio && g.toUpperCase() === mio.toUpperCase())) return g;
+        return (typeof window.cronosNombreRival === 'function') ? window.cronosNombreRival() : '';
+    }
+
     const modal = document.getElementById('setup-modal');
     modal.style.display = 'flex';
     modal.innerHTML = `
         <div class="modal-content" style="width:min(96vw,860px); max-height:94vh; display:flex; flex-direction:column; overflow-y:auto; padding:${isMobile ? '1rem 0.8rem' : '1.5rem'};">
 
             <div style="flex-shrink:0;">
-                <h2 style="margin:0 0 0.1rem; font-size:${isMobile ? '1.1rem' : '1.4rem'};">\u{1F4CB} Convocatoria \u2014 ${TEAM_NAMES.home}</h2>
+                <h2 style="margin:0 0 0.1rem; font-size:${isMobile ? '1.1rem' : '1.4rem'};">\u{1F4CB} Convocatoria \u2014 ${_convMiNombre()}</h2>
                 <p style="font-size:0.75rem; color:var(--text-muted); margin-bottom:0.6rem;">
                     1\u00ba click: <span style="color:var(--primary);font-weight:700;">Convocado</span> \u00b7 2\u00ba click: <span style="color:#f0883e;font-weight:900;background:rgba(240,136,62,0.15);padding:2px 8px;border-radius:4px;">TITULAR</span> \u00b7 3\u00ba click: Quitar \u00b7 M&iacute;n <span style="color:#f0883e;font-weight:700;">${minForMatch}</span> titulares para partido
                 </p>
@@ -256,7 +290,7 @@ function openConvocationModal() {
                         <label style="font-size:0.72rem; color:var(--text-muted); display:block; margin-bottom:0.2rem;">\u{1F19A} Rival</label>
                         <input type="text" id="conv-rival" class="conv-input"
                             placeholder="Equipo rival"
-                            value="${typeof escapeHtml==='function'? escapeHtml(savedConv.rival||TEAM_NAMES.away||''): savedConv.rival||TEAM_NAMES.away||''}">
+                            value="${typeof escapeHtml==='function'? escapeHtml(_convRivalPorDefecto(savedConv)): _convRivalPorDefecto(savedConv)}">
                     </div>
                     <div id="conv-jornada-box">
                         <label style="font-size:0.72rem; color:var(--text-muted); display:block; margin-bottom:0.2rem;">\u{1F522} Jornada</label>
@@ -938,9 +972,34 @@ function _convHeredarRivalAlPartido() {
         if (!rival) return '';
 
         // El rival ocupa el lado CONTRARIO al del equipo del entrenador.
-        const miLado    = (window._userTeamRole === 'away') ? 'away' : 'home';
+        // v707 · Los dos lados los decide `cronosMiLado()` (js/core/utils.js),
+        // que es la misma función que usan los informes y el registro de P/R.
+        const miLado    = (typeof window.cronosMiLado === 'function')
+            ? window.cronosMiLado()
+            : ((window._userTeamRole === 'away') ? 'away' : 'home');
         const ladoRival = (miLado === 'away') ? 'home' : 'away';
         const nombre    = rival.toUpperCase();
+
+        // ══════════════════════════════════════════════════════════════
+        //  🚨 v707 · LA SEGUNDA PUERTA: NUNCA DUPLICAR MI PROPIO NOMBRE
+        // ══════════════════════════════════════════════════════════════
+        //  Encargo del autor: «el sistema nunca debe autocompletar ni duplicar
+        //  ese mismo nombre en el bando local». El defecto de origen estaba en
+        //  el campo «Rival» de esta misma pantalla (ya corregido arriba), pero
+        //  esa cadena puede llegar de más sitios —`cronos_conv_data` guardado
+        //  con la versión anterior, el calendario oficial, o escrita a mano— y
+        //  el daño se hace AQUÍ, que es donde se escribe en el otro bando. Con
+        //  el mismo nombre en los dos lados, el marcador, el informe y el visor
+        //  quedan sin forma de distinguir a los equipos.
+        //
+        //  ⚠️ SE DEJA EL LADO DEL RIVAL COMO ESTÉ, no se borra: el entrenador
+        //  puede haber escrito ahí el nombre real en el menú de arranque.
+        const _mio = String((TEAM_NAMES && TEAM_NAMES[miLado]) || '').trim().toUpperCase();
+        if (_mio && nombre === _mio) {
+            console.warn('[v707] El «rival» de la convocatoria ("' + rival + '") es el nombre de ' +
+                         'MI equipo: no se copia al bando contrario para no duplicarlo.');
+            return '';
+        }
 
         if (typeof TEAM_NAMES !== 'undefined' && TEAM_NAMES) TEAM_NAMES[ladoRival] = nombre;
 

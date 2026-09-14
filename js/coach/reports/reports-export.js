@@ -604,14 +604,39 @@
     // Localía y veredicto SIEMPRE con la misma semántica que la tarjeta de
     // pantalla: sin myTeamRole (informes antiguos) se cae a 'home'. Si esto
     // divergiera, el archivo descargado contradiría al panel.
-    function _rxVeredicto(m) {
+    //  🏠✈️ v712 · Y el TÍTULO del encuentro, ya ordenado por localía
+    //  (`cronosEnfrentamiento`, js/core/utils.js): el marcador de la ficha es
+    //  LOCAL - VISITANTE, así que sin los dos nombres en ese mismo orden un
+    //  «2 - 1 (DERROTA)» parece una errata. El nombre propio se resuelve del
+    //  usuario en sesión —los informes que se exportan son de su club— y se
+    //  puede pasar por argumento (el PDF ya lleva el club en su `meta`).
+    //  ⚠️ El respaldo mantiene el comportamiento previo si `utils.js` no está
+    //  cargado (es lo que ocurre en el arnés de pruebas).
+    function _rxMiNombre(extra) {
+        const u = (typeof window !== 'undefined' && window._cronosCurrentUser) || {};
+        return String(extra || u.clubName || u.clubId || 'Mi equipo').trim() || 'Mi equipo';
+    }
+    function _rxVeredicto(m, miNombre) {
+        m = m || {};
+        if (typeof window !== 'undefined' && typeof window.cronosEnfrentamiento === 'function') {
+            const e = window.cronosEnfrentamiento(m, _rxMiNombre(miNombre));
+            return {
+                marcador:  e.marcador ? e.marcador.replace('-', ' - ') : '—',
+                veredicto: e.veredicto,
+                titulo:    e.titulo,
+            };
+        }
+        const _mio = _rxMiNombre(miNombre), _suyo = m.rival || 'Rival';
+        const _fuera = m.myTeamRole === 'away';
+        const titulo = (_fuera ? _suyo : _mio) + ' vs ' + (_fuera ? _mio : _suyo);
         const sh = m.scoreHome, sa = m.scoreAway;
-        if (sh == null || sa == null) return { marcador: '—', veredicto: '' };
-        const mios = m.myTeamRole === 'away' ? sa : sh;
-        const suyos = m.myTeamRole === 'away' ? sh : sa;
+        if (sh == null || sa == null) return { marcador: '—', veredicto: '', titulo: titulo };
+        const mios = _fuera ? sa : sh;
+        const suyos = _fuera ? sh : sa;
         return {
             marcador: sh + ' - ' + sa,
             veredicto: mios > suyos ? 'VICTORIA' : mios < suyos ? 'DERROTA' : 'EMPATE',
+            titulo: titulo,
         };
     }
 
@@ -708,18 +733,44 @@
     window.rxEtiquetaSuceso = function (e) {
         if (!e || !e.type) return '';
         const nota = _rxNota(e);
-        if (e.type === 'goal'   && /ANULAD/i.test(nota))            return 'Gol anulado';
-        if (e.type === 'red'    && /REVERTID|RECTIFIC/i.test(nota)) return 'Roja revertida';
-        if (e.type === 'yellow' && /DOBLE\s+AMARILLA/i.test(nota))  return 'Doble amarilla (expulsión)';
-        return RX_SUCESO[e.type] || String(e.type);
+        // 🟠 v715 · LO REGISTRADO A POSTERIORI SE DICE CON PALABRAS. En una
+        // hoja de cálculo y en un TXT no hay color —igual que pasa con
+        // "TARJETA", que allí hay que decir de qué color es—, así que la
+        // trazabilidad que el autor pide en naranja para la pantalla aquí se
+        // escribe. La marca la resuelve la regla única de js/core/utils.js.
+        const _retro = (typeof window !== 'undefined' && typeof window.cronosEsRetro === 'function')
+            ? window.cronosEsRetro(e)
+            : (e.retro === true || e.isRetroactive === true || /\(RETRO\)|\(RETROACTIVO\)/i.test(nota));
+        const _sello = (t) => _retro ? (t + ' (retroactivo)') : t;
+        if (e.type === 'goal'   && /ANULAD/i.test(nota))            return _sello('Gol anulado');
+        if (e.type === 'red'    && /REVERTID|RECTIFIC/i.test(nota)) return _sello('Roja revertida');
+        if (e.type === 'yellow' && /DOBLE\s+AMARILLA/i.test(nota))  return _sello('Doble amarilla (expulsión)');
+        return _sello(RX_SUCESO[e.type] || String(e.type));
     };
 
-    // rxIncidencias(p) → "02:24 Sale del campo | 10:00 Gol"
-    //  Va todo en UNA celda: son varias líneas y repartirlas en columnas
-    //  dejaría una hoja con un ancho distinto por jugador.
-    window.rxIncidencias = function (p) {
+    // ── 📄 v713 · LAS INCIDENCIAS, LÍNEA A LÍNEA ─────────────────────
+    //  rxLineasIncidencias(p) → ["02:24 Sale del campo", "10:00 Gol"]
+    //
+    //  REPORTE DEL AUTOR (implementar.txt 2026-09-14, capturas 10402/10403):
+    //  el TXT del informe de partido escribía «· [object Object]» por cada
+    //  suceso — cinco líneas seguidas en el jugador con más historial. Volcaba
+    //  `p.history` con una interpolación de texto, y desde v531 esos apuntes
+    //  son OBJETOS (`{type, minute, second, timeStr, note}`).
+    //
+    //  🔑 Y NO SE ARREGLA CON UN `JSON.stringify` NI CON UN ROTULITO POR TIPO:
+    //  la traducción correcta ya vivía aquí (`rxEtiquetaSuceso` +
+    //  `_rxSucesosReales`, del CSV) con las dos trampas resueltas —la
+    //  contabilidad de fase que no es una sustitución, y los sucesos que se
+    //  tipan como lo que no son (gol anulado, doble amarilla, roja
+    //  revertida)—. Así que el TXT consume ESTO, en vez de estrenar un tercer
+    //  criterio que divergiría del CSV y de la pantalla.
+    //
+    //  Devuelve una LÍNEA POR SUCESO porque es lo que necesita un TXT (y el
+    //  registro cronológico de la pantalla); `rxIncidencias` las junta para la
+    //  celda del CSV, que sigue siendo una sola.
+    window.rxLineasIncidencias = function (p) {
         const hist = (p && p.history) || [];
-        if (!Array.isArray(hist)) return '';
+        if (!Array.isArray(hist)) return [];
         // Historial ANTIGUO, todavía en crudo: son las cadenas de logEvent, ya
         // en español ("Sale a las 02:24 (1ªP)"). Se dejan tal cual, sólo se
         // descarta la contabilidad de fase, que ahí también sobra.
@@ -730,7 +781,14 @@
             const que = window.rxEtiquetaSuceso(e);
             return [cuando, que].filter(Boolean).join(' ');
         });
-        return reales.concat(crudas).filter(Boolean).join(' | ');
+        return reales.concat(crudas).filter(Boolean);
+    };
+
+    // rxIncidencias(p) → "02:24 Sale del campo | 10:00 Gol"
+    //  Va todo en UNA celda: son varias líneas y repartirlas en columnas
+    //  dejaría una hoja con un ancho distinto por jugador.
+    window.rxIncidencias = function (p) {
+        return window.rxLineasIncidencias(p).join(' | ');
     };
 
     // rxFilasInforme(m) → matriz para rxCsv: ficha del partido, línea en
@@ -741,8 +799,24 @@
         const jug = ((m.players) || []).slice().sort(function (a, b) {
             return (parseInt(a.playerNumber, 10) || 99) - (parseInt(b.playerNumber, 10) || 99);
         });
+        // 🔵🔴 v713 · Pérdidas y recuperaciones, con la MISMA regla que el resto
+        // (js/core/utils.js): el dato viaja repetido y se coge el ejemplar más
+        // completo. Si el partido no lo trae, no se escribe ninguna columna: un
+        // informe anterior al registro de P/R no puede rellenarse de ceros.
+        const pr    = (typeof window.cronosPRDelInforme === 'function')
+            ? window.cronosPRDelInforme(m) : (m.matchPR || null);
+        const prP   = (pr && pr.perdidas)       || {};
+        const prR   = (pr && pr.recuperaciones) || {};
+        const totP  = Number(prP.total) || 0;
+        const totR  = Number(prR.total) || 0;
+        const hayPR = !!(totP || totR);
+        const prDe  = function (dorsal, cual) {
+            const tabla = (cual === 'p' ? prP : prR).porDorsal || {};
+            return Number(tabla[String(dorsal == null ? '' : dorsal).trim()]) || 0;
+        };
         const out = [
             ['INFORME GRUPAL DE PARTIDO'],
+            ['Encuentro', v.titulo || '—'],
             ['Rival', m.rival || '—'],
             ['Fecha', window.rxFechaLarga(m.matchDate) + (m.matchTime ? ' · ' + m.matchTime : '')],
             ['Competición', m.competition || '—'],
@@ -752,16 +826,25 @@
             ['Resultado', v.marcador + (v.veredicto ? ' (' + v.veredicto + ')' : '')],
             ['Entrenador', m.coachEmail || '—'],
             ['Convocados', jug.length],
-            [],
-            ['Dorsal', 'Jugador', 'Minutos', 'Goles', 'Tarjeta', 'Lesión', 'Incidencias'],
         ];
+        if (hayPR) {
+            out.push(['Pérdidas del equipo', totP]);
+            out.push(['Recuperaciones del equipo', totR]);
+            const sinP = Number(prP.sinAsignar) || 0, sinR = Number(prR.sinAsignar) || 0;
+            if (sinP || sinR) out.push(['P/R sin jugador asignado', sinP + ' / ' + sinR]);
+        }
+        out.push([]);
+        out.push(['Dorsal', 'Jugador', 'Minutos', 'Goles', 'Tarjeta', 'Lesión']
+            .concat(hayPR ? ['Pérdidas', 'Recuperaciones'] : [])
+            .concat(['Incidencias']));
         jug.forEach(function (p) {
             const tarjeta = (p.cards && p.cards !== 'ninguna') ? p.cards : 'ninguna';
             out.push([
                 p.playerNumber || '', p.playerAlias || p.playerName || 'Jugador',
                 p.minutesPlayed || '0', p.goals || 0, tarjeta,
-                p.injured ? 'sí' : 'no', window.rxIncidencias(p),
-            ]);
+                p.injured ? 'sí' : 'no',
+            ].concat(hayPR ? [prDe(p.playerNumber, 'p'), prDe(p.playerNumber, 'r')] : [])
+             .concat([window.rxIncidencias(p)]));
         });
         return out;
     };
@@ -793,9 +876,9 @@
             _rxToast('⚠️ No se pudo generar el informe visual', 3500);
             return false;
         }
-        const v = _rxVeredicto(m);
+        const v = _rxVeredicto(m, meta.club);
         return window.rxImprimir({
-            titulo:    'Informe grupal · ' + (m.rival ? 'vs ' + m.rival : 'Partido'),
+            titulo:    'Informe grupal · ' + (v.titulo || (m.rival ? 'vs ' + m.rival : 'Partido')),
             subtitulo: window.rxFechaLarga(m.matchDate) +
                        (v.marcador !== '—' ? ' · ' + v.marcador + (v.veredicto ? ' (' + v.veredicto + ')' : '') : ''),
             meta: [
