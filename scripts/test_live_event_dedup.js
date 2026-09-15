@@ -473,11 +473,44 @@ console.log('\n── PARTE 7 · v676 · reconectar no puede cantar el historial
         }
 
         // El tope vive en el anuncio, no en la criba: se comprueba en el fuente.
-        ok('7f · 🔴 y ahí actúa el tope: un lote grande no se canta',
+        // ⚠️ v721 · ACTUALIZADA A PROPÓSITO. Exigía la línea exacta
+        // `if (_evNuevos.length > _TOPE_DIRECTO) {`, y ese tope a secas callaba
+        // también un CAMBIO GRUPAL de 6 (medido el 2026-09-15 en el Prebenjamín
+        // A: seis `sub` del mismo segundo, sin aviso). El tope SIGUE —es lo que
+        // cubre los sucesos sin fecha y el desfase de reloj— con UNA excepción:
+        // una sola jugada. La 7l/7m de abajo ejecutan esa excepción.
+        ok('7f · 🔴 y ahí actúa el tope: un lote grande no se canta (salvo una jugada)',
            /const _TOPE_DIRECTO = 5;/.test(l) &&
-           /if \(_evNuevos\.length > _TOPE_DIRECTO\) \{/.test(l) &&
+           /if \(_evNuevos\.length > _TOPE_DIRECTO && !_esUnaSolaJugada\(_evNuevos\)\) \{/.test(l) &&
            /_evNuevos\.length = 0;/.test(l),
            'es lo que cubre el desfase de reloj y los sucesos sin fecha');
+
+        // ── 7l/7m · 🔴 v721 · UN CAMBIO GRUPAL ES UNA JUGADA ──────────────
+        //  Se ejecuta la función REAL del visor (va dentro del trozo de estado).
+        {
+            const v = visor();
+            const T = Date.now() - 3000;
+            const grupal = [];
+            for (let i = 0; i < 6; i++) {
+                grupal.push({ eventId: 'g' + i, matchId: 'M1', type: 'sub',
+                              text: 'PREBENJAMÍN A | ▲ SALE: J' + i + ' | ▼ ENTRA: S' + i,
+                              createdAt: T + i });
+            }
+            const esJugada = typeof v._esUnaSolaJugada === 'function' && v._esUnaSolaJugada(grupal);
+            ok('7l · 🔴🔴 EL DEFECTO DEL REPORTE: seis cambios del mismo segundo SON una jugada',
+               esJugada === true,
+               'si no, el tope de v676 los calla (Prebenjamín A, 13:57:23)');
+
+            const repartidos = historial.slice(0, 20);              // 20 sucesos en 20 minutos
+            const viejaRafaga = grupal.map(e => Object.assign({}, e, { createdAt: e.createdAt - 10 * 60 * 1000 }));
+            const sinFecha = grupal.map(e => ({ eventId: e.eventId, type: e.type, text: e.text }));
+            ok('7m · …y NO lo es una puesta al día: repartida en minutos, vieja o sin fecha',
+               typeof v._esUnaSolaJugada === 'function' &&
+               v._esUnaSolaJugada(repartidos) === false &&
+               v._esUnaSolaJugada(viejaRafaga) === false &&
+               v._esUnaSolaJugada(sinFecha) === false,
+               'la cascada de v676 tiene que seguir callada');
+        }
 
         ok('7g · ⚠️ silenciar NO es perder: el cajón se reconstruye por su vía',
            /window\._loadMatchEventsFromSnapshot = function\(events\)/.test(l),

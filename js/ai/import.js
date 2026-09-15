@@ -1070,10 +1070,15 @@ function startMatchWithConvocation() {
     // partido los guards persistían y saveAllMatchReportsInternal() omitía el
     // despacho de TODOS los partidos siguientes ("no se envían a nadie").
     // Replicamos aquí la limpieza para liberar el despacho en cada partido nuevo.
+    // 🔐 v720 · por `cronosClavesLocales`, no por `Object.keys`: las claves
+    // llevan el dueño pegado detrás y un barrido a ciegas liberaría también
+    // los guards de la OTRA cuenta abierta en otra pestaña, que volvería a
+    // despachar informes ya enviados.
     try {
-        Object.keys(localStorage)
-            .filter(k => k.startsWith('cronos_reports_sent_'))
-            .forEach(k => localStorage.removeItem(k));
+        const _claves = (typeof window.cronosClavesLocales === 'function')
+            ? window.cronosClavesLocales('cronos_reports_sent_')
+            : Object.keys(localStorage).filter(k => k.startsWith('cronos_reports_sent_'));
+        _claves.forEach(k => localStorage.removeItem(k));
     } catch (_) { /* localStorage no disponible: no bloquea el arranque */ }
     if (typeof liveMatchId !== 'undefined') liveMatchId = null;
     if (typeof liveIsActive !== 'undefined') liveIsActive = false;

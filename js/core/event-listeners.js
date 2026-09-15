@@ -153,10 +153,57 @@ function setupEventListeners() {
         }
         toggleGame();
     };
-    document.getElementById('btn-play-pause').addEventListener('click', window.onPlayPauseClick);
-    document.getElementById('btn-reset').addEventListener('click', resetMatch);
-    document.getElementById('btn-save-team').addEventListener('click', saveCurrentTeam);
-    document.getElementById('btn-export').addEventListener('click', exportData);
+    // ══════════════════════════════════════════════════════════════════
+    //  🔴🔴🔴 v719 · UN CLIC, UN LISTENER: EL BOTÓN SE ANULABA A SÍ MISMO
+    // ══════════════════════════════════════════════════════════════════
+    //  Reporte del autor (implementar.txt 2026-09-15, capturas 10429-10433,
+    //  producción v718): «los botones de la barra superior (Empezar, Reanudar,
+    //  Pausar) NO SIEMPRE ejecutan la acción de forma inmediata al pulsarlos,
+    //  quedando el cronómetro estático», y —la pista que lo resuelve— hay que
+    //  arreglarlo «sin obligar al usuario a SALIR AL PANEL DEL ENTRENADOR ni
+    //  usar Recuperar Partido».
+    //
+    //  📏 MEDIDO: `setupEventListeners()` se ejecuta desde `init()`, e `init()`
+    //  se llama desde CUATRO sitios —`unlockApp`, el arranque de rol
+    //  (role-launch.js, DOS veces), los informes del Director y el
+    //  diagnóstico—. Cada pasada hacía `window.onPlayPauseClick = function…`
+    //  **creando una función NUEVA** y la registraba: el navegador sólo
+    //  descarta el `addEventListener` repetido si es LA MISMA referencia, y
+    //  aquí nunca lo era.
+    //
+    //  🔑🔑 CON DOS LISTENERS, UN CLIC LLAMA DOS VECES A `toggleGame()`: la
+    //  bandera va false → true → false. El reloj NO arranca y el botón se
+    //  queda como estaba. Con TRES vuelve a funcionar. Por eso «no siempre»:
+    //  depende de la PARIDAD, y salir a los roles y volver a entrar la cambia
+    //  — que es justo el apaño que él describe como molestia.
+    //
+    //  ⚠️ Y NO ERA SÓLO EL PLAY/PAUSE: se duplicaban también REINICIAR
+    //  (preguntaba dos veces), GUARDAR, DESCARGAR, el `visibilitychange` —que
+    //  suma los segundos perdidos, o sea que los sumaba DOS VECES: de ahí los
+    //  «saltos» de rondas anteriores— y el `pagehide`.
+    //
+    //  🔑 EL ARREGLO ES DOBLE, a propósito:
+    //   1 · la función se instala UNA VEZ (es un «setup», no un repintado);
+    //   2 · y los cuatro botones se desenganchan antes de engancharse, así que
+    //       ni siquiera un camino futuro que se salte la bandera puede volver
+    //       a duplicarlos.
+    //  ⚠️ Los cuatro botones y las zonas de arrastre viven en el HTML estático
+    //  de index.html y NO se reconstruyen al cambiar de rol (la app oculta y
+    //  muestra), así que instalar una vez es seguro. Si algún día se
+    //  reconstruyera la barra, habría que volver a enganchar ahí.
+    const _engancha = (id, fn, clave) => {
+        const el = document.getElementById(id);
+        if (!el || typeof fn !== 'function') return;
+        const previo = window._cronosManejadores && window._cronosManejadores[clave];
+        if (previo) { try { el.removeEventListener('click', previo); } catch (e) {} }
+        window._cronosManejadores = window._cronosManejadores || {};
+        window._cronosManejadores[clave] = fn;
+        el.addEventListener('click', fn);
+    };
+    _engancha('btn-play-pause', window.onPlayPauseClick, 'playPause');
+    _engancha('btn-reset',      typeof resetMatch === 'function' ? resetMatch : null, 'reset');
+    _engancha('btn-save-team',  typeof saveCurrentTeam === 'function' ? saveCurrentTeam : null, 'saveTeam');
+    _engancha('btn-export',     typeof exportData === 'function' ? exportData : null, 'export');
     window.endFirstHalf = function endFirstHalf(skipConfirm) {
         // E5: guard de idempotencia. La 1ª parte solo se cierra una vez.
         // Cierra la carrera entre el auto-fin del crono (tick → endFirstHalf(true))
@@ -174,10 +221,26 @@ function setupEventListeners() {
             p.history.push(`Sale a las ${timestamp1} (DESCANSO)`);
         });
         matchPhase = 'break';
+        // 🔴 v721 · EL FINAL DE LA PARTE ES UNA DECISIÓN DEL ENTRENADOR SOBRE LA
+        // MARCHA, igual que pausar: se sella como tal. Así el latido de pausa
+        // de v718 lo reintenta hasta que llegue (compara este sello con el del
+        // último latido bueno) y el vigía no puede devolverle la marcha al
+        // descanso durante la gracia de la pulsación.
+        window._cronosUltimoToggleLocal = Date.now();
         document.getElementById('btn-play-pause').textContent = 'REANUDAR';
         document.getElementById('btn-play-pause').classList.remove('danger');
         updateMasterUI();
-        if (liveIsActive) pushLiveSnapshot('active').catch(() => {});
+        // 📡 v721 · Y se emite COMPROBANDO QUE LLEGA, como pausar, reanudar y
+        // finalizar desde v718. Era el único cambio de estado del reloj que se
+        // mandaba a ciegas: si ese envío se perdía, el visor seguía contando la
+        // 1ª parte por su cuenta mientras el panel estaba en el descanso.
+        if (liveIsActive) {
+            if (typeof window.cronosEmiteEstadoAhora === 'function') {
+                window.cronosEmiteEstadoAhora('active').catch(() => {});
+            } else {
+                pushLiveSnapshot('active').catch(() => {});
+            }
+        }
         _saveMatchStateToStorage();
 
         // 🔴🔴 DOBLE SILBATO + PANTALLA FINAL DE 1ª PARTE
@@ -219,6 +282,31 @@ function setupEventListeners() {
         });
         el.addEventListener('drop', () => el.classList.remove('drop-hover'));
     });
+
+    // ══════════════════════════════════════════════════════════════════
+    //  🔴🔴 v719 · LO QUE NO PUEDE INSTALARSE DOS VECES
+    // ══════════════════════════════════════════════════════════════════
+    //  Los tres oyentes que vienen ahora se enganchan al DOCUMENTO y a la
+    //  VENTANA con funciones ANÓNIMAS: no hay forma de desengancharlos, así
+    //  que cada pasada de `init()` —y son cuatro los sitios que lo llaman—
+    //  añadía otra copia.
+    //
+    //  🔑 Y EL DUPLICADO DE `visibilitychange` HACE DAÑO DE VERDAD: ese
+    //  manejador recupera los segundos que el navegador se comió mientras la
+    //  pestaña estaba en segundo plano y los SUMA al reloj y a las fichas. Con
+    //  dos copias instaladas, al volver a la pestaña **se sumaban dos veces**:
+    //  el reloj daba un salto del doble de lo que tocaba. Encaja con los
+    //  «saltos extraños» que se venían reportando.
+    //
+    //  ⚠️ LA BANDERA VA AQUÍ Y NO AL PRINCIPIO DE LA FUNCIÓN, a propósito: lo
+    //  de arriba (los cuatro botones y las funciones de fase) SÍ conviene que
+    //  se rehaga en cada `init()` —engancha por referencia y se desengancha
+    //  antes, así que no puede duplicarse— y además
+    //  `scripts/test_play_pause_universal.js` extrae ese trozo y lo ejecuta
+    //  suelto: un `return` ahí arriba lo dejaba con un «Illegal return
+    //  statement» (medido).
+    if (window._cronosListenersGlobalesPuestos) return;
+    window._cronosListenersGlobalesPuestos = true;
 
     document.addEventListener('visibilitychange', () => {
         if (document.visibilityState === 'visible') {

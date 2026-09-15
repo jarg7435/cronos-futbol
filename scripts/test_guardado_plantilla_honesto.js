@@ -168,14 +168,31 @@ function parte2() {
     {
         const i = AUTH.indexOf("const _hayOtraSesion");
         const bloque = i < 0 ? '' : AUTH.slice(i, i + 2600);
-        ok('4a · 🔑 se detecta si OTRA cuenta ha desplazado a la sesión',
+        // ⚠️⚠️ v720 · 4b y 4c ESTABAN DEFENDIENDO UN MENSAJE FALSO, y esto es
+        // el caso de libro de "un guard desfasado desorienta el arreglo".
+        //
+        // El texto que exigían —«sólo se puede tener una sesión por navegador
+        // (las ventanas de incógnito también la comparten)»— era CIERTO cuando
+        // se escribió (v570) y DEJÓ DE SER CIERTO EN v638, cuando la
+        // persistencia pasó a `browserSessionPersistence`: sessionStorage es
+        // POR PESTAÑA, así que dos cuentas en dos pestañas ya no se expulsan.
+        // El aviso siguió ahí dos versiones mayores, el autor lo fotografió
+        // (capturas 10438-10440) y pidió que se levantara un bloqueo que ya no
+        // existía — mientras el que sí bloqueaba de verdad era la purga de
+        // localStorage, arreglada en v720.
+        //
+        // La INTENCIÓN de la PARTE 4 se conserva entera: que el aviso EXPLIQUE
+        // lo que pasa en vez de mandar a hablar con el administrador (4d sigue
+        // igual). Lo que cambia es QUÉ tiene que explicar.
+        ok('4a · 🔑 se detecta si la sesión DE ESTA PESTAÑA ha cambiado',
            /_actual\.uid !== user\.uid/.test(bloque) && /!_actual/.test(bloque),
-           'la sesión de Firebase es por ORIGEN, no por pestaña');
+           'v720 · la sesión es POR PESTAÑA (v638): sólo puede haber cambiado aquí');
         ok('4b · 🔑 y el mensaje lo explica en vez de mandar al administrador',
-           /OTRA cuenta de Chronos abierta en este navegador/.test(bloque));
-        ok('4c · 🔑 menciona que el incógnito TAMBIÉN comparte la sesión',
-           /inc[óo]gnito tambi[ée]n la comparten/i.test(bloque),
-           'es justo lo que el autor probó creyendo que aislaba');
+           /La sesi[óo]n de esta pesta[ñn]a ha cambiado/.test(bloque));
+        ok('4c · 🚨 y NO vuelve a decir que sólo cabe una sesión por navegador',
+           !/una sesi[óo]n por[\s\S]{0,20}navegador/.test(bloque) &&
+           !/inc[óo]gnito tambi[ée]n la comparten/i.test(bloque),
+           'es MENTIRA desde v638 y le hizo pedir que se quitara un bloqueo inexistente');
         ok('4d · ⚠️ ya no queda el "contacta al administrador" de permisos',
            !/Error de permisos\. Se está reintentando/.test(AUTH),
            'ese mensaje mandaba a alguien que no podía hacer nada');

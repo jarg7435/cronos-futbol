@@ -97,6 +97,24 @@
     function ssSet(k, v) { try { sessionStorage.setItem(k, v); } catch (e) {} }
     function ssDel(k) { try { sessionStorage.removeItem(k); } catch (e) {} }
 
+    // 🔐 v720 · ENUMERAR NO PUEDE HACERSE A PELO. Desde v720 las claves se
+    // guardan con el dueño pegado detrás (`…::<id>@<uid>`), así que
+    // `Object.keys(localStorage)` devuelve TAMBIÉN las ranuras de la otra
+    // cuenta abierta en otra pestaña — y este módulo las borraría en el
+    // barrido y las ofrecería en "Recuperar Partido". `cronosClavesLocales`
+    // devuelve sólo las MÍAS y ya con el nombre lógico, que es el que esperan
+    // `lsGet`/`lsDel` (van envueltos).
+    // ⚠️ El respaldo no es adorno: los guards cargan este módulo suelto, sin
+    // js/core/local-uid.js, y ahí `Object.keys` es la respuesta correcta.
+    function clavesLocales(prefijo) {
+        if (typeof window !== 'undefined' && typeof window.cronosClavesLocales === 'function') {
+            return window.cronosClavesLocales(prefijo);
+        }
+        var todas = [];
+        try { todas = Object.keys(localStorage); } catch (e) { return []; }
+        return todas.filter(function (k) { return k.indexOf(prefijo) === 0; });
+    }
+
     function claveDe(matchId) { return BASE + SEP + matchId; }
     function claveFinDe(matchId) { return FIN_BASE + SEP + matchId; }
 
@@ -307,8 +325,7 @@
     function listar(teamId) {
         var filtro = teamId ? String(teamId) : '';
         var out = [];
-        var claves;
-        try { claves = Object.keys(localStorage); } catch (e) { return out; }
+        var claves = clavesLocales(BASE + SEP);   // v720 · sólo las de esta cuenta
         for (var i = 0; i < claves.length; i++) {
             var k = claves[i];
             if (k.indexOf(BASE + SEP) !== 0) continue;
@@ -385,8 +402,11 @@
     function barrer(maxHoras) {
         var tope = (maxHoras || 6) * 3600 * 1000;
         var ahora = Date.now();
-        var claves;
-        try { claves = Object.keys(localStorage); } catch (e) { return 0; }
+        // v720 · `BASE` sin el separador cubre las ranuras Y las banderas de
+        // fin (`cronos_active_match_v2_finished::…`), que es justo lo que este
+        // bucle distingue dos líneas más abajo. Y sólo las de esta cuenta: un
+        // barrido a ciegas se llevaría el partido en curso de la otra pestaña.
+        var claves = clavesLocales(BASE);
         var n = 0;
         for (var i = 0; i < claves.length; i++) {
             var k = claves[i];

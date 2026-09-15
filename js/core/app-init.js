@@ -896,10 +896,14 @@ window._restoreActiveMatch = function() {
             // documento— y el partido se juega sin transmitir. Es la otra mitad
             // de los «errores de sincronización» de la captura 10409.
             try { window._cronosMatchSlots?.setTabMatchId(liveMatchId); } catch (e) {}
-            if (liveSyncTimer) clearInterval(liveSyncTimer);
-            liveSyncTimer = setInterval(() => {
-                if (liveIsActive) pushLiveSnapshot('active');
-            }, 5000);
+            // 🔴 v721 · El latido por la PUERTA ÚNICA (sync.js). Aquí latía cada
+            // 5 s SIEMPRE, también en pausa y durante todo el descanso: el
+            // ahorro de v572 y la regla de pausa de v718 no llegaban a los
+            // partidos retomados.
+            // ⚠️ SIN RESPALDO CON NÚMEROS, a propósito: un `setInterval(…,15000)`
+            // aquí sería una COPIA del ritmo que diverge el día que cambie (la
+            // lección de v666). Sin sync.js tampoco habría `pushLiveSnapshot`.
+            if (typeof window.cronosArrancaLatido === 'function') window.cronosArrancaLatido();
             // Push inmediato para que live.html reciba el estado restaurado
             pushLiveSnapshot('active').catch(() => {});
             updateLiveButton(true);
@@ -1871,15 +1875,44 @@ function _cronosNuevoPartidoDeEquipo() {
             _num('score-home') > 0 || _num('score-away') > 0;
 
         // ── 1 · el estado del partido, a cero ────────────────────────────
-        if (typeof isRunning    !== 'undefined') isRunning = false;
-        if (typeof timerInterval !== 'undefined' && timerInterval) {
-            clearInterval(timerInterval);
-            timerInterval = null;
+        // ══════════════════════════════════════════════════════════════
+        //  🔴🔴 v719 · AQUÍ ESTABA MI REGRESIÓN DE v716
+        // ══════════════════════════════════════════════════════════════
+        //  Este bloque ya ponía el reloj a cero y escribía 'EMPEZAR' en el
+        //  botón A MANO… y dos líneas más abajo llama a `updateMasterUI()`,
+        //  que DESDE v716 repinta el botón desde el estado. El pintor decide
+        //  entre EMPEZAR y REANUDAR mirando, entre otras señales, la marca de
+        //  «ya se pulsó» (`_cronosUltimoToggleLocal`, v714) — y esa marca es
+        //  del NAVEGADOR, no del partido: sobrevive de un partido al
+        //  siguiente. Resultado medido en la captura 10429: partido nuevo,
+        //  todo a cero, y el botón diciendo REANUDAR porque el pintor pisaba
+        //  el 'EMPEZAR' de esta función.
+        //
+        //  🔑 Se delega en `cronosRelojNuevoPartido()` (timer/core.js), que
+        //  hace los mismos ceros, BORRA la marca y repinta desde el estado.
+        //  Una sola definición de «cómo empieza un reloj»: si mañana se añade
+        //  otra señal al pintor, este camino la hereda.
+        //  ⚠️ VA DESPUÉS de calcular `huboPartido`, que lee los cronómetros
+        //  para saber si lo anterior fue un partido de verdad.
+        if (typeof window.cronosRelojNuevoPartido === 'function') {
+            window.cronosRelojNuevoPartido();
+        } else {
+            if (typeof isRunning    !== 'undefined') isRunning = false;
+            if (typeof timerInterval !== 'undefined' && timerInterval) {
+                clearInterval(timerInterval);
+                timerInterval = null;
+            }
+            if (typeof matchPhase   !== 'undefined') matchPhase   = '1st_half';
+            if (typeof masterTimeH1 !== 'undefined') masterTimeH1 = 0;
+            if (typeof masterTimeH2 !== 'undefined') masterTimeH2 = 0;
+            if (typeof lastTickTime !== 'undefined') lastTickTime = 0;
+            window._cronosUltimoToggleLocal = 0;
+            // ⚠️ Y el botón, A MANO, porque sin el módulo del reloj no hay
+            // pintor. Este respaldo existe para ese caso, así que tiene que
+            // dejar la barra igual de bien que el camino normal.
+            const _b = document.getElementById('btn-play-pause');
+            if (_b) { _b.textContent = 'EMPEZAR'; _b.classList.remove('danger'); }
         }
-        if (typeof matchPhase   !== 'undefined') matchPhase   = '1st_half';
-        if (typeof masterTimeH1 !== 'undefined') masterTimeH1 = 0;
-        if (typeof masterTimeH2 !== 'undefined') masterTimeH2 = 0;
-        if (typeof lastTickTime !== 'undefined') lastTickTime = 0;
         window._cronosExtraGoals = { home: 0, away: 0 };
         // El marcador vive SÓLO en el DOM: si no se pone a cero aquí, no lo
         // hace nadie.
@@ -1889,8 +1922,9 @@ function _cronosNuevoPartidoDeEquipo() {
         if (_sa) _sa.textContent = '0';
         // Y el botón vuelve a decir EMPEZAR (lo deja en 'PAUSAR' el partido
         // anterior si se terminó con el reloj corriendo).
-        const _btn = document.getElementById('btn-play-pause');
-        if (_btn) { _btn.textContent = 'EMPEZAR'; _btn.classList.remove('danger'); }
+        // ⚠️ v719 · YA NO SE ESCRIBE A MANO: lo pinta `cronosRelojNuevoPartido`
+        // desde el estado, y escribirlo aquí además sólo servía para que el
+        // repintado de `updateMasterUI` lo pisara (ver la nota de arriba).
         if (typeof updateMasterUI === 'function') { try { updateMasterUI(); } catch (e) {} }
 
         // ── 2 · la retransmisión anterior, soltada ───────────────────────

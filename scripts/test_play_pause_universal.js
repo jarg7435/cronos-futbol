@@ -129,7 +129,19 @@ function montar(faseInicial, opciones) {
     const iniEFH = cuerpoSetup.indexOf('window.endFirstHalf');
     const finSSH = cuerpoSetup.indexOf('const dropZones');
     const iniClick = cuerpoSetup.indexOf('window.onPlayPauseClick');
-    const finClick = cuerpoSetup.indexOf("document.getElementById('btn-play-pause')");
+    // ⚠️ v719 · EL MARCADOR DE CORTE SE MOVIÓ. El enganche del botón ya no es
+    // `document.getElementById('btn-play-pause').addEventListener(...)`: ahora
+    // pasa por `_engancha(...)`, que desengancha antes de enganchar para que
+    // `init()` —que se llama desde CUATRO sitios— no pueda duplicar el
+    // listener (con dos, un clic llamaba dos veces a toggleGame y la bandera
+    // volvía a su sitio: el reloj no arrancaba). Sin actualizar este corte,
+    // `indexOf` devolvía -1 y el trozo salía con las llaves sin cerrar
+    // («Unexpected end of input», medido).
+    const finClick = (() => {
+        const nuevo = cuerpoSetup.indexOf("_engancha('btn-play-pause'");
+        if (nuevo > iniClick) return nuevo;
+        return cuerpoSetup.indexOf("document.getElementById('btn-play-pause')");
+    })();
 
     if (iniEFH === -1 || finSSH === -1) throw new Error('No se localizan endFirstHalf/startSecondHalf');
     if (iniClick === -1 || finClick <= iniClick) {
@@ -258,9 +270,16 @@ console.log('\n── PARTE 4 · [C] 🔑 toggleGame() sigue siendo tonta ──
     ok('4d · el manejador del clic existe y es quien enruta',
        /window\.onPlayPauseClick\s*=/.test(EV_SRC) &&
        /matchPhase\s*===\s*'break'/.test(EV_SRC));
+    // ⚠️ v719 · El enganche pasa por `_engancha`, que desengancha antes de
+    // enganchar: `init()` se llama desde CUATRO sitios y cada pasada añadía
+    // otro listener, así que un clic llamaba N veces a `toggleGame` y con N
+    // par la bandera volvía a su sitio — el reloj no arrancaba. Lo que esta
+    // aserción mide sigue siendo lo mismo: que el botón cuelga del MANEJADOR
+    // que enruta por fase, y no de `toggleGame` a pelo.
     ok('4e · el botón está enganchado al manejador, no a toggleGame',
-       /addEventListener\('click',\s*window\.onPlayPauseClick\)/.test(EV_SRC) &&
-       !/addEventListener\('click',\s*toggleGame\)/.test(EV_SRC),
+       /_engancha\('btn-play-pause',\s*window\.onPlayPauseClick/.test(EV_SRC) &&
+       !/addEventListener\('click',\s*toggleGame\)/.test(EV_SRC) &&
+       !/_engancha\('btn-play-pause',\s*toggleGame/.test(EV_SRC),
        'si vuelve a colgar de toggleGame, el descanso se queda muerto otra vez');
 }
 

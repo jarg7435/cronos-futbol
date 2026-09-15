@@ -1822,11 +1822,15 @@
      así los envoltorios lo resuelven en cada llamada y no al cargar, para que
      un cambio de orden no los deje mirando a `undefined` para siempre.
      ══════════════════════════════════════════════════════════════════ -->
-<script src="js/shared/live-feed.js?v=v718"></script>
+<script src="js/shared/live-feed.js?v=v722"></script>
 <!-- 🔊 v709 · Las melodías de cada suceso (gol, amarilla, roja, cambio,
      lesión), compartidas con el panel en vivo del Área de Familias. Este visor
      le presta su AudioContext, que es el que lleva el keep-alive de iOS. -->
-<script src="js/shared/live-sound.js?v=v718"></script>
+<script src="js/shared/live-sound.js?v=v722"></script>
+<!-- 🔴🔴🔴 v721 · El caché en disco de Firestore es de UNA sola cuenta (ver
+     js/shared/fs-cache-mode.js). El visor lo comparte con la app, así que
+     tiene que decidir con la MISMA regla y antes de crear su instancia. -->
+<script src="js/shared/fs-cache-mode.js?v=v722"></script>
 
 <!-- ══ FIREBASE ══════════════════════════════════════════════════ -->
 <script type="module">
@@ -1835,7 +1839,7 @@ import { initializeApp }
 import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged, browserSessionPersistence, setPersistence }
     from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
 import { getFirestore, initializeFirestore, persistentLocalCache,
-         persistentMultipleTabManager, doc, getDoc, collection,
+         persistentMultipleTabManager, memoryLocalCache, doc, getDoc, collection,
          onSnapshot, getDocs, query, orderBy, where, limit }
     from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 
@@ -1893,6 +1897,15 @@ const app  = initializeApp(firebaseConfig);
     }
 })();
 
+// 🔴🔴🔴 v721 · SÓLO UNA CUENTA POR CACHÉ EN DISCO. Si otra cuenta ya lo usa
+// en otra pestaña, este visor va con caché en MEMORIA: con el compartido, sus
+// oyentes los ejecutaría la pestaña primaria con LAS CREDENCIALES DE LA OTRA
+// CUENTA, y un permiso ajeno los mataba en silencio (los avisos que dejaron de
+// saltar el 2026-09-15). Regla y porqué en js/shared/fs-cache-mode.js.
+// ⚠️ Antes de `getAuth`, como en firebase-init.js: entre `auth` y `db` no va nada.
+const _modoCache = (window.cronosFsModo && typeof window.cronosFsModo.decide === 'function')
+    ? window.cronosFsModo.decide() : 'persistente';
+
 const auth = getAuth(app);
 
 // ── Firestore con cache PERSISTENTE en disco ──────────────────────
@@ -1905,7 +1918,9 @@ const auth = getAuth(app);
 let db;
 try {
     db = initializeFirestore(app, {
-        localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }),
+        localCache: _modoCache === 'memoria'
+            ? memoryLocalCache()
+            : persistentLocalCache({ tabManager: persistentMultipleTabManager() }),
     });
 } catch (e) {
     console.warn('[Chronos] Cache persistente no disponible en el visor; se usa la de memoria:', e.message);
@@ -2148,6 +2163,41 @@ const _matchSeedTs = {};
 // ════════════════════════════════════════════════════════════════════
 const _matchWatchStart = {};
 const _TOLERANCIA_RELOJ_MS = 2 * 60 * 1000;
+// ════════════════════════════════════════════════════════════════════
+//  🔴🔴 v721 · UN CAMBIO GRUPAL ES UNA JUGADA, NO UNA PUESTA AL DÍA
+// ════════════════════════════════════════════════════════════════════
+//  Reporte del autor (implementar.txt 2026-09-15, Prebenjamín A): «tras
+//  realizar cambios múltiples o grupales… los eventos de sustitución se guardan
+//  y muestran en el historial, pero los avisos de audio y alertas visuales dejan
+//  de saltar».
+//
+//  📏 MEDIDO en el documento del partido: el cambio grupal de las 13:57:23 son
+//  SEIS sucesos `sub` con el mismo segundo. Y el tope de v676 (`_TOPE_DIRECTO`,
+//  5 por snapshot) los tomaba por una puesta al día tras reconectar y los
+//  mandaba al historial sin avisar. v220 ya había subido la pila a 15 «porque
+//  siete cambios grupales llegan en un ÚNICO snapshot»: v676 volvió a romperlo.
+//
+//  🔑 LO QUE DISTINGUE UNA COSA DE LA OTRA ES LA FORMA EN EL TIEMPO, no cuántos
+//  son: una puesta al día arrastra sucesos repartidos en minutos; una jugada
+//  del entrenador los crea todos en la misma ráfaga de segundos. Y los sellos
+//  se comparan ENTRE SÍ (los pone el mismo aparato), así que el desfase de reloj
+//  entre el entrenador y el espectador no afecta a la ráfaga.
+//  ⚠️ Además tiene que ser RECIENTE: una ráfaga de hace diez minutos que llega al
+//  reconectar sigue siendo una puesta al día y no se canta (el encargo de v676).
+//  ⚠️ Sin `createdAt` de época real no se puede fechar: manda el tope, como antes.
+const _RAFAGA_JUGADA_MS = 15 * 1000;
+function _esUnaSolaJugada(evs) {
+    if (!Array.isArray(evs) || evs.length < 2) return false;
+    let min = Infinity, max = -Infinity;
+    for (let i = 0; i < evs.length; i++) {
+        const t = Number(evs[i] && evs[i].createdAt) || 0;
+        if (t < 1e12) return false;
+        if (t < min) min = t;
+        if (t > max) max = t;
+    }
+    if (max - min > _RAFAGA_JUGADA_MS) return false;
+    return (Date.now() - max) <= _TOLERANCIA_RELOJ_MS;
+}
 // Ultimo updatedAt (epoch ms) PROCESADO por matchId. Sirve para descartar
 // snapshots no monotonicos (reenvios de Firestore tras reconexion o emisiones
 // desde cache local desactualizada), que de otro modo re-dispararian alertas
@@ -2511,8 +2561,18 @@ document.addEventListener("visibilitychange", () => {
 window.addEventListener("pagehide", teardownBackgroundWatch);
 
 // Sonidos sintéticos por tipo (sin archivos externos).
+// 🔊 v721 · UNA JUGADA, UN SONIDO. Un cambio grupal anuncia un aviso por
+// pareja (v220) y cada aviso llamaba aquí: seis melodías de cambio lanzadas en
+// el mismo instante se solapan y no se reconoce ninguna — la «saturación» del
+// reporte. Se coalescen las del MISMO tipo en una ventana corta; tipos
+// distintos (un gol y una tarjeta a la vez) siguen sonando los dos.
+const _SONIDO_COALESCE_MS = 700;
+const _ultimoSonido = {};
 function playEventSound(type) {
     if (_alertsMuted) return;
+    const _ahoraSon = Date.now();
+    if (_ultimoSonido[type] && (_ahoraSon - _ultimoSonido[type]) < _SONIDO_COALESCE_MS) return;
+    _ultimoSonido[type] = _ahoraSon;
     unlockAudio();
     if (!_audioCtx) return;
     const ctx = _audioCtx;
@@ -4451,7 +4511,10 @@ function detectAndAlert(matchId, matchData, fromCache) {
         //  silenciosa o exclusivamente al historial inferior».
         // ════════════════════════════════════════════════════════════════
         const _TOPE_DIRECTO = 5;
-        if (_evNuevos.length > _TOPE_DIRECTO) {
+        // 🔴 v721 · …salvo que sea UNA jugada: el cambio grupal (ver
+        // `_esUnaSolaJugada`). Seis sustituciones del mismo segundo no son el
+        // historial de nadie.
+        if (_evNuevos.length > _TOPE_DIRECTO && !_esUnaSolaJugada(_evNuevos)) {
             console.warn('[v676] Volcado de ' + _evNuevos.length + ' sucesos en un solo ' +
                          'snapshot (' + matchId + '): es una puesta al día, no juego en ' +
                          'directo. Van al historial sin anunciarse.');
@@ -4776,6 +4839,8 @@ function _mostrarFalloDeAcceso(mensaje) {
 
 // Restore session if already logged in
 onAuthStateChanged(auth, async (user) => {
+    // 🔴 v721 · Quién es esta pestaña, para el registro del caché en disco.
+    try { if (window.cronosFsModo) window.cronosFsModo.usuario(user ? user.uid : ''); } catch (e) {}
     // Ocultar siempre el startup screen
     const startup = document.getElementById('startup-screen');
     if (startup) startup.style.display = 'none';
@@ -5083,7 +5148,7 @@ async function _fetchHistoryMatches() {
 //  hubiera activado por medio, tiene que cancelar el listener del gordo, no el
 //  del índice que ya se cerró. Sin esta indirección quedaría un listener
 //  huérfano por cada partido degradado.
-function _vigilaConRespaldo(matchId, alRecibir) {
+function _vigilaConRespaldo(matchId, alRecibir, alMorir) {
     let cancelaActual = null;
     let dadoDeBaja    = false;
     let yaDegradado   = false;
@@ -5099,12 +5164,31 @@ function _vigilaConRespaldo(matchId, alRecibir) {
                 return;
             }
             alRecibir(snap);
-        }, () => {
+        }, (err) => {
+            if (dadoDeBaja) return;
             // Un error de permisos o de red sobre el índice tampoco puede dejar
             // al usuario sin alertas: mismo camino de degradación.
-            if (dadoDeBaja || coleccion !== _COL_INDICE || yaDegradado) return;
-            yaDegradado = true;
-            cancelaActual = suscribe("live_matches");
+            if (coleccion === _COL_INDICE) {
+                if (yaDegradado) return;   // ya no es el oyente vigente
+                yaDegradado = true;
+                cancelaActual = suscribe("live_matches");
+                return;
+            }
+            // ════════════════════════════════════════════════════════════
+            //  🔴 v721 · UN VIGILANTE MUERTO NO PUEDE QUEDARSE APUNTADO
+            // ════════════════════════════════════════════════════════════
+            //  Firestore NO reengancha un oyente que ha fallado: lo da de baja.
+            //  Y este error llegaba a la nada — el respaldo no tenía callback—,
+            //  así que el vigilante quedaba muerto PERO APUNTADO en
+            //  `_bgWatchers`, y `refreshBackgroundWatchers` («ya suscrito») no
+            //  lo volvía a crear jamás: ese partido no avisaba nunca más y
+            //  nadie lo veía (el reporte del 2026-09-15). Se avisa para que la
+            //  siguiente pasada de 30 s lo vuelva a enganchar.
+            dadoDeBaja = true;
+            try { cancelaActual && cancelaActual(); } catch (e) {}
+            console.warn('[v721] Vigilante de ' + matchId + ' caído (' +
+                         ((err && (err.code || err.message)) || 'error') + '): se reengancha.');
+            try { if (typeof alMorir === 'function') alMorir(err); } catch (e) {}
         });
     };
 
@@ -5196,6 +5280,12 @@ async function refreshBackgroundWatchers() {
                 //   · CAJÓN DE HISTORIAL → sólo el partido que se está viendo.
                 // De eso se encarga showEventToast con el matchId que recibe.
                 detectAndAlert(m.id, data, s2.metadata && s2.metadata.fromCache);
+            }, () => {
+                // 🔴 v721 · Caído: se desapunta para que la próxima pasada lo
+                // vuelva a crear. Sólo el vigilante; lo ya visto (siembra,
+                // marcas, sucesos anunciados) se conserva, así que al volver no
+                // se canta el historial.
+                delete _bgWatchers[m.id];
             });
         });
         // Cancelar suscripciones de partidos que ya no están activos/seguidos.
@@ -6881,6 +6971,15 @@ window.deleteLiveMatch = async function(matchId, e) {
         // de la app—, así que compone la clave a mano. Se recorren las ranuras
         // en vez de mirar una sola clave: la del partido borrado puede no ser
         // la única, y borrar a ciegas se llevaría el partido que sigue en juego.
+        // 🔐 v720 · AQUÍ SE TRABAJA CON LAS CLAVES REALES, A PROPÓSITO. Desde
+        // v720 la app guarda cada ranura con el dueño pegado detrás
+        // (`cronos_active_match_v2::<id>@<uid>`) mediante js/core/local-uid.js,
+        // que esta página NO carga —no conoce al usuario de la app, sólo al
+        // espectador—. Como aquí se lee y se escribe con la clave real y el
+        // sufijo viaja intacto de una a otra, la bandera de fin cae en el
+        // espacio del mismo dueño y la app la encuentra. Lo único que hay que
+        // quitar es el sufijo para comparar el ID del partido: con él pegado,
+        // `slotId === matchId` nunca casaría.
         try {
             const PREF = 'cronos_active_match_v2::';
             Object.keys(localStorage).forEach(k => {
@@ -6888,7 +6987,9 @@ window.deleteLiveMatch = async function(matchId, e) {
                 let st = null;
                 try { st = JSON.parse(localStorage.getItem(k)); } catch(e) { return; }
                 const slotId = k.slice(PREF.length);
-                if (!(slotId === matchId || (st && st.liveMatchId === matchId))) return;
+                const corte  = slotId.lastIndexOf('@');
+                const idSolo = corte > 0 ? slotId.slice(0, corte) : slotId;
+                if (!(idSolo === matchId || (st && st.liveMatchId === matchId))) return;
                 localStorage.removeItem(k);
                 localStorage.setItem('cronos_active_match_v2_finished::' + slotId, Date.now().toString());
                 console.log('[LIVE] ranura local limpiada (era el partido borrado):', slotId);
@@ -7429,9 +7530,9 @@ setInterval(function() {
 }
 </style>
 <!-- v434 · Inmutabilidad: antes de retroactive-modal.js, que la consulta. -->
-<script src="js/match/immutability.js?v=v718"></script>
-<script src="js/match/replay/replay-player.js?v=v718"></script>
-<script src="js/match/events/retroactive-modal.js?v=v718"></script>
+<script src="js/match/immutability.js?v=v722"></script>
+<script src="js/match/replay/replay-player.js?v=v722"></script>
+<script src="js/match/events/retroactive-modal.js?v=v722"></script>
 
 <!-- ══════════════════════════════════════════════════════════════════
      🟩 v577 · FRANJA DE VERSIÓN TAMBIÉN EN EL VISOR
@@ -7444,7 +7545,7 @@ setInterval(function() {
      El sello lo escribe `scripts/cache-bust.js` a partir del CACHE_NAME de
      sw.js, nunca a mano: un número puesto a mano miente en cuanto alguien
      olvida cambiarlo (v527 lo encontró mintiendo 185 versiones seguidas). -->
-<div id="cronos-version-badge" data-version="v718" style="position:fixed;bottom:calc(4px + env(safe-area-inset-bottom, 0px));right:6px;z-index:2147483000;pointer-events:none;background:rgba(0,0,0,0.55);color:#2ea043;font-family:monospace;font-size:0.6rem;font-weight:700;letter-spacing:0.5px;padding:2px 6px;border-radius:4px;">CHRONOS v718</div>
+<div id="cronos-version-badge" data-version="v722" style="position:fixed;bottom:calc(4px + env(safe-area-inset-bottom, 0px));right:6px;z-index:2147483000;pointer-events:none;background:rgba(0,0,0,0.55);color:#2ea043;font-family:monospace;font-size:0.6rem;font-weight:700;letter-spacing:0.5px;padding:2px 6px;border-radius:4px;">CHRONOS v722</div>
 <script>
 /* 🧪 v577 · Y DE QUÉ ENTORNO ES ESA VERSIÓN.
    El problema real del autor no era no ver la versión: era no saber si la

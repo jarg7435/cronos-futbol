@@ -435,6 +435,33 @@ async function startLiveSync() {
     //    · caso malo (se perdió, que en un campo es lo corriente) → se
     //      reintenta hasta que entre, y el panel en vivo deja de mentir.
     //  Eso es la «veracidad» que pide el autor sin pagar por el silencio.
+    cronosArrancaLatido();
+
+    // Mostrar botón de compartir en el header
+    updateLiveButton(true);
+}
+
+// ══════════════════════════════════════════════════════════════════════
+//  🔴 v721 · EL LATIDO TIENE UNA SOLA PUERTA
+// ══════════════════════════════════════════════════════════════════════
+//  Hallazgo de la ronda anterior, corregido a petición del autor. El latido lo
+//  creaban TRES sitios y sólo éste respetaba las dos reglas que se ganaron
+//  midiendo (15 s de v572, y en pausa sólo mientras el cambio no haya llegado,
+//  de v718):
+//    · «Recuperar Partido» desde la NUBE (setup-modal.js) lo ponía a 1 SEGUNDO
+//      —quince veces el coste de v572, y cada latido se reparte a TODOS los
+//      espectadores— y, si el partido se recuperaba en pausa, NO lo creaba: al
+//      reanudar, el partido se jugaba sin latido ninguno;
+//    · retomar desde el DISPOSITIVO (app-init.js) latía cada 5 s SIEMPRE, también
+//      en pausa y durante todo el descanso (~180 escrituras regaladas en 15 min).
+//  🔑 Ahora los tres pasan por aquí: una sola definición de «cómo late un
+//  partido», y si mañana cambia, cambia para todos. Apaga el anterior antes de
+//  encender (la lección del reloj en v716: un creador que no limpia deja
+//  huérfanos).
+//  ⚠️ Va DEBAJO de `startLiveSync` y no suelta en otro sitio a propósito:
+//  scripts/test_startlivesync_idempotent.js corta desde `startLiveSync` hasta la
+//  siguiente `async function` y ejecuta el trozo; aquí queda dentro.
+function cronosArrancaLatido() {
     if (liveSyncTimer) clearInterval(liveSyncTimer);
     liveSyncTimer = setInterval(() => {
         if (!liveIsActive) return;
@@ -443,10 +470,9 @@ async function startLiveSync() {
         const emitido = window._cronosUltimoLatidoOk || 0;
         if (pulsado && pulsado > emitido) pushLiveSnapshot('active');
     }, LIVE_HEARTBEAT_MS);
-
-    // Mostrar botón de compartir en el header
-    updateLiveButton(true);
+    return liveSyncTimer;
 }
+if (typeof window !== 'undefined') window.cronosArrancaLatido = cronosArrancaLatido;
 
 // v221: caché de umbrales del club para evitar leer Firestore en cada
 // pushLiveSnapshot (que se llama cada 2-5s). TTL de 60s: si el Director

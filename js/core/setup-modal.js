@@ -2125,13 +2125,8 @@ async function _doResumeMatch(matchId) {
                     isRunning = false; // Forzamos false para que toggleGame() lo pase a true y arranque el intervalo
                 }
                 if (typeof toggleGame === 'function') toggleGame();
-                
-                // Solo activar sincronización de escritura si este dispositivo es el controlador
-                if (!anotherDeviceActive && typeof pushLiveSnapshot === 'function') {
-                    liveSyncTimer = setInterval(() => {
-                        if (liveIsActive && isRunning) pushLiveSnapshot('active');
-                    }, 1000);
-                }
+                // 🔴 v721 · El latido ya NO se crea aquí (era de 1 SEGUNDO): va
+                // por la puerta única, unas líneas más abajo, en las dos ramas.
             } else {
                 if (typeof isRunning !== 'undefined') {
                     isRunning = false; // Asegurarse de que esté pausado visual y lógicamente
@@ -2143,6 +2138,23 @@ async function _doResumeMatch(matchId) {
                 if (typeof window._cronosParaReloj === 'function') window._cronosParaReloj();
                 else if (typeof timerInterval !== 'undefined') clearInterval(timerInterval);
             }
+        }
+
+        // ══════════════════════════════════════════════════════════════
+        //  🔴 v721 · EL LATIDO, POR SU PUERTA ÚNICA Y EN LAS DOS RAMAS
+        // ══════════════════════════════════════════════════════════════
+        //  Aquí se creaba un latido de 1 SEGUNDO —quince veces los 15 s de
+        //  v572, repartido a todos los espectadores— y SÓLO si el partido se
+        //  recuperaba en marcha. Recuperado en pausa (el caso del Regional B el
+        //  2026-09-15), el latido de arriba ya estaba borrado y no se creaba
+        //  otro: al pulsar REANUDAR el partido se jugaba sin latido.
+        //  `cronosArrancaLatido` (sync.js) late a 15 s en marcha y, en pausa,
+        //  sólo mientras el cambio no haya llegado (v718).
+        //  ⚠️ Mismas condiciones que antes para ESCRIBIR: no si otro aparato
+        //  controla el partido, y nunca con el partido terminado.
+        if (!anotherDeviceActive && liveIsActive &&
+            typeof matchPhase !== 'undefined' && matchPhase !== 'finished') {
+            if (typeof window.cronosArrancaLatido === 'function') window.cronosArrancaLatido();
         }
 
         if (typeof updateLiveButton === 'function') updateLiveButton(true);

@@ -75,6 +75,9 @@ const COBERTURA_DECLARADA = [
   // v709 · Las melodías de cada suceso. Mismo caso: la cargan los DOS
   // documentos (index.html y live.html).
   'js/shared/live-sound.js',
+  // v721 · El caché de Firestore por cuenta. Lo cargan los DOS documentos
+  // antes de crear su instancia.
+  'js/shared/fs-cache-mode.js',
 ];
 
 const files = (argFiles.length

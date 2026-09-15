@@ -2872,7 +2872,10 @@ window.openUnifiedCommsMenu    = openUnifiedCommsMenu;
 // ════════════════════════════════════════════════════════════════════
 window._cronosForceRedispatch = async function() {
     // Limpiar localStorage
-    const keysToRemove = Object.keys(localStorage).filter(k => k.startsWith('cronos_reports_sent_'));
+    // v720 · sólo los guards DE ESTA CUENTA (ver js/core/local-uid.js).
+    const keysToRemove = (typeof window.cronosClavesLocales === 'function')
+        ? window.cronosClavesLocales('cronos_reports_sent_')
+        : Object.keys(localStorage).filter(k => k.startsWith('cronos_reports_sent_'));
     keysToRemove.forEach(k => localStorage.removeItem(k));
     // Limpiar guard en memoria
     window._cronosLastDispatchedMatch = null;

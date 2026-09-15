@@ -29,6 +29,15 @@ function showAuthError(msg) {
 // --- CERRAR SESIÓN ---
 async function cerrarSesion() {
     if (!confirm('¿Cerrar sesión?')) return;
+    // 🔐 v720 · EL UID, LO PRIMERO. Más abajo esta función anula
+    // `window._cronosCurrentUser` y DESPUÉS llama a la purga de PII, que desde
+    // v720 necesita saber QUIÉN sale para barrer sólo lo suyo. Sin capturarlo
+    // aquí llegaría vacía y barrería el almacén entero, llevándose los datos
+    // de la otra cuenta abierta en otra pestaña.
+    const _uidSaliente = (window._cronosCurrentUser && window._cronosCurrentUser.uid) ||
+                         (window._cronos_auth && window._cronos_auth.auth &&
+                          window._cronos_auth.auth.currentUser &&
+                          window._cronos_auth.auth.currentUser.uid) || '';
     // 🔒 v699 · Soltar la plaza ANTES de cerrar la sesión de Firebase: después
     // ya no habría permiso para borrar la marca y quedaría ocupada hasta
     // caducar, bloqueando al propio usuario si entra desde otro aparato.
@@ -53,8 +62,8 @@ async function cerrarSesion() {
     window._loginThisSession  = false;
     sessionStorage.clear();
 
-    // [Cronos-Privacy] Logout: purga incondicional de PII + marcador.
-    if (typeof window._cronosPurgeAllLocalPII === 'function') window._cronosPurgeAllLocalPII();
+    // [Cronos-Privacy] Logout: purga de la PII del usuario que sale (v720).
+    if (typeof window._cronosPurgeAllLocalPII === 'function') window._cronosPurgeAllLocalPII(_uidSaliente);
 
     // [Cronos-Privacy] Y la caché EN DISCO de Firestore, que localStorage no
     // cubre: las lecturas servidas desde ella no pasan por las reglas, así que

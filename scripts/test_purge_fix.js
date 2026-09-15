@@ -71,20 +71,45 @@ function check(name, cond) {
   check('conserva training_weeks', ls.getItem('cronos_training_weeks') === '{"w1":[]}');
 }
 
-// ── Escenario C: cambio de usuario REAL (marcador != uid entrante). DEBE purgar PII.
+// ── Escenario C: cambio de usuario REAL (marcador != uid entrante).
+// ══════════════════════════════════════════════════════════════════════
+//  ⚠️⚠️ v720 · INVERTIDO A PROPÓSITO: AQUÍ YA NO SE PURGA.
+// ══════════════════════════════════════════════════════════════════════
+//  Este escenario exigía, desde v199, que un cambio de uid BORRARA las claves
+//  del usuario anterior. Era la única defensa que había contra heredar los
+//  datos de otro en el mismo navegador… y con el tiempo se volvió el daño:
+//
+//  🔴 localStorage es del NAVEGADOR, no de la pestaña. Al entrar una segunda
+//  cuenta en otra pestaña, ese barrido se llevaba TODAS las claves `cronos_*`
+//  —incluida la RANURA DEL PARTIDO EN CURSO de la primera, y las plantillas,
+//  convocatorias y planificaciones, que NO se restauran de Firestore—. Es lo
+//  que el autor fotografió (capturas 10438-10440) al pedir que dos correos
+//  pudieran convivir en dos pestañas.
+//
+//  v720 aísla en vez de borrar: cada cuenta lee y escribe en su propio espacio
+//  (`cronos_teams@<uid>`, js/core/local-uid.js), así que la herencia que v199
+//  venía a evitar ES IMPOSIBLE por construcción — la cuenta que entra no puede
+//  ni leer las claves de la otra. La INTENCIÓN de v199 se conserva entera; lo
+//  que cambia es el mecanismo, y con él el signo de estas dos aserciones.
+//
+//  ⚠️ Lo que este arnés NO puede probar: la migración de verdad. `makeLS` no
+//  es un `Storage` con prototipo, así que la envoltura de v720 no se instala
+//  aquí y `cronosMigraClavesLocales` no existe en este sandbox. El aislamiento
+//  completo —dos cuentas, dos pestañas, un solo localStorage— se prueba en
+//  **scripts/test_datos_locales_por_uid.js**, que monta el navegador entero.
+//  Aquí se defiende lo que sí se ve: que el CASO 3 no destruye nada.
 {
   const ls = makeLS({
     cronos_owner_uid: 'coach-OLD',
     cronos_master_roster: '[{"id":99}]',
     cronos_training_weeks: '{"secreto":true}',
-    cronos_owner_uid_keep_check: 'x', // no empieza por cronos_ keep, se ignora? sí empieza, se borra
     cronos_live_muted: '1',           // KEEP list → debe sobrevivir
   });
   const purge = loadPurgeFn(ls);
   purge('coach-NEW');
-  console.log('Escenario C (cambio de usuario real):');
-  check('PURGA cronos_master_roster del anterior', ls.getItem('cronos_master_roster') === null);
-  check('PURGA cronos_training_weeks del anterior', ls.getItem('cronos_training_weeks') === null);
+  console.log('Escenario C (cambio de usuario real · v720: aislar, no borrar):');
+  check('NO purga cronos_master_roster del anterior (v720)', ls.getItem('cronos_master_roster') === '[{"id":99}]');
+  check('NO purga cronos_training_weeks del anterior (v720)', ls.getItem('cronos_training_weeks') === '{"secreto":true}');
   check('conserva cronos_live_muted (KEEP list)', ls.getItem('cronos_live_muted') === '1');
   check('actualiza marcador al nuevo uid', ls.getItem('cronos_owner_uid') === 'coach-NEW');
 }

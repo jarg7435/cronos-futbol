@@ -245,7 +245,14 @@ ORDER.forEach(f => { decl[f] = declaraciones(rd(f)); });
     // exigiendo que app-init.js sea el primero SALVO por esa lista corta y
     // explicita de precursores, para que colar un sexto script delante siga
     // poniendose rojo.
-    const PRECURSORES = ['js/core/match-slots.js'];
+    //
+    // v720 · SE AÑADE UN SEGUNDO PRECURSOR, js/core/local-uid.js, y tiene que
+    // ir incluso DELANTE de match-slots.js: envuelve localStorage para aislar
+    // las claves por uid, y cualquier modulo que se cargue antes —empezando por
+    // la mudanza de v464 que match-slots.js hace al cargarse— trabajaria con
+    // claves sin duenyo, fuera del aislamiento. La lista sigue siendo corta y
+    // explicita: colar un tercer script delante se pone rojo igual.
+    const PRECURSORES = ['js/core/local-uid.js', 'js/core/match-slots.js'];
     const idxAI = ORDER.indexOf(AI);
     const delante = ORDER.slice(0, idxAI);
     ok('2b · antes de app-init.js solo van sus precursores declarados',

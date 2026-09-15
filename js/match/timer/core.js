@@ -206,6 +206,40 @@ function cronosPintaBotonReloj() {
 // para los tres sitios que preguntaban por su cuenta (`!isRunning`): con el
 // reloj y el botón ya sincronizados, esto deja de dar falsos bloqueos.
 // ══════════════════════════════════════════════════════════════════
+//  🔴🔴 v719 · UN PARTIDO NUEVO ARRANCA CON EL RELOJ EN CERO DE VERDAD
+// ══════════════════════════════════════════════════════════════════
+//  📏 MEDIDO en la captura 10429 (producción v718): partido recién creado,
+//  todas las fichas a 00:00 y las dos partes a 05:00 (o sea nada jugado)… y el
+//  botón decía **REANUDAR**, no EMPEZAR.
+//
+//  🔑 EL CAMINO DEL PARTIDO NUEVO NO REINICIA NADA DEL RELOJ: ni `isRunning`,
+//  ni la fase, ni los cronómetros, ni la marca de «ya se pulsó» que decide
+//  entre EMPEZAR y REANUDAR (`_cronosUltimoToggleLocal`, v714). Sólo
+//  `resetMatch` lo hacía. Así que el segundo partido de una sesión heredaba el
+//  estado del primero:
+//    · el botón decía REANUDAR en un partido sin empezar, y
+//    · si `isRunning` se quedó en `true` —volver al panel con
+//      `goBackToSetup` NO lo baja, a propósito, por el modo autónomo— la
+//      PRIMERA pulsación lo ponía en false: el reloj no arrancaba.
+//
+//  ⚠️ NO TOCA `liveMatchId` NI NADA DE LA TRANSMISIÓN: de eso se encarga
+//  `startLiveSync` (y `resetMatch`, v714). Aquí sólo se pone el RELOJ a cero,
+//  que es lo que el partido nuevo da por supuesto.
+function cronosRelojNuevoPartido() {
+    if (typeof window._cronosParaReloj === 'function') window._cronosParaReloj();
+    if (typeof isRunning    !== 'undefined') isRunning = false;
+    if (typeof masterTimeH1 !== 'undefined') masterTimeH1 = 0;
+    if (typeof masterTimeH2 !== 'undefined') masterTimeH2 = 0;
+    if (typeof lastTickTime !== 'undefined') lastTickTime = 0;
+    if (typeof matchPhase   !== 'undefined') matchPhase = '1st_half';
+    // La marca de «ya se pulsó en este partido»: sin borrarla, el botón de un
+    // partido nuevo sigue diciendo REANUDAR (ver `cronosPintaBotonReloj`).
+    window._cronosUltimoToggleLocal = 0;
+    if (typeof cronosPintaBotonReloj === 'function') cronosPintaBotonReloj();
+    if (typeof updateMasterUI === 'function') { try { updateMasterUI(); } catch (e) {} }
+}
+
+// ══════════════════════════════════════════════════════════════════
 //  🔴 v717 · NO SE PUEDE ESTAR EN LA 2ª PARTE CON LA 1ª A CERO
 // ══════════════════════════════════════════════════════════════════
 //  📏 MEDIDO en la captura 10421 (producción v716): la cabecera decía
@@ -251,6 +285,7 @@ if (typeof window !== 'undefined') {
     window.cronosPintaBotonReloj  = cronosPintaBotonReloj;
     window.cronosPartidoEnJuego   = cronosPartidoEnJuego;
     window.cronosCoherenciaDelReloj = cronosCoherenciaDelReloj;
+    window.cronosRelojNuevoPartido  = cronosRelojNuevoPartido;
 }
 
 function toggleGame() {
@@ -421,6 +456,33 @@ async function syncTimerWithServer() {
         if (!snap.exists()) return;
 
         const serverData = snap.data();
+
+        // ══════════════════════════════════════════════════════════════
+        //  🔴 v721 · UN DOCUMENTO DE OTRA FASE NO MANDA SOBRE EL RELOJ
+        // ══════════════════════════════════════════════════════════════
+        //  Reporte del autor (implementar.txt 2026-09-15, Regional B): «el botón
+        //  de reanudar la segunda parte no responde… dejando el partido congelado
+        //  en el descanso». En Firestore quedó «2ª PARTE» con la 2ª a cero y el
+        //  reloj parado.
+        //
+        //  🔑 LA MARCHA Y LOS SEGUNDOS SÓLO SIGNIFICAN ALGO DENTRO DE SU FASE, y
+        //  aquí se adoptaban sin mirarla. Un documento que todavía dice «1ª
+        //  parte» —la lectura salió antes de pulsar el 🏁 y volvió después— le
+        //  devolvía `isRunning: true` al DESCANSO; uno que todavía dice
+        //  «descanso» —porque la escritura del arranque no ha llegado— le
+        //  quitaba la marcha a la 2ª parte recién empezada, y en pausa hasta le
+        //  ponía su `timeH2` a cero. El documento no está equivocado: está
+        //  describiendo OTRO momento del partido, y ese momento ya pasó aquí.
+        //  ⚠️ Sin `phase` en el documento (partidos anteriores) se sigue como
+        //  siempre: no se puede saber de qué momento habla.
+        if (serverData.phase && typeof matchPhase !== 'undefined' &&
+            serverData.phase !== matchPhase) {
+            if (window._CRONOS_DEBUG) {
+                console.warn('[v721] No se adopta el reloj del servidor: habla de la fase «' +
+                             serverData.phase + '» y aquí estamos en «' + matchPhase + '».');
+            }
+            return;
+        }
 
         // ⏱️ v638 · LA MARCHA, ANTES QUE EL TIEMPO. Si el servidor dice que el
         //    reloj está parado y aquí sigue corriendo (o al revés), corregir

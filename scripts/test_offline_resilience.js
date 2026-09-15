@@ -240,9 +240,32 @@ console.log('\n── PARTE 4 · PIEZA B2 · la caché en disco y la PII ──'
        _llama(CORE));
     ok('4d · [PIEZA B2] 🔑 el logout de auth.js borra la caché',
        _llama(AUTH));
-    ok('4e · [PIEZA B2] el cambio de usuario (CASO 3) también la borra',
-       _llama(STORAGE),
-       'es el escenario exacto de v199: otro usuario en el mismo dispositivo');
+    // ⚠️⚠️ v720 · INVERTIDA, Y CON MOTIVO MEDIDO. Esta aserción exigía que el
+    // cambio de usuario (CASO 3) llamara a `_cronosClearFirestoreCache`… que ES
+    // UN NO-OP DESDE v470, cuatro aserciones más arriba en este mismo bloque
+    // (4b/4b2 exigen que NO se toque la caché en disco, porque borrarla le mata
+    // el cliente al visor). Así que lo único que hacía de verdad esa llamada en
+    // el login era el `location.reload()` que iba colgado de su `.finally` —una
+    // recarga que no limpiaba nada y que expulsaba a la sesión de lo que
+    // estuviera haciendo—.
+    //
+    // v720 quita la llamada y la recarga. El hueco de la caché en disco sigue
+    // donde v470 lo dejó: DOCUMENTADO Y ASUMIDO en firebase-init.js, pendiente
+    // de hacerse en el arranque (es el único momento sin clientes abiertos).
+    // Lo que se exige ahora es que el CASO 3 no vuelva a fingir que limpia.
+    //
+    // ⚠️ SE MIRA SÓLO EL BLOQUE DE LA PURGA, no el fichero entero: más abajo
+    // firestore-storage.js tiene los `location.reload()` de la
+    // autoactualización del service worker (v645), que no tienen nada que ver
+    // con esto. Un `!/location\.reload/` sobre todo el fuente se ponía rojo por
+    // ellos — medido al escribir esta aserción.
+    const _BLOQUE_PURGA = STORAGE.slice(
+        STORAGE.indexOf('function _purgeStaleLocalDataIfNeeded'),
+        STORAGE.indexOf('window._purgeStaleLocalDataIfNeeded ='));
+    ok('4e · [PIEZA B2] ⚠️ el cambio de usuario ya NO finge borrar la caché ni recarga',
+       _BLOQUE_PURGA.length > 200 && !_llama(_BLOQUE_PURGA) &&
+       !/location\.reload/.test(_BLOQUE_PURGA),
+       'llamar a un no-op y recargar no es privacidad: es expulsar al usuario');
 
     // v204: la purga NO puede volver a dispararse por falta de marcador.
     ok('4f · v204 intacto: sin marcador previo se ADOPTA el uid, no se purga',

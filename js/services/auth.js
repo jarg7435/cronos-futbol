@@ -2064,12 +2064,35 @@ export async function checkAuthorization(user) {
         //
         //  Decirlo bien no arregla la limitación, pero convierte media hora de
         //  callejón sin salida en un aviso accionable.
+        //
+        // ════════════════════════════════════════════════════════════════
+        //  🔐 v720 · ⚠️⚠️ LO DE ARRIBA YA NO ES VERDAD: ESE TEXTO ERA DE v570
+        //  Y LA LIMITACIÓN SE LEVANTÓ EN v638.
+        // ════════════════════════════════════════════════════════════════
+        //  Desde v638 la persistencia es `browserSessionPersistence`, que vive
+        //  en `sessionStorage` y por tanto **es POR PESTAÑA**: dos cuentas en
+        //  dos pestañas del mismo navegador ya NO se expulsan. Pero el aviso
+        //  siguió diciendo «sólo se puede tener una sesión por navegador» dos
+        //  años y dos versiones mayores — y es el que el autor fotografió
+        //  (capturas 10438-10440) creyendo que la app se lo estaba prohibiendo.
+        //
+        //  🚨 UN MENSAJE DESFASADO NO ES UN DETALLE COSMÉTICO: le hizo pedir
+        //  que se levantara un bloqueo que ya no existía. Lo que sí quedaba
+        //  bloqueando de verdad era la purga de localStorage
+        //  (`cronos_owner_uid`), que se arregla en esta misma versión.
+        //
+        //  Y la comprobación de abajo sigue valiendo, con otro significado: si
+        //  la sesión de ESTA pestaña ya no es la que se estaba verificando, es
+        //  que ha cambiado AQUÍ (otra cuenta entró en esta misma pestaña, o
+        //  alguien cerró la sesión por debajo). Lo que pase en las demás
+        //  pestañas no puede provocarlo.
         const _hayOtraSesion = (function () {
             try {
                 const _actual = window._cronos_auth && window._cronos_auth.auth &&
                                 window._cronos_auth.auth.currentUser;
                 // La sesión activa ya no es la del usuario que se estaba
-                // verificando: otra pestaña ha entrado con otra cuenta.
+                // verificando. v720 · La sesión es POR PESTAÑA (v638), así que
+                // esto sólo puede haber pasado EN ESTA: otra cuenta entró aquí.
                 if (user && _actual && _actual.uid !== user.uid) return true;
                 // O directamente ya no hay sesión: alguien la cerró por debajo.
                 if (user && !_actual) return true;
@@ -2082,15 +2105,17 @@ export async function checkAuthorization(user) {
               'recuperes internet, no hace falta volver a entrar.'
             : (err.code === 'permission-denied' || _msgErr.includes('permission'))
             ? (_hayOtraSesion
-                ? '⚠️ Hay OTRA cuenta de Chronos abierta en este navegador y ha ' +
-                  'desplazado a la tuya. Sólo se puede tener una sesión por ' +
-                  'navegador (las ventanas de incógnito también la comparten). ' +
-                  'Cierra las demás pestañas de Chronos y vuelve a entrar, o usa ' +
-                  'otro navegador o dispositivo.'
-                : '⚠️ No se ha podido verificar tu sesión. Si tienes Chronos abierto ' +
-                  'en otra pestaña o ventana de este mismo navegador, ciérrala y ' +
-                  'vuelve a entrar: sólo se admite una cuenta por navegador. Si no ' +
-                  'es el caso, vuelve a intentarlo en unos segundos.')
+                // v720 · La sesión DE ESTA PESTAÑA ha cambiado mientras se
+                // verificaba. Ya NO se culpa a las demás pestañas: desde v638
+                // cada una lleva su propia sesión y varias cuentas a la vez
+                // son perfectamente normales.
+                ? '⚠️ La sesión de esta pestaña ha cambiado mientras se ' +
+                  'verificaba (se entró con otra cuenta aquí, o se cerró la ' +
+                  'sesión). Vuelve a entrar en esta pestaña. Puedes tener otras ' +
+                  'cuentas abiertas en otras pestañas sin problema.'
+                : '⚠️ No se ha podido verificar tu sesión. Vuelve a intentarlo en ' +
+                  'unos segundos; si sigue igual, recarga la página y entra de ' +
+                  'nuevo. No hace falta cerrar las demás pestañas de Chronos.')
             : 'Error de verificación: ' + (_msgErr || 'Desconocido');
         showAuthError(msg);
     }
@@ -4125,9 +4150,18 @@ export async function doAuth() {
 // ── Logout ─────────────────────────────────────────────────
 window.logoutUser = async () => {
     if (!confirm('¿Seguro que deseas salir y volver al inicio?')) return;
+    // 🔐 v720 · EL UID SE CAPTURA AQUÍ, ANTES DE TOCAR NADA. La purga de
+    // logout ahora se limita a las claves de quien sale (ver
+    // js/services/firestore-storage.js): sin este dato barrería el almacén
+    // entero y se llevaría el partido en curso de la otra cuenta abierta en
+    // otra pestaña.
+    const _uidSaliente = (window._cronosCurrentUser && window._cronosCurrentUser.uid) ||
+                         (window._cronos_auth && window._cronos_auth.auth &&
+                          window._cronos_auth.auth.currentUser &&
+                          window._cronos_auth.auth.currentUser.uid) || '';
     sessionStorage.clear();
-    // [Cronos-Privacy] Logout: purga incondicional de PII + marcador.
-    if (typeof window._cronosPurgeAllLocalPII === 'function') window._cronosPurgeAllLocalPII();
+    // [Cronos-Privacy] Logout: purga de la PII del usuario que sale.
+    if (typeof window._cronosPurgeAllLocalPII === 'function') window._cronosPurgeAllLocalPII(_uidSaliente);
 
     // [Cronos-Privacy] La caché EN DISCO de Firestore no la cubre la purga de
     // localStorage, y sus lecturas no pasan por las reglas: hay que borrarla

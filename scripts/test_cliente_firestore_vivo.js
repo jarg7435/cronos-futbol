@@ -165,6 +165,9 @@ console.log('── PARTE 1 · ⚠️ nadie termina el cliente que la app usa �
     const iAuth = INIT_COD.indexOf('const auth = getAuth(app);');
     const entre = INIT_COD.slice(iAuth + 'const auth = getAuth(app);'.length, corte)
         .split('\n').map(l => l.trim()).filter(Boolean);
+    // v721 · La decisión del caché (js/shared/fs-cache-mode.js) se puso primero
+    // aquí en medio y esta aserción la cazó. Se movió DELANTE de `getAuth`, no
+    // se relajó la aserción.
     ok('1b4 · ⚠️🔑🔑 entre crear `auth` y crear `db` NO hay ni una línea de código',
        iAuth !== -1 && entre.length === 0,
        'sobra(n): ' + JSON.stringify(entre.slice(0, 6)) +

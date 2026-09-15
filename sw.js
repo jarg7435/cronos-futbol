@@ -2644,8 +2644,18 @@
 // CACHE_NAME, los dos los pone `node scripts/cache-bust.js`. Se vuelve a
 // alinear aquí —iba por v399— para que un log de consola no mienta sobre qué
 // versión está sirviendo.
-const VERSION = 'v718';
-const CACHE_NAME = 'cronos-cache-v718';
+// v721 · UNA CUENTA POR CACHÉ DE FIRESTORE (js/shared/fs-cache-mode.js): con
+//        dos cuentas en dos pestañas, la primaria del gestor multipestaña sólo
+//        enviaba las escrituras de la suya. + el cambio grupal ya no lo calla el
+//        tope de v676, un vigilante caído se reengancha, y el final de la 1ª
+//        parte se emite comprobado y no deja adoptar el reloj de otra fase.
+// v722 · EL LATIDO TIENE UNA SOLA PUERTA (`cronosArrancaLatido`, sync.js):
+//        «Recuperar Partido» desde la nube latía cada 1 s (y recuperado en pausa
+//        no latía nada), y retomar desde el dispositivo cada 5 s también en
+//        pausa. Ahora los tres caminos: 15 s en marcha, y en pausa sólo hasta
+//        que el cambio llegue (v572 + v718).
+const VERSION = 'v722';
+const CACHE_NAME = 'cronos-cache-v722';
 
 const ASSETS = [
     './',
@@ -2659,6 +2669,17 @@ const ASSETS = [
     // en curso no se podria ni guardar ni recuperar. El fichero existe en
     // disco: `cache.addAll` es ATOMICO y una ruta que devuelva 404 tumba la
     // precarga ENTERA (leccion de v452).
+    // v720 · va en el precache Y VA PRIMERO: envuelve localStorage para aislar
+    // las claves por usuario, y sin el (una pestaña sin cobertura que arranca de
+    // la cache) cada cuenta volveria a escribir en el espacio comun y dos
+    // correos en dos pestañas se pisarian otra vez. Mismo aviso que el de abajo:
+    // `cache.addAll` es ATOMICO y un 404 aqui tumba la precarga ENTERA (v452).
+    './js/core/local-uid.js',
+    // v721 · decide el caché de Firestore ANTES de crear la instancia. Sin él
+    // en el precache, una pestaña que arranca sin cobertura volvería al caché
+    // compartido aunque haya otra cuenta abierta. Mismo aviso: un 404 aquí
+    // tumba la precarga ENTERA (v452) — el fichero existe.
+    './js/shared/fs-cache-mode.js',
     './js/core/match-slots.js',
     './js/core/app-init.js',
     './js/core/setup-modal.js',

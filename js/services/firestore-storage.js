@@ -5,14 +5,33 @@
 // ══════════════════════════════════════════════════════════════════
 
 // ══════════════════════════════════════════════════════════════════
-//  PURGA DE PII LOCAL AL CAMBIAR DE USUARIO EN EL MISMO DISPOSITIVO
+//  PII LOCAL AL CAMBIAR DE USUARIO EN EL MISMO DISPOSITIVO
 //  ──────────────────────────────────────────────────────────────────
-//  localStorage NO está namespaced por uid. Si un usuario distinto
-//  inicia sesión en el mismo navegador, heredaría la caché del anterior
-//  (plantillas, jugadores, configs...). Estas funciones purgan TODA
-//  clave 'cronos_*' de PII cuando se detecta un cambio de uid (login)
-//  o al cerrar sesión (logout), ANTES de que cloudGet/syncFromCloud
-//  repueblen la caché desde Firestore (aislado por uid).
+//  v199 · El problema: localStorage NO estaba aislado por uid. Si un
+//  usuario distinto entraba en el mismo navegador, heredaba la caché del
+//  anterior (plantillas, jugadores, configs...). La respuesta de v199 fue
+//  PURGAR toda clave 'cronos_*' al detectar un cambio de uid.
+//
+//  🔐 v720 · AHORA SÍ ESTÁ AISLADO POR UID, Y POR ESO YA NO SE PURGA EN
+//  EL LOGIN. js/core/local-uid.js envuelve localStorage y cada cuenta
+//  escribe en su propio espacio ('cronos_teams@<uid>'), así que la
+//  herencia que v199 venía a evitar YA NO PUEDE OCURRIR: la cuenta que
+//  entra no puede ni leer las claves de la otra.
+//
+//  ⚠️ Y LA PURGA HABÍA PASADO DE REMEDIO A DEFECTO. Encargo del autor
+//  (implementar.txt, capturas 10438-10440): dos correos en dos pestañas
+//  del mismo navegador tienen que convivir. El barrido se llevaba TODAS
+//  las claves 'cronos_*' del navegador —incluida la RANURA DEL PARTIDO EN
+//  CURSO de la otra pestaña, y las plantillas, convocatorias y
+//  planificaciones, que sólo viven en localStorage y NO se restauran de
+//  Firestore—. No era un bloqueo: era destrucción cruzada entre pestañas.
+//
+//  Lo que queda:
+//   · LOGIN  → `_purgeStaleLocalDataIfNeeded` ya no barre: MIGRA las
+//     claves heredadas al espacio de su dueño (aislar, no borrar).
+//   · LOGOUT → `_cronosPurgeAllLocalPII` sigue barriendo, pero SÓLO las
+//     claves DEL USUARIO QUE SALE. La red de privacidad se mantiene y la
+//     otra pestaña no se entera.
 // ══════════════════════════════════════════════════════════════════
 
 // Lista blanca COMPARTIDA: claves cronos_* genéricas/seguras por
@@ -33,24 +52,55 @@ const _CRONOS_LOCAL_KEEP_KEYS = new Set([
 ]);
 window._CRONOS_LOCAL_KEEP_KEYS = _CRONOS_LOCAL_KEEP_KEYS;
 
-// Barrido interno: elimina toda clave cronos_* salvo la lista blanca.
+// Barrido interno: elimina las claves cronos_* de PII, salvo la lista blanca.
 // Devuelve el array de claves purgadas (para logging). Síncrono.
-function _cronosSweepLocalPII() {
+//
+// 🔐 v720 · `uid` ES EL ÁMBITO DEL BARRIDO, y es la pieza que impide la
+// destrucción cruzada entre pestañas:
+//   · con uid → se llevan SÓLO las claves de ESE usuario ('…@<uid>'), más las
+//     heredadas sin dueño (pre-v720, que la migración debería haber movido ya);
+//   · sin uid → comportamiento de v199, barrer todo lo que no sea del
+//     dispositivo. Se conserva como red de seguridad para el único caso en que
+//     no se sabe quién sale.
+//
+// ⚠️ SE ENUMERA Y SE BORRA CON LAS CLAVES REALES, por el localStorage SIN
+// ENVOLVER (`_cronosLocalOriginal`). Pasando por la envoltura, una clave real
+// que ya lleva '@' se dejaría igual (bien) pero una heredada se namespacearía
+// al borrarla y el barrido no borraría nada.
+function _cronosSweepLocalPII(uid) {
     const _purged = [];
+    const _O = (typeof window !== 'undefined') ? window._cronosLocalOriginal : null;
+    const _quita = (real) => {
+        try {
+            if (_O) _O.removeItem.call(localStorage, real);
+            else    localStorage.removeItem(real);
+        } catch (e) { /* almacén bloqueado: no puede tumbar la salida */ }
+    };
     // Copia de claves: removeItem muta el índice de localStorage al iterar.
-    const _allKeys = Object.keys(localStorage);
-    for (const key of _allKeys) {
-        if (!key.startsWith('cronos_')) continue;       // no tocar claves ajenas
-        if (_CRONOS_LOCAL_KEEP_KEYS.has(key)) continue; // conservar genéricas
-        localStorage.removeItem(key);
-        _purged.push(key);
+    let _allKeys = [];
+    try { _allKeys = Object.keys(localStorage); } catch (e) { return _purged; }
+    const _dueno = String(uid || '');
+    for (const real of _allKeys) {
+        if (!real.startsWith('cronos_')) continue;       // no tocar claves ajenas
+        const corte  = real.lastIndexOf('@');
+        const logica = corte > 0 ? real.slice(0, corte)  : real;
+        const suyo   = corte > 0 ? real.slice(corte + 1) : '';
+        if (_CRONOS_LOCAL_KEEP_KEYS.has(logica)) continue;  // conservar genéricas
+        if (_dueno && suyo && suyo !== _dueno) continue;     // es de la otra cuenta
+        _quita(real);
+        _purged.push(real);
     }
     return _purged;
 }
 
-// LOGIN: purga condicional por cambio de uid. Idempotente y SÍNCRONA.
+// LOGIN: aislamiento por uid. Idempotente y SÍNCRONA.
 // Debe invocarse tras fijar window._cronosCurrentUser y ANTES de cualquier
 // cloudGet/syncFromCloud/_initSprint4Sync del usuario entrante.
+//
+// 🔐 v720 · CONSERVA EL NOMBRE PORQUE LO LLAMAN CUATRO SITIOS (auth.js x3 y
+// role-launch.js) y el contrato con ellos no cambia: "prepara el almacén local
+// para este uid, y hazlo antes de leer nada". Lo que ha cambiado es CÓMO:
+// antes barría, ahora MIGRA.
 function _purgeStaleLocalDataIfNeeded(incomingUid) {
     try {
         if (!incomingUid) {
@@ -58,6 +108,18 @@ function _purgeStaleLocalDataIfNeeded(incomingUid) {
             return;
         }
         const ownerUid = localStorage.getItem('cronos_owner_uid');
+
+        // 🔐 v720 · LA MUDANZA, SIEMPRE Y LA PRIMERA. Mueve las claves
+        // heredadas (las que aún no llevan dueño) al espacio de quien
+        // corresponda: si este navegador tenía otro propietario, se guardan a
+        // NOMBRE DE AQUÉL —ni se borran ni se le regalan al que entra—; si no,
+        // son de quien entra. Es idempotente, así que correr en cada login no
+        // cuesta nada, y tiene que ir ANTES del CASO 1: un navegador que ya
+        // tenga el marcador puesto puede seguir teniendo claves sin mudar (por
+        // ejemplo si la actualización a v720 le pilló con la sesión abierta).
+        if (typeof window.cronosMigraClavesLocales === 'function') {
+            window.cronosMigraClavesLocales(incomingUid);
+        }
 
         // CASO 1: mismo usuario que la última vez → no tocar nada (preserva
         // la caché legítima y la sincronización entre dispositivos del mismo uid).
@@ -92,39 +154,62 @@ function _purgeStaleLocalDataIfNeeded(incomingUid) {
             return;
         }
 
-        // CASO 3: cambio de usuario REAL (ownerUid existe y NO coincide) → purgar PII.
-        const _purged = _cronosSweepLocalPII();
+        // CASO 3: cambio de usuario REAL (ownerUid existe y NO coincide).
+        // ───────────────────────────────────────────────────────────────
+        // 🔐 v720 · YA NO SE BARRE NADA, Y ÉSTE ES EL CAMBIO DE FONDO DE LA
+        // VERSIÓN. Hasta v719 aquí se llamaba a `_cronosSweepLocalPII()` sin
+        // ámbito y se recargaba la página. Eso hacía DOS daños que el autor
+        // fotografió: se llevaba por delante el partido en curso y las
+        // plantillas de la otra pestaña (que son de OTRA cuenta y sólo viven
+        // aquí), y la recarga expulsaba a esta sesión de lo que estuviera
+        // haciendo. Con el aislamiento por uid ya no hay nada que heredar:
+        // esta cuenta no puede leer las claves de la otra.
+        //
+        // ⚠️ Y LA RECARGA NO LIMPIABA NADA: iba colgada de
+        // `_cronosClearFirestoreCache`, que ES UN NO-OP DESDE v470 —borrar la
+        // caché en disco le mata el cliente al visor, que comparte el
+        // IndexedDB—. Quitarla no abre ningún hueco de privacidad que no
+        // estuviera ya abierto y documentado allí.
         localStorage.setItem('cronos_owner_uid', incomingUid);
         console.log(
-            `[Cronos-Privacy] 🔒 Cambio de usuario detectado en el dispositivo. ` +
-            `Purgadas ${_purged.length} clave(s) de PII del usuario anterior:`,
-            _purged
+            '[Cronos-Privacy] 🔐 Cambio de usuario en el dispositivo. NO se purga: ' +
+            'los datos de cada cuenta están aislados por uid (v720) y los del ' +
+            'usuario anterior se conservan intactos en su propio espacio.'
         );
-
-        // [Cronos-Privacy] La caché EN DISCO de Firestore guarda documentos del
-        // usuario ANTERIOR y sus lecturas no pasan por las reglas: hay que
-        // borrarla también. No se puede hacer en caliente —borrarla exige
-        // terminar la instancia, que este mismo login está usando—, así que se
-        // borra y se recarga: el login se rehace con la caché limpia.
-        //
-        // No hay bucle: el marcador ya se ha actualizado arriba, así que tras
-        // la recarga se entra por el CASO 1 (mismo uid) y no se vuelve a pasar
-        // por aquí.
-        if (typeof window._cronosClearFirestoreCache === 'function') {
-            window._cronosClearFirestoreCache().finally(() => location.reload());
-        }
     } catch (e) {
         console.warn('[Cronos-Privacy] Error en _purgeStaleLocalDataIfNeeded:', e.message);
     }
 }
 
-// LOGOUT: purga incondicional de PII + elimina el marcador, dejando el
-// dispositivo limpio para el siguiente usuario (red de seguridad).
-function _cronosPurgeAllLocalPII() {
+// LOGOUT: purga de PII DEL USUARIO QUE SALE (red de seguridad: el que cierra
+// sesión no deja sus datos en el navegador).
+//
+// 🔐 v720 · `uidSaliente` ES OBLIGATORIO EN LA PRÁCTICA, aunque el argumento
+// sea opcional: sin él se barre TODO el almacén y eso es exactamente lo que
+// destruía los datos de la otra pestaña. Los llamadores tienen que capturar el
+// uid ANTES de anular `window._cronosCurrentUser` —security-and-state.js lo
+// anulaba tres líneas antes de llamar aquí—, y por eso no se puede deducir
+// dentro: cuando llegamos, la sesión ya no está.
+//
+// ⚠️ NO SE MIRA `cronos_owner_uid` como respaldo. Con dos cuentas en dos
+// pestañas, el marcador es de LA ÚLTIMA QUE ENTRÓ, que puede ser la otra: se
+// barrerían los datos de quien se queda.
+//
+// El marcador sólo se borra si era de quien sale: si apunta a la cuenta de la
+// otra pestaña, quitarlo la dejaría sin propietario.
+function _cronosPurgeAllLocalPII(uidSaliente) {
     try {
-        const _purged = _cronosSweepLocalPII();
-        localStorage.removeItem('cronos_owner_uid');
-        console.log(`[Cronos-Privacy] 🔒 Logout: purgadas ${_purged.length} clave(s) de PII + marcador.`, _purged);
+        const _uid = String(uidSaliente || '');
+        const _purged = _cronosSweepLocalPII(_uid);
+        if (!_uid || localStorage.getItem('cronos_owner_uid') === _uid) {
+            localStorage.removeItem('cronos_owner_uid');
+        }
+        console.log(
+            `[Cronos-Privacy] 🔒 Logout: purgadas ${_purged.length} clave(s) de PII ` +
+            (_uid ? 'del usuario que sale (las de otras cuentas, intactas).'
+                  : '— ⚠️ SIN uid: barrido completo del almacén.'),
+            _purged
+        );
     } catch (e) {
         console.warn('[Cronos-Privacy] Error en _cronosPurgeAllLocalPII:', e.message);
     }

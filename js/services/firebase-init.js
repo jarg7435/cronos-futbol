@@ -62,7 +62,7 @@
     // terminado: bloqueo total de acceso. Sin el import, esa vía no se puede
     // volver a tomar por descuido. La caché se borra por IndexedDB, más abajo.
     const { getFirestore, initializeFirestore, persistentLocalCache,
-            persistentMultipleTabManager,
+            persistentMultipleTabManager, memoryLocalCache,
             doc, getDoc, getDocFromServer, setDoc, serverTimestamp } =
         await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
     const { getFunctions } =
@@ -144,6 +144,24 @@
                     ': ese dominio no está registrado en la clave de reCAPTCHA.');
     }
 
+    // ══════════════════════════════════════════════════════════════
+    //  🔴🔴🔴 v721 · EL CACHÉ EN DISCO ES DE UNA SOLA CUENTA
+    // ══════════════════════════════════════════════════════════════
+    //  Con el gestor multipestaña, la pestaña primaria sólo envía las
+    //  escrituras de SU usuario: una segunda cuenta abierta en otra pestaña
+    //  se queda escribiendo en una cola que no sale nunca, sin un solo error
+    //  (FUTureFEM C y Regional B, 2026-09-15). La explicación completa y la
+    //  regla están en js/shared/fs-cache-mode.js.
+    //  🔑 Una sola cuenta en el navegador → 'persistente', exactamente como
+    //  antes. Otra cuenta ya ocupándolo → 'memoria': cliente independiente.
+    //  ⚠️ Sin el módulo (index.html viejo en caché) se queda como antes.
+    //  ⚠️ VA AQUÍ, ANTES DE `getAuth`, Y NO JUNTO A `initializeFirestore`: entre
+    //  crear `auth` y crear `db` no puede haber ni una línea (v469, guard 1b4 de
+    //  test_cliente_firestore_vivo.js). Sólo lee sessionStorage y localStorage;
+    //  no toca IndexedDB, que es lo que rompió v467/v468.
+    const _modoCache = (window.cronosFsModo && typeof window.cronosFsModo.decide === 'function')
+        ? window.cronosFsModo.decide() : 'persistente';
+
     const auth = getAuth(app);
 
     // ── Firestore con caché PERSISTENTE en disco ──────────────────
@@ -224,7 +242,9 @@
     let db;
     try {
         db = initializeFirestore(app, {
-            localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }),
+            localCache: _modoCache === 'memoria'
+                ? memoryLocalCache()
+                : persistentLocalCache({ tabManager: persistentMultipleTabManager() }),
         });
     } catch (e) {
         console.warn('[Chronos] Caché persistente no disponible; se usa la de memoria:', e.message);
@@ -489,6 +509,16 @@
     // ══════════════════════════════════════════════════════════════
     setPersistence(auth, browserSessionPersistence).catch(() => {});
 
+    // 🔴 v721 · Quién es esta pestaña, para el registro del caché en disco
+    // (js/shared/fs-cache-mode.js). Va en su PROPIO observador y no dentro del
+    // de abajo, que sale en su primera línea si ya hay perfil cargado: un
+    // cambio de cuenta tiene que llegar aquí siempre.
+    onAuthStateChanged(auth, (u) => {
+        try {
+            if (window.cronosFsModo) window.cronosFsModo.usuario(u ? u.uid : '');
+        } catch (e) { /* nunca puede cortar el arranque de sesión */ }
+    });
+
     // ── Observador de sesión ──────────────────────────────────────
     onAuthStateChanged(auth, async (user) => {
         if (window._cronosCurrentUser) return;
@@ -597,7 +627,10 @@
                            d.status === 'suspended' || d.status === 'deleted';
             if (_fuera) {
                 console.warn('[Chronos] La cuenta ya no está autorizada. Cerrando sesión.');
-                if (typeof window._cronosPurgeAllLocalPII === 'function') window._cronosPurgeAllLocalPII();
+                // v720 · la purga se limita al usuario que sale: `u` es él.
+                if (typeof window._cronosPurgeAllLocalPII === 'function') {
+                    window._cronosPurgeAllLocalPII((u && u.uid) || '');
+                }
                 await signOut(auth).catch(() => {});
                 location.reload();
                 return;
