@@ -49,12 +49,23 @@ console.log('── PARTE 1 · P1: el latido pasa de 5 s a 15 s ──');
     // El setInterval tiene que USAR la constante. Con el 5000 escrito a mano la
     // constante seria decoracion y el latido seguiria siendo el de antes.
     ok('1c · el setInterval usa la constante, no un numero suelto',
-       /setInterval\(\s*\(\)\s*=>\s*\{[\s\S]{0,160}?\},\s*LIVE_HEARTBEAT_MS\s*\)/.test(SYNC),
+       /setInterval\(\s*\(\)\s*=>\s*\{[\s\S]{0,400}?\},\s*LIVE_HEARTBEAT_MS\s*\)/.test(SYNC),
        'el intervalo del latido tiene que leer LIVE_HEARTBEAT_MS');
 
-    ok('1d · el latido sigue latiendo SOLO con el reloj en marcha',
-       /if\s*\(liveIsActive\s*&&\s*isRunning\)\s*pushLiveSnapshot/.test(SYNC),
-       'en pausa y en el descanso no se paga nada: es la mitad del ahorro');
+    // ⚠️ v718 · ESTA ASERCION SE HA REESCRITO, Y EL AHORRO SIGUE EN PIE.
+    // El autor pidio «veracidad total» en el panel en vivo: el envio de la
+    // PAUSA ya era inmediato, pero era el UNICO, y si se perdia —en un campo
+    // se pierde— el espectador se quedaba con el reloj corriendo para siempre.
+    // La solucion NO es latir en pausa por si acaso (eso son ~15 escrituras
+    // regaladas por descanso, justo lo que este guard defiende), sino emitir en
+    // pausa SOLO MIENTRAS EL CAMBIO NO HAYA LLEGADO: la pulsacion deja su sello
+    // (`_cronosUltimoToggleLocal`) y la escritura buena el suyo
+    // (`_cronosUltimoLatidoOk`, los dos de v714). Con el envio confirmado, en
+    // pausa se pagan CERO escrituras, que es lo que medimos aqui.
+    ok('1d · con el reloj en marcha late, y en pausa SOLO si el cambio no llego',
+       /if\s*\(isRunning\)\s*\{\s*pushLiveSnapshot\('active'\);\s*return;\s*\}/.test(SYNC) &&
+       /pulsado\s*>\s*emitido\)\s*pushLiveSnapshot/.test(SYNC),
+       'en pausa, con el cambio ya emitido, no se paga nada: es la mitad del ahorro');
 
     // ⚠️ EL ACOPLAMIENTO QUE HABRIA ROTO P1 EN SILENCIO.
     // live.html da un canal por muerto si pasa demasiado tiempo sin snapshots y

@@ -403,9 +403,45 @@ async function startLiveSync() {
     // los cambios ya se auto-flushean por liveSyncOnAction/liveSyncFlushNow, así que
     // no hace falta latir en pausa). Guard anti-doble-intervalo: si startLiveSync se
     // llama 2× (p.ej. share-modal + import), evita dejar timers huérfanos.
+    // ════════════════════════════════════════════════════════════════
+    //  📡 v718 · TAMBIÉN SE LATE EN PAUSA (más despacio)
+    // ════════════════════════════════════════════════════════════════
+    //  Encargo del autor (implementar.txt 2026-09-15): «en el momento exacto
+    //  en que un partido se pausa, reanuda o finaliza, el cambio debe
+    //  propagarse y actualizarse de inmediato en los paneles de partidos en
+    //  vivo y terminados, garantizando total veracidad y credibilidad».
+    //
+    //  🔑 EL EMPUJÓN DE LA PAUSA YA SE MANDA AL INSTANTE (`toggleGame`), pero
+    //  ERA EL ÚNICO: este latido callaba en cuanto `isRunning` era false. Si
+    //  ese único envío se perdía —y en un campo se pierde: el móvil sin
+    //  cobertura es LA NORMA— el espectador se quedaba con el reloj
+    //  CORRIENDO, porque `live.html` cuenta solo desde `phaseStartedAt`. O
+    //  sea: el panel en vivo mentía y nada lo corregía.
+    //
+    //  ⚠️⚠️ PERO EN PAUSA NO SE LATE «POR SI ACASO», Y ESTO ES DELIBERADO.
+    //  `scripts/test_p1_p2_consumo.js` (1d) defiende un ahorro MEDIDO de v572:
+    //  «en pausa y en el descanso no se paga nada». Un latido de cortesía cada
+    //  minuto durante un descanso de 15 minutos son 15 escrituras regaladas
+    //  POR PARTIDO, y ese ahorro se ganó a pulso.
+    //
+    //  🔑 LO QUE SE HACE EN SU LUGAR: en pausa se emite SÓLO SI EL CAMBIO
+    //  TODAVÍA NO HA LLEGADO. La pulsación deja su sello
+    //  (`_cronosUltimoToggleLocal`, v714) y la escritura buena deja el suyo
+    //  (`_cronosUltimoLatidoOk`, v714); si el primero es más nuevo que el
+    //  segundo, el servidor NO se ha enterado de la pausa y se reintenta. En
+    //  cuanto entra, se calla.
+    //    · caso normal (el envío llegó) → CERO escrituras en pausa, el ahorro
+    //      de v572 intacto;
+    //    · caso malo (se perdió, que en un campo es lo corriente) → se
+    //      reintenta hasta que entre, y el panel en vivo deja de mentir.
+    //  Eso es la «veracidad» que pide el autor sin pagar por el silencio.
     if (liveSyncTimer) clearInterval(liveSyncTimer);
     liveSyncTimer = setInterval(() => {
-        if (liveIsActive && isRunning) pushLiveSnapshot('active');
+        if (!liveIsActive) return;
+        if (isRunning) { pushLiveSnapshot('active'); return; }
+        const pulsado = window._cronosUltimoToggleLocal || 0;
+        const emitido = window._cronosUltimoLatidoOk || 0;
+        if (pulsado && pulsado > emitido) pushLiveSnapshot('active');
     }, LIVE_HEARTBEAT_MS);
 
     // Mostrar botón de compartir en el header
@@ -1294,6 +1330,38 @@ async function pushLiveSnapshot(status = 'active') {
         }
     }
 }
+
+// ══════════════════════════════════════════════════════════════════════
+//  📡 v718 · EL CAMBIO DE ESTADO SE EMITE YA, Y SE COMPRUEBA QUE LLEGÓ
+// ══════════════════════════════════════════════════════════════════════
+//  Los tres momentos que el autor nombra —pausar, reanudar, finalizar— no son
+//  un latido más: son LO QUE CAMBIA LA VERDAD del partido. Si su envío se
+//  pierde, el panel en vivo sigue contando un reloj parado y el de terminados
+//  no se entera de que el partido acabó.
+//
+//  🔑 CÓMO SE SABE SI LLEGÓ, sin tocar `pushLiveSnapshot`: esa función sella
+//  `window._cronosUltimoLatidoOk` DESPUÉS de la escritura (v714). Si el sello
+//  no ha avanzado, no se escribió — y entonces se reintenta UNA vez.
+//
+//  ⚠️ UN SOLO REINTENTO, y corto. Esto corre en el momento en que el
+//  entrenador pulsa el botón: encadenar esperas largas dejaría la interfaz
+//  pendiente de la red, que es justo lo que v714 quitó de en medio. Si el
+//  segundo intento también falla, el latido de pausa (arriba) lo corregirá
+//  dentro de un minuto, y el reloj local nunca ha dependido de esto.
+async function cronosEmiteEstadoAhora(status) {
+    const antes = window._cronosUltimoLatidoOk || 0;
+    try { await pushLiveSnapshot(status || 'active'); } catch (e) {}
+    if ((window._cronosUltimoLatidoOk || 0) > antes) return true;
+    await new Promise(r => setTimeout(r, 1200));
+    try { await pushLiveSnapshot(status || 'active'); } catch (e) {}
+    const llegó = (window._cronosUltimoLatidoOk || 0) > antes;
+    if (!llegó) {
+        console.warn('[v718] El cambio de estado (' + (status || 'active') +
+                     ') no se ha podido emitir todavía; el latido lo reintentará.');
+    }
+    return llegó;
+}
+if (typeof window !== 'undefined') window.cronosEmiteEstadoAhora = cronosEmiteEstadoAhora;
 
 async function stopLiveSync() {
     if (!liveIsActive) return;

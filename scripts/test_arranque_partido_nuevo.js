@@ -151,9 +151,13 @@ console.log('\n── PARTE 2 · [B] reiniciar vuelve a encender el directo ─�
     // La pieza que hacía que el silencio fuera total: los envíos del botón
     // cuelgan de liveIsActive.
     const tg = trozo(TIMER, 'function toggleGame()');
+    // ⚠️ v718 · El envío del botón pasa ahora por `cronosEmiteEstadoAhora`
+    // (que comprueba que la escritura llegó y reintenta una vez), pero lo que
+    // esta aserción mide es OTRA cosa y sigue igual de cierta: que el envío
+    // cuelga de `liveIsActive`, y por eso apagarlo callaba el partido entero.
     ok('2g · 📏 [B] los envíos del botón siguen colgando de liveIsActive ' +
        '(por eso apagarlo callaba el partido entero)',
-       !!tg && /if \(liveIsActive\) pushLiveSnapshot/.test(tg));
+       !!tg && /if \(liveIsActive\) \{[\s\S]{0,320}?(cronosEmiteEstadoAhora|pushLiveSnapshot)/.test(tg));
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

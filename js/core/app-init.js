@@ -860,6 +860,10 @@ window._restoreActiveMatch = function() {
             // Si el partido estaba en una fase activa (1ª o 2ª parte), SIEMPRE reanudar.
             // El timer se puede haber parado por: INICIO, cambio de pestaña, cierre del navegador.
             // En todos los casos, "Retomar partido" debe continuar el cronómetro automáticamente.
+            // 🔴 v717 · Antes de decidir nada, el reloj tiene que ser COHERENTE:
+            // no se puede retomar en la 2ª parte con la 1ª a cero (captura
+            // 10421). Ver `cronosCoherenciaDelReloj`.
+            if (typeof window.cronosCoherenciaDelReloj === 'function') window.cronosCoherenciaDelReloj();
             // 🔴 v716 · Por la PUERTA ÚNICA del reloj y con el botón pintado
             // del estado. Este camino y el de la recuperación desde la nube
             // eran dos de los creadores del intervalo, y cada uno pintaba el

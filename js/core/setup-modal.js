@@ -2096,6 +2096,12 @@ async function _doResumeMatch(matchId) {
             liveIsActive = false;  // No escribir desde este dispositivo
         }
 
+        // 🔴 v717 · El reloj recuperado tiene que ser COHERENTE antes de decidir
+        // si sigue corriendo: no se puede retomar en la 2ª parte con la 1ª a
+        // cero (captura 10421, el «salto extraño» del reporte). Ver
+        // `cronosCoherenciaDelReloj` en js/match/timer/core.js.
+        if (typeof window.cronosCoherenciaDelReloj === 'function') window.cronosCoherenciaDelReloj();
+
         if (shouldAutoEndFirstHalf) {
             if (typeof window.endFirstHalf === 'function') {
                 window.endFirstHalf(true);

@@ -205,6 +205,42 @@ function cronosPintaBotonReloj() {
 // ¿Se pueden registrar goles, tarjetas o lesiones AHORA? Una sola respuesta
 // para los tres sitios que preguntaban por su cuenta (`!isRunning`): con el
 // reloj y el botón ya sincronizados, esto deja de dar falsos bloqueos.
+// ══════════════════════════════════════════════════════════════════
+//  🔴 v717 · NO SE PUEDE ESTAR EN LA 2ª PARTE CON LA 1ª A CERO
+// ══════════════════════════════════════════════════════════════════
+//  📏 MEDIDO en la captura 10421 (producción v716): la cabecera decía
+//  «2ª PARTE» con `1ª P 10:00` —o sea la primera parte SIN JUGAR, cero
+//  segundos— mientras las fichas de los jugadores llevaban 17:04, 13:31,
+//  12:13… Un partido no puede estar en la segunda parte con la primera a
+//  cero: la primera, por definición, ya se jugó entera. Ese hueco es lo que
+//  hace que el reloj total, el tiempo de los jugadores y el informe cuenten
+//  tres historias distintas, y es el «salto extraño» del reporte.
+//
+//  🔑 De dónde sale el hueco: al retomar un partido conviven DOS copias (la
+//  del dispositivo y la de la nube, ver el panel de «Recuperar Partido»), y si
+//  la que gana no trae `timeH1` —o trae 0 porque se guardó antes de arrancar—
+//  la fase sí se restaura pero el cronómetro de la primera parte no.
+//
+//  ⚠️ SE RELLENA CON EL TOPE DE LA PARTE, no con la suma de las fichas: el
+//  tope es un dato del PARTIDO (la duración pactada), mientras que el tiempo
+//  de un jugador depende de cuánto jugó él. Y sólo se toca si está a CERO:
+//  un valor pequeño pero real (una parte cortada a propósito) es un hecho y
+//  no se inventa nada encima.
+function cronosCoherenciaDelReloj() {
+    if (typeof matchPhase === 'undefined') return false;
+    const enSegunda = (matchPhase === '2nd_half' || matchPhase === 'finished');
+    if (!enSegunda) return false;
+    if (typeof masterTimeH1 === 'undefined' || masterTimeH1 > 0) return false;
+    const tope = (typeof half1MaxTime !== 'undefined' && half1MaxTime > 0) ? half1MaxTime : 0;
+    if (!tope) return false;
+    masterTimeH1 = tope;
+    console.warn('[v717] La 1ª parte estaba a CERO en la ' +
+                 (matchPhase === 'finished' ? 'fase final' : '2ª parte') +
+                 ': se completa con su duración (' + tope + 's).');
+    if (typeof updateMasterUI === 'function') { try { updateMasterUI(); } catch (e) {} }
+    return true;
+}
+
 function cronosPartidoEnJuego() {
     if (typeof matchPhase !== 'undefined' && matchPhase === 'finished') return false;
     return (typeof isRunning !== 'undefined') && isRunning === true;
@@ -214,6 +250,7 @@ if (typeof window !== 'undefined') {
     window._cronosParaReloj       = _cronosParaReloj;
     window.cronosPintaBotonReloj  = cronosPintaBotonReloj;
     window.cronosPartidoEnJuego   = cronosPartidoEnJuego;
+    window.cronosCoherenciaDelReloj = cronosCoherenciaDelReloj;
 }
 
 function toggleGame() {
@@ -232,7 +269,17 @@ function toggleGame() {
     if (isRunning) _cronosArrancaReloj();
     else           _cronosParaReloj();
     // Push inmediato → live.html recibe pausa/reanuda en <1s
-    if (liveIsActive) pushLiveSnapshot('active').catch(() => {});
+    // 📡 v718 · Y SE COMPRUEBA QUE HA LLEGADO. Pausar y reanudar no son un
+    // latido más: si ese envío se pierde, el espectador se queda con el reloj
+    // corriendo (live.html cuenta solo desde `phaseStartedAt`). El emisor de
+    // sync.js reintenta una vez; si tampoco, lo corrige el latido de pausa.
+    if (liveIsActive) {
+        if (typeof window.cronosEmiteEstadoAhora === 'function') {
+            window.cronosEmiteEstadoAhora('active').catch(() => {});
+        } else {
+            pushLiveSnapshot('active').catch(() => {});
+        }
+    }
     // ⏱️ v638 · y el vigía queda en pie tanto al pausar como al reanudar: es lo
     //    que permite que un aparato en PAUSA siga enterándose de lo que hacen
     //    los demás.

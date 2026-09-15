@@ -2549,6 +2549,41 @@ service cloud.firestore {
     // ACOTADO, y aqui directamente no hay ninguna consulta que hacer — el
     // cliente siempre lee un documento concreto por su id.
     match /cronos_role_sessions/{sessionId} {
+      // ══════════════════════════════════════════════════════════════
+      //  🔴 v717 · UN `get` SOBRE UNA MARCA QUE NO EXISTE NO ES UN ROBO
+      // ══════════════════════════════════════════════════════════════
+      //  📏 MEDIDO en la consola del autor (captura 10421, prod v716): el
+      //  oyente de la plaza moría con «permission-denied» en el mismo instante
+      //  en que se le cerró la sesión. La causa NO era de pertenencia: en el
+      //  lenguaje de reglas, leer un campo de un documento que NO EXISTE
+      //  **LANZA**, y un error en la condición equivale a DENY. Así que en
+      //  cuanto la marca se borra —`cronosSesionLibera`, al cambiar de plaza o
+      //  cerrar sesión— cualquier oyente que siga puesto recibe un error de
+      //  PERMISOS en vez de un «documento borrado», y se muere para siempre.
+      //  Es la misma trampa que ya se pagó en `live_matches` (v714).
+      //
+      //  ⚠️⚠️ ESTA REGLA SE HA DEJADO COMO ESTABA, Y ES UNA DECISIÓN MEDIDA.
+      //  La corrección evidente —admitir el hueco vacío con `resource == null`,
+      //  acotado a los ids del propio uid— se escribió y se PROBÓ con el método
+      //  `:test` de la Rules REST API (scripts/test_session_lock_rules.js, el
+      //  único banco de pruebas de reglas del proyecto, v631). Resultado: ese
+      //  banco **no puede representar un documento inexistente**. Sin
+      //  `resource` en el caso de prueba, TANTO `resource == null` COMO
+      //  `resource != null` revientan la evaluación (errorPosition en la línea
+      //  de la comparación), y una evaluación que revienta DENIEGA — o sea que
+      //  el caso saldría «verde» sin haber probado nada, que es justo el verde
+      //  falso que ese guard vigila.
+      //
+      //  🔑 Y NO HACE FALTA TOCARLA para arreglar lo que el autor reportó: el
+      //  daño visible era que el oyente MORÍA EN SILENCIO y no se volvía a
+      //  enganchar (v717, js/services/auth/session-lock.js). Eso está resuelto
+      //  en el cliente, que es donde se puede verificar.
+      //
+      //  Si algún día se quiere quitar también el ruido de `permission-denied`
+      //  de la consola, hay que verificar la regla con el EMULADOR (no con el
+      //  `:test`) antes de publicarla, y desplegarla aparte
+      //  (`deploy:prod:rules`). Sin esa verificación, no se toca la frontera
+      //  de seguridad.
       allow get:    if isAuth() && resource.data.get('uid', '') == request.auth.uid;
       allow list:   if false;
       allow create: if isAuth() && request.resource.data.get('uid', '') == request.auth.uid;

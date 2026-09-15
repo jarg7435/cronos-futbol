@@ -33,7 +33,10 @@ window.endMatch = function endMatch(skipConfirm = false) {
 
     // Detener cronómetro
     isRunning = false;
-    clearInterval(timerInterval);
+    // 🔴 v718 · Por la puerta única del reloj (v716): al terminar no puede
+    // quedar ningún intervalo huérfano sumando tiempo a las fichas.
+    if (typeof window._cronosParaReloj === 'function') window._cronosParaReloj();
+    else clearInterval(timerInterval);
     matchPhase = 'finished';
 
     // ── FIX (punto 2): limpiar el estado persistido del partido activo ──
@@ -83,7 +86,14 @@ window.endMatch = function endMatch(skipConfirm = false) {
     updateMasterUI();
 
     // Detener sincronización en vivo y empujar estado 'finished' a Firestore
-    if (typeof pushLiveSnapshot === 'function') {
+    // 📡 v718 · EL FINAL SE EMITE YA Y SE COMPRUEBA QUE LLEGÓ. Es el estado
+    // que hace desaparecer la tarjeta de «Partidos en Vivo» y aparecer la de
+    // «Terminados»: si ese envío se pierde, el partido se queda «en vivo» para
+    // todo el mundo con el reloj andando. El emisor reintenta una vez.
+    if (typeof window.cronosEmiteEstadoAhora === 'function') {
+        window.cronosEmiteEstadoAhora('finished')
+            .catch(e => console.warn('[endMatch] Error pushing finished snapshot:', e));
+    } else if (typeof pushLiveSnapshot === 'function') {
         pushLiveSnapshot('finished').catch(e => console.warn('[endMatch] Error pushing finished snapshot:', e));
     }
     if (typeof stopLiveSync === 'function') {

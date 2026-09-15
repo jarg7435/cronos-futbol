@@ -138,7 +138,9 @@
         var fa = window._cronos_auth;
         if (!fa || !fa.db) return null;
         var m = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
-        return { m: m, db: fa.db };
+        // v717 · `auth` viaja también: es el respaldo del `uid` con el que las
+        // reglas comparan la marca de la plaza (ver `cronosSesionReclama`).
+        return { m: m, db: fa.db, auth: fa.auth || null };
     }
 
     function _vive(doc) {
@@ -174,9 +176,24 @@
             return { ok: false, ocupadaPor: previo };
         }
 
+        // 🔑 v717 · SIN `uid` NO SE ESCRIBE LA MARCA. La regla de lectura es
+        // `resource.data.uid == request.auth.uid`, así que una marca con
+        // `uid: ''` es una marca **que su propio dueño no puede leer**: su
+        // oyente muere con permission-denied y este aparato deja de enterarse
+        // de que otro le toma la plaza. Antes se escribía igual y el fallo
+        // aparecía después, lejos de su causa. El respaldo es el usuario de
+        // Firebase Auth, que es el que las reglas comparan.
+        var _uid = (window._cronosCurrentUser || {}).uid ||
+                   (f.auth && f.auth.currentUser && f.auth.currentUser.uid) || '';
+        if (!_uid) {
+            console.warn('[v717] No se reclama la plaza: todavía no hay uid. ' +
+                         'Una marca sin uid no la puede leer ni su dueño.');
+            return { ok: true, sinComprobar: true };
+        }
+
         try {
             await f.m.setDoc(ref, {
-                uid:        (window._cronosCurrentUser || {}).uid || '',
+                uid:        _uid,
                 clave:      clave,
                 deviceId:   yo,
                 deviceName: _nombreAparato(),
@@ -221,12 +238,49 @@
     //  🔑 El aviso al PRIMER aparato es la otra mitad del encargo: sin esto,
     //  seguiría escribiendo creyendo que manda y volveríamos al problema de
     //  las escrituras contradictorias.
+    // ════════════════════════════════════════════════════════════════
+    //  🔴🔴 v717 · EL OYENTE DE LA SESIÓN SE MORÍA EN SILENCIO
+    // ════════════════════════════════════════════════════════════════
+    //  📏 MEDIDO en la consola del autor (captura 10421, producción v716,
+    //  22:26:40Z — el mismo instante en que se le cerró la sesión):
+    //    «Uncaught Error in snapshot listener: FirebaseError:
+    //     [code=permission-denied]: Missing or insufficient permissions»
+    //
+    //  🔑 POR QUÉ SE DENIEGA UNA LECTURA QUE ES SUYA. La regla de
+    //  `cronos_role_sessions` es `allow get: resource.data.uid == uid`, y en el
+    //  lenguaje de reglas **leer un campo de un documento que NO EXISTE LANZA**
+    //  —y un error en la condición equivale a DENY—. O sea que en cuanto la
+    //  marca se BORRA (`cronosSesionLibera`, al cambiar de plaza o cerrar
+    //  sesión) cualquier oyente que siga puesto no recibe «documento
+    //  borrado»: recibe **permission-denied**. Es exactamente la misma trampa
+    //  que se midió en v714 para `live_matches`, ahora en una LECTURA.
+    //  El otro camino al mismo sitio: una marca escrita con `uid: ''` (si el
+    //  usuario aún no estaba cargado) es una marca **que su propio dueño no
+    //  puede leer**.
+    //
+    //  🔑🔑 Y ESTE `onSnapshot` NO TENÍA CALLBACK DE ERROR, así que:
+    //    · el SDK lo escupía como error NO CAPTURADO en la consola, y
+    //    · el oyente quedaba MUERTO para siempre — este aparato no volvía a
+    //      enterarse de que otro tomaba su plaza, que es justo lo que este
+    //      módulo existe para vigilar.
+    //
+    //  Lo que se hace ahora: se atiende el error, se dice UNA vez, y se vuelve
+    //  a enganchar si seguimos teniendo la plaza (con tope de reintentos, para
+    //  que un fallo permanente no se convierta en un bucle de reconexión).
+    //  ⚠️ Sigue siendo COORDINACIÓN, no seguridad: si la escucha no se puede
+    //  restablecer, se trabaja igual (misma política de fail-open del módulo).
+    // ════════════════════════════════════════════════════════════════
+    var _reintentos = 0;
+    var _MAX_REINTENTOS = 3;
+    var _REINTENTO_MS = 4000;
+
     async function _escucha(clave) {
         _paraEscuchaFn();
         try {
             var f = await _fs();
             if (!f) return;
             _paraEscucha = f.m.onSnapshot(f.m.doc(f.db, COLECCION, clave), function (snap) {
+                _reintentos = 0;            // la escucha va: se olvida el historial de fallos
                 var d = snap.exists() ? (snap.data() || {}) : null;
                 if (!d || !d.deviceId) return;
                 if (d.deviceId === _deviceId()) return;
@@ -234,6 +288,28 @@
                 _paraLatido();
                 _paraEscuchaFn();
                 window.cronosSesionDesalojado(d);
+            }, function (err) {
+                // 🔑 El oyente ya está muerto cuando llega aquí: Firestore lo
+                // cierra al fallar. Se suelta la referencia y se decide.
+                _paraEscucha = null;
+                var msg = (err && err.message) || String(err);
+                if (window._cronosSesionUltimoFallo !== msg) {
+                    window._cronosSesionUltimoFallo = msg;
+                    console.warn('[v717] La escucha de la plaza se cortó (' + msg +
+                                 '). Reintentando mientras la plaza siga siendo nuestra.');
+                }
+                // Si ya no tenemos plaza (cambio de rol, salida), no hay nada
+                // que volver a escuchar.
+                if (_claveActual !== clave) return;
+                if (_reintentos >= _MAX_REINTENTOS) {
+                    console.warn('[v717] Escucha de plaza desactivada tras ' + _reintentos +
+                                 ' intentos. Se sigue trabajando (coordinación, no seguridad).');
+                    return;
+                }
+                _reintentos++;
+                setTimeout(function () {
+                    if (_claveActual === clave && !_paraEscucha) _escucha(clave);
+                }, _REINTENTO_MS);
             });
         } catch (e) { /* sin escucha: se sigue trabajando igual */ }
     }
@@ -286,23 +362,56 @@
                 '<div style="background:var(--bg-card,#0d1117);border:1px solid rgba(255,255,255,0.18);' +
                 'border-radius:14px;max-width:420px;width:100%;padding:18px;' +
                 'box-shadow:0 18px 50px rgba(0,0,0,0.7);">' +
-                '<div style="font-size:1rem;font-weight:800;color:#e3b341;margin-bottom:10px;">' +
-                '⚠️ Ese rol ya está abierto</div>' +
+                // ══════════════════════════════════════════════════════════
+                //  🔒🔒 v718 · EL EQUIPO QUEDA BLOQUEADO, Y SE DICE POR QUÉ
+                // ══════════════════════════════════════════════════════════
+                //  Encargo del autor (implementar.txt 2026-09-15, pruebas con
+                //  el Alevín C): «si un dispositivo intenta abrir o gestionar
+                //  un equipo que ya tiene una sesión activa en otro lugar, el
+                //  sistema debe BLOQUEAR el acceso de forma explícita y
+                //  mostrar un mensaje claro indicando que no es posible
+                //  trabajar con este equipo a no ser que se retire la
+                //  prioridad o se cierre la sesión en el otro dispositivo».
+                //
+                //  ⚠️ CAMBIA LA POLÍTICA DE v699, Y LO PIDE ÉL. Hasta aquí
+                //  esto era una pregunta con dos salidas al mismo nivel
+                //  («Cancelar» / «Tomar el control»), así que tomar el equipo
+                //  de otro aparato costaba un clic y no se leía el aviso.
+                //  Ahora la respuesta POR DEFECTO es NO ENTRAR: el botón
+                //  principal cierra, y retirar la prioridad es una acción
+                //  aparte, secundaria y dicha con todas las letras.
+                //
+                //  🔑 LA SALIDA SIGUE EXISTIENDO, Y NO ES UN CAPRICHO: si el
+                //  otro aparato se quedó sin batería en mitad del partido, un
+                //  bloqueo sin escape dejaría al entrenador fuera de su propio
+                //  encuentro. Por eso se dicen las TRES vías: cerrar allí,
+                //  retirar la prioridad desde aquí, o esperar — la marca
+                //  caduca sola en ~1 minuto (TTL 75 s, latido 25 s).
+                '<div style="font-size:1rem;font-weight:800;color:#f85149;margin-bottom:10px;">' +
+                '🔒 Este equipo ya está abierto en otro dispositivo</div>' +
                 '<div style="font-size:0.84rem;color:#c9d1d9;line-height:1.45;margin-bottom:6px;">' +
                 '<strong>' + esc(info.etiqueta || 'Este rol') + '</strong></div>' +
                 '<div style="font-size:0.78rem;color:#8b949e;margin-bottom:14px;">' +
                 esc(info.deviceName || 'Otro dispositivo') + ' · activo ' + esc(_desde(info.startedAt || info.lastSeen)) +
                 '</div>' +
-                '<div style="font-size:0.76rem;color:#8b949e;margin-bottom:16px;line-height:1.45;">' +
-                'Si tomas el control, la sesión del otro dispositivo se cerrará para evitar que ' +
-                'los dos escriban a la vez sobre el mismo partido.</div>' +
-                '<div style="display:flex;gap:8px;">' +
-                '<button id="cs-cancelar" style="flex:1;min-height:44px;border-radius:10px;cursor:pointer;' +
-                'background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.18);color:#c9d1d9;' +
-                'font-weight:700;font-size:0.8rem;">Cancelar</button>' +
-                '<button id="cs-tomar" style="flex:1;min-height:44px;border-radius:10px;cursor:pointer;' +
-                'background:rgba(218,54,51,0.85);border:1px solid rgba(255,255,255,0.25);color:#fff;' +
-                'font-weight:800;font-size:0.8rem;">Tomar el control</button>' +
+                '<div style="font-size:0.78rem;color:#f0f6fc;background:rgba(248,81,73,0.10);' +
+                'border:1px solid rgba(248,81,73,0.35);border-radius:10px;padding:10px;' +
+                'margin-bottom:12px;line-height:1.5;">' +
+                '<strong>No es posible trabajar con este equipo desde aquí</strong> mientras siga ' +
+                'abierto en el otro dispositivo: los dos escribirían a la vez sobre el mismo ' +
+                'partido.</div>' +
+                '<div style="font-size:0.76rem;color:#8b949e;margin-bottom:16px;line-height:1.5;">' +
+                'Para poder usarlo: <strong>cierra la sesión</strong> en ese dispositivo, ' +
+                '<strong>retírale la prioridad</strong> desde aquí (allí se cerrará al momento), ' +
+                'o espera: si se quedó sin batería o sin cobertura, el equipo se libera solo en ' +
+                'aproximadamente un minuto.</div>' +
+                '<div style="display:flex;flex-direction:column;gap:8px;">' +
+                '<button id="cs-cancelar" style="width:100%;min-height:46px;border-radius:10px;cursor:pointer;' +
+                'background:rgba(88,166,255,0.9);border:none;color:#fff;' +
+                'font-weight:800;font-size:0.85rem;">Entendido, no entrar</button>' +
+                '<button id="cs-tomar" style="width:100%;min-height:42px;border-radius:10px;cursor:pointer;' +
+                'background:rgba(255,255,255,0.04);border:1px solid rgba(218,54,51,0.55);color:#ff7b72;' +
+                'font-weight:700;font-size:0.78rem;">Retirar la prioridad al otro dispositivo</button>' +
                 '</div></div>';
             document.body.appendChild(ov);
             var cierra = function (v) { try { ov.remove(); } catch (e) {} resolve(v); };
@@ -312,8 +421,42 @@
     };
 
     // Al aparato que pierde la plaza.
+    // ════════════════════════════════════════════════════════════════
+    //  🔴🔴 v717 · EL APARATO DESALOJADO DEJA DE ESCRIBIR EL PARTIDO
+    // ════════════════════════════════════════════════════════════════
+    //  Hasta aquí, al ser desalojado sólo se PINTABA el aviso: el cronómetro
+    //  seguía corriendo y el latido seguía subiendo `live_matches` hasta que el
+    //  entrenador pulsara «Volver a los roles». O sea que durante ese rato
+    //  había DOS aparatos escribiendo el mismo partido — exactamente lo que
+    //  este módulo existe para evitar (ver la cabecera, v699) — y el que se
+    //  queda leyendo ve el reloj pelearse consigo mismo: es el «bucle» y los
+    //  «saltos extraños» del reporte (implementar.txt 2026-09-14).
+    //
+    //  🔑 UNA SOLA FUENTE DE VERDAD, que es lo que pide el autor: manda el
+    //  aparato que tiene la plaza. Así que aquí se CALLA este: se para el
+    //  reloj, se corta el latido y se apaga la emisión.
+    //
+    //  ⚠️ NO SE EMITE UN ÚLTIMO LATIDO al callarse (`stopLiveSync` lo haría):
+    //  nuestro estado ya es el viejo, y mandarlo pisaría el del aparato que
+    //  acaba de tomar el control. Callarse es justo lo contrario de despedirse.
+    //  ⚠️ Y NO SE BORRA NADA EN LOCAL: la ranura del partido se queda donde
+    //  está, así que si vuelve por aquí lo recupera.
+    function _callaEsteAparato() {
+        try { if (typeof isRunning !== 'undefined') isRunning = false; } catch (e) {}
+        try { if (typeof window._cronosParaReloj === 'function') window._cronosParaReloj(); } catch (e) {}
+        try { if (typeof window.cronosPintaBotonReloj === 'function') window.cronosPintaBotonReloj(); } catch (e) {}
+        try {
+            if (typeof liveSyncTimer !== 'undefined' && liveSyncTimer) {
+                clearInterval(liveSyncTimer); liveSyncTimer = null;
+            }
+        } catch (e) {}
+        try { if (typeof liveIsActive !== 'undefined') liveIsActive = false; } catch (e) {}
+        try { if (typeof updateLiveButton === 'function') updateLiveButton(false); } catch (e) {}
+    }
+
     window.cronosSesionDesalojado = function (info) {
-        var esc = (typeof window.escapeHtml === 'function') ? window.escapeHtml : function (s) { return String(s); };
+        _callaEsteAparato();
+        var esc =(typeof window.escapeHtml === 'function') ? window.escapeHtml : function (s) { return String(s); };
         var ov = document.createElement('div');
         ov.style.cssText = 'position:fixed;inset:0;z-index:2700;display:flex;align-items:center;' +
             'justify-content:center;background:rgba(0,0,0,0.82);padding:16px;';

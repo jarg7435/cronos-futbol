@@ -19,6 +19,18 @@
 //
 //  Se prueba con el metodo :test de la Rules REST API (ver la nota de v631):
 //  evalua las reglas en el servidor de Google, sin emulador ni JDK.
+//
+//  ⚠️⚠️ v717 · LO QUE ESTE BANCO NO PUEDE PROBAR, Y HAY QUE SABERLO.
+//  MEDIDO: un caso de prueba SIN `resource` (o sea, el documento NO EXISTE)
+//  hace que TANTO `resource == null` COMO `resource != null` revienten la
+//  evaluacion — el API devuelve `errorPosition` justo en la comparacion—. Y
+//  una evaluacion que revienta DENIEGA, asi que un caso DENY saldria verde sin
+//  haber probado la regla (el verde falso que vigila el bucle de abajo).
+//  Consecuencia practica: el `permission-denied` que mata al oyente de la
+//  plaza cuando la marca se BORRA (captura 10421, prod v716) NO se puede
+//  reproducir aqui. Se arreglo en el CLIENTE, que es donde se puede verificar
+//  (js/services/auth/session-lock.js, v717). Si algun dia se quiere tocar la
+//  regla para admitir el hueco vacio, hay que verificarlo con el EMULADOR.
 // ─────────────────────────────────────────────────────────────────────────
 'use strict';
 
@@ -64,6 +76,11 @@ function post(url, token, payload) {
 }
 
 const YO = 'uid_entrenador', OTRO = 'uid_curioso';
+// v717 · Ids con el formato REAL de `_claveDePlaza`:
+// `<uid>__<rol>__<entidad>__<equipo>`. Hacen falta para el hueco vacío, que
+// sólo se puede leer en los ids propios.
+const P_MIO   = `${DB}/cronos_role_sessions/${YO}__user__clubA__eq1`;
+const P_AJENO = `${DB}/cronos_role_sessions/${OTRO}__user__clubA__eq1`;
 const auth = (uid) => ({ uid, token: { email: uid + '@x.es', firebase: { sign_in_provider: 'password' } } });
 
 // La marca EXISTENTE, la que ya dejo el aparato del propio usuario.
