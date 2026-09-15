@@ -2654,8 +2654,12 @@
 //        no latía nada), y retomar desde el dispositivo cada 5 s también en
 //        pausa. Ahora los tres caminos: 15 s en marcha, y en pausa sólo hasta
 //        que el cambio llegue (v572 + v718).
-const VERSION = 'v722';
-const CACHE_NAME = 'cronos-cache-v722';
+// v723 · CUADRANTE: el calendario oficial, blindado frente a lo pegado. Pegar
+//        semana/fila/casilla no escribe un entrenamiento en la casilla de un
+//        partido oficial, esté FIJADO o todavía SIN FIJAR en el calendario
+//        (`_cqPartidoOficialEn`). Capturas 10458-10461.
+const VERSION = 'v723';
+const CACHE_NAME = 'cronos-cache-v723';
 
 const ASSETS = [
     './',

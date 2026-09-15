@@ -83,7 +83,7 @@ sb.globalThis = sb;
 vm.createContext(sb);
 vm.runInContext(CQ + '\n;window.__probe = { _cqMin, _cqHHMM, _cqDocId, _cqFilasVisibles, _cqHoraIni, ' +
                      '_cqFilasEfectivas, _cqFilaLimpia, CQ_DOC_FILAS, ' +
-                     '_cqEsPartido, _cqHistInit, _cqHistPush, _cqHistGuardado, ' +
+                     '_cqEsPartido, _cqPartidoOficialEn, _cqHistInit, _cqHistPush, _cqHistGuardado, ' +
                      '_cqPuedeDeshacer, _cqPuedeRehacer, CQ_HIST_MAX, ' +
                      '_cqEtiquetaCelda, _cqOcupaCampo, _cqMinutosOcupados, ' +
                      '_cqEspaciosDe, _cqEspacioImplicito, _cqNombreEspacios, CQ_ESPACIOS, ' +
@@ -517,9 +517,12 @@ console.log('\n13) 📋 v604 · Copiar y pegar bloques (punto 6)');
        /if \(!confirm\(/.test(_seccion(CQ_COD, 'window.cqPegarFila', 'window.cqCancelarCopia')),
        'perder la semana de un equipo por un clic es el borrado silencioso de siempre');
 
+    // ⚠️ v723 · ACOTADA A LA FUNCIÓN, no a 600 caracteres: la puerta del partido
+    // oficial (con su porqué) empujó el `st.sucio` fuera de la ventana y la
+    // aserción se puso roja sin defecto. Se exige lo mismo, en su sitio.
+    const _PEGA_CELDA = _seccion(CQ_COD, 'window.cqPegarCelda', 'function _cqRotuloSemana');
     ok('13g · ⚠️ pegar NO guarda: marca sucio y el autor revisa',
-       /window\.cqPegarCelda[\s\S]{0,600}st\.sucio = true;/.test(CQ) &&
-       !/window\.cqPegarCelda[\s\S]{0,600}_cqGuardar\(/.test(CQ));
+       /st\.sucio = true;/.test(_PEGA_CELDA) && !/_cqGuardar\(/.test(_PEGA_CELDA));
 
     ok('13h · 🔑 pegar una casilla NO sale del modo: lo normal es repetir el bloque',
        /NO se sale del modo pegar/.test(CQ));
@@ -990,9 +993,11 @@ console.log('\n20) 🗓️ v607 · Copiar y pegar la semana entera (punto 2)');
        /st\.doc\.filas\.push\(\{ id: f\.id, tipo: f\.tipo, cat: f\.cat, sub: f\.sub, label: f\.label \}\);/.test(CQ_COD),
        'si no, las celdas de "Porteros" o "Fisio" no tendrían fila donde salir');
 
+    // ⚠️ v723 · Acotada a la función (antes, ventana de 2600 caracteres: el
+    // recuento de partidos del calendario la desbordó sin defecto).
+    const _PEGA_SEM = _seccion(CQ_COD, 'window.cqPegarSemana', 'window.cqOlvidarSemana');
     ok('20j · ⚠️ pegar NO guarda: marca sucio y el autor revisa',
-       /window\.cqPegarSemana[\s\S]{0,2600}st\.sucio = true;/.test(CQ_COD) &&
-       !/window\.cqPegarSemana[\s\S]{0,2600}_cqGuardar\(/.test(CQ_COD));
+       /st\.sucio = true;/.test(_PEGA_SEM) && !/_cqGuardar\(/.test(_PEGA_SEM));
 
     ok('20k · copiar una semana vacía avisa en vez de dejar un portapapeles inútil',
        /Esta semana está vacía: no hay nada que copiar/.test(CQ_COD));
@@ -1215,8 +1220,12 @@ console.log('\n23 · 🔴 v615 · COPIAR SEMANA NO SE LLEVA NI PISA LOS PARTIDOS
     //  ⚠️ Esta es la mitad que se escapa fácil: aunque el paquete ya no traiga
     //  partidos, el entrenamiento del martes de la semana origen puede caer
     //  justo donde ESTA semana hay partido.
-    ok('23g · ⚠️ un entrenamiento no se escribe encima de un partido',
-       /if \(_cqEsPartido\(st\.doc\.celdas\[clave\]\)\) \{ respetados\+\+; return; \}/.test(PEGA),
+    // ⚠️ v723 · ACTUALIZADA A PROPÓSITO: exigía `_cqEsPartido(st.doc.celdas[clave])`,
+    // que sólo ve los partidos FIJADOS. Las capturas 10458-10461 son justo un
+    // partido del calendario SIN fijar que el pegado pisó. Ahora la pregunta es
+    // `_cqPartidoOficialEn`, que mira las dos cosas; la sección 30 lo ejecuta.
+    ok('23g · ⚠️ un entrenamiento no se escribe encima de un partido (fijado o del calendario)',
+       /if \(_cqPartidoOficialEn\(clave\)\) \{ respetados\+\+; return; \}/.test(PEGA),
        'el pegado puede sobrescribir un partido');
     ok('23h · y el aviso previo lo promete por escrito',
        /partido\(s\) oficiales de esta semana NO se tocan/.test(PEGA));
@@ -1496,6 +1505,113 @@ console.log('\n27 · 🔴 v673 · LA FILA COPIADA SE PEGA EN LA SEMANA DE DESTIN
 
     ok('27t · y la barra invita a cambiar de semana antes de pegar',
        /Cambia de semana si quieres y pulsa el 📌 del equipo de destino/.test(CQ));
+}
+
+// ════════════════════════════════════════════════════════════════════════
+console.log('\n30 · 🔴🔴 v723 · EL CALENDARIO OFICIAL, BLINDADO FRENTE A LO PEGADO');
+// ════════════════════════════════════════════════════════════════════════
+//  Capturas 10458-10461: se copia la semana del 28 sept (Regional B entrena
+//  lunes, miércoles y jueves, y juega el viernes) y se pega en la del 5 oct,
+//  donde el calendario trae el partido del Regional B el JUEVES, todavía sin
+//  fijar. El entreno del jueves caía encima y el partido desaparecía.
+//  Se ejecuta el flujo REAL: `cqCopiarSemana` → `cqPegarSemana`, y la fila y
+//  la casilla, sobre el sandbox del principio.
+{
+    const W = sb.window;
+    const F = (d) => P._cqFechaKey(d);
+    const almacen = {};
+    sb.localStorage = { getItem: (k) => (k in almacen ? almacen[k] : null),
+                        setItem: (k, v) => { almacen[k] = String(v); }, removeItem: (k) => { delete almacen[k]; } };
+    const filas = () => [{ id: 'regional_b', tipo: 'equipo', cat: 'regional', sub: 'B', label: 'Regional B' },
+                         { id: 'fisio', tipo: 'libre', label: 'FISIO' }];
+    const entreno = (txt) => ({ tipo: 'entreno', ini: '18:00', fin: '20:00', esp: [1, 2], txt: txt, nota: '' });
+    const fechasDe = (off) => P._cqFechasSemana(P._cqLunes(off));
+
+    // ── Semana ORIGEN ─────────────────────────────────────────────────
+    W._cqState.offset = 0;
+    W._cqState.calendario = {};
+    const o = fechasDe(0);
+    W._cqState.doc = { v: 1, weekKey: F(P._cqLunes(0)), espacios: [1, 2, 3, 4], filas: filas(), celdas: {} };
+    [0, 2, 3].forEach(i => { W._cqState.doc.celdas['regional_b|' + o[i]] = entreno('EQU AMARILLO'); });
+    W._cqState.doc.celdas['regional_b|' + o[4]] = { tipo: 'partido_casa', ini: '20:30', fin: '22:00', esp: [], txt: 'J2 · VELEZ', nota: '' };
+    [0, 2, 3].forEach(i => { W._cqState.doc.celdas['fisio|' + o[i]] = entreno('FISIO'); });
+    W._cqHistInit();
+    W.cqCopiarSemana();
+    const paquete = JSON.parse(almacen.cronos_cq_semana || 'null');
+    ok('30a · copiar semana lleva SÓLO entrenamientos (el partido del viernes se queda)',
+       !!paquete && paquete.entradas.length === 6 && paquete.entradas.every(e => !P._cqEsPartido(e.celda)),
+       paquete && paquete.entradas.map(e => e.filaId + '·' + e.dia + '·' + e.celda.tipo));
+
+    // ── Semana DESTINO, con el partido del calendario SIN FIJAR el jueves ──
+    W._cqState.offset = 1;
+    const d = fechasDe(1);
+    W._cqState.doc = { v: 1, weekKey: F(P._cqLunes(1)), espacios: [1, 2, 3, 4], filas: filas(), celdas: {} };
+    W._cqState.calendario = {};
+    W._cqState.calendario['regional_b|' + d[3]] = { local: false, hora: '21:00', rival: 'CERRUDA', sede: 'SANTA LUCÍA' };
+    W._cqHistInit();
+    W.cqPegarSemana();
+    const cel = W._cqState.doc.celdas;
+    ok('30b · 🔴🔴 EL DEFECTO DE LAS CAPTURAS: el entreno NO cae en la casilla del partido del calendario',
+       !cel['regional_b|' + d[3]], cel['regional_b|' + d[3]]);
+    ok('30c · …y el partido sigue siendo una propuesta visible (FIJAR lo sigue ofreciendo)',
+       typeof W._cqState.calendario['regional_b|' + d[3]] === 'object');
+    ok('30d · el resto de entrenamientos SÍ se pega (lunes y miércoles del Regional B, los tres de FISIO)',
+       !!cel['regional_b|' + d[0]] && !!cel['regional_b|' + d[2]] &&
+       !!cel['fisio|' + d[0]] && !!cel['fisio|' + d[2]] && !!cel['fisio|' + d[3]],
+       Object.keys(cel));
+    ok('30e · 🔑 el choque es POR CASILLA: FISIO entrena el jueves aunque el Regional B juegue',
+       !!cel['fisio|' + d[3]]);
+
+    // ── Un entreno escrito a mano encima del partido del calendario, y se pega ──
+    W._cqState.doc.celdas = {};
+    W._cqState.doc.celdas['regional_b|' + d[3]] = entreno('A MANO');
+    W.cqPegarSemana();
+    ok('30f · 🔴 pegar tampoco deja un entreno solapando el partido del calendario (el viejo se sustituye y el nuevo se omite)',
+       !W._cqState.doc.celdas['regional_b|' + d[3]], W._cqState.doc.celdas['regional_b|' + d[3]]);
+
+    // ── Un partido YA FIJADO sigue intacto (v615) ─────────────────────
+    W._cqState.doc.celdas = {};
+    W._cqState.calendario = {};
+    W._cqState.doc.celdas['regional_b|' + d[3]] = { tipo: 'partido_fuera', ini: '21:00', fin: '', esp: [], txt: 'J3 · CERRUDA', nota: '' };
+    W.cqPegarSemana();
+    ok('30g · ⚠️ un partido ya FIJADO sigue intacto (la regla de v615 no se pierde)',
+       W._cqState.doc.celdas['regional_b|' + d[3]].tipo === 'partido_fuera');
+
+    // ── La granularidad de al lado: PEGAR FILA ────────────────────────
+    W._cqState.doc.celdas = {};
+    W._cqState.calendario = {};
+    W._cqState.calendario['regional_b|' + d[3]] = { local: true, hora: '20:30', rival: 'VELEZ' };
+    W._cqState.offset = 0;
+    W._cqState.doc.weekKey = F(P._cqLunes(0));
+    W._cqState.doc.celdas['regional_b|' + o[3]] = entreno('JUEVES');
+    W.cqCopiarFila('regional_b');
+    W._cqState.offset = 1;
+    W._cqState.doc.weekKey = F(P._cqLunes(1));
+    W._cqState.doc.celdas = {};
+    W.cqPegarFila('regional_b');
+    ok('30h · 🔴 pegar FILA respeta igual el partido del calendario sin fijar (la función de al lado)',
+       !W._cqState.doc.celdas['regional_b|' + d[3]], W._cqState.doc.celdas);
+
+    // ── Y la CASILLA suelta ───────────────────────────────────────────
+    W._cqState.doc.celdas['fisio|' + d[1]] = entreno('SUELTO');
+    W.cqCopiarCelda('fisio', d[1]);
+    W.cqPegarCelda('regional_b', d[3]);
+    ok('30i · 🔴 pegar una CASILLA de entreno encima del partido del calendario tampoco lo pisa',
+       !W._cqState.doc.celdas['regional_b|' + d[3]]);
+    W.cqPegarCelda('regional_b', d[1]);
+    ok('30j · …y en una casilla sin partido sí se pega (el bloqueo no es general)',
+       !!W._cqState.doc.celdas['regional_b|' + d[1]]);
+
+    // ── La pregunta, suelta: fijado, calendario, nada ─────────────────
+    W._cqState.doc.celdas = { 'regional_b|X': { tipo: 'partido_casa' }, 'fisio|X': entreno('E') };
+    W._cqState.calendario = { 'regional_b|Y': { hora: '20:00' } };
+    const q1 = P._cqPartidoOficialEn('regional_b|X'), q2 = P._cqPartidoOficialEn('regional_b|Y'),
+          q3 = P._cqPartidoOficialEn('fisio|X');
+    W._cqState.calendario = null;
+    const q4 = P._cqPartidoOficialEn('regional_b|Y');
+    ok('30k · la pregunta distingue fijado / calendario / nada, y sin calendario cargado no inventa partidos',
+       q1 === 'fijado' && q2 === 'calendario' && q3 === '' && q4 === '', [q1, q2, q3, q4]);
+    W._cqState.portapapeles = null;
 }
 
 console.log('\n' + '─'.repeat(70));

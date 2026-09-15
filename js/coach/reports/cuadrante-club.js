@@ -1439,6 +1439,15 @@ window.cqPegarCelda = function (filaId, fecha) {
     const p = st.portapapeles;
     if (!p || p.modo !== 'celda') return;
     const d = p.datos;
+    // 🔴 v723 · Tampoco se pega un entrenamiento encima de un partido oficial,
+    // fijado o del calendario (ver `_cqPartidoOficialEn`). Si hay que moverlo
+    // —una jornada aplazada— se abre la casilla y se edita: eso sí es criterio
+    // del director (v609), y no un pegado a ciegas.
+    if (!_cqEsPartido(d) && _cqPartidoOficialEn(filaId + '|' + fecha)) {
+        _cqToast('🛡️ Ahí hay un partido oficial: no se pega el entrenamiento encima. ' +
+                 'Si el partido cambió, abre la casilla y edítalo.', 5000);
+        return;
+    }
     st.doc.celdas[filaId + '|' + fecha] = {
         tipo: d.tipo, ini: d.ini, fin: d.fin, esp: (d.esp || []).slice(), txt: d.txt, nota: d.nota,
     };
@@ -1571,7 +1580,8 @@ window.cqPegarFila = function (filaId) {
     fechas.forEach(fecha => {
         const k = filaId + '|' + fecha;
         const c = st.doc.celdas[k];
-        if (!c) return;
+        // 🔴 v723 · El partido del calendario sin fijar también es del destino.
+        if (!c) { if (_cqPartidoOficialEn(k)) partidosDestino.push(k); return; }
         if (_cqEsPartido(c)) partidosDestino.push(k);
         else yaHabia.push(k);
     });
@@ -1595,8 +1605,9 @@ window.cqPegarFila = function (filaId) {
         if (!fecha) return;
         const clave = filaId + '|' + fecha;
         // El entrenamiento del viernes de la semana origen puede caer justo
-        // donde ESTA semana hay partido. El partido manda.
-        if (_cqEsPartido(st.doc.celdas[clave])) { respetados++; return; }
+        // donde ESTA semana hay partido. El partido manda — fijado o todavía en
+        // el calendario (v723).
+        if (_cqPartidoOficialEn(clave)) { respetados++; return; }
         const c = en.celda || {};
         st.doc.celdas[clave] = {
             tipo: c.tipo, ini: c.ini, fin: c.fin,
@@ -1679,6 +1690,33 @@ const CQ_SEMANA_KEY = 'cronos_cq_semana';
 // ════════════════════════════════════════════════════════════════════
 function _cqEsPartido(c) {
     return !!c && (c.tipo === 'partido_casa' || c.tipo === 'partido_fuera');
+}
+
+// ════════════════════════════════════════════════════════════════════
+//  🔴🔴 v723 · EL PARTIDO DEL CALENDARIO, AUNQUE NO ESTÉ FIJADO, BLINDA SU CASILLA
+// ════════════════════════════════════════════════════════════════════
+//  Encargo del autor (implementar.txt 2026-09-15, capturas 10458-10461): al
+//  PEGAR SEMANA en la del 5-11 oct, el entrenamiento del jueves del Regional B
+//  cayó encima del partido oficial (FUERA 21:00 en Cerruda) y el partido
+//  desapareció de la parrilla, quedando sólo como aviso de «el calendario no
+//  coincide… se respeta lo que has puesto tú». Pide que el calendario oficial
+//  quede «totalmente blindado e intacto frente a las plantillas semanales».
+//
+//  🔑 LA REGLA DE v615 YA EXISTÍA, PERO SÓLO MIRABA LA MITAD. El pegado no
+//  escribía encima de un partido de `st.doc.celdas`, o sea FIJADO. Y el de la
+//  captura estaba SIN FIJAR (el botón «📌 FIJAR 1 PARTIDO» de la 10459): vive
+//  en `st.calendario` como propuesta, y para el pegado esa casilla estaba vacía.
+//
+//  ⚠️ ESTO ACOTA —NO REVIERTE— LA DECISIÓN DE v609 («el calendario PROPONE, no
+//  impone; manda lo escrito a mano»). Quien abre la casilla y la escribe sigue
+//  mandando: puede mover una jornada aplazada. Lo que ya no puede es una
+//  PLANTILLA pegada de otra semana, que no sabe nada de los partidos de ésta.
+//  Así que se pregunta aquí, y lo usan los tres pegados (semana, fila, casilla).
+function _cqPartidoOficialEn(clave) {
+    const st = window._cqState;
+    if (st.doc && st.doc.celdas && _cqEsPartido(st.doc.celdas[clave])) return 'fijado';
+    if (st.calendario && st.calendario[clave]) return 'calendario';
+    return '';
 }
 
 // ════════════════════════════════════════════════════════════════════
@@ -1909,13 +1947,25 @@ window.cqPegarSemana = function () {
         if (_cqEsPartido(st.doc.celdas[k])) partidosDestino.push(k);
         else yaHabia.push(k);
     });
+    // 🔴 v723 · Y los del calendario que aún no están fijados en esta semana:
+    // también son partidos oficiales y también se respetan (ver
+    // `_cqPartidoOficialEn`). Se cuentan aparte para decirlo en el aviso.
+    const fechasDestino = _cqFechasSemana(_cqLunes(st.offset));
+    let delCalendario = 0;
+    visibles.forEach(f => fechasDestino.forEach(fecha => {
+        const k = f.id + '|' + fecha;
+        if (_cqPartidoOficialEn(k) === 'calendario' && !_cqEsPartido(st.doc.celdas[k])) delCalendario++;
+    }));
+    const oficiales = partidosDestino.length + delCalendario;
 
     if (!confirm('Vas a pegar los entrenamientos de la semana del ' + p.etiqueta +
         ' (' + p.entradas.length + ' actividades) aquí.' +
         (yaHabia.length ? '\n\n⚠️ Esta semana ya tiene ' + yaHabia.length +
             ' entrenamiento(s) y se SUSTITUIRÁN.' : '') +
-        (partidosDestino.length ? '\n\n✅ Los ' + partidosDestino.length +
-            ' partido(s) oficiales de esta semana NO se tocan.' : '') +
+        (oficiales ? '\n\n✅ Los ' + oficiales +
+            ' partido(s) oficiales de esta semana NO se tocan' +
+            (delCalendario ? ' (' + delCalendario + ' del calendario, aún sin fijar)' : '') +
+            ': el entrenamiento que caiga en su casilla se omite.' : '') +
         '\n\nNo se guarda hasta que pulses GUARDAR.')) return;
 
     // 1. Las filas que trae el paquete y aquí no existen, se crean. Sin esto,
@@ -1948,7 +1998,8 @@ window.cqPegarSemana = function () {
         // no trae partidos, el entrenamiento del martes de la semana origen
         // puede caer justo donde ESTA semana hay partido. El partido manda:
         // viene del calendario oficial y su día no es negociable.
-        if (_cqEsPartido(st.doc.celdas[clave])) { respetados++; return; }
+        // 🔴 v723 · Fijado o todavía en el calendario: los dos cuentan.
+        if (_cqPartidoOficialEn(clave)) { respetados++; return; }
         const c = en.celda || {};
         st.doc.celdas[clave] = {
             tipo: c.tipo, ini: c.ini, fin: c.fin,
@@ -1960,7 +2011,7 @@ window.cqPegarSemana = function () {
     _cqHistPush('pegar semana');
     _cqToast('🗓️ Pegados ' + pegadas + ' entrenamiento(s)' +
              (filasNuevas ? ' y ' + filasNuevas + ' fila(s) nueva(s)' : '') +
-             (partidosDestino.length ? ' · ' + partidosDestino.length + ' partido(s) intactos' : '') +
+             (oficiales ? ' · ' + oficiales + ' partido(s) oficiales intactos' : '') +
              (respetados ? ' · ' + respetados + ' celda(s) no se pisaron por haber partido' : '') +
              '. Revisa y guarda.', 6000);
     _cqPintar();
