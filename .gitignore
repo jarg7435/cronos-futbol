@@ -96,6 +96,18 @@ presentaci*n/
 # acceden a produccion directamente y no forman parte del producto.
 scripts/ops/
 
+# ACCESOS DIRECTOS DE WINDOWS (no son producto)
+# El proyecto vive en el Escritorio, asi que Windows deja aqui sus .lnk («APP
+# CRONOS FUTBOL - Acceso directo.lnk»). Son binarios con rutas ABSOLUTAS de
+# la maquina de quien los creo: no sirven en ningun otro sitio y ensucian el
+# `git status` de cada ronda.
+# 2026-09-16: comprobado que hosting NO los publica — `firebase.json` ya lleva
+# `**/*.lnk` en su `ignore`, y la peticion contra produccion devuelve el
+# index.html del rewrite, no el fichero. Aun asi van en los DOS sitios: git y
+# el hosting son listas distintas y una no sustituye a la otra (misma leccion
+# que las capturas de Presentaci*n, aqui arriba).
+*.lnk
+
 # CANAL DE TRABAJO CON LA IA (no es producto)
 # Ficheros donde el autor deja los encargos y el resultado de sus pruebas.
 # Cambian en cada ronda y no describen el estado del codigo, asi que en el
