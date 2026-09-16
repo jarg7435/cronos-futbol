@@ -294,13 +294,28 @@ function _registerMatchEvent(type, text, icon, matchTimeOverride, extra, target)
         //  ⚠️ TOPE DE SEGURIDAD: con el reloj parado no hay latido, así que el
         //  aparcamiento podría crecer sin fin. Al llegar al tope se deja pasar
         //  el más viejo por la vía normal para no perderlo.
-        if (type === 'tactical_move') {
-            if (!Array.isArray(window._cronosTacticalPending)) window._cronosTacticalPending = [];
-            window._cronosTacticalPending.push(eventEntry);
-            if (window._cronosTacticalPending.length <= 150) return;
-            // Rebosa: se sigue hacia abajo con el más viejo, que se escribe ya.
-            eventEntry = window._cronosTacticalPending.shift();
-        }
+        //
+        //  ══════════════════════════════════════════════════════════════
+        //   📤 v724 · EL APARCAMIENTO SE MUDA A LA COLA POR PARTIDO
+        //  ══════════════════════════════════════════════════════════════
+        //  La idea de v576 se mantiene ENTERA —un `tactical_move` no puede
+        //  hacer bajar el documento gordo a todos los espectadores por cada
+        //  píxel arrastrado— pero el aparcamiento ya no es
+        //  `window._cronosTacticalPending`, que era UNA GLOBAL SIN PARTIDO:
+        //  `pushLiveSnapshot` la volcaba sobre el `liveMatchId` que tocara en
+        //  ese momento, así que con dos partidos en la misma pestaña los
+        //  movimientos de uno acababan escritos en el documento del OTRO. Y su
+        //  vaciado por `slice(n)` —por POSICIÓN, con varios latidos en vuelo—
+        //  perdía movimientos que nadie había enviado.
+        //
+        //  🔑 Ahora esperan EN LA COLA DE SU PARTIDO (`CronosOutbox`, con su
+        //  ventana de agrupación larga), con reintento y sin poder cruzarse.
+        //
+        //  🔑🔑 Y DE PASO PASAN POR LAS PUERTAS. El aparcamiento estaba AQUÍ,
+        //  ANTES de la puerta de inmutabilidad (v434) y de la puerta estanca
+        //  por partido (v469): los movimientos tácticos eran los únicos
+        //  sucesos que se saltaban las dos. Al bajar el `return`, todos los
+        //  tipos siguen exactamente el mismo camino.
 
         // v246: escribir a Firestore con setDoc + merge + arrayUnion.
         var fa = window._cronos_auth;
@@ -364,7 +379,38 @@ function _registerMatchEvent(type, text, icon, matchTimeOverride, extra, target)
             }
         } catch (e) { /* la puerta nunca puede impedir un partido por sí misma */ }
 
-        if (fa && fa.db && _id) {
+        // ══════════════════════════════════════════════════════════════
+        //  📤 v724 · EL SUCESO SE ENTREGA A LA COLA DE SU PARTIDO
+        // ══════════════════════════════════════════════════════════════
+        //  🔴 LO QUE HABÍA AQUÍ Y POR QUÉ NO PODÍA QUEDARSE. Esta función
+        //  escribía directamente y su `.catch` sólo hacía `console.error`: NO
+        //  HABÍA REINTENTO. Un gol, una tarjeta o un cambio que fallara en su
+        //  único intento se perdía del directo PARA SIEMPRE y en silencio.
+        //
+        //  🔑🔑 Y EL LATIDO NO PODÍA REPARARLO: `pushLiveSnapshot` tiene
+        //  PROHIBIDO mandar `events` como array plano (v246, `setDoc merge`
+        //  reemplaza arrays y borraría el historial). O sea que no existía
+        //  NINGÚN camino por el que un suceso caído volviera a salir. Un
+        //  parpadeo de cobertura —la norma en un campo— bastaba.
+        //
+        //  Ahora el suceso se entrega a `CronosOutbox`, que lo guarda hasta
+        //  que el servidor acusa recibo, reintenta con espera creciente, lo
+        //  agrupa con los de su ráfaga y lo sobrevive a una recarga. La cola
+        //  es POR `matchId` —el mismo `_id` que ya calcularon las puertas de
+        //  arriba—, así que dos partidos del mismo aparato no comparten nada.
+        //
+        //  ⚠️ EL OBJETO NO SE VUELVE A TOCAR DESPUÉS DE ENCOLARLO. Es lo que
+        //  hace seguro el reintento: `arrayUnion` con un objeto IDÉNTICO no
+        //  añade nada, así que reenviar un suceso cuya primera escritura
+        //  llegó tarde es una operación nula. Si alguien mutase `eventEntry`
+        //  aquí abajo, un reintento crearía un duplicado en el historial.
+        var _cola = (typeof window !== 'undefined') ? window.CronosOutbox : null;
+        if (_cola && typeof _cola.encola === 'function' && _id) {
+            _cola.encola(_id, eventEntry);
+        } else if (fa && fa.db && _id) {
+            // ⚠️ RESPALDO LITERAL AL CAMINO DE v246, por si el módulo de la
+            // cola no hubiera cargado. Sin reintento, como antes: es peor,
+            // pero es infinitamente mejor que no emitir el suceso.
             import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js')
                 .then(function(fs) {
                     return fs.setDoc(fs.doc(fa.db, 'live_matches', _id), {

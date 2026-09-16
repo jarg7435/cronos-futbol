@@ -292,6 +292,53 @@ async function startLiveSync() {
     try { window._cronosMatchSlots?.setTabMatchId(liveMatchId); } catch (e) {}
     liveIsActive = true;
 
+    // ══════════════════════════════════════════════════════════════════
+    //  📤 v724 · LA COLA DE ESTE PARTIDO SE RETOMA DONDE SE QUEDÓ
+    // ══════════════════════════════════════════════════════════════════
+    //  `CronosOutbox` persiste los sucesos sin acusar en `localStorage`. Si la
+    //  pestaña se recargó —o el navegador mató la página en segundo plano, que
+    //  en un iPad con la pantalla apagada es lo normal— los sucesos siguen
+    //  ahí y salen ahora, en vez de desaparecer con la pestaña.
+    //
+    //  ⚠️ VA CON EL `matchId` EXPLÍCITO, y por eso se llama AQUÍ y no antes:
+    //  hasta esta línea no se sabe cuál es el partido. Reclamar la cola de
+    //  otro es exactamente el cruce que este módulo existe para impedir.
+    try {
+        if (window.CronosOutbox) {
+            const _enEspera = window.CronosOutbox.recupera(liveMatchId);
+            if (_enEspera > 0) {
+                console.log('[v724] ' + _enEspera + ' sucesos pendientes recuperados de ' + liveMatchId);
+            }
+
+            // ══════════════════════════════════════════════════════════════
+            //  🔁 v725 · Y TAMBIÉN LAS COLAS DE **OTROS** PARTIDOS
+            // ══════════════════════════════════════════════════════════════
+            //  🔴 El agujero que cierra: hasta v724 sólo se recuperaba la cola
+            //  del partido que se estaba arrancando. La que dejaba un partido
+            //  YA TERMINADO —el caso normal: se pita el final con mala
+            //  cobertura, se cierra la app y uno se va del campo— no la
+            //  recuperaba nadie y `barre` acababa borrándola. Ahora, abrir
+            //  cualquier partido entrega lo que quedó pendiente de todos.
+            const _rescate = window.CronosOutbox.recuperaTodas();
+            if (_rescate.sucesos > 0) {
+                console.log('[v725] ' + _rescate.sucesos + ' sucesos de ' +
+                            _rescate.colas + ' partidos anteriores, reenviándose.');
+            }
+
+            // Y de paso se barren las colas de partidos que ya no existen: sin
+            // esto `localStorage` acumula sucesos de hace días.
+            // ⚠️ v725 · `barre` NO tira goles, tarjetas, cambios ni lesiones por
+            // viejos que sean: sólo caduca lo táctico (ver su nota).
+            window.CronosOutbox.barre(24);
+
+            // 🔎 v725 · EL CONCILIADOR. Cada 90 s comprueba que lo que creemos
+            // enviado está DE VERDAD en el documento, y vuelve a encolar lo que
+            // falte. Es lo que convierte «debería haber llegado» en una
+            // medición. Ver la nota larga en outbox.js.
+            window.CronosOutbox.vigila(liveMatchId);
+        }
+    } catch (e) { /* la cola nunca puede impedir que arranque el partido */ }
+
     if (_isNewMatch) {
         // E4: nuevo partido en vivo → liberar el guard de despacho de informes.
         window._cronosLastDispatchedMatch = null;
@@ -823,14 +870,71 @@ async function _pushLiveIndex(setDoc, doc, db, matchId, idxDoc) {
     }
 }
 
+// ══════════════════════════════════════════════════════════════════════
+//  ⏱️📡 v724 · UN LATIDO EN VUELO, Y NO MÁS
+// ══════════════════════════════════════════════════════════════════════
+//  📏 QUIÉN LLAMA A `pushLiveSnapshot` EN v723: el latido de 15 s, el throttle
+//  de acción (`liveSyncOnAction`), el volcado inmediato (`liveSyncFlushNow`),
+//  el camino corto de la pizarra cuando detecta un cambio de estado, CUATRO
+//  puntos de `js/core/event-listeners.js`, y `cronosEmiteEstadoAhora`. Nueve
+//  llamantes y NINGÚN guard de concurrencia.
+//
+//  🔴 QUÉ PASABA CON LA RED LENTA. Cada llamada construye un snapshot de
+//  ~10 KB y espera el acuse del servidor. Si el acuse tarda 40 s, se apilan
+//  tres latidos + lo que metan los llamantes de acción, cada uno con SU copia
+//  del documento, todos compitiendo por el mismo canal —que además es UNO
+//  SOLO para toda la cuenta (`persistentMultipleTabManager`, ver la nota de
+//  v575)—. La cola se realimenta: cuanto más tarda, más se apila; cuanto más
+//  se apila, más tarda. Con 3 partidos ya se notó; con los cientos que pide
+//  el encargo es la diferencia entre escalar y no escalar.
+//
+//  🔑 LA PUERTA: uno en vuelo por pestaña. El que llega mientras hay otro no
+//  se descarta —eso perdería el cambio de estado que traía— sino que se
+//  FUSIONA: se apunta que hay que repetir, con el `status` más reciente, y se
+//  hace UNA sola pasada más al terminar. Diez llamadas durante una escritura
+//  lenta se convierten en dos escrituras, no en diez.
+//
+//  ⚠️ LA PROMESA DEVUELTA RESUELVE DESPUÉS DE LA ÚLTIMA PASADA, no de la que
+//  estaba en vuelo. Es lo que mantiene intacto a `cronosEmiteEstadoAhora`
+//  (v718), que comprueba si `_cronosUltimoLatidoOk` avanzó para saber si el
+//  cambio llegó: si le devolviéramos la pasada vieja, daría por emitida una
+//  pausa que todavía no ha salido.
+const _PLAZO_LATIDO_MS = 12000;
+let _latidoEnVuelo   = null;
+let _latidoRepetir   = false;
+let _latidoStatusPend = null;   // el status más reciente que pidió repetir
+
 async function pushLiveSnapshot(status = 'active') {
+    if (_latidoEnVuelo) {
+        _latidoRepetir = true;
+        _latidoStatusPend = status;
+        return _latidoEnVuelo;
+    }
+    _latidoEnVuelo = (async () => {
+        let s = status;
+        // El bucle es acotado por construcción: cada vuelta consume la bandera
+        // y sólo la vuelve a levantar un llamante NUEVO durante esa vuelta.
+        for (let vuelta = 0; vuelta < 3; vuelta++) {
+            _latidoRepetir = false;
+            await _emiteLatido(s);
+            if (!_latidoRepetir) break;
+            s = _latidoStatusPend || s;
+        }
+    })();
+    try { await _latidoEnVuelo; }
+    finally { _latidoEnVuelo = null; _latidoRepetir = false; _latidoStatusPend = null; }
+}
+
+async function _emiteLatido(status = 'active') {
     const fa = window._cronos_auth;
     if (!fa || !fa.db || !liveMatchId) return;
 
     try {
-        // v576 · `arrayUnion` entra para vaciar el aparcamiento de movimientos
-        // tácticos en UNA sola escritura agrupada (ver más abajo).
-        const { setDoc, doc, serverTimestamp, arrayUnion } = await import(
+        // ⚠️ v724 · `arrayUnion` YA NO SE IMPORTA AQUÍ. Entró en v576 para
+        // vaciar el aparcamiento de movimientos tácticos desde este latido; esa
+        // espera vive ahora en `CronosOutbox`, una cola por partido. Este
+        // documento no vuelve a tocar `events` (ver la nota larga más abajo).
+        const { setDoc, doc, serverTimestamp } = await import(
             'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
 
         // v232: cargar eventos existentes de Firestore antes del primer push
@@ -1292,27 +1396,52 @@ async function pushLiveSnapshot(status = 'active') {
         } catch (e) { /* nunca puede cortar la emisión por sí misma */ }
 
         // ════════════════════════════════════════════════════════════════
-        //  🐌 v576 · AQUÍ SE VACÍA EL APARCAMIENTO DE MOVIMIENTOS TÁCTICOS
+        //  📤 v724 · EL LATIDO YA NO ACARREA SUCESOS: LOS LLEVA LA COLA
         // ════════════════════════════════════════════════════════════════
-        //  ⚠️ SÍ, ESTO ESCRIBE `events` DESDE EL SNAPSHOT, Y v246 DICE QUE NO SE
-        //  HAGA NUNCA. La prohibición de v246 es sobre mandar un ARRAY PLANO:
-        //  `setDoc merge` REEMPLAZA arrays enteros, así que un `events: [...]`
-        //  aquí borraría todo lo acumulado por `arrayUnion` desde los sucesos.
-        //  `arrayUnion` NO reemplaza: AÑADE. Por eso esto es seguro y aquello
-        //  no lo era. Si alguien lo cambia por un array plano, se lleva por
-        //  delante el historial entero del partido.
+        //  Aquí se vaciaba `window._cronosTacticalPending` con
+        //  `snapshot.events = arrayUnion.apply(null, _tacticasPendientes)`.
+        //  La idea de v576 era buena —agrupar los `tactical_move` en vez de
+        //  escribirlos uno a uno— pero el aparcamiento tenía DOS defectos que
+        //  no se podían arreglar donde estaba:
         //
-        //  Los `tactical_move` se aparcan en `_registerMatchEvent` en vez de
-        //  escribirse uno a uno (eran el 75-90% de los sucesos y cada uno hacía
-        //  bajar 23 KB a cada espectador). Aquí salen todos juntos, gratis:
-        //  aprovechan una escritura que ya se iba a hacer.
-        const _tacticasPendientes = Array.isArray(window._cronosTacticalPending)
-            ? window._cronosTacticalPending.slice() : [];
-        if (_tacticasPendientes.length) {
-            snapshot.events = arrayUnion.apply(null, _tacticasPendientes);
-        }
+        //  🔴 NO LLEVABA PARTIDO. Era una global de pestaña, y este latido la
+        //     volcaba sobre `liveMatchId`. Con dos partidos abiertos, los
+        //     movimientos de uno se escribían en el documento del OTRO.
+        //  🔴 SE VACIABA POR POSICIÓN (`slice(n)`) DESPUÉS DE ESCRIBIR, y
+        //     `pushLiveSnapshot` no tenía ningún guard de concurrencia: con
+        //     dos latidos en vuelo el segundo recortaba por una longitud que ya
+        //     no correspondía y se llevaba movimientos que NADIE había enviado.
+        //
+        //  🔑 Los dos desaparecen al mudar la espera a `CronosOutbox`: una cola
+        //  POR `matchId`, que retira por `eventId` y sólo DESPUÉS del acuse.
+        //  El ahorro de v576 se conserva íntegro (los tácticos siguen esperando
+        //  su ventana de agrupación y viajando en un solo `arrayUnion`), pero
+        //  ahora con reintento y sin poder cruzarse de partido.
+        //
+        //  ⚠️ Y ESTE DOCUMENTO YA NO ESCRIBE `events` EN ABSOLUTO. Vuelve a
+        //  valer la prohibición de v246 tal cual: si alguien añade aquí un
+        //  `events:`, que sea con `arrayUnion` y nunca con un array plano.
 
-        await setDoc(doc(fa.db, 'live_matches', liveMatchId), snapshot, { merge: true });
+        // ════════════════════════════════════════════════════════════════
+        //  ⏱️ v724 · LA ESCRITURA TIENE PLAZO
+        // ════════════════════════════════════════════════════════════════
+        //  `setDoc` sólo resuelve cuando el servidor ACUSA. Sin plazo, una
+        //  escritura atascada deja esta llamada pendiente para siempre: el
+        //  latido siguiente arranca otra, y otra, y el partido se queda mudo
+        //  sin un solo error en consola. No había un solo `timeout` en todo el
+        //  camino de emisión de v723, y es la forma más limpia de explicar un
+        //  documento que deja de actualizarse a las 01:55:47 y nunca más.
+        //
+        //  🔑 REINTENTAR ES SEGURO: el latido es IDEMPOTENTE por construcción
+        //  —`merge: true` con el estado actual—, así que si la escritura
+        //  «vencida» llega más tarde, lo peor que puede pasar es que se
+        //  escriba dos veces lo mismo.
+        const _conPlazo = (window.CronosOutbox && typeof window.CronosOutbox.conPlazo === 'function')
+            ? window.CronosOutbox.conPlazo
+            : ((p) => p);
+        await _conPlazo(
+            setDoc(doc(fa.db, 'live_matches', liveMatchId), snapshot, { merge: true }),
+            _PLAZO_LATIDO_MS, 'latido');
 
         // 🔴 v714 · SELLO DEL ÚLTIMO LATIDO BUENO. Lo lee el reloj
         // (js/match/timer/core.js, `_mandaLaPulsacionLocal`) para saber si el
@@ -1321,14 +1450,6 @@ async function pushLiveSnapshot(status = 'active') {
         // entrenador. Va aquí, DESPUÉS de la escritura: si falló, no hubo
         // latido bueno.
         window._cronosUltimoLatidoOk = Date.now();
-
-        // Vaciado DESPUÉS de que la escritura haya ido bien, y sólo de lo que
-        // se mandó: si mientras tanto entró un movimiento nuevo, se queda para
-        // el siguiente latido en vez de perderse.
-        if (_tacticasPendientes.length) {
-            window._cronosTacticalPending =
-                (window._cronosTacticalPending || []).slice(_tacticasPendientes.length);
-        }
 
         // v575 · Sella el estado que acaba de salir. A partir de aquí el camino
         // corto puede comparar contra esto para saber si le basta con mandar
@@ -1397,8 +1518,32 @@ async function stopLiveSync() {
     // Si el partido REALMENTE ha terminado (fase finished), se marca como finished.
     // De lo contrario, se queda como 'active' para que siga recuperándolo!
     const finalStatus = (typeof matchPhase !== 'undefined' && matchPhase === 'finished') ? 'finished' : 'active';
+
+    // 📤 v724 · LOS SUCESOS PENDIENTES SALEN ANTES DE CERRAR, Y POR DELANTE DEL
+    // LATIDO FINAL. Si el partido se marca `finished` con la cola llena, el
+    // visor recibe el cierre y deja de esperar nada más: los últimos goles o
+    // cambios llegarían a un partido que el espectador ya da por terminado.
+    // Se le dan varias vueltas porque el último tramo es justo cuando el
+    // entrenador está saliendo del campo y la cobertura es peor.
+    // ⚠️ NO PUEDE BLOQUEAR EL CIERRE: si la cola no drena, el partido se cierra
+    // igual y lo pendiente sale en la siguiente sesión (persiste en disco).
+    try {
+        if (window.CronosOutbox) {
+            // 🔎 v725 · UNA CONCILIACIÓN FINAL ANTES DE CERRAR. Es el último
+            // momento en que el registro local del entrenador y el documento
+            // pueden compararse con el partido todavía abierto: lo que se haya
+            // escapado por cualquier vía entra aquí a la cola y sale con el
+            // drenaje de abajo. Si la lectura falla no se repara nada (no se
+            // puede distinguir «no hay» de «no lo sé»), y el partido se cierra
+            // igual: lo pendiente queda en disco y saldrá al reabrir la app.
+            await window.CronosOutbox.concilia(liveMatchId);
+            await window.CronosOutbox.drenaYa(liveMatchId, 3);
+            window.CronosOutbox.noVigiles(liveMatchId);
+        }
+    } catch (e) { /* el cierre del partido nunca depende de la cola */ }
+
     await pushLiveSnapshot(finalStatus);
-    
+
     updateLiveButton(false);
 }
 

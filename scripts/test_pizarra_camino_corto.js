@@ -274,30 +274,55 @@ console.log('\n── PARTE 6 · la SEGUNDA escritura por arrastre, agrupada ─
     // partidos reales). Como Firestore no manda deltas, cada una obligaba a
     // bajar 17-23 KB a cada espectador. La primera ya se mudo al indice; esta
     // se agrupa y viaja con el latido.
-    ok('6a · 🔑 los tactical_move se aparcan en vez de escribirse uno a uno',
-       /if \(type === 'tactical_move'\)[\s\S]{0,300}?_cronosTacticalPending\.push\(eventEntry\)/.test(A),
+    // ══════════════════════════════════════════════════════════════════
+    //  📤 v724 · EL APARCAMIENTO SE MUDO A LA COLA POR PARTIDO
+    // ══════════════════════════════════════════════════════════════════
+    //  Hasta v723 la espera vivia en `window._cronosTacticalPending` y la
+    //  vaciaba `pushLiveSnapshot`. La PROPIEDAD que defendia este bloque —un
+    //  `tactical_move` no escribe en caliente el documento gordo, se agrupa—
+    //  sigue siendo la misma y se sigue comprobando aqui; lo que cambia es
+    //  DONDE espera. Se mudo porque aquella global tenia dos defectos que no
+    //  se podian arreglar en su sitio:
+    //    · no llevaba `matchId`, asi que el latido la volcaba sobre el partido
+    //      que tocara (con dos partidos, cruce de documentos);
+    //    · se vaciaba por POSICION (`slice(n)`) y sin guard de concurrencia,
+    //      asi que dos latidos en vuelo perdian movimientos no enviados.
+    //  Ahora espera en `CronosOutbox`, una cola POR partido que retira por
+    //  `eventId` y solo DESPUES del acuse del servidor.
+    const OUTBOX = sinComentarios(
+        fs.readFileSync(path.join(ROOT, 'js', 'match', 'live', 'outbox.js'), 'utf8'));
+
+    ok('6a · 🔑 los tactical_move se agrupan en vez de escribirse uno a uno',
+       /ventanaTactica:\s*\d{4,}/.test(OUTBOX) &&
+       /_hayUrgente\(cola\)\s*\?\s*T\.ventanaUrgente\s*:\s*T\.ventanaTactica/.test(OUTBOX),
        'escribirlos en caliente hace bajar el partido entero por cada arrastre');
 
     ok('6b · con tope de seguridad (en pausa no hay latido que los vacie)',
-       /_cronosTacticalPending\.length <= \d+\)\s*return;/.test(A),
+       /topeCola:\s*\d+/.test(OUTBOX) && /function _recorta\(cola\)/.test(OUTBOX),
        'sin tope, con el reloj parado el aparcamiento crece sin fin');
 
-    ok('6c · el latido los vacia en UNA escritura agrupada',
-       /snapshot\.events = arrayUnion\.apply\(null, _tacticasPendientes\)/.test(S),
-       'es gratis: aprovecha una escritura que ya se iba a hacer');
+    ok('6c · la cola los manda en UNA escritura agrupada',
+       /events:\s*fs\.arrayUnion\.apply\(null, lote\)/.test(OUTBOX) &&
+       /loteMax:\s*\d+/.test(OUTBOX),
+       'un arrayUnion por lote, no uno por movimiento');
 
-    // ⚠️ v246 prohibe mandar `events` desde el snapshot… con un ARRAY PLANO,
-    // porque `setDoc merge` REEMPLAZA arrays y borraria el historial. Con
-    // `arrayUnion` se ANADE. Si alguien lo cambia por un array plano, se lleva
-    // por delante todos los sucesos del partido.
+    // ⚠️ v246 prohibe mandar `events`… con un ARRAY PLANO, porque `setDoc
+    // merge` REEMPLAZA arrays y borraria el historial. Con `arrayUnion` se
+    // ANADE. Si alguien lo cambia por un array plano, se lleva por delante
+    // todos los sucesos del partido. Ahora hay que vigilarlo en LOS DOS
+    // ficheros: el latido ya no toca `events`, y la cola solo con arrayUnion.
     ok('6d · 🔑 y con arrayUnion, NUNCA con un array plano',
-       !/snapshot\.events\s*=\s*\[/.test(S),
+       !/snapshot\.events\s*=\s*\[/.test(S) && !/events:\s*lote\b/.test(OUTBOX),
        'un array plano en setDoc merge borraria el historial entero del partido');
 
-    ok('6e · el vaciado ocurre DESPUES de escribir con exito',
-       S.indexOf('await setDoc(doc(fa.db, \'live_matches\', liveMatchId), snapshot') <
-       S.indexOf('window._cronosTacticalPending =\n'.trim()),
-       'vaciar antes perderia los movimientos si la escritura falla');
+    ok('6e · 🔑 el vaciado ocurre DESPUES del acuse, y POR eventId',
+       /\.then\(function \(\) \{[\s\S]{0,600}?cola\.pendientes = cola\.pendientes\.filter\([\s\S]{0,120}?enviados\[e\.eventId\]/.test(OUTBOX) &&
+       !/_cronosTacticalPending/.test(S),
+       'vaciar antes, o por posicion, pierde movimientos que nadie envio');
+
+    ok('6f · 🔑 y el aparcamiento global sin matchId ya no existe',
+       !/_cronosTacticalPending/.test(A) || /RESPALDO LITERAL/.test(ACTIONS),
+       'era una global de pestana: con dos partidos, los movimientos se cruzaban');
 }
 
 console.log('\n' + pass + ' PASS / ' + fail + ' FAIL');

@@ -2658,8 +2658,31 @@
 //        semana/fila/casilla no escribe un entrenamiento en la casilla de un
 //        partido oficial, esté FIJADO o todavía SIN FIJAR en el calendario
 //        (`_cqPartidoOficialEn`). Capturas 10458-10461.
-const VERSION = 'v723';
-const CACHE_NAME = 'cronos-cache-v723';
+// v724 · DIRECTO: los sucesos salen por una BANDEJA POR PARTIDO
+//        (`js/match/live/outbox.js`). Medido en las capturas 10538-10543: el
+//        visor llevaba 18 min con el mismo «↻ 01:55:47» y el marcador iba 3-0
+//        contra 2-0 — no se congeló el canal de sucesos, se congeló el
+//        documento entero; el reloj parecía vivo porque se deriva de
+//        `phaseStartedAt`. Se cierran cuatro agujeros: un suceso que fallaba
+//        NO se reintentaba nunca (y el latido no puede repararlo, v246); el
+//        aparcamiento táctico era una global SIN matchId (cruce entre
+//        partidos) que se vaciaba por POSICIÓN (pérdida con dos latidos en
+//        vuelo); y NINGUNA escritura tenía plazo. Ahora: cola por matchId,
+//        reintento con espera creciente y sorteo, lotes, persistencia en
+//        disco y un latido en vuelo como máximo.
+// v725 · DIRECTO: de «debería haber llegado» a COMPROBADO. Tres agujeros que
+//        v724 dejó abiertos: (1) `recupera()` sólo miraba la cola del partido
+//        que se arrancaba, así que la de un partido TERMINADO no drenaba nunca
+//        y `barre(24)` la borraba → `recuperaTodas()`, y el barrido ya NO
+//        caduca goles/tarjetas/cambios (sólo lo táctico); (2) nadie forzaba el
+//        drenaje al ocultar la página, y un iPad congela los temporizadores en
+//        cuanto se bloquea la pantalla → `pagehide` + `visibilitychange`;
+//        (3) nada verificaba que lo enviado llegase → EL CONCILIADOR, que cada
+//        90 s (y al pitar el final) lee lo que el servidor tiene, lo compara
+//        con el registro local y vuelve a encolar lo que falte. ⚠️ si la
+//        lectura falla NO repara nada: «no lo sé» no es «no está».
+const VERSION = 'v725';
+const CACHE_NAME = 'cronos-cache-v725';
 
 const ASSETS = [
     './',
@@ -2713,6 +2736,7 @@ const ASSETS = [
     './js/match/timer/core.js',
     './js/match/events/movement-log.js',
     './js/match/persistence/team-persistence.js',
+    './js/match/live/outbox.js',
     './js/match/live/sync.js',
     './js/match/live/finished-index.js',
     './js/roster/formations.js',
