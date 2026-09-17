@@ -233,6 +233,20 @@ window._cronosCambiarEquipo = function(teamId) {
         var destino = window._cronosAplicarEquipoActivo(teamId);
         if (!destino) return;
 
+        // ══════════════════════════════════════════════════════════════
+        //  🔄🔴 v730 · Y SE SUELTA LA PLAZA DEL EQUIPO QUE SE DEJA
+        // ══════════════════════════════════════════════════════════════
+        //  🔑 AQUÍ NACÍA EL FALSO POSITIVO de la captura 10513. Esta función
+        //  cambiaba el equipo activo y repintaba, pero no tocaba la sesión: la
+        //  marca del equipo ANTERIOR seguía viva, con su latido, y el oyente
+        //  seguía escuchando ESA plaza. Cuando el otro aparato abría el equipo
+        //  que aquí se había dejado atrás, este —que estaba en OTRO equipo—
+        //  recibía «Se ha abierto este rol en otro dispositivo» y se cerraba.
+        //  No había ventanas duplicadas: había una plaza sin soltar.
+        try {
+            if (typeof window.cronosSesionSincroniza === 'function') window.cronosSesionSincroniza();
+        } catch (e) { /* cambiar de equipo nunca puede fallar por la sesión */ }
+
         if (typeof showToast === 'function') {
             showToast('✅ Ahora estás en ' + destino.etiqueta +
                       (destino.modalidad === 'f7' ? ' (Fútbol 7)' :
@@ -1245,6 +1259,33 @@ function restoreSetupState() {
 }
 
 function confirmSetup() {
+    // ══════════════════════════════════════════════════════════════════
+    //  🔒 v730 · AQUÍ ES DONDE SE PIDE EL EQUIPO, Y NO ANTES
+    // ══════════════════════════════════════════════════════════════════
+    //  Ésta es una de las dos puertas al partido en vivo (la otra es
+    //  `openLiveMatchRecovery`). Hasta v729 la plaza se reclamaba al arrancar
+    //  el ROL, así que el segundo aparato se quedaba fuera de la plantilla, la
+    //  asistencia y la convocatoria por un partido que nadie estaba dirigiendo.
+    //  El candado protege de DOS ESCRITORES DEL MISMO PARTIDO: su sitio es
+    //  esta puerta.
+    //
+    //  ⚠️ NO SE ESPERA LA RESPUESTA PARA SEGUIR — se espera SÓLO para dejar
+    //  entrar. Si el equipo está ocupado en otro aparato, `confirmSetup` no
+    //  llega a montar el partido; si está libre (o no hay red: fail-open del
+    //  módulo), sigue su curso normal.
+    if (!window._cronosSaltarCandadoPartido &&
+        typeof window.cronosSesionAlAbrirPartido === 'function') {
+        window._cronosSaltarCandadoPartido = true;
+        Promise.resolve(window.cronosSesionAlAbrirPartido()).then(function (puede) {
+            window._cronosSaltarCandadoPartido = false;
+            if (puede) confirmSetup();
+        }).catch(function () {
+            window._cronosSaltarCandadoPartido = false;
+            confirmSetup();      // el candado jamás impide cronometrar
+        });
+        return;
+    }
+
     // ── ⚽ v726 · Los datos del partido quedan decididos AQUÍ ──
     let _datosPartido = null, _partidoCal = null;
     try {
@@ -1741,6 +1782,16 @@ window._recuperacionSeparaDudosas = _recuperacionSeparaDudosas;
 //  y status === 'active'. Muestra un panel para retomar el partido.
 // ════════════════════════════════════════════════════════════════════
 async function openLiveMatchRecovery() {
+    // 🔒 v730 · La OTRA puerta al partido en vivo. Misma razón que en
+    // `confirmSetup`: recuperar un partido es ponerse a escribirlo, así que
+    // aquí sí se pide el equipo. Si está abierto en otro aparato, no se entra.
+    if (typeof window.cronosSesionAlAbrirPartido === 'function') {
+        let _puede = true;
+        try { _puede = await window.cronosSesionAlAbrirPartido(); }
+        catch (e) { _puede = true; }               // el candado nunca impide trabajar
+        if (!_puede) return;
+    }
+
     // Pila de navegación (js/core/nav-stack.js).
     if (typeof navScreen === 'function') navScreen('openLiveMatchRecovery');
 

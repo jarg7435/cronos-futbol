@@ -86,22 +86,61 @@
         return nav ? (so + ' · ' + nav) : so;
     }
 
-    // ── La clave de la PLAZA ─────────────────────────────────────────
-    //  uid + rol + entidad + equipo. El equipo es lo que separa al mismo
-    //  entrenador con dos equipos; si la plaza no lleva equipo (un Director,
-    //  por ejemplo), queda vacío y el bloqueo es por rol dentro de su club,
-    //  que es justo lo que se quiere.
+    // ════════════════════════════════════════════════════════════════
+    //  🔑 v731 · LA CLAVE ES EL RECURSO QUE SE EDITA, Y NADA MÁS
+    // ════════════════════════════════════════════════════════════════
+    //  Encargo del autor (implementar.txt 2026-09-17, captura 10518): «el
+    //  candado jamás debe basarse en el usuario global ni en el
+    //  navegador/dispositivo. Debe generar una clave única ligada
+    //  exclusivamente al recurso que se está editando: userId + equipoId +
+    //  categoría + subcategoría».
+    //
+    //  📏 Lo que ya era cierto y lo que no: la clave NUNCA ha llevado el
+    //  navegador ni el aparato (el `deviceId` sirve para saber QUIÉN la tiene,
+    //  no para formarla) y el `equipo` ya es `club__categoria__subcategoria`.
+    //  Lo que sí sobraba era el ROL, y faltaba el ENTORNO:
+    //
+    //  🔑 EL ROL FUERA. Desde v730 sólo ocupan plaza los que dirigen, así que
+    //  el rol no distinguía recursos: sólo podía PARTIRLOS. La misma persona
+    //  entrando al mismo equipo como 'user' y como 'individual' son el MISMO
+    //  partido y deben colisionar; con el rol dentro, no colisionaban.
+    //
+    //  🚨 EL ENTORNO DENTRO, Y ESTE ES EL GORDO. `cronos-futbol-test` y
+    //  `cronos-futbol-app` son dominios distintos —cada uno con su
+    //  `localStorage`, o sea con su propio identificador de aparato— pero
+    //  COMPARTEN LA MISMA BASE DE DATOS (ver la nota del proyecto sobre
+    //  staging). Resultado medido en la captura del autor: la pestaña de
+    //  PRODUCCIÓN retenía la plaza del Regional B y bloqueaba a la de TESTEO,
+    //  presentándose como «otro dispositivo · Windows · Chrome» — que era su
+    //  propio PC. Peor aún: una prueba en testeo podía DESALOJAR a un club
+    //  real en producción. Con el host en la clave, cada entorno tiene sus
+    //  marcas y no se pisan jamás.
+    function _entorno() {
+        try {
+            var h = String(location.hostname || '');
+            if (h.indexOf('cronos-futbol-test') === 0) return 'test';
+            if (h === 'localhost' || h === '127.0.0.1') return 'local';
+            return 'prod';
+        } catch (e) { return 'prod'; }
+    }
+    window.cronosSesionEntorno = _entorno;
+
     function _claveDePlaza(me) {
         if (!me || !me.uid) return null;
-        var rol = String(me._activeRole || me.role || '').trim();
-        if (!rol) return null;
         var entidad = String(me.clubId || me.individualEntityId || '').trim();
         var equipo = '';
         try {
             if (typeof window.cronosMyTeamId === 'function') equipo = String(window.cronosMyTeamId() || '');
         } catch (e) { equipo = ''; }
+        // ⚠️ SIN EQUIPO NO HAY PLAZA. Un recurso sin identificar no se puede
+        // bloquear sin bloquear de más, y bloquear de más es exactamente lo
+        // que este módulo lleva tres versiones corrigiendo. Desde v730 quien
+        // no lleva equipo tampoco ocupa plaza, así que esto es coherente con
+        // la puerta de entrada: devolver null significa "no hay nada que
+        // reservar", y todos los caminos lo tratan como vía libre.
+        if (!equipo) return null;
         // Sólo caracteres seguros: esto acaba siendo el id del documento.
-        return [me.uid, rol, entidad, equipo].join('__').replace(/[^A-Za-z0-9_\-.@+]/g, '_');
+        return [_entorno(), me.uid, entidad, equipo].join('__').replace(/[^A-Za-z0-9_\-.@+]/g, '_');
     }
     window.cronosClaveDePlaza = _claveDePlaza;
 
@@ -143,10 +182,28 @@
         return { m: m, db: fa.db, auth: fa.auth || null };
     }
 
+    // ════════════════════════════════════════════════════════════════
+    //  ⏳ v730 · UNA MARCA DEL FUTURO NO PUEDE BLOQUEAR PARA SIEMPRE
+    // ════════════════════════════════════════════════════════════════
+    //  `lastSeen` lo escribe el OTRO aparato con SU reloj y lo juzgamos con el
+    //  NUESTRO. Con los relojes desincronizados —un iPad adelantado diez
+    //  minutos— la resta sale NEGATIVA, siempre menor que el TTL, y la marca
+    //  se daba por viva indefinidamente: un bloqueo fantasma que ni siquiera
+    //  caduca, que es lo que el autor describe como «falsos positivos» y le
+    //  obligaba a borrar el almacenamiento desde F12.
+    //
+    //  🔑 Un margen pequeño hacia el futuro SÍ se acepta (un par de segundos de
+    //  deriva es normal y no hay que castigarlo); más allá, la marca no se
+    //  considera viva. Ante la duda se deja pasar, que es la política de todo
+    //  este módulo: es coordinación, no seguridad.
+    var FUTURO_MAX_MS = 120000;   // 2 min de deriva de reloj tolerada
+
     function _vive(doc) {
         if (!doc || !doc.lastSeen) return false;
         var t = Number(doc.lastSeen) || 0;
-        return (Date.now() - t) < TTL_MS;
+        var edad = Date.now() - t;
+        if (edad < 0) return (-edad) <= FUTURO_MAX_MS;   // marca "del futuro"
+        return edad < TTL_MS;
     }
 
     // ════════════════════════════════════════════════════════════════
@@ -191,13 +248,28 @@
             return { ok: true, sinComprobar: true };
         }
 
+        // 📋 v731 · LA MARCA DICE DE QUÉ EQUIPO ES. Hasta aquí había que
+        // deducirlo de la etiqueta, y cuando un bloqueo salta donde no debe —la
+        // captura 10518— lo primero que hace falta saber es QUÉ recurso se
+        // reservó y DÓNDE. Son cuatro campos y no cuestan una lectura más.
+        var _me2 = window._cronosCurrentUser || {};
+        var _eq = null;
+        try { _eq = (typeof window.cronosMyTeam === 'function') ? window.cronosMyTeam() : null; }
+        catch (e) { _eq = null; }
+
         try {
             await f.m.setDoc(ref, {
                 uid:        _uid,
                 clave:      clave,
                 deviceId:   yo,
                 deviceName: _nombreAparato(),
-                rol:        String((window._cronosCurrentUser || {})._activeRole || ''),
+                rol:        String(_me2._activeRole || ''),
+                entorno:     _entorno(),
+                teamId:      (_eq && _eq.teamId) ? String(_eq.teamId) : '',
+                // `category` o `categoryLabel`: la cascada de `cronosMyTeam`
+                // devuelve una u otra según de dónde salga el equipo.
+                category:    (_eq && (_eq.category || _eq.categoryLabel)) ? String(_eq.category || _eq.categoryLabel) : '',
+                subcategory: (_eq && _eq.subcategory) ? String(_eq.subcategory) : '',
                 etiqueta:   _etiquetaPlaza(window._cronosCurrentUser),
                 startedAt:  Date.now(),
                 lastSeen:   Date.now()
@@ -274,12 +346,32 @@
     var _MAX_REINTENTOS = 3;
     var _REINTENTO_MS = 4000;
 
+    // ════════════════════════════════════════════════════════════════
+    //  🔴 v730 · NINGÚN OYENTE HUÉRFANO SOBRE LA PLAZA ANTERIOR
+    // ════════════════════════════════════════════════════════════════
+    //  `_escucha` tiene un `await` entre el «apaga el anterior» y el «guarda el
+    //  nuevo». Dos llamadas seguidas —cambiar de equipo, rearrancar el rol— se
+    //  solapan ahí: la segunda apaga lo que hay, y luego la PRIMERA termina y
+    //  escribe su `unsubscribe` encima. Resultado: un oyente vivo sobre la
+    //  plaza VIEJA al que ya nadie puede dar de baja. Cuando otro aparato
+    //  reclamaba esa plaza vieja, ese huérfano disparaba el desalojo y cerraba
+    //  la sesión de un equipo que no tenía nada que ver. Misma familia que
+    //  v719: la baja no basta si el alta puede llegar después.
+    //
+    //  🔑 Cada intento lleva su GENERACIÓN. Si al volver del `await` la
+    //  generación ya no es la vigente, la suscripción se cierra en el acto en
+    //  vez de guardarse.
+    var _generacion = 0;
+
     async function _escucha(clave) {
         _paraEscuchaFn();
+        var mia = ++_generacion;
         try {
             var f = await _fs();
             if (!f) return;
-            _paraEscucha = f.m.onSnapshot(f.m.doc(f.db, COLECCION, clave), function (snap) {
+            if (mia !== _generacion) return;          // nos adelantó otra llamada
+            var baja = f.m.onSnapshot(f.m.doc(f.db, COLECCION, clave), function (snap) {
+                if (mia !== _generacion) return;      // esta escucha ya no manda
                 _reintentos = 0;            // la escucha va: se olvida el historial de fallos
                 var d = snap.exists() ? (snap.data() || {}) : null;
                 if (!d || !d.deviceId) return;
@@ -289,6 +381,7 @@
                 _paraEscuchaFn();
                 window.cronosSesionDesalojado(d);
             }, function (err) {
+                if (mia !== _generacion) return;
                 // 🔑 El oyente ya está muerto cuando llega aquí: Firestore lo
                 // cierra al fallar. Se suelta la referencia y se decide.
                 _paraEscucha = null;
@@ -311,10 +404,16 @@
                     if (_claveActual === clave && !_paraEscucha) _escucha(clave);
                 }, _REINTENTO_MS);
             });
+            // ⚠️ La baja se guarda SÓLO si esta sigue siendo la escucha vigente.
+            // Si nos adelantaron mientras se abría, se cierra aquí mismo: es lo
+            // que impide que quede un oyente sobre la plaza anterior.
+            if (mia !== _generacion) { try { baja(); } catch (e) {} return; }
+            _paraEscucha = baja;
         } catch (e) { /* sin escucha: se sigue trabajando igual */ }
     }
 
     function _paraEscuchaFn() {
+        _generacion++;              // invalida cualquier escucha en vuelo
         if (typeof _paraEscucha === 'function') { try { _paraEscucha(); } catch (e) {} }
         _paraEscucha = null;
     }
@@ -499,11 +598,54 @@
     }
     window.cronosSesionControlActivo = _controlActivo;
 
-    window.cronosSesionAlEntrar = async function () {
+    // ════════════════════════════════════════════════════════════════
+    //  🔓 v730 · QUIÉN OCUPA PLAZA: SÓLO QUIEN ESCRIBE EL PARTIDO
+    // ════════════════════════════════════════════════════════════════
+    //  Encargo del autor (implementar.txt 2026-09-17, capturas 10513-10514):
+    //  «Un director deportivo, coordinador, familiar o la pantalla de En Vivo
+    //  deben poder consultar un partido o panel libremente a la vez que el
+    //  entrenador lo tiene abierto dirigiendo el encuentro. Ningún rol de
+    //  supervisión o visualización puede ser bloqueado».
+    //
+    //  🔑 El motivo del candado (v699) es que DOS APARATOS NO ESCRIBAN EL
+    //  MISMO PARTIDO. Un director que mira informes no escribe ningún partido:
+    //  reservarle plaza no protegía nada y, en cambio, le echaba de su propio
+    //  panel si abría el móvil. Así que la plaza la ocupan únicamente los roles
+    //  que dirigen —los mismos de `CRONOS_ROLES_CON_EQUIPO` (v598)— y sólo al
+    //  entrar en el partido, no al entrar en la aplicación.
+    function _rolOcupaPlaza(me) {
+        var rol = String((me && (me._activeRole || me.role)) || '').trim();
+        var conEquipo = window.CRONOS_ROLES_CON_EQUIPO || ['user', 'coach', 'individual', 'admin_individual'];
+        return conEquipo.indexOf(rol) >= 0;
+    }
+    window.cronosRolOcupaPlaza = _rolOcupaPlaza;
+
+    // ════════════════════════════════════════════════════════════════
+    //  🚪 v730 · EL CANDADO VIVE EN LA PUERTA DEL PARTIDO, NO EN LA DE CASA
+    // ════════════════════════════════════════════════════════════════
+    //  Segundo punto del encargo: «el aviso de que un equipo ya está abierto en
+    //  otro dispositivo sólo debe saltar si se intenta editar o crear un
+    //  partido de manera simultánea para el mismo equipo, categoría y
+    //  subcategoría exacta».
+    //
+    //  🔑 Antes se reclamaba al ARRANCAR EL ROL, así que el segundo aparato se
+    //  quedaba fuera de TODO —plantilla, asistencia, convocatoria, informes—
+    //  por un partido que quizá nadie iba a tocar. Y era justo lo que le
+    //  impedía al autor entrar a comprobar la asistencia de v729.
+    //  Ahora la comprobación va donde está el riesgo real: `confirmSetup()` y
+    //  `openLiveMatchRecovery()`, las dos puertas al partido en vivo.
+    //
+    //  ⚠️ EL CANDADO NO SE AFLOJA DONDE IMPORTA: dos aparatos escribiendo el
+    //  mismo partido siguen sin poder, que es para lo que nació v718.
+    window.cronosSesionAlAbrirPartido = async function () {
         if (!_controlActivo()) return true;
         var me = window._cronosCurrentUser;
+        if (!_rolOcupaPlaza(me)) return true;      // quien no dirige, no ocupa
         var clave = _claveDePlaza(me);
         if (!clave) return true;
+
+        // Ya la tenemos: entrar otra vez en nuestro propio partido no pregunta.
+        if (_claveActual === clave) return true;
 
         // Cambiar de plaza dentro del mismo aparato libera la anterior: si no,
         // un entrenador que salta de su Alevín a su Regional se dejaría la
@@ -519,6 +661,46 @@
         _arrancaLatido(clave);
         _escucha(clave);
         return true;
+    };
+
+    // ════════════════════════════════════════════════════════════════
+    //  🚪 ENTRAR EN LA APLICACIÓN — la llama el arranque de rol
+    // ════════════════════════════════════════════════════════════════
+    //  Ya NO reclama nada ni puede impedir la entrada a nadie (v730). Lo único
+    //  que hace es higiene: soltar la plaza que hubiera quedado de la sesión
+    //  anterior en este mismo aparato, para no dejar marcas que luego bloqueen
+    //  al propio usuario. Devuelve true siempre, a propósito.
+    window.cronosSesionAlEntrar = async function () {
+        try {
+            if (_claveActual) {
+                var clave = _claveDePlaza(window._cronosCurrentUser);
+                if (clave !== _claveActual) await window.cronosSesionLibera();
+            }
+        } catch (e) { /* entrar en la app nunca puede fallar por esto */ }
+        return true;
+    };
+
+    // ════════════════════════════════════════════════════════════════
+    //  🔄 v730 · CAMBIAR DE EQUIPO MUEVE LA PLAZA
+    // ════════════════════════════════════════════════════════════════
+    //  🔑🔑 ESTE ERA EL FALSO POSITIVO DE LA CAPTURA 10513. `_cronosCambiarEquipo`
+    //  (js/core/setup-modal.js) cambiaba el equipo activo y repintaba… pero no
+    //  tocaba la sesión: la marca de la plaza ANTERIOR seguía viva, con su
+    //  latido, y el oyente seguía escuchando ESA. Así que al abrir el iPad el
+    //  equipo que el PC había dejado atrás, el PC —que estaba tranquilamente en
+    //  OTRO equipo— recibía «Se ha abierto este rol en otro dispositivo» y se
+    //  le cerraba la sesión. Ni había dos ventanas del mismo equipo, ni el rol
+    //  estaba duplicado: era una plaza que este aparato ya no usaba y no había
+    //  soltado.
+    //
+    //  ⚠️ NO RECLAMA la plaza nueva: desde v730 la plaza se toma al entrar en
+    //  el partido. Cambiar de equipo sólo SUELTA lo que ya no se usa.
+    window.cronosSesionSincroniza = async function () {
+        try {
+            if (!_claveActual) return;
+            var clave = _claveDePlaza(window._cronosCurrentUser);
+            if (clave !== _claveActual) await window.cronosSesionLibera();
+        } catch (e) { /* cambiar de equipo nunca puede fallar por esto */ }
     };
 
     // Al cerrar la pestaña se suelta la plaza cuanto antes; si no llega a

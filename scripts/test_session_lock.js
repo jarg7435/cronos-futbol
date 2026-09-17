@@ -15,6 +15,21 @@
 // aquí deja a un entrenador fuera de su propio partido, que es mucho peor que
 // el problema que se quiere evitar. De ahí los casos de fail-open (sin red),
 // de caducidad y de roles/equipos distintos.
+//
+// ═══════════════════════════════════════════════════════════════════════════
+//  🚪 2026-09-17 · v730 · LA PUERTA SE MUDA, LA MECÁNICA SE QUEDA
+// ═══════════════════════════════════════════════════════════════════════════
+//  El autor revoca una parte de v699 (implementar.txt 2026-09-17, capturas
+//  10513-10514): el candado ya NO se pide al entrar en la aplicación, sino al
+//  entrar en el PARTIDO, y sólo para los roles que lo dirigen. Por eso todo lo
+//  de abajo ejercita ahora `cronosSesionAlAbrirPartido()` en vez de
+//  `cronosSesionAlEntrar()`.
+//
+//  ⚠️ NO ES UN GUARD DEBILITADO: las 27 comprobaciones de mecánica —conflicto,
+//  toma de control, desalojo, caducidad, fail-open, latido, extra apagado— son
+//  las mismas y siguen exigiéndose. Lo único que cambia es POR QUÉ PUERTA se
+//  entra. Y la PARTE 12, nueva, fija lo que el autor pidió a cambio: que
+//  consultar no bloquee y que cambiar de equipo suelte la plaza anterior.
 // ═══════════════════════════════════════════════════════════════════════════
 'use strict';
 
@@ -85,6 +100,9 @@ function aparato(nube, op) {
     const ctx = {
         console: { log(){}, warn(){}, error(){} },
         Date, Math, JSON, String, Number, Promise, Object, Array,
+        // v731 · El ENTORNO forma parte de la clave: testeo y producción
+        // comparten base de datos y no pueden pisarse las marcas.
+        location: { hostname: o.host || 'cronos-futbol-app.web.app' },
         setInterval: (fn) => { temporizadores.push(fn); return temporizadores.length; },
         clearInterval: () => {},
         navigator: { userAgent: o.nombre === 'iPad' ? 'iPad; CPU OS 17 Safari' : 'Windows NT 10.0 Chrome',
@@ -136,7 +154,7 @@ function aparato(nube, op) {
     {
         const nube = crearNube();
         const a = aparato(nube);
-        const entro = await a.w.cronosSesionAlEntrar();
+        const entro = await a.w.cronosSesionAlAbrirPartido();
         ok('CONTROL · el primer aparato entra y deja su marca',
            entro === true && Object.keys(nube.docs).length === 1);
 
@@ -149,11 +167,11 @@ function aparato(nube, op) {
     {
         const nube = crearNube();
         const ipad = aparato(nube, { nombre: 'iPad' });
-        await ipad.w.cronosSesionAlEntrar();
+        await ipad.w.cronosSesionAlAbrirPartido();
 
         const movil = aparato(nube, { nombre: 'Windows' });
         movil.avisos.respuestaConflicto = false;            // el usuario CANCELA
-        const entro = await movil.w.cronosSesionAlEntrar();
+        const entro = await movil.w.cronosSesionAlAbrirPartido();
 
         ok('🔑 el segundo aparato con la MISMA plaza NO entra si cancela', entro === false);
         ok('…y se le dice QUÉ aparato la tiene y desde cuándo',
@@ -167,11 +185,11 @@ function aparato(nube, op) {
     {
         const nube = crearNube();
         const ipad = aparato(nube, { nombre: 'iPad' });
-        await ipad.w.cronosSesionAlEntrar();
+        await ipad.w.cronosSesionAlAbrirPartido();
 
         const movil = aparato(nube, { nombre: 'Windows' });
         movil.avisos.respuestaConflicto = true;             // el usuario TOMA EL CONTROL
-        const entro = await movil.w.cronosSesionAlEntrar();
+        const entro = await movil.w.cronosSesionAlAbrirPartido();
 
         ok('tomando el control, el segundo entra', entro === true);
         ok('…y la plaza pasa a ser suya',
@@ -186,21 +204,24 @@ function aparato(nube, op) {
     {
         const nube = crearNube();
         const pc = aparato(nube, { rol: 'director', equipo: '' });
-        await pc.w.cronosSesionAlEntrar();
+        const entroDir = await pc.w.cronosSesionAlAbrirPartido();
         const movil = aparato(nube, { rol: 'user', equipo: 'eq_alevin_c' });
-        const entro = await movil.w.cronosSesionAlEntrar();
+        const entro = await movil.w.cronosSesionAlAbrirPartido();
         ok('🔑 ROLES DISTINTOS a la vez: Director en el PC y Entrenador en el móvil',
-           entro === true && movil.avisos.conflicto === null &&
-           Object.keys(nube.docs).length === 2);
+           entro === true && entroDir === true && movil.avisos.conflicto === null);
+        // v730 · Y el director NI SIQUIERA DEJA MARCA: no dirige ningún
+        // partido, así que no ocupa plaza de nadie ni puede ser desalojado.
+        ok('🔑 v730 · el DIRECTOR no reserva plaza (sólo la ocupa quien dirige)',
+           Object.keys(nube.docs).length === 1);
     }
     {
         // Decisión del autor: la unidad es la PLAZA. Un entrenador con dos
         // equipos puede llevar uno en cada aparato: son partidos distintos.
         const nube = crearNube();
         const ipad = aparato(nube, { rol: 'user', equipo: 'eq_alevin_c' });
-        await ipad.w.cronosSesionAlEntrar();
+        await ipad.w.cronosSesionAlAbrirPartido();
         const movil = aparato(nube, { rol: 'user', equipo: 'eq_regional_a' });
-        const entro = await movil.w.cronosSesionAlEntrar();
+        const entro = await movil.w.cronosSesionAlAbrirPartido();
         ok('🔑 MISMO rol y EQUIPOS distintos: los dos entran (la unidad es la plaza)',
            entro === true && movil.avisos.conflicto === null &&
            Object.keys(nube.docs).length === 2);
@@ -209,9 +230,9 @@ function aparato(nube, op) {
         // Usuarios distintos nunca se estorban.
         const nube = crearNube();
         const a = aparato(nube, { uid: 'u1' });
-        await a.w.cronosSesionAlEntrar();
+        await a.w.cronosSesionAlAbrirPartido();
         const b = aparato(nube, { uid: 'u2' });
-        const entro = await b.w.cronosSesionAlEntrar();
+        const entro = await b.w.cronosSesionAlAbrirPartido();
         ok('dos USUARIOS distintos con el mismo rol no se estorban', entro === true);
     }
 
@@ -221,7 +242,7 @@ function aparato(nube, op) {
         // fuera a un entrenador por no tener red sería peor que el problema.
         const nube = crearNube();
         const solo = aparato(nube, { sinNube: true });
-        const entro = await solo.w.cronosSesionAlEntrar();
+        const entro = await solo.w.cronosSesionAlAbrirPartido();
         ok('🚨 sin conexión se ENTRA igual (fail-open deliberado)',
            entro === true && solo.avisos.conflicto === null);
     }
@@ -230,11 +251,11 @@ function aparato(nube, op) {
         // siempre.
         const nube = crearNube();
         const ipad = aparato(nube, { nombre: 'iPad' });
-        await ipad.w.cronosSesionAlEntrar();
+        await ipad.w.cronosSesionAlAbrirPartido();
         const clave = Object.keys(nube.docs)[0];
         nube.docs[clave].lastSeen = Date.now() - (10 * 60 * 1000);   // 10 minutos sin señal
         const movil = aparato(nube, { nombre: 'Windows' });
-        const entro = await movil.w.cronosSesionAlEntrar();
+        const entro = await movil.w.cronosSesionAlAbrirPartido();
         ok('🚨 una marca CADUCADA no bloquea: el segundo entra sin preguntar nada',
            entro === true && movil.avisos.conflicto === null);
     }
@@ -242,8 +263,8 @@ function aparato(nube, op) {
         // El mismo aparato volviendo a entrar no se bloquea a sí mismo.
         const nube = crearNube();
         const a = aparato(nube);
-        await a.w.cronosSesionAlEntrar();
-        const entro = await a.w.cronosSesionAlEntrar();
+        await a.w.cronosSesionAlAbrirPartido();
+        const entro = await a.w.cronosSesionAlAbrirPartido();
         ok('el MISMO aparato reentrando no se bloquea a sí mismo',
            entro === true && a.avisos.conflicto === null);
     }
@@ -252,13 +273,13 @@ function aparato(nube, op) {
     {
         const nube = crearNube();
         const a = aparato(nube, { nombre: 'iPad' });
-        await a.w.cronosSesionAlEntrar();
+        await a.w.cronosSesionAlAbrirPartido();
         await a.w.cronosSesionLibera();
         ok('al salir, la marca se borra y la plaza queda libre',
            Object.keys(nube.docs).length === 0);
 
         const b = aparato(nube, { nombre: 'Windows' });
-        const entro = await b.w.cronosSesionAlEntrar();
+        const entro = await b.w.cronosSesionAlAbrirPartido();
         ok('…y otro aparato entra sin preguntar', entro === true && b.avisos.conflicto === null);
     }
     {
@@ -266,10 +287,10 @@ function aparato(nube, op) {
         // dejaría la plaza libre a un tercero sin que él se entere.
         const nube = crearNube();
         const ipad = aparato(nube, { nombre: 'iPad' });
-        await ipad.w.cronosSesionAlEntrar();
+        await ipad.w.cronosSesionAlAbrirPartido();
         const movil = aparato(nube, { nombre: 'Windows' });
         movil.avisos.respuestaConflicto = true;
-        await movil.w.cronosSesionAlEntrar();
+        await movil.w.cronosSesionAlAbrirPartido();
         await ipad.w.cronosSesionLibera();
         ok('🔑 quien perdió la plaza NO borra la marca del que la tiene',
            Object.keys(nube.docs).length === 1 &&
@@ -279,10 +300,10 @@ function aparato(nube, op) {
         // Cambiar de plaza en el mismo aparato suelta la anterior.
         const nube = crearNube();
         const a = aparato(nube, { equipo: 'eq_alevin_c' });
-        await a.w.cronosSesionAlEntrar();
+        await a.w.cronosSesionAlAbrirPartido();
         a.w._cronosCurrentUser = { uid: 'u1', _activeRole: 'user', clubId: 'clubA' };
         a.w.cronosMyTeamId = () => 'eq_regional_a';
-        await a.w.cronosSesionAlEntrar();
+        await a.w.cronosSesionAlAbrirPartido();
         ok('cambiar de equipo en el mismo aparato suelta la plaza anterior',
            Object.keys(nube.docs).length === 1 &&
            /eq_regional_a/.test(Object.keys(nube.docs)[0]));
@@ -292,7 +313,7 @@ function aparato(nube, op) {
     {
         const nube = crearNube();
         const a = aparato(nube);
-        await a.w.cronosSesionAlEntrar();
+        await a.w.cronosSesionAlAbrirPartido();
         const clave = Object.keys(nube.docs)[0];
         nube.docs[clave].lastSeen = Date.now() - 60000;
         const antes = nube.docs[clave].lastSeen;
@@ -310,9 +331,9 @@ function aparato(nube, op) {
         // con la misma plaza, como antes de v699.
         const nube = crearNube();
         const ipad = aparato(nube, { nombre: 'iPad', extras: { sesion_unica: false } });
-        const entro1 = await ipad.w.cronosSesionAlEntrar();
+        const entro1 = await ipad.w.cronosSesionAlAbrirPartido();
         const movil = aparato(nube, { nombre: 'Windows', extras: { sesion_unica: false } });
-        const entro2 = await movil.w.cronosSesionAlEntrar();
+        const entro2 = await movil.w.cronosSesionAlAbrirPartido();
         ok('🔧 con el extra APAGADO, dos aparatos comparten la misma plaza',
            entro1 === true && entro2 === true && movil.avisos.conflicto === null);
         // 🔑 Y no sólo "no pregunta": no deja marca ninguna. Si la dejara, al
@@ -327,21 +348,218 @@ function aparato(nube, op) {
         // desplegado hoy. Con `=== true` se habría apagado para todos.
         const nube = crearNube();
         const a = aparato(nube, { extras: { otra_cosa: true } });
-        await a.w.cronosSesionAlEntrar();
+        await a.w.cronosSesionAlAbrirPartido();
         const b = aparato(nube, { nombre: 'Windows', extras: { otra_cosa: true } });
-        const entro = await b.w.cronosSesionAlEntrar();
+        const entro = await b.w.cronosSesionAlAbrirPartido();
         ok('🔑 extra AUSENTE = control ACTIVO (regla `!== false`)',
            entro === false && !!b.avisos.conflicto);
     }
     ok('el extra está declarado en el panel del SuperAdmin',
        /key:\s*'sesion_unica'/.test(leer('js/admin/superadmin/extras-toggle.js')));
 
+    // ═══════════════════════════════════════════════════════════════════════
+    //  12. v730 · LOS FALSOS POSITIVOS QUE ÉL REPORTÓ (capturas 10513-10514)
+    // ═══════════════════════════════════════════════════════════════════════
+    {
+        // El entrenador dirige el Alevín C en el iPad. El director abre su
+        // panel en el PC: no puede quedarse fuera por eso.
+        const nube = crearNube();
+        const ipad = aparato(nube, { rol: 'user', equipo: 'eq_alevin_c' });
+        await ipad.w.cronosSesionAlAbrirPartido();
+        const pc = aparato(nube, { uid: 'uid_dir', rol: 'director', equipo: '' });
+        const entro = await pc.w.cronosSesionAlAbrirPartido();
+        ok('12a · 🔑 el DIRECTOR consulta mientras el entrenador dirige',
+           entro === true && pc.avisos.conflicto === null);
+    }
+    {
+        // Familiar: igual. Ni marca, ni bloqueo, ni desalojo posible.
+        const nube = crearNube();
+        const ipad = aparato(nube, { rol: 'user', equipo: 'eq_alevin_c' });
+        await ipad.w.cronosSesionAlAbrirPartido();
+        const movil = aparato(nube, { uid: 'uid_fam', rol: 'parent', equipo: '' });
+        const entro = await movil.w.cronosSesionAlAbrirPartido();
+        ok('12b · 🔑 el FAMILIAR tampoco se bloquea', entro === true);
+        ok('12c · …y no deja marca en la nube', Object.keys(nube.docs).length === 1);
+    }
+    {
+        // ENTRAR EN LA APLICACIÓN no reclama nada: aunque su equipo esté
+        // tomado en otro aparato, aquí se puede gestionar plantilla,
+        // asistencia y convocatoria. Lo que se cierra es la puerta del partido.
+        const nube = crearNube();
+        const ipad = aparato(nube, { rol: 'user', equipo: 'eq_alevin_c' });
+        await ipad.w.cronosSesionAlAbrirPartido();
+        const pc = aparato(nube, { rol: 'user', equipo: 'eq_alevin_c' });
+        const entroApp = await pc.w.cronosSesionAlEntrar();
+        ok('12d · 🔑 entrar en la APLICACIÓN nunca se bloquea',
+           entroApp === true && pc.avisos.conflicto === null);
+        pc.avisos.respuestaConflicto = false;
+        const entroPartido = await pc.w.cronosSesionAlAbrirPartido();
+        ok('12e · …pero el PARTIDO del mismo equipo sí avisa',
+           entroPartido === false && !!pc.avisos.conflicto);
+    }
+    {
+        // 🔑🔑 EL FALSO POSITIVO DE LA CAPTURA 10513, reproducido:
+        // el PC dirige el Alevín C, cambia al Regional B y el iPad abre el
+        // Alevín que el PC acaba de dejar. El PC NO puede ser desalojado: ya
+        // no está ahí.
+        const nube = crearNube();
+        const pc = aparato(nube, { rol: 'user', equipo: 'eq_alevin_c' });
+        await pc.w.cronosSesionAlAbrirPartido();
+
+        pc.w.cronosMyTeamId = () => 'eq_regional_b';        // pulsa MIS EQUIPOS
+        await pc.w.cronosSesionSincroniza();                // v730: suelta la anterior
+        await pc.w.cronosSesionAlAbrirPartido();            // y entra al partido del nuevo
+
+        const ipad = aparato(nube, { rol: 'user', equipo: 'eq_alevin_c' });
+        const entroIpad = await ipad.w.cronosSesionAlAbrirPartido();
+        nube.avisa(Object.keys(nube.docs).filter(k => /alevin/.test(k))[0]);
+
+        ok('12f · 🔑🔑 el iPad entra en el equipo que el PC dejó (estaba libre)',
+           entroIpad === true && ipad.avisos.conflicto === null);
+        ok('12g · 🔑🔑 y al PC NO se le cierra la sesión: está en OTRO equipo',
+           pc.avisos.desalojo === null);
+        ok('12h · los dos equipos quedan ocupados, uno por cada aparato',
+           Object.keys(nube.docs).length === 2);
+    }
+    {
+        // 🔴 DOS APERTURAS SEGUIDAS, sin esperar a la primera: es lo que pasa
+        //  al cambiar de equipo con el rol recién arrancado.
+        //
+        //  ⚠️ HONESTIDAD SOBRE LO QUE ESTO MIDE Y LO QUE NO: se probó a mutar
+        //  el cierre de la escucha adelantada (`if (mia !== _generacion) baja()`
+        //  en session-lock.js) y estas dos aserciones SIGUIERON EN VERDE —el
+        //  arnés no llega a solapar los `await` internos—. O sea que NO cazan
+        //  el oyente huérfano; se quedan porque fijan el resultado que importa
+        //  (una escucha viva y ningún desalojo) y porque un verde que se
+        //  presenta como lo que no es acaba costando una ronda entera.
+        //  Lo que de verdad impide el desalojo espurio es la comprobación de
+        //  generación DENTRO del callback; el cierre de la baja adelantada es
+        //  higiene: evita una suscripción colgada gastando lecturas.
+        const nube = crearNube();
+        const pc = aparato(nube, { rol: 'user', equipo: 'eq_alevin_c' });
+        const p1 = pc.w.cronosSesionAlAbrirPartido();
+        pc.w.cronosMyTeamId = () => 'eq_regional_b';
+        const p2 = pc.w.cronosSesionAlAbrirPartido();
+        await p1; await p2;
+
+        ok('12k · tras dos aperturas seguidas queda UNA sola escucha viva',
+           nube.escuchas.length === 1);
+        // Otro aparato toma la plaza vieja: el PC no puede enterarse siquiera.
+        const claveVieja = Object.keys(nube.docs).filter(k => /alevin/.test(k))[0];
+        if (claveVieja) {
+            nube.docs[claveVieja] = { uid: 'uid_1', deviceId: 'otro_aparato',
+                                      deviceName: 'iPad', lastSeen: Date.now() };
+            nube.avisa(claveVieja);
+        }
+        ok('12l · 🔑 y nadie le cierra la sesión por una plaza que ya soltó',
+           pc.avisos.desalojo === null);
+    }
+    {
+        // ⏳ Marca con el reloj MUY adelantado: no puede bloquear para siempre.
+        const nube = crearNube();
+        const a = aparato(nube, { rol: 'user', equipo: 'eq_alevin_c' });
+        await a.w.cronosSesionAlAbrirPartido();
+        const clave = Object.keys(nube.docs)[0];
+        nube.docs[clave].lastSeen = Date.now() + 3600000;   // +1 hora
+        const b = aparato(nube, { rol: 'user', equipo: 'eq_alevin_c' });
+        const entro = await b.w.cronosSesionAlAbrirPartido();
+        ok('12i · ⏳ una marca "del futuro" (reloj desajustado) no bloquea',
+           entro === true && b.avisos.conflicto === null);
+    }
+    {
+        // …pero una deriva pequeña SÍ se respeta: es un reloj normal.
+        const nube = crearNube();
+        const a = aparato(nube, { rol: 'user', equipo: 'eq_alevin_c' });
+        await a.w.cronosSesionAlAbrirPartido();
+        const clave = Object.keys(nube.docs)[0];
+        nube.docs[clave].lastSeen = Date.now() + 5000;      // +5 s
+        const b = aparato(nube, { rol: 'user', equipo: 'eq_alevin_c' });
+        b.avisos.respuestaConflicto = false;
+        const entro = await b.w.cronosSesionAlAbrirPartido();
+        ok('12j · ⚠️ una deriva de segundos sigue contando como viva',
+           entro === false && !!b.avisos.conflicto);
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    //  13. v731 · LA CLAVE ES EL RECURSO (captura 10518)
+    // ═══════════════════════════════════════════════════════════════════════
+    {
+        // 🔑 EL CASO DEL ENCARGO: los dos equipos del mismo entrenador, en el
+        //  MISMO PC y el mismo navegador. Nunca pueden estorbarse.
+        const nube = crearNube();
+        const alevin = aparato(nube, { rol: 'user', equipo: 'eq_alevin_c' });
+        await alevin.w.cronosSesionAlAbrirPartido();
+        const regional = aparato(nube, { rol: 'user', equipo: 'eq_regional_b', nombre: 'Windows' });
+        const entro = await regional.w.cronosSesionAlAbrirPartido();
+        ok('13a · 🔑🔑 Alevín C y Regional B a la vez: ninguno bloquea al otro',
+           entro === true && regional.avisos.conflicto === null &&
+           Object.keys(nube.docs).length === 2);
+    }
+    {
+        // 🚨 TESTEO Y PRODUCCIÓN COMPARTEN BASE DE DATOS. Antes de v731, la
+        //  pestaña de producción bloqueaba a la de testeo presentándose como
+        //  «otro dispositivo», y una prueba podía desalojar a un club real.
+        const nube = crearNube();
+        const prod = aparato(nube, { equipo: 'eq_regional_b', host: 'cronos-futbol-app.web.app' });
+        await prod.w.cronosSesionAlAbrirPartido();
+        const test = aparato(nube, { equipo: 'eq_regional_b', host: 'cronos-futbol-test.web.app' });
+        const entro = await test.w.cronosSesionAlAbrirPartido();
+        ok('13b · 🚨 TESTEO no bloquea a PRODUCCIÓN aunque compartan la BD',
+           entro === true && test.avisos.conflicto === null &&
+           Object.keys(nube.docs).length === 2,
+           JSON.stringify(Object.keys(nube.docs)));
+        ok('13c · …y se distingue en la propia clave',
+           Object.keys(nube.docs).some(k => k.indexOf('test__') === 0) &&
+           Object.keys(nube.docs).some(k => k.indexOf('prod__') === 0),
+           JSON.stringify(Object.keys(nube.docs)));
+    }
+    {
+        // El ROL ya no parte la clave: el mismo equipo es el mismo partido,
+        // se entre como 'user' o como 'individual'.
+        const nube = crearNube();
+        const a = aparato(nube, { rol: 'user', equipo: 'eq_alevin_c' });
+        await a.w.cronosSesionAlAbrirPartido();
+        const b = aparato(nube, { rol: 'individual', equipo: 'eq_alevin_c', nombre: 'Windows' });
+        b.avisos.respuestaConflicto = false;
+        const entro = await b.w.cronosSesionAlAbrirPartido();
+        ok('13d · 🔑 el MISMO equipo es el mismo partido aunque cambie el rol',
+           entro === false && !!b.avisos.conflicto);
+    }
+    {
+        // Sin equipo no hay recurso que reservar: vía libre y sin marca.
+        const nube = crearNube();
+        const a = aparato(nube, { rol: 'user', equipo: '' });
+        const entro = await a.w.cronosSesionAlAbrirPartido();
+        ok('13e · sin equipo no se reserva nada (ni marca ni bloqueo)',
+           entro === true && Object.keys(nube.docs).length === 0);
+    }
+    {
+        // La marca guarda el recurso, para poder diagnosticar un bloqueo.
+        const nube = crearNube();
+        const a = aparato(nube, { equipo: 'eq_alevin_c' });
+        await a.w.cronosSesionAlAbrirPartido();
+        const d = nube.docs[Object.keys(nube.docs)[0]];
+        ok('13f · la marca dice equipo, categoría, subcategoría y entorno',
+           !!d.teamId && !!d.category && !!d.subcategory && d.entorno === 'prod',
+           JSON.stringify(d));
+    }
+
     // ═══ 8. INTEGRACIÓN ════════════════════════════════════════════════════
     const roleLaunch = leer('js/services/auth/role-launch.js');
-    ok('el arranque de rol pide la plaza al final (cuando ya conoce el equipo)',
-       /cronosSesionAlEntrar\(\)/.test(roleLaunch));
-    ok('si el usuario cancela, se le devuelve al selector de roles',
-       /navExitToRoles\(\)/.test(roleLaunch));
+    const setupModal = leer('js/core/setup-modal.js');
+    // 🚪 v730 · El arranque de rol ya sólo hace HIGIENE (soltar una plaza
+    // vieja); quien pide el equipo son las dos puertas del partido. Antes esta
+    // aserción exigía lo contrario, y dejarla habría dicho que el arreglo
+    // pedido por el autor es una regresión.
+    ok('el arranque de rol ya NO reclama plaza: sólo suelta la que sobre',
+       /cronosSesionAlEntrar\(\)/.test(roleLaunch) &&
+       !/cronosSesionAlAbrirPartido/.test(roleLaunch));
+    ok('🔑 v730 · CONTINUAR AL PARTIDO pide el equipo',
+       /function confirmSetup\(\)[\s\S]{0,1600}cronosSesionAlAbrirPartido\(\)/.test(setupModal));
+    ok('🔑 v730 · RECUPERAR PARTIDO también',
+       /openLiveMatchRecovery\(\)[\s\S]{0,600}cronosSesionAlAbrirPartido\(\)/.test(setupModal));
+    ok('🔑 v730 · cambiar de equipo suelta la plaza del que se deja',
+       /_cronosCambiarEquipo[\s\S]{0,3000}cronosSesionSincroniza\(\)/.test(setupModal));
     ok('salir a los roles suelta la plaza',
        /cronosSesionLibera/.test(leer('js/core/nav-stack.js')));
     ok('cerrar sesión suelta la plaza ANTES del signOut',

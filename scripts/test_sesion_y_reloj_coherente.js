@@ -116,6 +116,12 @@ console.log('\n── PARTE 1 · [A] el oyente de la plaza, EJECUTADO ──');
                 _reintentos: o.reintentos || 0,
                 _MAX_REINTENTOS: 3, _REINTENTO_MS: 4000,
                 _paraEscucha: null,
+                // v730 · `_escucha` lleva ahora un contador de GENERACIÓN para
+                // que una apertura adelantada no deje un oyente huérfano sobre
+                // la plaza anterior. Vive fuera del trozo que este arnés
+                // extrae, así que hay que dárselo: sin él, la función que se
+                // está midiendo ni siquiera arranca.
+                _generacion: 0,
                 _enganches: 0, _pendientes: [],
                 _paraLatido: () => {},
                 _deviceId: () => 'yo',
