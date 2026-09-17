@@ -1258,34 +1258,52 @@ function restoreSetupState() {
     window._pendingSetupState = null;
 }
 
+// ══════════════════════════════════════════════════════════════════════
+//  🔒 v730 · AQUÍ ES DONDE SE PIDE EL EQUIPO, Y NO ANTES
+// ══════════════════════════════════════════════════════════════════════
+//  Ésta es una de las dos puertas al partido en vivo (la otra es
+//  `openLiveMatchRecovery`). Hasta v729 la plaza se reclamaba al arrancar el
+//  ROL, así que el segundo aparato se quedaba fuera de la plantilla, la
+//  asistencia y la convocatoria por un partido que nadie estaba dirigiendo. El
+//  candado protege de DOS ESCRITORES DEL MISMO PARTIDO: su sitio es esta
+//  puerta.
+//
+// ══════════════════════════════════════════════════════════════════════
+//  🔴🔴🔴 v732 · Y SE PIDE **SIN VOLVER A ENTRAR AQUÍ**
+// ══════════════════════════════════════════════════════════════════════
+//  Reporte del autor (implementar.txt 2026-09-17, capturas 10524-10527, sobre
+//  PRODUCCIÓN v731): la aplicación se congela entera y no responde ningún
+//  botón. **Defecto introducido por mí en v730**, y de los que no perdonan:
+//
+//      window._cronosSaltarCandadoPartido = true;
+//      Promise...then(function (puede) {
+//          window._cronosSaltarCandadoPartido = false;   // ← ANTES
+//          if (puede) confirmSetup();                    // ← vuelve a entrar
+//      });
+//
+//  La bandera que debía impedir la reentrada se limpiaba ANTES de la llamada
+//  recursiva, así que la segunda pasada volvía a entrar en el mismo bloque, y
+//  la tercera, y la cuarta: un **bucle infinito de microtareas**. Las
+//  microtareas se drenan enteras antes de devolver el control al bucle de
+//  eventos, así que el navegador no vuelve a pintar ni a atender un clic: la
+//  pestaña queda muerta y el cuelgue parece venir de lo último que se tocó.
+//
+//  🔑 LA CURA NO ES ARREGLAR LA BANDERA, ES QUITARLA. Una función que se
+//  llama a sí misma para "continuar donde iba" necesita que ALGUIEN acierte
+//  con el estado de una variable global; partirla en dos no necesita que
+//  nadie acierte con nada. `confirmSetup` es ahora sólo la puerta, y el
+//  trabajo vive en `_confirmSetupAhora`, a la que nada más puede reentrar.
+//
+//  ⚠️ El candado JAMÁS impide cronometrar: si la comprobación falla, se entra
+//  igual (fail-open del módulo de sesión).
 function confirmSetup() {
-    // ══════════════════════════════════════════════════════════════════
-    //  🔒 v730 · AQUÍ ES DONDE SE PIDE EL EQUIPO, Y NO ANTES
-    // ══════════════════════════════════════════════════════════════════
-    //  Ésta es una de las dos puertas al partido en vivo (la otra es
-    //  `openLiveMatchRecovery`). Hasta v729 la plaza se reclamaba al arrancar
-    //  el ROL, así que el segundo aparato se quedaba fuera de la plantilla, la
-    //  asistencia y la convocatoria por un partido que nadie estaba dirigiendo.
-    //  El candado protege de DOS ESCRITORES DEL MISMO PARTIDO: su sitio es
-    //  esta puerta.
-    //
-    //  ⚠️ NO SE ESPERA LA RESPUESTA PARA SEGUIR — se espera SÓLO para dejar
-    //  entrar. Si el equipo está ocupado en otro aparato, `confirmSetup` no
-    //  llega a montar el partido; si está libre (o no hay red: fail-open del
-    //  módulo), sigue su curso normal.
-    if (!window._cronosSaltarCandadoPartido &&
-        typeof window.cronosSesionAlAbrirPartido === 'function') {
-        window._cronosSaltarCandadoPartido = true;
-        Promise.resolve(window.cronosSesionAlAbrirPartido()).then(function (puede) {
-            window._cronosSaltarCandadoPartido = false;
-            if (puede) confirmSetup();
-        }).catch(function () {
-            window._cronosSaltarCandadoPartido = false;
-            confirmSetup();      // el candado jamás impide cronometrar
-        });
-        return;
-    }
+    if (typeof window.cronosSesionAlAbrirPartido !== 'function') { _confirmSetupAhora(); return; }
+    Promise.resolve(window.cronosSesionAlAbrirPartido())
+        .then(function (puede) { if (puede) _confirmSetupAhora(); })
+        .catch(function ()     { _confirmSetupAhora(); });
+}
 
+function _confirmSetupAhora() {
     // ── ⚽ v726 · Los datos del partido quedan decididos AQUÍ ──
     let _datosPartido = null, _partidoCal = null;
     try {
