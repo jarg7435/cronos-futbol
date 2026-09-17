@@ -129,12 +129,69 @@
     // ══════════════════════════════════════════════════════════════════
     //  LA PLANTILLA SOBRE LA QUE SE PASA LISTA
     // ══════════════════════════════════════════════════════════════════
-    //  Funde F7 y F11 y deduplica por ficha: un jugador es la misma persona
-    //  juegue en la modalidad que juegue, y un club que tiene las dos
-    //  plantillas no debe pasar lista dos veces al mismo chaval.
+    //  Es la plantilla del EQUIPO ABIERTO **en su modalidad**, y nada más.
+    //
+    // ══════════════════════════════════════════════════════════════════
+    //  🔴🔴🔴 v729 · AQUÍ SE FUNDÍAN F7 Y F11, Y ESO SUSTITUÍA MEDIA LISTA
+    // ══════════════════════════════════════════════════════════════════
+    //  Reporte del autor (implementar.txt 2026-09-17, capturas 10499-10503):
+    //  en Asistencia del Regional B salían TONI, IVÁN, SERGIO, SAÚL, KIKO,
+    //  JUAN, DAVID, FEFO, CUCO, GOYO y SIXTO —once nombres que NO están en su
+    //  plantilla— y los dorsales descolocados.
+    //
+    //  📏 MEDIDO EN SUS PROPIAS CAPTURAS, y la aritmética no deja alternativa:
+    //  la lista tenía 25 filas; los dorsales 19-25 (CACO, TITO, RUIZ, ROMERO,
+    //  SÁNCHEZ, ALEX, VÍCTOR) coincidían EXACTAMENTE con la plantilla F11, y
+    //  los 18 primeros eran otros. 18 + 7 = 25: los dieciocho primeros salían
+    //  de la lista **F7** —que para el Regional B es la del otro equipo del
+    //  entrenador (Alevín C) o la semilla del legado— y sólo los siete que F7
+    //  no podía tener (un F7 son 18 fichas como mucho) llegaban de la suya.
+    //
+    //  🔑 Y NO ERA QUE SOBRARAN NOMBRES: ERA QUE SUSTITUÍAN. La deduplicación
+    //  es por FICHA, las fichas de las dos plantillas del mismo entrenador
+    //  COLISIONAN (las dos empiezan en ALC01), y F7 iba primero en el bucle.
+    //  Así que ALC03 dejaba de ser SANCHO para ser TONI **con el dorsal 3**:
+    //  cada marca de asistencia se escribía sobre la ficha de otro jugador.
+    //
+    //  ⚠️ EL MOTIVO DE LA FUSIÓN CADUCÓ, Y POR ESO SE RETIRA. Se escribió
+    //  cuando la plantilla era ÚNICA y global: entonces «un jugador es la misma
+    //  persona juegue en la modalidad que juegue» describía bien el mundo.
+    //  Desde v580 cada equipo tiene la suya, y desde v537 un entrenador lleva
+    //  como mucho DOS equipos y obligatoriamente uno de cada modalidad — o sea
+    //  que la otra lista no es «la otra modalidad de mi equipo»: es **el otro
+    //  equipo**. Pasarle lista aquí es pasarle lista al equipo equivocado.
     //
     //  ⚠️ Se descartan las filas VACÍAS (la plantilla se rellena hasta 18/25
     //  con huecos en blanco) y las PLAZAS DE APOYO sin jugador asignado.
+
+    //  La modalidad del equipo abierto. NO se pregunta ni se guarda aparte: se
+    //  deriva de la categoría con el resolutor único (v537), y sólo si de ahí
+    //  no sale nada se mira lo que diga el selector del panel.
+    function _modalidadDelEquipo() {
+        try {
+            var eq = _miEquipo();
+            if (eq && eq.category && typeof window._cronosMatchModality === 'function') {
+                var m = window._cronosMatchModality(eq.category);
+                if (m === 'f7' || m === 'f11') return m;
+            }
+        } catch (e) { /* se prueba con el selector */ }
+        try {
+            if (typeof window.cronosActiveMode === 'function') {
+                var a = window.cronosActiveMode();
+                if (a === 'f7' || a === 'f11') return a;
+            }
+        } catch (e) { /* sin modalidad */ }
+        return '';
+    }
+
+    //  ¿Esa lista tiene jugadores de verdad, o son las filas en blanco?
+    function _listaConJugadores(roster, modo) {
+        return (roster[modo] || []).some(function (p) {
+            return !!p && !!String(p.id || '').trim() &&
+                   (!!String(p.name || '').trim() || !!String(p.alias || '').trim());
+        });
+    }
+
     function jugadores() {
         var roster = {};
         // v580 · la plantilla DEL EQUIPO abierto. Guard `typeof`: este modulo
@@ -145,25 +202,49 @@
                 ? window.cronosPlantillaAmbas() : {};
         } catch (e) { roster = {}; }
 
+        // ⚠️ EL RESPALDO ES DE UNA SOLA LISTA, NUNCA DE LAS DOS. Si la
+        // modalidad no se puede resolver, o si la resuelta está vacía y la otra
+        // no, se usa la que tenga jugadores — pero NO se funden: fundirlas es
+        // exactamente el defecto que esto arregla. Con las dos vacías da igual
+        // cuál se elija: el resultado es una lista vacía.
+        var modo = _modalidadDelEquipo();
+        var lista;
+        if (modo) {
+            var otra = (modo === 'f7') ? 'f11' : 'f7';
+            if (!_listaConJugadores(roster, modo) && _listaConJugadores(roster, otra)) {
+                console.warn('[Asistencia] la plantilla ' + modo.toUpperCase() +
+                             ' del equipo está vacía; se pasa lista con la de ' + otra.toUpperCase() + '.');
+                lista = otra;
+            } else {
+                lista = modo;
+            }
+        } else {
+            console.warn('[Asistencia] no se pudo resolver la modalidad del equipo; ' +
+                         'se usa la plantilla que tenga jugadores.');
+            lista = _listaConJugadores(roster, 'f11') ? 'f11' : 'f7';
+        }
+
+        // 🔑 La deduplicación por ficha SE QUEDA, aunque ahora sea una sola
+        // lista: una plantilla puede traer dos filas con la misma ficha (una
+        // plaza de apoyo mal asignada, un pegado a mano), y dos filas con la
+        // misma clave significarían dos botones escribiendo en la MISMA marca.
         var vistos = {}, out = [];
-        ['f7', 'f11'].forEach(function (modo) {
-            (roster[modo] || []).forEach(function (p) {
-                if (!p) return;
-                var nombre = String(p.name || '').trim();
-                var alias  = String(p.alias || '').trim();
-                if (!nombre && !alias) return;                 // fila vacía
-                var ficha = String(p.id || '').trim();
-                if (!ficha) return;                            // sin ficha no hay clave
-                if (vistos[ficha]) return;
-                vistos[ficha] = true;
-                out.push({
-                    ficha:   ficha,
-                    dorsal:  String(p.number == null ? '' : p.number).trim(),
-                    nombre:  nombre,
-                    alias:   alias || nombre.split(' ')[0],
-                    isGuest: p.isGuest === true,
-                    origen:  p.isGuest ? String(p.originCategory || '') + ' ' + String(p.originSubcategory || '') : ''
-                });
+        (roster[lista] || []).forEach(function (p) {
+            if (!p) return;
+            var nombre = String(p.name || '').trim();
+            var alias  = String(p.alias || '').trim();
+            if (!nombre && !alias) return;                 // fila vacía
+            var ficha = String(p.id || '').trim();
+            if (!ficha) return;                            // sin ficha no hay clave
+            if (vistos[ficha]) return;
+            vistos[ficha] = true;
+            out.push({
+                ficha:   ficha,
+                dorsal:  String(p.number == null ? '' : p.number).trim(),
+                nombre:  nombre,
+                alias:   alias || nombre.split(' ')[0],
+                isGuest: p.isGuest === true,
+                origen:  p.isGuest ? String(p.originCategory || '') + ' ' + String(p.originSubcategory || '') : ''
             });
         });
         return out;
