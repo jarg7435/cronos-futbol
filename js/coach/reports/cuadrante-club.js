@@ -629,6 +629,8 @@ async function _cqLeer(clubId, weekKey) {
                 celdas: (d.celdas && typeof d.celdas === 'object') ? d.celdas : {},
                 publicadoEn: d.publicadoEn || '', publicadoPor: d.publicadoPor || '',
                 publicadoA:  Array.isArray(d.publicadoA) ? d.publicadoA : [],
+                // v734 · Lo que ven los entrenadores, aparte del borrador.
+                publicado:   _cqRamaPublicada(d),
                 actualizado: d.actualizado || '', actualizadoPorNombre: d.actualizadoPorNombre || '',
             };
         }
@@ -639,15 +641,101 @@ async function _cqLeer(clubId, weekKey) {
     return null;
 }
 
-async function _cqGuardar(clubId, datos) {
+// ════════════════════════════════════════════════════════════════════
+//  📤 v734 · GUARDAR NO ES ENVIAR — EL BORRADOR Y LO PUBLICADO, SEPARADOS
+// ════════════════════════════════════════════════════════════════════
+//  Encargo del autor (implementar.txt 2026-09-17, capturas 10538-10540):
+//  «GUARDAR debe limitarse estrictamente a guardar y persistir el cuadrante
+//  para el director/coordinador, sin enviarlo a los entrenadores. La
+//  sincronización con el panel del entrenador sólo debe producirse al pulsar
+//  ENVIAR A ENTRENADORES».
+//
+//  📏 MEDIDO EN SUS CAPTURAS: pulsa GUARDAR y el panel del entrenador —abierto
+//  al lado— pasa de «el club todavía no ha enviado el cuadrante» a enseñar la
+//  semana entera. 🔑 La causa es que el documento es UNO SOLO: `celdas` y
+//  `filas` son a la vez el borrador del director y lo que lee el entrenador,
+//  que sólo comprueba que exista `publicadoEn` — y esa fecha ya estaba de un
+//  envío anterior. Desde v728, además, el entrenador lo mira EN VIVO.
+//
+//  🔑 LA SEPARACIÓN VIVE DENTRO DEL MISMO DOCUMENTO (`publicado`), no en otro
+//  documento: una segunda ruta significaría otra lectura por pantalla, otra
+//  regla de Firestore y dos sitios donde se puede quedar a medias.
+//
+//  ⚠️⚠️ Y POR ESO ESTE `setDoc` ES EL SITIO PELIGROSO: va con `merge:false`
+//  —a propósito, porque con merge borrar una celda no se guardaría nunca— así
+//  que **lo que no se copie aquí, se borra**. Si `publicado` no viajara en el
+//  payload, cada guardado del director dejaría a los entrenadores sin
+//  cuadrante. Va primero en el objeto y con su nota para que no se caiga en un
+//  refactor distraído.
+function _cqRamaPublicada(datos) {
+    const p = datos && datos.publicado;
+    if (!p || typeof p !== 'object') return null;
+    return {
+        espacios: p.espacios || CQ_ESPACIOS,
+        filas:    Array.isArray(p.filas) ? p.filas : [],
+        celdas:   (p.celdas && typeof p.celdas === 'object') ? p.celdas : {},
+        publicadoEn:  p.publicadoEn  || '',
+        publicadoPor: p.publicadoPor || '',
+        publicadoA:   Array.isArray(p.publicadoA) ? p.publicadoA : [],
+        // El sello del borrador del que salió esta publicación: es lo que
+        // permite decir «hay cambios guardados sin enviar» sin comparar mapas.
+        selloOrigen:  p.selloOrigen || '',
+    };
+}
+
+//  `opciones.sellarPublicacion` (v734): lo pide el ENVÍO. Marca la rama
+//  publicada con el sello del borrador que se está escribiendo en esta misma
+//  llamada, para no necesitar una segunda escritura — que además tendría que
+//  ir con `merge` y arrastraría celdas borradas (guard 3b).
+async function _cqGuardar(clubId, datos, opciones) {
     const me = window._cronosCurrentUser || {};
+    const op = opciones || {};
     const fs = await _cqFS();
+
+    // ⚠️ MIGRACIÓN PEREZOSA, Y ES LO QUE IMPIDE UNA REGRESIÓN EN PRODUCCIÓN.
+    // Un cuadrante ya enviado antes de v734 no tiene rama `publicado`: si se
+    // guardara sin más, el entrenador seguiría leyendo la raíz —o sea, el
+    // borrador— y este arreglo no serviría de nada. Así que la primera vez se
+    // siembra `publicado` con **lo que el servidor ya tenía**, que es
+    // exactamente lo que el entrenador está viendo ahora mismo.
+    let publicado = _cqRamaPublicada(datos);
+    if (!publicado) {
+        try {
+            const snap = await fs.getDoc(fs.doc(fs.db, 'trainingPlans', clubId, 'weeks', _cqDocId(datos.weekKey)));
+            const viejo = snap.exists() ? (snap.data() || {}) : {};
+            if (viejo.publicadoEn) {
+                publicado = {
+                    espacios: viejo.espacios || CQ_ESPACIOS,
+                    filas:    Array.isArray(viejo.filas) ? viejo.filas : [],
+                    celdas:   (viejo.celdas && typeof viejo.celdas === 'object') ? viejo.celdas : {},
+                    publicadoEn:  viejo.publicadoEn  || '',
+                    publicadoPor: viejo.publicadoPor || '',
+                    publicadoA:   Array.isArray(viejo.publicadoA) ? viejo.publicadoA : [],
+                    selloOrigen:  viejo.actualizado || '',
+                };
+                if (window._cqState && window._cqState.doc) window._cqState.doc.publicado = publicado;
+            }
+        } catch (e) {
+            // Sin poder leer lo anterior NO se inventa nada: se guarda sin rama
+            // publicada y el respaldo de lectura (la raíz) sigue sirviendo el
+            // cuadrante viejo. Peor que lo ideal, pero nunca deja a nadie sin
+            // su semana.
+            console.warn('[Cuadrante] no se pudo sembrar lo publicado:', e && e.message ? e.message : e);
+        }
+    }
+
     const payload = {
         v: 1,
         weekKey:  datos.weekKey,
         espacios: datos.espacios || CQ_ESPACIOS,
         filas:    datos.filas  || [],
         celdas:   datos.celdas || {},
+        // 🔑 v734 · LO PUBLICADO VIAJA SIEMPRE. Con `merge:false`, omitirlo es
+        // borrarlo, y borrarlo deja a los entrenadores sin cuadrante.
+        publicado: publicado || null,
+        // ⚠️ Los tres sellos de raíz se conservan por compatibilidad: los leen
+        // la cabecera del director y el respaldo del entrenador mientras haya
+        // documentos sin migrar.
         publicadoEn:  datos.publicadoEn  || '',
         publicadoPor: datos.publicadoPor || '',
         publicadoA:   datos.publicadoA   || [],
@@ -655,6 +743,11 @@ async function _cqGuardar(clubId, datos) {
         actualizadoPor: me.uid || '',
         actualizadoPorNombre: me.displayName || me.email || '',
     };
+    // v734 · El envío marca su publicación como "salida de ESTE borrador", en
+    // la misma escritura (ver `sellarPublicacion` arriba).
+    if (op.sellarPublicacion && payload.publicado) {
+        payload.publicado.selloOrigen = payload.actualizado;
+    }
     // merge:false — ver la nota de cabecera: con merge, borrar una celda no se
     // guardaría nunca porque Firestore fusiona los mapas.
     await fs.setDoc(fs.doc(fs.db, 'trainingPlans', clubId, 'weeks', _cqDocId(datos.weekKey)), payload, { merge: false });
@@ -664,7 +757,22 @@ async function _cqGuardar(clubId, datos) {
     window._cqState.selloPropio = payload.actualizado;
     window._cqState.doc.actualizado = payload.actualizado;
     window._cqState.doc.actualizadoPorNombre = payload.actualizadoPorNombre;
+    // v734 · La pantalla necesita saber qué hay publicado para poder decir
+    // «guardado, pendiente de enviar».
+    window._cqState.doc.publicado = payload.publicado;
     return payload;
+}
+
+// ¿El borrador guardado va por delante de lo que ven los entrenadores?
+// Devuelve false cuando no hay nada publicado todavía: ahí el aviso es otro
+// («aún no se ha enviado»), y decir «pendiente de enviar» sobre un cuadrante
+// que nadie ha visto nunca confundiría más que ayudar.
+function _cqHayCambiosSinEnviar(d) {
+    const doc = d || (window._cqState && window._cqState.doc);
+    if (!doc) return false;
+    const p = doc.publicado;
+    if (!p || !p.publicadoEn) return false;
+    return String(p.selloOrigen || '') !== String(doc.actualizado || '');
 }
 
 // ════════════════════════════════════════════════════════════════════
@@ -894,6 +1002,12 @@ function _cqLlegaCambio(snap, weekKey) {
         celdas: (d.celdas && typeof d.celdas === 'object') ? d.celdas : {},
         publicadoEn: d.publicadoEn || '', publicadoPor: d.publicadoPor || '',
         publicadoA:  Array.isArray(d.publicadoA) ? d.publicadoA : [],
+        // ⚠️ v734 · LA RAMA PUBLICADA VIAJA TAMBIÉN EN EL CAMBIO AJENO. Sin
+        // esto, adoptar el cambio de otro coordinador dejaría `publicado`
+        // vacío en memoria y el SIGUIENTE guardado —que escribe el documento
+        // entero— se lo llevaría por delante, dejando a los entrenadores sin
+        // cuadrante. Es la misma trampa del `merge:false` de `_cqGuardar`.
+        publicado:   _cqRamaPublicada(d),
         actualizado: sello, actualizadoPorNombre: d.actualizadoPorNombre || '',
     };
     _cqSanearCeldas(entrante);   // 🧹 v673 · mismo criterio que al abrir
@@ -1035,6 +1149,27 @@ function _cqPintar() {
                 ' el ' + _cqE(cuando.toLocaleDateString('es-ES', { day:'numeric', month:'long' })) +
                 ' a las ' + _cqE(cuando.toLocaleTimeString('es-ES', { hour:'2-digit', minute:'2-digit' })) + '.' +
                 ' Lo ven en su <strong>🏃 Planificación Semanal</strong>.</div>';
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  📤 v734 · GUARDADO ≠ ENVIADO, Y HAY QUE DECIRLO
+    // ══════════════════════════════════════════════════════════════════
+    //  Desde v734 guardar ya no toca lo que ven los entrenadores. Eso es lo
+    //  que pidió el autor, pero deja un estado nuevo que ANTES no existía: el
+    //  borrador por delante de la pauta publicada. Sin decirlo, el director
+    //  haría cambios, vería «✅ Enviado el 15 de septiembre» justo encima y se
+    //  iría convencido de que su equipo ya los tiene. El aviso de arriba
+    //  seguiría siendo cierto y aun así engañaría.
+    if (_cqHayCambiosSinEnviar(d)) {
+        html += '<div style="font-size:0.72rem;color:#f0883e;background:rgba(240,136,62,0.09);' +
+                'border:1px solid rgba(240,136,62,0.45);border-radius:8px;padding:0.45rem 0.7rem;' +
+                'margin-bottom:0.8rem;display:flex;align-items:center;gap:0.6rem;flex-wrap:wrap;">' +
+                '<span style="flex:1;min-width:220px;">📝 <strong>Guardado, pero sin enviar.</strong> ' +
+                'Los entrenadores siguen viendo la versión anterior hasta que pulses ' +
+                '<strong>📤 ENVIAR A ENTRENADORES</strong>.</span>' +
+                '<button class="btn" onclick="cqAbrirEnvio()" style="padding:0.3rem 0.7rem;font-size:0.68rem;' +
+                'font-weight:800;background:rgba(240,136,62,0.16);border:1px solid rgba(240,136,62,0.5);' +
+                'color:#f0883e;">Enviar ahora</button></div>';
     }
 
     // 🔄 v604 · Un cambio ajeno esperando porque yo tengo trabajo sin guardar.
@@ -2846,7 +2981,11 @@ window.cqExportar = function () {
         meta: [
             me.clubName ? 'Club: ' + me.clubName : '',
             alcance ? 'Ámbito: ' + window._cronosCoordScopeLabel(alcance) : '',
-            st.doc.publicadoEn ? 'Cuadrante enviado a los entrenadores' : 'Cuadrante sin enviar (borrador)',
+            // v734 · Tres estados, no dos: sin enviar, enviado y al día, o
+            // enviado con cambios guardados que todavía no han salido.
+            !st.doc.publicadoEn ? 'Cuadrante sin enviar (borrador)'
+                : _cqHayCambiosSinEnviar(st.doc) ? 'Enviado, con cambios guardados SIN ENVIAR'
+                : 'Cuadrante enviado a los entrenadores',
         ],
         cuerpo:   cuerpo,
         apaisado: true,   // 7 días + equipo no caben en vertical
@@ -3064,7 +3203,43 @@ window.cqEnviar = async function () {
         st.doc.publicadoEn  = new Date().toISOString();
         st.doc.publicadoPor = me.uid || '';
         st.doc.publicadoA   = Array.from(enviados);
-        await _cqGuardar(clubId, st.doc);
+
+        // ══════════════════════════════════════════════════════════════
+        //  📤 v734 · **AQUÍ**, Y SÓLO AQUÍ, EL BORRADOR PASA A SER LA PAUTA
+        // ══════════════════════════════════════════════════════════════
+        //  Es el único punto de todo el módulo que toca lo que ven los
+        //  entrenadores. GUARDAR conserva esta rama tal cual (ver `_cqGuardar`);
+        //  enviar la REEMPLAZA por el borrador de este momento.
+        //
+        //  ⚠️ Se copia la semana ENTERA aunque el envío sea a unos pocos
+        //  entrenadores, y es lo que ya ocurría antes de v734: todos leen el
+        //  mismo documento y cada uno mira SU fila, así que elegir
+        //  destinatarios decide a quién le llega el AVISO, no quién puede ver
+        //  su cuadrante. Publicar sólo las filas elegidas dejaría a los demás
+        //  equipos con la pauta vieja sin que nadie lo hubiera pedido.
+        //
+        //  🔑 `selloOrigen` guarda de qué borrador salió esta publicación: es
+        //  lo que deja decir «guardado, pendiente de enviar» comparando dos
+        //  cadenas en vez de dos mapas de celdas. Lo rellena `_cqGuardar` con
+        //  el sello que acaba de escribir, en la MISMA escritura.
+        //
+        //  ⚠️⚠️ UNA SOLA ESCRITURA, Y SIN `merge`. La primera versión de esto
+        //  guardaba y después sellaba con un `setDoc({merge:true})`… y el
+        //  guard 3b del cuadrante lo cazó con la razón exacta: Firestore
+        //  fusiona también los mapas ANIDADOS, así que `publicado.celdas`
+        //  habría ido creciendo y **una casilla borrada seguiría publicada**
+        //  después de reenviar. Es la misma trampa que ya documentaba
+        //  `_cqGuardar` para `celdas`, una capa más abajo.
+        st.doc.publicado = {
+            espacios: st.doc.espacios || CQ_ESPACIOS,
+            filas:    Array.isArray(st.doc.filas) ? st.doc.filas.slice() : [],
+            celdas:   JSON.parse(JSON.stringify(st.doc.celdas || {})),
+            publicadoEn:  st.doc.publicadoEn,
+            publicadoPor: st.doc.publicadoPor,
+            publicadoA:   st.doc.publicadoA.slice(),
+            selloOrigen:  '',     // lo pone _cqGuardar: ver `sellarPublicacion`
+        };
+        await _cqGuardar(clubId, st.doc, { sellarPublicacion: true });
         st.sucio = false;
 
         if (typeof hideSpinner === 'function') hideSpinner();
@@ -3135,7 +3310,23 @@ window.cronosCuadranteClubDeMiEquipo = async function (weekKey, forzar) {
         const fs = await _cqFS();
         const snap = await fs.getDoc(fs.doc(fs.db, 'trainingPlans', clubId, 'weeks', _cqDocId(weekKey)));
         if (!snap.exists()) return recordar(null);
-        const d = snap.data() || {};
+        const bruto = snap.data() || {};
+        // ══════════════════════════════════════════════════════════════
+        //  📤 v734 · EL ENTRENADOR LEE **LO PUBLICADO**, NO EL BORRADOR
+        // ══════════════════════════════════════════════════════════════
+        //  Hasta v733 leía `celdas`/`filas` de la raíz, que son lo que el
+        //  director está editando: bastaba con que GUARDARA para que su
+        //  borrador apareciera aquí (capturas 10538-10540).
+        //
+        //  ⚠️ EL RESPALDO A LA RAÍZ NO SE PUEDE QUITAR TODAVÍA. Los cuadrantes
+        //  enviados ANTES de v734 no tienen rama `publicado`, y sin este
+        //  respaldo todos los clubes que ya tienen su semana a la vista la
+        //  verían desaparecer de golpe. La rama se siembra sola en el primer
+        //  guardado (ver `_cqGuardar`), así que el respaldo se va quedando sin
+        //  uso solo, sin migrar nada a mano.
+        const d = (bruto.publicado && typeof bruto.publicado === 'object' && bruto.publicado.publicadoEn)
+            ? bruto.publicado
+            : bruto;
         // ⚠️ SÓLO SI SE HA ENVIADO. Un cuadrante a medio escribir no es una
         // directriz: enseñarlo haría montar la semana sobre un borrador.
         if (!d.publicadoEn) return recordar(null);
