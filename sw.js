@@ -2689,8 +2689,12 @@
 //        Convocatoria los hereda bloqueados. (3) Mi equipo ya no sale como
 //        «LOCAL»/«VISITANTE» (club o equipo por defecto) y la categoría se ve
 //        en la cabecera del entrenador y bajo el reloj del visor.
-const VERSION = 'v726';
-const CACHE_NAME = 'cronos-cache-v726';
+// v727 · CUERPO TÉCNICO EN EL BANQUILLO DE MI EQUIPO. `renderStaffInBench`
+//        pintaba siempre en el banquillo LOCAL; jugando fuera (que desde v726
+//        fija el calendario) ese banquillo está oculto y la tarjeta no se veía.
+//        Y el orden del banquillo ya no la sube por encima de los suplentes.
+const VERSION = 'v727';
+const CACHE_NAME = 'cronos-cache-v727';
 
 const ASSETS = [
     './',

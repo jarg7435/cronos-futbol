@@ -379,6 +379,11 @@ function sortBenchUI(team) {
         return (pA?.benchOrder || 0) - (pB?.benchOrder || 0);
     });
     chips.forEach(chip => list.appendChild(chip));
+    // v727 · El cuerpo técnico vive en este mismo contenedor y no es una ficha:
+    // sin jugador, el orden de arriba lo trataba como `benchOrder` 0 y podía
+    // subirlo por encima de los suplentes. Se devuelve siempre al final.
+    const staffCard = document.getElementById('staff-bench-card');
+    if (staffCard && staffCard.parentNode === list) list.appendChild(staffCard);
 }
 
 // ════════════════════════════════════════════════════════════════════

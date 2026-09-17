@@ -46,8 +46,21 @@ function renderStaffInBench() {
     const hasAny = staff.coach1 || staff.coach2 || staff.delegate || staff.fieldDelegate;
     if (!hasAny) return;
 
-    // El card va DENTRO de bench-list para que sea scrollable junto a los suplentes
-    const benchList = document.getElementById('bench-list');
+    // El card va DENTRO del banquillo para que sea scrollable junto a los suplentes.
+    // ══════════════════════════════════════════════════════════════
+    //  🏠✈️ v727 · EN EL BANQUILLO DE MI EQUIPO, NO SIEMPRE EN EL LOCAL
+    // ══════════════════════════════════════════════════════════════
+    //  Reporte del autor (implementar.txt 2026-09-17, captura 10488 frente a
+    //  IMG_0590): con v726 el cuerpo técnico «desapareció» del banquillo. No
+    //  era la carga de la plantilla: iba SIEMPRE a `#bench-list`, el banquillo
+    //  LOCAL, y jugando FUERA ese banquillo está oculto (`body.role-away`) y
+    //  el mío es `#bench-list-away`. Se veía ahora porque desde v726 la
+    //  jornada del calendario pone la localía sola, y el Regional B jugaba
+    //  fuera. Misma familia que v707: «mi equipo» ≠ «el local».
+    const _miLado = (typeof window.cronosMiLado === 'function')
+        ? window.cronosMiLado()
+        : ((window._userTeamRole === 'away') ? 'away' : 'home');
+    const benchList = document.getElementById(_miLado === 'away' ? 'bench-list-away' : 'bench-list');
     if (!benchList) return;
 
     const card = document.createElement('div');
