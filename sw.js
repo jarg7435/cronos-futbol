@@ -2693,8 +2693,8 @@
 //        pintaba siempre en el banquillo LOCAL; jugando fuera (que desde v726
 //        fija el calendario) ese banquillo está oculto y la tarjeta no se veía.
 //        Y el orden del banquillo ya no la sube por encima de los suplentes.
-const VERSION = 'v727';
-const CACHE_NAME = 'cronos-cache-v727';
+const VERSION = 'v728';
+const CACHE_NAME = 'cronos-cache-v728';
 
 const ASSETS = [
     './',
@@ -2737,6 +2737,7 @@ const ASSETS = [
     './js/services/auth/invite-prefill.js',
     './js/services/firestore-sync.js',
     './js/services/firestore-storage.js',
+    './js/services/club-live-sync.js',
     './js/services/offline-manager.js',
     './js/services/notification-dismiss-sync.js',
     './js/services/training-firestore-sync.js',
@@ -2908,17 +2909,65 @@ function _esCanalVivo(url) {
            url.includes('recaptcha.net');
 }
 
+// ══════════════════════════════════════════════════════════════════
+//  ⚡ v728 · INSTALAR RAPIDO: EL ARMAZON BLOQUEA, EL RESTO NO
+// ══════════════════════════════════════════════════════════════════
+//  Reporte del autor (implementar.txt 2026-09-17): actualizar "tarda
+//  demasiado". MEDIDO: ASSETS son 99 ficheros, 4,6 MB, y `cache.addAll` los
+//  descargaba TODOS dentro del `waitUntil` del install. Un Service Worker no
+//  pasa a `installed` hasta que ese waitUntil termina, y hasta ahi no hay
+//  `skipWaiting` que valga: el boton de la franja verde no podia hacer nada
+//  mas que esperar, con la app mientras tanto en la version vieja.
+//
+//  🔑 Y ESE PRECACHE NO DECIDE QUE VERSION SE VE. La estrategia por defecto de
+//  este Service Worker es NETWORK FIRST (ver _networkFirst mas abajo): cada
+//  recurso se pide a la red y la copia guardada es solo la red de seguridad
+//  para cuando no hay cobertura. O sea, se bloqueaba la actualizacion entera
+//  para rellenar un respaldo que ademas se rellena solo con el uso.
+//
+//  Ahora el waitUntil solo espera al ARMAZON (lo que hace falta para arrancar
+//  sin red) y el resto se descarga detras, ya con la version nueva al mando.
+//
+//  ⚠️ Y SE DESCARGA UNO A UNO, NO CON addAll. `addAll` es ATOMICO: una sola
+//  ruta que devuelva 404 tira la precarga ENTERA y deja el dispositivo sin
+//  respaldo offline (la leccion de v452, que costo diez rondas). Uno a uno, un
+//  fichero que falte se pierde el solo y no se lleva por delante a los otros
+//  98.
+const SHELL = [
+    './',
+    './index.html',
+    './offline.html',
+    './manifest.json',
+    './style.css',
+    './js/core/local-uid.js',        // v720 · va primero: aisla las claves por uid
+    './js/shared/fs-cache-mode.js',  // v721 · decide el cache de Firestore
+];
+
+async function _precargaArmazon() {
+    try {
+        const cache = await caches.open(CACHE_NAME);
+        await Promise.allSettled(SHELL.map(u => cache.add(u)));
+    } catch (e) {
+        // Nunca se deja fallar la instalación: un Service Worker que no
+        // instala es un Service Worker VIEJO que se queda mandando.
+        console.warn(`[SW ${VERSION}] Error al precargar el armazón:`, e && e.message);
+    }
+}
+
+// El respaldo offline completo, SIN bloquear a nadie.
+async function _precargaElResto() {
+    try {
+        const cache = await caches.open(CACHE_NAME);
+        const resto = ASSETS.filter(u => SHELL.indexOf(u) < 0);
+        await Promise.allSettled(resto.map(u => cache.add(u).catch(() => false)));
+    } catch (e) {
+        console.warn(`[SW ${VERSION}] Error al completar el respaldo offline:`, e && e.message);
+    }
+}
+
 self.addEventListener('install', event => {
     self.skipWaiting();
-    event.waitUntil(
-        caches.open(CACHE_NAME)
-            .then(cache => cache.addAll(ASSETS))
-            .catch(err => {
-                // Nunca se deja fallar la instalación: un Service Worker que no
-                // instala es un Service Worker VIEJO que se queda mandando.
-                console.warn(`[SW ${VERSION}] Error al precargar recursos:`, err);
-            })
-    );
+    event.waitUntil(_precargaArmazon().then(() => { _precargaElResto(); }));
 });
 
 // ── ACTIVACIÓN: purgar lo viejo y tomar el control YA ─────────────
@@ -2980,12 +3029,12 @@ self.addEventListener('activate', event => {
             if (tocaPurgaTotal) {
                 // Repoblar el shell inmediatamente: si no, la primera navegación
                 // tras la purga se queda sin red de seguridad.
-                try {
-                    const cache = await caches.open(CACHE_NAME);
-                    await cache.addAll(ASSETS);
-                } catch (e) {
-                    console.warn(`[SW ${VERSION}] No se pudo repoblar tras la purga:`, e && e.message);
-                }
+                // ⚡ v728 · Se espera SOLO al armazón; los otros 92 ficheros van
+                // detrás. Repoblar 4,6 MB aquí retrasaba el `clients.claim()` de
+                // abajo, que es lo que dispara el `controllerchange` — o sea,
+                // retrasaba justo la recarga que el usuario está esperando.
+                await _precargaArmazon();
+                _precargaElResto();
                 try {
                     const meta = await caches.open('cronos-meta');
                     await meta.put('purga-total', new Response(PURGA_TOTAL));

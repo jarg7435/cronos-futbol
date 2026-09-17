@@ -3214,9 +3214,54 @@ window.cqToggleDirectriz = function () {
 //  La llama renderTrainingWeek() (js/coach/training/panel.js) con guarda
 //  typeof, DESPUÉS de escribir su HTML: rellena el hueco `#cq-directriz`.
 //  Es asíncrona a propósito y no bloquea el pintado de la parrilla propia.
+// ════════════════════════════════════════════════════════════════════
+//  📡 v728 · LA SEMANA QUE SE ESTÁ MIRANDO, EN DIRECTO
+// ════════════════════════════════════════════════════════════════════
+//  Encargo del autor (implementar.txt 2026-09-17, punto 2): el entrenador
+//  tiene que ver el cuadrante EN CUANTO el director lo envía.
+//
+//  🔑 Con la caché de 60 s de aquí arriba —que sigue siendo buena para no
+//  cobrar el paseo con ◀ ▶— el cuadrante recién enviado podía tardar un
+//  minuto en aparecer, y aun así SÓLO si algo repintaba la pantalla. Como
+//  nadie repinta una pantalla quieta, en la práctica había que salir y volver
+//  a entrar. Ahora se escucha el documento de la semana VISIBLE (uno solo), y
+//  cuando cambia se tira su entrada de la caché y se repinta.
+//
+//  ⚠️ Se escucha UNA semana: la que está en pantalla. Al pasar a otra con ◀ ▶
+//  se cierra la anterior. Ni una escucha por cada semana visitada (v719), ni
+//  las 52 del curso abiertas a la vez.
+let _cqBajaDirectriz = null;
+let _cqDirectrizEscuchada = null;
+
+function _cqEscuchaDirectriz(clubId, weekKey, contenedorId) {
+    if (typeof window.cronosEscuchaDocClub !== 'function') return;
+    const clave = clubId + '|' + weekKey;
+    if (_cqDirectrizEscuchada === clave) return;
+    if (typeof _cqBajaDirectriz === 'function') { try { _cqBajaDirectriz(); } catch (e) {} }
+    _cqDirectrizEscuchada = clave;
+    let primero = true;
+    _cqBajaDirectriz = window.cronosEscuchaDocClub(
+        ['trainingPlans', clubId, 'weeks', _cqDocId(weekKey)],
+        function () {
+            // ⚠️ El primer aviso es la foto que ya acabamos de leer.
+            if (primero) { primero = false; return; }
+            Object.keys(_cqCacheDirectriz).forEach(k => {
+                if (k.indexOf(clubId + '|') === 0 && k.slice(-weekKey.length) === weekKey) {
+                    delete _cqCacheDirectriz[k];
+                }
+            });
+            window.cronosPintarDirectrizClub(weekKey, contenedorId);
+        });
+}
+
 window.cronosPintarDirectrizClub = async function (weekKey, contenedorId) {
     const cont = document.getElementById(contenedorId || 'cq-directriz');
     if (!cont) return;
+
+    try {
+        const _club = (window._cronosCurrentUser || {}).clubId || '';
+        if (_club && weekKey) _cqEscuchaDirectriz(_club, weekKey, contenedorId);
+    } catch (e) { /* sin escucha se sigue viendo el cuadrante, sólo que no en vivo */ }
 
     const boton  = document.getElementById('cq-lado-btn');
     const info   = await window.cronosCuadranteClubDeMiEquipo(weekKey);
@@ -3298,6 +3343,22 @@ window.cronosPintarDirectrizClub = async function (weekKey, contenedorId) {
             'Es la pauta del club: los espacios y horarios que tienes asignados. ' +
             'Monta tu semana en la parrilla sobre este marco.</div>');
 };
+
+// ════════════════════════════════════════════════════════════════════
+//  📡 v728 · Y LA PARRILLA SE ENTERA DE QUE HAY CALENDARIO NUEVO
+// ════════════════════════════════════════════════════════════════════
+//  Los partidos oficiales se pintan en las casillas del cuadrante
+//  (`st.calendario`). Si alguien importa la temporada —o la reimporta— con el
+//  cuadrante abierto en otro dispositivo, esa parrilla enseñaba los partidos
+//  de antes hasta cambiar de semana o recargar. El aviso lo emite
+//  calendario-temporada.js cuando el mes cambia DE VERDAD.
+//
+//  ⚠️ Un solo oyente para toda la vida de la página: este fichero se carga una
+//  vez, pero `_cqPintar` corre en cada semana (v719).
+document.addEventListener('cronos:calendario-cambiado', function () {
+    if (!_cqCont()) return;              // el cuadrante no está en pantalla
+    try { _cqPintar(); } catch (e) { console.warn('[Cuadrante] repintado en vivo:', e && e.message); }
+});
 
 // Exportado para los guards y para switchStaffTab.
 window._sdLoadCuadrante = _sdLoadCuadrante;

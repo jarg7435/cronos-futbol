@@ -66,7 +66,7 @@ class RespuestaFalsa {
 function montar(op) {
     op = op || {};
     const cache = new Map(Object.entries(op.cacheado || {}));
-    const reg = { puestos: [], borrados: [], claims: 0, avisos: [] };
+    const reg = { puestos: [], borrados: [], claims: 0, avisos: [], precargados: [] };
 
     // Almacén con cachés CON NOMBRE, para poder probar el sello de la purga
     // total: vive en la caché 'cronos-meta' y decide si toca borrarlo todo.
@@ -91,6 +91,13 @@ function montar(op) {
                 },
                 match: async (req) => m.get(typeof req === 'string' ? req : req.url),
                 addAll: async () => { if (op.addAllFalla) throw new Error('addAll falló'); reg.repoblado = true; },
+                // ⚡ v728 · la precarga dejó de ser atómica: ahora es `add` uno
+                // a uno, para que un 404 no tumbe el respaldo entero (v452).
+                add: async (u) => {
+                    if (op.addAllFalla) throw new Error('add falló');
+                    reg.repoblado = true;
+                    reg.precargados.push(u);
+                },
             };
         },
         keys: async () => (op.clavesCache || ['cronos-cache-vVIEJA', 'cronos-cache-v453']),

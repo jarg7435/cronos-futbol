@@ -492,7 +492,15 @@ function openConvocationModal() {
         }
     };
 
-    (async function _convCargarCalendario() {
+    // ══════════════════════════════════════════════════════════════════
+    //  📡 v728 · Y SE PUEDE VOLVER A LLENAR SIN CERRAR LA CONVOCATORIA.
+    //  Antes esto era una IIFE anónima: se ejecutaba una vez al abrir la
+    //  pantalla y no había forma de repetirlo. Si el director importaba la
+    //  temporada con el entrenador dentro de la convocatoria, el desplegable
+    //  seguía diciendo que no hay calendario hasta salir y entrar — el punto 2
+    //  del encargo del autor. Ahora tiene nombre y se la puede volver a
+    //  llamar cuando el calendario cambie de verdad.
+    window._convRecargarCalendario = async function _convCargarCalendario() {
         try {
             if (typeof window.calPartidosDeEquipo !== 'function') return;
             const eq = (typeof window.cronosMyTeam === 'function') ? window.cronosMyTeam() : null;
@@ -551,7 +559,20 @@ function openConvocationModal() {
             console.warn('[Convocatoria] no se pudo leer el calendario oficial:',
                          e && e.message ? e.message : e);
         }
-    })();
+    };
+    window._convRecargarCalendario();
+
+    // 📡 v728 · UNA SOLA SUSCRIPCIÓN PARA TODA LA VIDA DE LA PÁGINA. La
+    // convocatoria se abre y se cierra muchas veces; registrar el oyente en
+    // cada apertura es cómo se acumulan listeners duplicados (v719). El
+    // oyente comprueba que la pantalla siga abierta antes de repintar nada.
+    if (!window._convCalOyenteListo) {
+        window._convCalOyenteListo = true;
+        document.addEventListener('cronos:calendario-cambiado', function () {
+            if (!document.getElementById('conv-cal-box')) return;   // no está abierta
+            if (typeof window._convRecargarCalendario === 'function') window._convRecargarCalendario();
+        });
+    }
 
     const countEl = document.getElementById('conv-count');
     const goBtn   = document.getElementById('btn-go-titulares');

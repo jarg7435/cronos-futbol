@@ -109,18 +109,57 @@ function _calMesesDe(inicio) {
 // ════════════════════════════════════════════════════════════════════
 //  LECTURA
 // ════════════════════════════════════════════════════════════════════
+// ════════════════════════════════════════════════════════════════════
+//  📡 v728 · EL MES QUE SE LEE, SE QUEDA ESCUCHANDO
+// ════════════════════════════════════════════════════════════════════
+//  Encargo del autor (implementar.txt 2026-09-17, punto 2): el entrenador
+//  tiene que ver el calendario de temporada EN CUANTO el director lo importa.
+//
+//  🔑 LA CACHÉ DE ARRIBA ES DE SESIÓN Y SÓLO SE INVALIDA AL ESCRIBIR — y quien
+//  escribe es el DIRECTOR, en SU navegador. Para el entrenador que ya tenía la
+//  app abierta, el mes leído se quedaba congelado hasta recargar la aplicación
+//  entera: por eso el desplegable de jornadas de la convocatoria seguía vacío
+//  después de que el club importara la temporada.
+//
+//  Se escucha SÓLO lo que de verdad se ha mirado (uno o dos meses por sesión),
+//  no los once: una escucha cuesta como la lectura que ya se hizo, y a partir
+//  de ahí sólo se paga cuando el documento CAMBIA de verdad.
+function _calEscuchaMes(clubId, mes) {
+    if (typeof window.cronosEscuchaDocClub !== 'function') return;
+    const clave = clubId + '|' + mes;
+    if (window._calState.escuchas && window._calState.escuchas[clave]) return;  // una clave, una escucha (v719)
+    if (!window._calState.escuchas) window._calState.escuchas = {};
+    let primero = true;
+    window._calState.escuchas[clave] = window.cronosEscuchaDocClub(
+        ['trainingPlans', clubId, 'weeks', _calDocId(mes)],
+        (datos) => {
+            // ⚠️ El primer aviso es la foto que acabamos de leer: repintar con
+            // él sería cobrar dos veces la misma lectura en cada apertura.
+            if (primero) { primero = false; return; }
+            window._calState.cache[clave] = { partidos: (datos && datos.partidos) || {}, ts: Date.now() };
+            // Quien tenga algo del calendario en pantalla, que se entere. Va
+            // por evento y no por llamada directa para no tener que conocer
+            // aquí las pantallas que lo consumen (el cuadrante, la
+            // convocatoria, el panel de creación de partidos).
+            try {
+                document.dispatchEvent(new CustomEvent('cronos:calendario-cambiado', { detail: { clubId, mes } }));
+            } catch (e) { /* un navegador sin CustomEvent no puede tumbar la lectura */ }
+        });
+}
+
 async function _calLeerMes(clubId, mes) {
     const clave = clubId + '|' + mes;
     const c = window._calState.cache[clave];
     // La caché es de sesión y se invalida al escribir. Sin ella, pasar de
     // semana en el cuadrante releería el mismo documento del mes una y otra
     // vez: exactamente el coste que el diseño de 11 documentos evita.
-    if (c) return c.partidos;
+    if (c) { _calEscuchaMes(clubId, mes); return c.partidos; }
     try {
         const fs = await _calFS();
         const snap = await fs.getDoc(fs.doc(fs.db, 'trainingPlans', clubId, 'weeks', _calDocId(mes)));
         const p = snap.exists() ? ((snap.data() || {}).partidos || {}) : {};
         window._calState.cache[clave] = { partidos: p, ts: Date.now() };
+        _calEscuchaMes(clubId, mes);
         return p;
     } catch (e) {
         console.warn('[Calendario] no se pudo leer el mes ' + mes + ':', e && e.message ? e.message : e);

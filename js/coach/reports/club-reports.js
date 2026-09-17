@@ -384,6 +384,11 @@ window.switchStaffTab = async (tab) => {
     // Si se vuelve a entrar en 'cuadrante', _sdLoadCuadrante lo reconecta.
     if (typeof window._cqDesconectar === 'function') window._cqDesconectar();
 
+    // 📡 v728 · Y LO MISMO CON LA DE CONVOCATORIAS / ENTRENAMIENTOS, que
+    // desde v728 también escucha en vivo. Misma razón y mismo sitio: al salir
+    // de la pestaña, su `onSnapshot` sobra.
+    if (typeof window._sdDesconectarEventos === 'function') window._sdDesconectarEventos();
+
     // ══════════════════════════════════════════════════════════════════
     //  🔴 v591 · LA BARRA DE VUELTA AL TABLERO
     //

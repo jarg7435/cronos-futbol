@@ -440,6 +440,16 @@ async function startRealtimeSync() {
                 if (activeMatchChanged) _refreshMatchUI();
                 if (typeof loadEmailConfig === 'function') loadEmailConfig();
                 if (typeof loadStaffConfig === 'function') loadStaffConfig();
+                // 👨‍💼 v728 · Y SE REPINTA EL BANQUILLO. `loadStaffConfig` sólo
+                // rellena el objeto; la tarjeta del cuerpo técnico la dibuja
+                // `renderStaffInBench`, y hasta ahora nadie la llamaba aquí. Si
+                // el staff bajaba de la nube DESPUÉS de montar el banquillo
+                // —sesión nueva, otro dispositivo, caché limpia—, la tarjeta no
+                // salía hasta el siguiente `renderPlayers()`, que en un partido
+                // parado puede no ocurrir nunca.
+                if (typeof renderStaffInBench === 'function') {
+                    try { renderStaffInBench(); } catch(e) { /* nunca romper el sync por la tarjeta */ }
+                }
                 const setupModal = document.getElementById('setup-modal');
                 if (setupModal && setupModal.style.display !== 'none') {
                     // v726 · con la carga automática de la plantilla propia.

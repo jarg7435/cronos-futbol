@@ -44,6 +44,14 @@ async function cerrarSesion() {
     try {
         if (typeof window.cronosSesionLibera === 'function') await window.cronosSesionLibera();
     } catch(e) { /* caducará sola */ }
+    // 📡 v728 · Cerrar las escuchas en vivo del club ANTES del signOut. Una
+    // suscripción que sigue abierta cuando se va la sesión se come un
+    // `permission-denied` en vuelo y ensucia la consola con un error que
+    // parece una avería y no lo es.
+    try {
+        if (typeof window.cronosCerrarEscuchasClub === 'function') window.cronosCerrarEscuchasClub();
+    } catch(e) { /* la recarga de abajo se las lleva igual */ }
+
     try {
         // Detener cronómetro si está en marcha
         if (typeof isRunning !== 'undefined' && isRunning) {

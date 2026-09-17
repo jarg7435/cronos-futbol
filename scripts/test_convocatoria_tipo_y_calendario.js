@@ -112,6 +112,10 @@ function montarPantalla(opts) {
 
     const doc = {
         body: nuevoEl(),
+        // 📡 v728 · La convocatoria se suscribe a `cronos:calendario-cambiado`
+        // para rellenar el desplegable de jornadas sin cerrarse. Un `document`
+        // de juguete sin oyentes revienta al cargar el módulo.
+        addEventListener() {},
         getElementById(id) { if (!porId[id]) porId[id] = nuevoEl(); return porId[id]; },
         querySelectorAll(sel) { return sel.indexOf('conv-row') !== -1 ? filas : []; },
         querySelector(sel) {

@@ -530,10 +530,66 @@ async function _sdLoadEvents(type) {
             }
         };
 
+        // ══════════════════════════════════════════════════════════════
+        //  📡 v728 · Y LA PESTAÑA SE QUEDA ESCUCHANDO
+        // ══════════════════════════════════════════════════════════════
+        //  Encargo del autor (implementar.txt 2026-09-17, punto 2): las
+        //  convocatorias y los entrenamientos que mandan los entrenadores
+        //  tienen que aparecerle al director SIN salir y entrar.
+        //
+        //  🔑 Esto era una FOTO: los `getDocs` de arriba se disparan al abrir
+        //  la pestaña y nada más. Con el panel abierto media tarde, un aviso
+        //  enviado a las 17:05 no existía hasta volver a entrar.
+        //
+        //  Se escucha la MISMA consulta que ya se lee (por `clubId`), no una
+        //  nueva: así pasa por las mismas reglas, que es como se prueba un
+        //  `list` (v674). La otra consulta —por `parentUid`— es la de los
+        //  avisos dirigidos a esta persona en concreto y entra en el mismo
+        //  repintado.
+        _sdEscucharEventos(type, clubId);
+
     } catch(e) {
         container.innerHTML = `<div style="text-align:center;padding:2rem;color:#ff5858;">⚠️ ${escapeHtml(e.message)}</div>`;
     }
 }
+
+// ── La escucha en vivo de la pestaña abierta ─────────────────────────
+//  ⚠️ UNA PESTAÑA, UNA ESCUCHA, y se da de baja al salir. Un `onSnapshot` que
+//  sobrevive a su pantalla sigue costando lecturas y repinta un contenedor que
+//  ya es de otra sección (la lección de v439, igual que en el cuadrante). La
+//  baja la llama `switchStaffTab`.
+let _sdBajaEventos = null;
+let _sdTipoEscuchado = '';
+
+function _sdEscucharEventos(type, clubId) {
+    if (typeof window.cronosEscuchaConsultaClub !== 'function') return;
+    if (!clubId) return;
+    if (_sdTipoEscuchado === type && _sdBajaEventos) return;
+    _sdDesconectarEventos();
+    _sdTipoEscuchado = type;
+    let primero = true;
+    _sdBajaEventos = window.cronosEscuchaConsultaClub(
+        'notif|' + clubId + '|' + type,
+        (fs) => fs.query(fs.collection(fs.db, 'cronos_notifications'),
+                         fs.where('clubId', '==', clubId), fs.where('type', '==', type)),
+        function () {
+            // El primer aviso es la foto que acabamos de pintar.
+            if (primero) { primero = false; return; }
+            // Se salió del panel mientras tanto: baja y fuera.
+            if (!document.getElementById('staff-dashboard-content')) { _sdDesconectarEventos(); return; }
+            if (_sdTipoEscuchado !== type) return;
+            _sdLoadEvents(type);
+        });
+}
+
+function _sdDesconectarEventos() {
+    if (typeof _sdBajaEventos === 'function') {
+        try { _sdBajaEventos(); } catch (e) { /* ya estaba dada de baja */ }
+    }
+    _sdBajaEventos = null;
+    _sdTipoEscuchado = '';
+}
+window._sdDesconectarEventos = _sdDesconectarEventos;
 
 // ════════════════════════════════════════════════════════════════════
 //  📅 v689 · EL MOTOR ÚNICO DE LA PLANIFICACIÓN SEMANAL

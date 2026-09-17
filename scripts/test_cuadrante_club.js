@@ -70,7 +70,11 @@ const INDEX   = leer('index.html');
 const sb = {
     console: { log() {}, warn() {}, error() {} },
     String, Array, Number, Object, Date, parseInt, parseFloat, isNaN, RegExp, Math, JSON,
+    // 📡 v728 · `addEventListener` en el propio document: el cuadrante se
+    // suscribe a `cronos:calendario-cambiado` para repintar la parrilla cuando
+    // alguien importa la temporada desde otro dispositivo.
     document: { getElementById: () => null, body: { contains: () => false },
+                addEventListener: () => {},
                 querySelectorAll: () => [], createElement: () => ({ style: {}, addEventListener() {} }) },
     // v673 · `cqPegarFila` pregunta antes de sustituir. Sin este stub la
     // llamada moriría en un ReferenceError y el test de copiar-pegar entre

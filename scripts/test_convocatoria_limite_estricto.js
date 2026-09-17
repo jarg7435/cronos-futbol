@@ -145,6 +145,8 @@ function montarPantalla(opts) {
 
     const doc = {
         body: nuevoEl(),
+        // 📡 v728 · la convocatoria se suscribe a `cronos:calendario-cambiado`
+        addEventListener() {},
         getElementById(id) { if (!porId[id]) porId[id] = nuevoEl(); return porId[id]; },
         querySelectorAll(sel) { return sel.indexOf('conv-row') !== -1 ? filas : []; },
         querySelector(sel) {
@@ -289,6 +291,8 @@ function montarGoto(nConvocados, nTitulares) {
         currentMode: 'f7',
         document: {
             body: nuevoEl(),
+            // 📡 v728 · la convocatoria se suscribe a `cronos:calendario-cambiado`
+            addEventListener: () => {},
             getElementById: () => nuevoEl(),
             querySelectorAll: (sel) => (sel.indexOf('conv-row') !== -1 ? filas : [])
         },

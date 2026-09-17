@@ -23,8 +23,56 @@ function loadStaffConfig() {
         // crearía un global implícito y volvería a partir el objeto en dos.
         try { window.staffConfig = { ...window.staffConfig, ...JSON.parse(saved) }; }
         catch(e) { console.warn('[Staff] Error leyendo staffConfig:', e); }
+        return;
     }
+    // Sin copia local: puede que el dato exista y todavía esté de camino.
+    _pedirCuerpoTecnicoALaNube();
 }
+
+// ══════════════════════════════════════════════════════════════════
+//  ☁️ v728 · EL CUERPO TÉCNICO QUE LLEGA TARDE (y ya no pinta a nadie)
+// ══════════════════════════════════════════════════════════════════
+//  Reporte del autor (implementar.txt 2026-09-17): tras v727 el cuerpo
+//  técnico seguía sin salir en el banquillo. v727 arregló DÓNDE se pinta
+//  (el banquillo de mi equipo, no el local). Esto arregla CUÁNDO.
+//
+//  🔑 `loadStaffConfig` leía sólo `localStorage`, y `cronos_staff` NO SIEMPRE
+//  ESTÁ AHÍ cuando se pinta el banquillo:
+//    · sesión recién abierta — la purga por cambio de uid de v720 deja las
+//      claves del entrante vacías hasta que `syncFromCloud` las baja;
+//    · otro dispositivo / navegador nuevo / caché limpia tras actualizar.
+//  Con el objeto vacío, `hasAny` es false y `renderStaffInBench` se va sin
+//  pintar. Misma familia que las plantillas vacías de v726: CARRERA
+//  init↔nube, no un dato perdido.
+//
+//  🚨 Y NADIE VOLVÍA A INTENTARLO: cuando el dato llega, `startRealtimeSync`
+//  (js/services/firestore-storage.js) llamaba a `loadStaffConfig()` —que
+//  rellena el objeto— pero no repintaba el banquillo. En un partido parado
+//  `renderPlayers()` puede no ejecutarse nunca más, así que la tarjeta no
+//  aparecía hasta el siguiente cambio... o hasta recargar la app.
+//
+//  Se pide UNA vez por uid: si el entrenador no tiene cuerpo técnico
+//  guardado, la nube contesta null y no se insiste en cada repintado.
+let _staffPedidoALaNubePorUid = null;
+
+function _pedirCuerpoTecnicoALaNube() {
+    const uid = window._cronosCurrentUser?.uid || null;
+    if (!uid) return;                       // sin sesión no hay a quién preguntar
+    if (_staffPedidoALaNubePorUid === uid) return;
+    if (typeof cloudGet !== 'function') return;
+    _staffPedidoALaNubePorUid = uid;
+    // `cloudGet` deja la clave en localStorage, así que la siguiente
+    // `loadStaffConfig()` ya la encuentra y esto no se vuelve a pedir.
+    Promise.resolve(cloudGet('cronos_staff', null)).then(valor => {
+        if (!valor) return;
+        if (window._cronosCurrentUser?.uid !== uid) return;  // cambió de cuenta por el camino
+        try { window.staffConfig = { ...window.staffConfig, ...JSON.parse(valor) }; }
+        catch(e) { return; }
+        renderStaffInBench();
+    }).catch(() => { /* sin cobertura se reintentará al cambiar de sesión */ });
+}
+// ⚠️ La marca guarda EL UID, no un booleano: un cambio de cuenta (v720, cada
+// uid con sus propias claves locales) vuelve a preguntar solo.
 
 function saveStaffConfig() {
     staffConfig.coach1        = (document.getElementById('staff-coach1')?.value       || '').trim();
