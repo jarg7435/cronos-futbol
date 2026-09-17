@@ -122,6 +122,12 @@ console.log('\n── PARTE 1 · [A] el oyente de la plaza, EJECUTADO ──');
                 // extrae, así que hay que dárselo: sin él, la función que se
                 // está midiendo ni siquiera arranca.
                 _generacion: 0,
+                // v733 · La escucha decide por PESTAÑA (`_esMia`), no por
+                // aparato: dos ventanas del mismo navegador comparten
+                // `localStorage` y hasta v732 se daban por el mismo. Vive
+                // fuera del trozo que este arnés extrae, así que se le pasa —
+                // aquí sólo interesa que el desalojo de otro siga llegando.
+                _esMia: (d) => !!d && d.deviceId === 'yo',
                 _enganches: 0, _pendientes: [],
                 _paraLatido: () => {},
                 _deviceId: () => 'yo',

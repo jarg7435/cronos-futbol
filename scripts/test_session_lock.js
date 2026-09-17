@@ -93,7 +93,11 @@ function crearNube() {
 function aparato(nube, op) {
     const o = Object.assign({ uid: 'u1', rol: 'user', club: 'clubA', equipo: 'eq_alevin_c',
                               nombre: 'iPad', sinNube: false }, op || {});
-    const almacen = {};
+    //  `aparatoDe` = otro "aparato" cuyo localStorage se comparte → otra
+    //  PESTAÑA del mismo navegador. `sesionDe` = la MISMA pestaña (p. ej. tras
+    //  recargar). Sin pasar nada, es un aparato nuevo y aislado, como antes.
+    const almacen = o.aparatoDe ? o.aparatoDe._almacen : {};
+    const sesion  = o.sesionDe  ? o.sesionDe._sesion  : {};
     const avisos = { conflicto: null, desalojo: null, respuestaConflicto: false };
     const temporizadores = [];
 
@@ -111,6 +115,16 @@ function aparato(nube, op) {
             getItem: k => (k in almacen ? almacen[k] : null),
             setItem: (k, v) => { almacen[k] = String(v); },
             removeItem: k => { delete almacen[k]; }
+        },
+        // 🪟 v733 · El navegador de verdad tiene DOS almacenes: `localStorage`
+        // es del APARATO (lo comparten todas las pestañas) y `sessionStorage`
+        // es de la PESTAÑA, y sobrevive a la recarga. Sin los dos, este arnés
+        // no puede representar el caso que reportó el autor —dos ventanas del
+        // mismo PC— ni el que NO debe romperse: recargar con F5.
+        sessionStorage: {
+            getItem: k => (k in sesion ? sesion[k] : null),
+            setItem: (k, v) => { sesion[k] = String(v); },
+            removeItem: k => { delete sesion[k]; }
         },
         document: {
             createElement: () => ({ style: {}, _html: '', set innerHTML(v) { this._html = v; },
@@ -146,7 +160,9 @@ function aparato(nube, op) {
     };
     ctx.window.cronosSesionDesalojado = (info) => { avisos.desalojo = info; };
 
-    return { ctx, w: ctx.window, avisos, temporizadores };
+    // `_almacen` y `_sesion` se devuelven para poder montar otra pestaña del
+    // mismo navegador (v733), no para leerlos desde las aserciones.
+    return { ctx, w: ctx.window, avisos, temporizadores, _almacen: almacen, _sesion: sesion };
 }
 
 (async function () {
@@ -543,6 +559,81 @@ function aparato(nube, op) {
            !!d.teamId && !!d.category && !!d.subcategory && d.entorno === 'prod',
            JSON.stringify(d));
     }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    //  14. v733 · DOS VENTANAS DEL MISMO NAVEGADOR (captura 10532)
+    // ═══════════════════════════════════════════════════════════════════════
+    //  El autor puso DOS partidos del Alevín C en marcha a la vez con dos
+    //  ventanas del mismo PC. El candado los daba por «el mismo aparato»
+    //  —comparten `localStorage`— y la regla de v699 dejaba reentrar. La
+    //  unidad pasa a ser la PESTAÑA… sin romper la recarga, que es la razón
+    //  por la que aquella regla existía.
+    {
+        const nube = crearNube();
+        const v1 = aparato(nube, { equipo: 'eq_alevin_c', nombre: 'Windows' });
+        await v1.w.cronosSesionAlAbrirPartido();
+        const v2 = aparato(nube, { equipo: 'eq_alevin_c', nombre: 'Windows', aparatoDe: v1 });
+        v2.avisos.respuestaConflicto = false;
+        const entro = await v2.w.cronosSesionAlAbrirPartido();
+        ok('14a · 🔑🔑 la SEGUNDA VENTANA del mismo PC no entra en el mismo equipo',
+           entro === false && !!v2.avisos.conflicto,
+           'es la captura 10532: dos partidos del Alevín C a la vez');
+        ok('14b · …y la plaza sigue siendo de la primera ventana',
+           Object.keys(nube.docs).length === 1);
+    }
+    {
+        // ⚠️ LO QUE NO SE PUEDE ROMPER: recargar con F5. Misma pestaña =
+        // mismo sessionStorage = mismo tabId, aunque el módulo se cargue de
+        // cero y pierda su estado en memoria.
+        const nube = crearNube();
+        const antes = aparato(nube, { equipo: 'eq_alevin_c', nombre: 'Windows' });
+        await antes.w.cronosSesionAlAbrirPartido();
+        const tras = aparato(nube, { equipo: 'eq_alevin_c', nombre: 'Windows',
+                                     aparatoDe: antes, sesionDe: antes });
+        tras.avisos.respuestaConflicto = false;
+        const entro = await tras.w.cronosSesionAlAbrirPartido();
+        ok('14c · 🔑 recargar la MISMA pestaña no se bloquea a sí misma',
+           entro === true && tras.avisos.conflicto === null,
+           'bloquear aquí dejaría al entrenador fuera de su partido tras un F5');
+    }
+    {
+        // Y la multigestión sigue: dos ventanas, dos EQUIPOS distintos.
+        const nube = crearNube();
+        const v1 = aparato(nube, { equipo: 'eq_alevin_c', nombre: 'Windows' });
+        await v1.w.cronosSesionAlAbrirPartido();
+        const v2 = aparato(nube, { equipo: 'eq_regional_b', nombre: 'Windows', aparatoDe: v1 });
+        const entro = await v2.w.cronosSesionAlAbrirPartido();
+        ok('14d · 🔑 dos ventanas con equipos DISTINTOS: las dos entran',
+           entro === true && v2.avisos.conflicto === null &&
+           Object.keys(nube.docs).length === 2);
+    }
+    {
+        // Cerrar una ventana no puede soltar la plaza que usa la otra.
+        const nube = crearNube();
+        const v1 = aparato(nube, { equipo: 'eq_alevin_c', nombre: 'Windows' });
+        await v1.w.cronosSesionAlAbrirPartido();
+        const v2 = aparato(nube, { equipo: 'eq_alevin_c', nombre: 'Windows', aparatoDe: v1 });
+        v2.avisos.respuestaConflicto = true;                 // retira la prioridad
+        await v2.w.cronosSesionAlAbrirPartido();
+        await v1.w.cronosSesionLibera();                     // la primera se cierra
+        ok('14e · ⚠️ al cerrarse, la ventana desalojada NO borra la marca de la otra',
+           Object.keys(nube.docs).length === 1,
+           JSON.stringify(nube.docs));
+    }
+    {
+        // El desalojo llega a la ventana correcta.
+        const nube = crearNube();
+        const v1 = aparato(nube, { equipo: 'eq_alevin_c', nombre: 'Windows' });
+        await v1.w.cronosSesionAlAbrirPartido();
+        const v2 = aparato(nube, { equipo: 'eq_alevin_c', nombre: 'Windows', aparatoDe: v1 });
+        v2.avisos.respuestaConflicto = true;
+        await v2.w.cronosSesionAlAbrirPartido();
+        ok('14f · 🔑 a la primera ventana se le avisa de que ha perdido el equipo',
+           !!v1.avisos.desalojo);
+    }
+    ok('14g · el aviso distingue «otra ventana» de «otro dispositivo»',
+       /_mismoAparato/.test(fuente) && /en otra ventana de este dispositivo/.test(fuente),
+       'decir «otro dispositivo» mandaría a buscar un aparato que no existe');
 
     // ═══ 8. INTEGRACIÓN ════════════════════════════════════════════════════
     const roleLaunch = leer('js/services/auth/role-launch.js');

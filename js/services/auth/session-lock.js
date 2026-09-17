@@ -67,6 +67,67 @@
     }
     window.cronosDeviceId = _deviceId;
 
+    // ════════════════════════════════════════════════════════════════
+    //  🪟 v733 · LA UNIDAD ES LA PESTAÑA, NO EL APARATO
+    // ════════════════════════════════════════════════════════════════
+    //  Reporte del autor (implementar.txt 2026-09-17, captura 10532): con dos
+    //  ventanas del MISMO navegador puso DOS partidos del Alevín C en marcha a
+    //  la vez. Los dos escribiendo el mismo partido, que es exactamente lo que
+    //  este módulo existe para impedir.
+    //
+    //  🔑 POR QUÉ SE COLABA, y no era un descuido: el ocupante se identificaba
+    //  por APARATO, y dos pestañas del mismo navegador comparten el
+    //  `localStorage` donde vive ese identificador. Para el candado eran «el
+    //  mismo aparato», y desde v699 hay una regla explícita —«el mismo aparato
+    //  reentrando no se bloquea a sí mismo»— que existe por una razón que NO
+    //  se puede perder: si recargar la página (F5) se bloqueara a sí mismo,
+    //  dejaría al entrenador fuera de su partido en mitad del encuentro.
+    //
+    //  🔑🔑 ASÍ QUE NO SE QUITA ESA REGLA: SE AFINA LA UNIDAD. `sessionStorage`
+    //  es POR PESTAÑA **y sobrevive a la recarga**, que es justo la distinción
+    //  que hacía falta:
+    //    · la misma pestaña que recarga → mismo `tabId` → entra, como siempre;
+    //    · otra pestaña, aunque sea el mismo navegador y el mismo correo →
+    //      `tabId` distinto → bloqueada.
+    //
+    //  Se reutiliza el identificador de pestaña que YA tiene el proyecto
+    //  (`_cronosMatchSlots.tabId()`, js/core/match-slots.js, v465/v638): una
+    //  segunda definición acabaría divergiendo de la primera.
+    function _tabId() {
+        try {
+            if (window._cronosMatchSlots && typeof window._cronosMatchSlots.tabId === 'function') {
+                var t = window._cronosMatchSlots.tabId();
+                if (t) return String(t);
+            }
+        } catch (e) { /* respaldo propio */ }
+        // Respaldo con la MISMA clave y el mismo sitio, por si este módulo
+        // corre antes que match-slots.
+        var k = 'cronos_tab_id';
+        try {
+            var v = sessionStorage.getItem(k);
+            if (!v) {
+                v = 'tab:' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+                sessionStorage.setItem(k, v);
+            }
+            return v;
+        } catch (e) {
+            // Sin sessionStorage no hay forma de distinguir pestañas: se cae al
+            // aparato, que es el comportamiento de antes de v733. Peor, pero
+            // nunca vacío — y este módulo es coordinación, no seguridad.
+            return _deviceId();
+        }
+    }
+    window.cronosTabId = _tabId;
+
+    //  ¿La marca es de ESTA MISMA pestaña? Las marcas escritas antes de v733 no
+    //  llevan `tabId`: para ellas se conserva el criterio viejo (el aparato),
+    //  que es lo que impide que una marca en vuelo bloquee a quien la escribió.
+    function _esMia(doc) {
+        if (!doc) return false;
+        if (doc.tabId) return doc.tabId === _tabId();
+        return !!doc.deviceId && doc.deviceId === _deviceId();
+    }
+
     // Nombre legible para que el aviso diga algo útil ("iPad", "Windows"),
     // no un identificador que no significa nada para quien lo lee.
     function _nombreAparato() {
@@ -229,7 +290,11 @@
             return { ok: true, sinComprobar: true };
         }
 
-        if (!op.forzar && previo && previo.deviceId && previo.deviceId !== yo && _vive(previo)) {
+        // 🪟 v733 · Ocupada = la tiene OTRA PESTAÑA viva, sea de este aparato o
+        // de otro. Antes se comparaba el aparato, y por eso dos ventanas del
+        // mismo navegador podían poner el mismo partido en marcha dos veces.
+        if (!op.forzar && previo && (previo.tabId || previo.deviceId) &&
+            !_esMia(previo) && _vive(previo)) {
             return { ok: false, ocupadaPor: previo };
         }
 
@@ -262,6 +327,8 @@
                 uid:        _uid,
                 clave:      clave,
                 deviceId:   yo,
+                // 🪟 v733 · La PESTAÑA, que es la unidad real del bloqueo.
+                tabId:      _tabId(),
                 deviceName: _nombreAparato(),
                 rol:        String(_me2._activeRole || ''),
                 entorno:     _entorno(),
@@ -294,8 +361,13 @@
                 // hubiera borrado, este `merge` sería un ALTA, y la regla de
                 // creación exige el uid. Sin él, el latido moriría en silencio
                 // y la plaza caducaría con el entrenador dentro.
+                // 🪟 v733 · El `tabId` viaja en el latido por lo mismo que el
+                // uid: si la marca se hubiera borrado, este `merge` es un ALTA,
+                // y una marca sin pestaña volvería a decidirse por aparato —o
+                // sea, volvería a dejar entrar a la segunda ventana.
                 await f.m.setDoc(f.m.doc(f.db, COLECCION, _claveActual),
                                  { lastSeen: Date.now(), deviceId: _deviceId(),
+                                   tabId: _tabId(),
                                    uid: (window._cronosCurrentUser || {}).uid || '' },
                                  { merge: true });
             } catch (e) { /* sin red: la plaza caducará sola, y está bien */ }
@@ -374,9 +446,10 @@
                 if (mia !== _generacion) return;      // esta escucha ya no manda
                 _reintentos = 0;            // la escucha va: se olvida el historial de fallos
                 var d = snap.exists() ? (snap.data() || {}) : null;
-                if (!d || !d.deviceId) return;
-                if (d.deviceId === _deviceId()) return;
-                // Otro aparato ha tomado esta plaza.
+                if (!d || (!d.tabId && !d.deviceId)) return;
+                if (_esMia(d)) return;
+                // 🪟 v733 · Otra PESTAÑA ha tomado esta plaza (de este aparato
+                // o de otro): en los dos casos aquí se deja de escribir.
                 _paraLatido();
                 _paraEscuchaFn();
                 window.cronosSesionDesalojado(d);
@@ -431,7 +504,10 @@
             var snap = await f.m.getDoc(f.m.doc(f.db, COLECCION, clave));
             // Sólo se borra si la marca sigue siendo MÍA: si otro tomó el
             // control, borrarla le dejaría la plaza libre para un tercero.
-            if (snap.exists() && (snap.data() || {}).deviceId === _deviceId()) {
+            // 🪟 v733 · «Mía» = de ESTA PESTAÑA. Con el criterio por aparato,
+            // cerrar una ventana soltaba la plaza que estaba usando la OTRA
+            // ventana del mismo navegador.
+            if (snap.exists() && _esMia(snap.data() || {})) {
                 await f.m.deleteDoc(f.m.doc(f.db, COLECCION, clave));
             }
         } catch (e) { /* la marca caducará sola */ }
@@ -453,6 +529,15 @@
     window.cronosSesionPreguntaConflicto = function (info) {
         return new Promise(function (resolve) {
             var esc = (typeof window.escapeHtml === 'function') ? window.escapeHtml : function (s) { return String(s); };
+            // 🪟 v733 · EL AVISO TIENE QUE DECIR LA VERDAD. Desde v733 el
+            // bloqueo también salta entre DOS VENTANAS DEL MISMO PC, y ahí
+            // «en otro dispositivo» manda a buscar un aparato que no existe:
+            // el usuario miraría el iPad sin entender nada cuando lo que tiene
+            // es otra pestaña detrás. Se distingue por el aparato de la marca.
+            var _mismoAparato = !!info && !!info.deviceId && info.deviceId === _deviceId();
+            var _donde  = _mismoAparato ? 'en otra ventana de este dispositivo' : 'en otro dispositivo';
+            var _alli   = _mismoAparato ? 'esa otra ventana' : 'el otro dispositivo';
+            var _cierra = _mismoAparato ? 'cierra esa otra ventana' : 'cierra la sesión en ese dispositivo';
             var ov = document.createElement('div');
             ov.id = 'cronos-sesion-conflicto';
             ov.style.cssText = 'position:fixed;inset:0;z-index:2600;display:flex;align-items:center;' +
@@ -487,20 +572,22 @@
                 //  retirar la prioridad desde aquí, o esperar — la marca
                 //  caduca sola en ~1 minuto (TTL 75 s, latido 25 s).
                 '<div style="font-size:1rem;font-weight:800;color:#f85149;margin-bottom:10px;">' +
-                '🔒 Este equipo ya está abierto en otro dispositivo</div>' +
+                '🔒 Este equipo ya está abierto ' + _donde + '</div>' +
                 '<div style="font-size:0.84rem;color:#c9d1d9;line-height:1.45;margin-bottom:6px;">' +
                 '<strong>' + esc(info.etiqueta || 'Este rol') + '</strong></div>' +
                 '<div style="font-size:0.78rem;color:#8b949e;margin-bottom:14px;">' +
-                esc(info.deviceName || 'Otro dispositivo') + ' · activo ' + esc(_desde(info.startedAt || info.lastSeen)) +
+                esc(info.deviceName || 'Otro dispositivo') +
+                (_mismoAparato ? ' · otra ventana' : '') +
+                ' · activo ' + esc(_desde(info.startedAt || info.lastSeen)) +
                 '</div>' +
                 '<div style="font-size:0.78rem;color:#f0f6fc;background:rgba(248,81,73,0.10);' +
                 'border:1px solid rgba(248,81,73,0.35);border-radius:10px;padding:10px;' +
                 'margin-bottom:12px;line-height:1.5;">' +
                 '<strong>No es posible trabajar con este equipo desde aquí</strong> mientras siga ' +
-                'abierto en el otro dispositivo: los dos escribirían a la vez sobre el mismo ' +
+                'abierto en ' + _alli + ': los dos escribirían a la vez sobre el mismo ' +
                 'partido.</div>' +
                 '<div style="font-size:0.76rem;color:#8b949e;margin-bottom:16px;line-height:1.5;">' +
-                'Para poder usarlo: <strong>cierra la sesión</strong> en ese dispositivo, ' +
+                'Para poder usarlo: <strong>' + _cierra + '</strong>, ' +
                 '<strong>retírale la prioridad</strong> desde aquí (allí se cerrará al momento), ' +
                 'o espera: si se quedó sin batería o sin cobertura, el equipo se libera solo en ' +
                 'aproximadamente un minuto.</div>' +
@@ -510,7 +597,7 @@
                 'font-weight:800;font-size:0.85rem;">Entendido, no entrar</button>' +
                 '<button id="cs-tomar" style="width:100%;min-height:42px;border-radius:10px;cursor:pointer;' +
                 'background:rgba(255,255,255,0.04);border:1px solid rgba(218,54,51,0.55);color:#ff7b72;' +
-                'font-weight:700;font-size:0.78rem;">Retirar la prioridad al otro dispositivo</button>' +
+                'font-weight:700;font-size:0.78rem;">Retirar la prioridad a ' + _alli + '</button>' +
                 '</div></div>';
             document.body.appendChild(ov);
             var cierra = function (v) { try { ov.remove(); } catch (e) {} resolve(v); };
