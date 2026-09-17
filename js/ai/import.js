@@ -132,6 +132,18 @@ function openConvocationModal() {
     // Restore saved convocation data
     const savedConv = JSON.parse(localStorage.getItem('cronos_conv_data') || '{}');
 
+    // ⚽ v726 · LO QUE YA DECIDIÓ LA PANTALLA INICIAL NO SE VUELVE A PREGUNTAR.
+    // El tipo de partido y —en liga— la jornada y
+    // el rival salen de allí (`_setupVolcarDatosAConvocatoria`, setup-modal.js) y aquí se ven
+    // BLOQUEADOS: cambiarlos en esta pantalla reabriría la contradicción que
+    // se corrigió (convocar de LOCAL un partido que el calendario juega fuera).
+    // Fecha, hora y campo siguen editables: un cambio de horario no toca la
+    // localía. Sin pantalla inicial (tests, rutas antiguas) todo queda libre.
+    const _convDef = (typeof window !== 'undefined' && window._cronosDatosPartido &&
+                      window._cronosDatosPartido.confirmado) || null;
+    const _convBloq = _convDef ? ' disabled title="Definido en la pantalla inicial del partido"' : '';
+    const _convCalFijo = !!(_convDef && _convDef.partido);
+
     // ════════════════════════════════════════════════════════════════
     //  ⚖️ v666 · LOS CUPOS DEPENDEN DEL TIPO DE PARTIDO, ASÍ QUE CAMBIAN
     // ════════════════════════════════════════════════════════════════
@@ -254,7 +266,7 @@ function openConvocationModal() {
                 <div style="margin-bottom:0.6rem;">
                     <label style="font-size:0.72rem; color:var(--text-muted); display:block; margin-bottom:0.2rem;">\u{1F3C6} Tipo de partido</label>
                     <div style="display:flex; gap:0.5rem; flex-wrap:wrap; align-items:center;">
-                        <select id="conv-type" class="conv-input" onchange="_convCambiarTipo()" style="max-width:14rem;">
+                        <select id="conv-type" class="conv-input" onchange="_convCambiarTipo()" style="max-width:14rem;"${_convBloq}>
                             <option value="liga" ${savedConv.type==='liga'?'selected':''}>\u{1F3C6} Liga</option>
                             <option value="copa" ${savedConv.type==='copa'?'selected':''}>\u{1F3C5} Copa</option>
                             <option value="torneo" ${savedConv.type==='torneo'?'selected':''}>\u{1F396}\uFE0F Torneo</option>
@@ -289,13 +301,13 @@ function openConvocationModal() {
                     <div>
                         <label style="font-size:0.72rem; color:var(--text-muted); display:block; margin-bottom:0.2rem;">\u{1F19A} Rival</label>
                         <input type="text" id="conv-rival" class="conv-input"
-                            placeholder="Equipo rival"
+                            placeholder="Equipo rival"${_convCalFijo ? ' readonly title="Lo fija el calendario oficial"' : ''}
                             value="${typeof escapeHtml==='function'? escapeHtml(_convRivalPorDefecto(savedConv)): _convRivalPorDefecto(savedConv)}">
                     </div>
                     <div id="conv-jornada-box">
                         <label style="font-size:0.72rem; color:var(--text-muted); display:block; margin-bottom:0.2rem;">\u{1F522} Jornada</label>
                         <input type="number" min="1" max="60" id="conv-jornada" class="conv-input"
-                            onwheel="this.blur()"
+                            onwheel="this.blur()"${_convCalFijo ? ' readonly title="Lo fija el calendario oficial"' : ''}
                             value="${typeof escapeHtml==='function'? escapeHtml(String(savedConv.jornada||'')): (savedConv.jornada||'')}">
                     </div>
                     <div>
@@ -521,6 +533,19 @@ function openConvocationModal() {
             //    YA JUGADO y acertar es casi seguro; aquí se está preparando el
             //    PRÓXIMO, y pisar el rival o el campo que el entrenador acabe
             //    de escribir sería peor que no ayudar. Se ofrece y él elige.
+            // ⚽ v726 · …SALVO QUE LA JORNADA YA VENGA ELEGIDA de la pantalla
+            //    inicial: entonces se enseña ESA y queda fija (los campos ya
+            //    llegaron rellenos en `cronos_conv_data`, no se toca nada).
+            if (_convCalFijo) {
+                const pf = _convDef.partido;
+                const iFijo = lista.findIndex(p => p.fecha === pf.fecha && (p.hora || '') === (pf.hora || ''));
+                const selCal = document.getElementById('conv-cal');
+                if (selCal && iFijo >= 0) {
+                    selCal.value = String(iFijo);
+                    selCal.disabled = true;
+                    selCal.title = 'Jornada elegida en la pantalla inicial del partido';
+                }
+            }
             if (typeof window._convCambiarTipo === 'function') window._convCambiarTipo();
         } catch (e) {
             console.warn('[Convocatoria] no se pudo leer el calendario oficial:',
@@ -893,6 +918,9 @@ function goToTitularSelection() {
     //    rechaza y para que `spawnInitialPlayers()` y el marcador ya nazcan con
     //    el nombre bueno. Ver la nota larga junto a la funcion.
     if (typeof _convHeredarRivalAlPartido === 'function') _convHeredarRivalAlPartido();
+    // ⚽ v726 · Los datos de la pantalla inicial ya están consumidos: el
+    // próximo partido vuelve a partir de la jornada más cercana.
+    if (typeof window !== 'undefined') window._cronosDatosPartido = null;
 
     document.body.classList.remove('setup-mode');
     spawnInitialPlayers();
@@ -1089,6 +1117,7 @@ function startMatchWithConvocation() {
     //    (`goToTitularSelection` y esta): poner la herencia solo en una es
     //    justo la forma de que el nombre aparezca unas veces si y otras no.
     if (typeof _convHeredarRivalAlPartido === 'function') _convHeredarRivalAlPartido();
+    if (typeof window !== 'undefined') window._cronosDatosPartido = null;   // v726
 
     document.body.classList.remove('setup-mode');
     spawnInitialPlayers();

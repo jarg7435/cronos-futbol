@@ -1,8 +1,11 @@
 // --- PERSISTENCE ---
 
 // Helper centralizado para cargar datos de una plantilla
-window.loadTeamData = function(teamKey, team, idx) {
+// v726 · `opts.silencioso` lo usa la carga AUTOMÁTICA (sin toast: el
+// entrenador no ha pulsado nada y no tiene por qué leer un aviso).
+window.loadTeamData = function(teamKey, team, idx, opts) {
     if (!team) return;
+    opts = opts || {};
 
     // Sincronizar el select oculto
     const dropdown = document.getElementById(`saved-teams-${teamKey}`);
@@ -66,7 +69,11 @@ window.loadTeamData = function(teamKey, team, idx) {
     if (!window.loadedTeamPlayers) window.loadedTeamPlayers = {};
     window.loadedTeamPlayers[teamKey] = team.players;
 
-    // Resaltar visualmente la fila seleccionada en la lista
+    // 🔑 v726 · EL SELECTOR Y EL RESALTADO VAN DESPUÉS DE `syncSetupMode`.
+    // Esa función repuebla los equipos guardados (patches.js) y reconstruir el
+    // <select> se llevaba el valor puesto arriba: la plantilla se cargaba y el
+    // desplegable seguía diciendo «-- Cargar --» (IMG_2761/2763).
+    if (dropdown) dropdown.value = idx;
     const listEl = document.getElementById(`saved-teams-list-${teamKey}`);
     if (listEl) {
         Array.from(listEl.children).forEach((row) => {
@@ -74,6 +81,15 @@ window.loadTeamData = function(teamKey, team, idx) {
             row.style.background = isSelected ? 'rgba(63,185,80,0.12)' : '';
         });
     }
+
+    // v726 · Si la plantilla va al lado de MI equipo, se recuerda como «la
+    // mía» para cargarla sola la próxima vez que se abra el panel.
+    try {
+        const miLado = document.getElementById('setup-my-team-role')?.value || 'home';
+        if (teamKey === miLado && typeof window.cronosRecordarPlantillaPropia === 'function') {
+            window.cronosRecordarPlantillaPropia(team.name);
+        }
+    } catch (e) { /* recordar es una comodidad */ }
 
     // Sincronizar _pendingSetupState para evitar sobreescritura accidental
     if (window._pendingSetupState) {
@@ -93,7 +109,116 @@ window.loadTeamData = function(teamKey, team, idx) {
         if (team.formation) window._pendingSetupState.formation = team.formation;
     }
 
-    if (typeof showToast === 'function') showToast(`✅ Plantilla "${team.name}" cargada.`, 2500);
+    if (!opts.silencioso && typeof showToast === 'function') showToast(`✅ Plantilla "${team.name}" cargada.`, 2500);
+};
+
+// ═══════════════════════════════════════════════════════════════════
+//  📥 v726 · LA PLANTILLA PROPIA SE CARGA SOLA AL ABRIR EL PANEL
+// ═══════════════════════════════════════════════════════════════════
+//  Encargo del autor (implementar.txt 2026-09-17, IMG_2759→2763): al abrir el
+//  panel los selectores salían en «-- Cargar --» con «Sin plantillas en esta
+//  modalidad», y había que entrar en GESTIONAR PLANTILLA y volver para verlas.
+//
+//  🔑 NO ERA LA PANTALLA DE PLANTILLA: ERA UNA CARRERA. `init()` pinta el
+//  panel (`openSetupModal`) y DESPUÉS baja los datos de la nube
+//  (`migrateLocalToCloud` → `syncFromCloud`), que escribe `cronos_teams` en
+//  localStorage sin repintar nada. El oyente en tiempo real tampoco: compara
+//  con localStorage, que ya está al día, y no ve cambios. Volver de GESTIONAR
+//  PLANTILLA arreglaba la vista sólo porque vuelve a pintar el panel.
+//
+//  🔑 QUÉ PLANTILLA ES «LA MÍA», SIN ADIVINAR. Las plantillas del RIVAL se
+//  guardan con MI categoría (la del desplegable, que está bloqueada), así que
+//  la categoría no distingue nada. Se elige, por este orden:
+//    1 · la última que el entrenador cargó en SU lado (se recuerda por equipo);
+//    2 · la que se llama como su equipo («FUTUREFEM C» == «FUTureFEM C»);
+//    3 · la que lleva el nombre de su club.
+//  ⚠️ Si nada casa NO se carga ninguna: meter la plantilla de un rival como
+//  si fuera la propia es peor que dejar el hueco.
+// ═══════════════════════════════════════════════════════════════════
+function _cronosNormNombre(s) {
+    return String(s == null ? '' : s).normalize('NFD').replace(/[̀-ͯ]/g, '')
+        .toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
+function _cronosLeePlantillasPropias() {
+    try { return JSON.parse(localStorage.getItem('cronos_plantilla_propia') || '{}') || {}; }
+    catch (e) { return {}; }
+}
+
+window.cronosRecordarPlantillaPropia = function (nombre) {
+    const eq = (typeof window.cronosEquipoDelPanel === 'function') ? window.cronosEquipoDelPanel() : null;
+    if (!eq || !eq.teamId || !nombre) return;
+    const mapa = _cronosLeePlantillasPropias();
+    if (mapa[eq.teamId] === nombre) return;
+    mapa[eq.teamId] = nombre;
+    try { localStorage.setItem('cronos_plantilla_propia', JSON.stringify(mapa)); } catch (e) {}
+};
+
+// Pura: devuelve el ÍNDICE (en el array completo) de la plantilla de mi
+// equipo, o -1. `eq` = { teamId, etiqueta, clubName }.
+function cronosElegirPlantillaPropia(teams, modo, eq, recordadas) {
+    if (!Array.isArray(teams) || !eq) return -1;
+    const cand = [];
+    teams.forEach((t, i) => { if (t && (t.mode || 'f7') === modo && t.name) cand.push(i); });
+    if (!cand.length) return -1;
+    const porNombre = (n) => {
+        const k = _cronosNormNombre(n);
+        if (!k) return -1;
+        const hit = cand.filter(i => _cronosNormNombre(teams[i].name) === k);
+        return hit.length ? hit[0] : -1;
+    };
+    // 1 · la recordada
+    const rec = recordadas && eq.teamId ? recordadas[eq.teamId] : '';
+    let i = rec ? porNombre(rec) : -1;
+    if (i >= 0) return i;
+    // 2 · la que se llama como el equipo
+    i = porNombre(eq.etiqueta);
+    if (i >= 0) return i;
+    // 3 · la que lleva el nombre del club (sólo si es UNA: con dos, no se sabe)
+    const club = _cronosNormNombre(eq.clubName);
+    if (club.length >= 4) {
+        const hit = cand.filter(j => _cronosNormNombre(teams[j].name).indexOf(club) >= 0);
+        if (hit.length === 1) return hit[0];
+    }
+    return -1;
+}
+window.cronosElegirPlantillaPropia = cronosElegirPlantillaPropia;
+
+// Carga la plantilla propia en MI lado, sólo si ese lado sigue con su rótulo
+// de fábrica: lo que el entrenador haya cargado o escrito no se pisa nunca.
+window.cronosAutoCargarPlantillaPropia = function () {
+    try {
+        const miLado = document.getElementById('setup-my-team-role')?.value || 'home';
+        const input = document.getElementById('setup-' + miLado + '-name');
+        if (!input) return false;                       // el panel no está abierto
+        const actual = String(input.value || '').trim();
+        const deFabrica = !actual || (typeof window.cronosNombreDeFabrica === 'function'
+            ? window.cronosNombreDeFabrica(actual) : /^(local|visitante)$/i.test(actual));
+        if (!deFabrica) return false;
+
+        const eq = (typeof window.cronosEquipoDelPanel === 'function') ? window.cronosEquipoDelPanel() : null;
+        if (!eq) return false;
+        const modo = document.getElementById('setup-mode')?.value || 'f7';
+        const teams = JSON.parse(localStorage.getItem('cronos_teams') || '[]');
+        const idx = cronosElegirPlantillaPropia(teams, modo, eq, _cronosLeePlantillasPropias());
+        if (idx < 0) return false;
+        window.loadTeamData(miLado, teams[idx], idx, { silencioso: true });
+        return true;
+    } catch (e) {
+        console.warn('[v726] No se pudo cargar la plantilla propia:', e && e.message ? e.message : e);
+        return false;
+    }
+};
+
+// Repinta los equipos guardados y aplica la carga automática. Lo llaman el
+// panel al abrirse y la sincronización con la nube al terminar.
+window.cronosRefrescarPlantillasDelPanel = function () {
+    if (!document.getElementById('saved-teams-list-home')) return;   // panel cerrado
+    if (typeof populateSavedTeams === 'function') {
+        populateSavedTeams('home');
+        populateSavedTeams('away');
+    }
+    window.cronosAutoCargarPlantillaPropia();
 };
 
 // ═══════════════════════════════════════════════════════════════════
@@ -106,6 +231,9 @@ function populateSavedTeams(teamKey) {
     // 1. Actualizar el <select> oculto (compatibilidad con código legado)
     const dropdown = document.getElementById(`saved-teams-${teamKey}`);
     if (dropdown) {
+        // v726 · Repoblar no puede soltar lo elegido: `syncSetupMode` llama
+        // aquí cada vez que se toca la modalidad, también al abrir el panel.
+        const _previo = dropdown.value;
         dropdown.innerHTML = '<option value="">-- Cargar --</option>';
         const teamsForSelect = JSON.parse(localStorage.getItem('cronos_teams') || '[]');
         teamsForSelect.forEach((team, index) => {
@@ -116,6 +244,10 @@ function populateSavedTeams(teamKey) {
                 dropdown.appendChild(opt);
             }
         });
+        if (_previo !== '' && _previo != null) {
+            const _t = teamsForSelect[_previo];
+            if (_t && (_t.mode || 'f7') === activeMode) dropdown.value = _previo;
+        }
     }
 
     // 2. Actualizar la lista visual con botones de borrado individuales

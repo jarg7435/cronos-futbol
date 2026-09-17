@@ -581,6 +581,17 @@ function updateMasterUI() {
     else if (matchPhase === '2nd_half') phaseLabel.textContent = masterTimeH2 > half2MaxTime ? '2ª PARTE (AÑADIDO)' : '2ª PARTE';
     else if (matchPhase === 'finished') phaseLabel.textContent = 'FIN DEL PARTIDO';
 
+    // 🏷️ v726 · La categoría del partido bajo la fase. Aquí y no al arrancar:
+    // updateMasterUI corre en TODOS los caminos (partido nuevo, recuperar,
+    // recarga), y el rótulo no puede depender de por cuál se llegó.
+    try {
+        const catLabel = document.getElementById('match-team-label');
+        if (catLabel && typeof window.cronosEtiquetaCategoriaPartido === 'function') {
+            const txt = window.cronosEtiquetaCategoriaPartido() || '';
+            if (catLabel.textContent !== txt) catLabel.textContent = txt;
+        }
+    } catch (e) { /* un rótulo no puede parar el reloj */ }
+
     const prev = document.getElementById('btn-inline-phase');
     if (prev) prev.remove();
 

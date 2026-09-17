@@ -448,6 +448,37 @@ function openSetupModal() {
 
             ${_selectorEquipoHTML}
 
+            <!-- ⚽ v726 · DATOS DEL PARTIDO, LO PRIMERO DE LA PANTALLA.
+                 El tipo de partido y la jornada del calendario oficial deciden
+                 la LOCALÍA y el RIVAL, así que van antes de los dos equipos: si
+                 se preguntaban después (en la Convocatoria) el entrenador podía
+                 montar el partido de LOCAL y descubrir luego que jugaba fuera.
+                 Lo rellena y lo gobierna _setupDatosPartidoInit(). -->
+            <div id="setup-datos-partido" style="background:rgba(88,166,255,0.06); border:1px solid rgba(88,166,255,0.25);
+                        border-radius:12px; padding:0.7rem 1rem; margin-bottom:1rem;">
+                <div style="font-size:0.75rem; font-weight:800; color:#58a6ff; letter-spacing:0.5px; margin-bottom:0.5rem;">⚽ DATOS DEL PARTIDO</div>
+                <div style="display:grid; grid-template-columns:minmax(140px, 200px) 1fr; gap:0.8rem; align-items:end;">
+                    <div>
+                        <label style="font-size:0.75rem; color:var(--text-muted); margin-bottom:6px; display:block;">🏆 Tipo de partido</label>
+                        <select id="setup-match-type" onchange="_setupCambiarTipoPartido(this.value)"
+                            style="width:100%; padding:0.5rem; background:var(--bg); border:1px solid var(--glass-border); border-radius:8px; color:white; font-weight:700;">
+                            <option value="liga">🏆 Liga</option>
+                            <option value="copa">🏅 Copa</option>
+                            <option value="torneo">🎖️ Torneo</option>
+                            <option value="amistoso">🤝 Amistoso</option>
+                        </select>
+                    </div>
+                    <div id="setup-cal-box">
+                        <label style="font-size:0.75rem; color:var(--text-muted); margin-bottom:6px; display:block;">📅 Jornada · calendario oficial</label>
+                        <select id="setup-cal" onchange="_setupElegirPartidoCal(this.value)"
+                            style="width:100%; padding:0.5rem; background:var(--bg); border:1px solid var(--glass-border); border-radius:8px; color:white;">
+                            <option value="">Cargando el calendario oficial…</option>
+                        </select>
+                    </div>
+                </div>
+                <div id="setup-datos-resumen" style="font-size:0.72rem; color:var(--text-muted); margin-top:0.45rem; line-height:1.45;"></div>
+            </div>
+
             <!-- CUADRICULA SIMÉTRICA DE EQUIPOS (LOCAL / VISITANTE) -->
             <div style="display:grid; grid-template-columns: 1fr 1fr; gap:1.5rem; margin-bottom:1.2rem;">
                 
@@ -547,7 +578,7 @@ function openSetupModal() {
                     <label style="font-size:0.75rem; color:var(--text-muted); margin-bottom:6px; display:block;">Mi equipo juega de</label>
                     <div style="display:flex; border-radius:8px; overflow:hidden; border:1px solid var(--glass-border);">
                         <button id="role-btn-home"
-                            onclick="_setMyTeamRole('home')"
+                            onclick="_setupElegirLocalia('home')"
                             style="flex:1; padding:0.45rem 0.5rem; background:rgba(29,78,216,0.35);
                                    border:none; color:white; font-size:0.72rem; font-weight:800;
                                    cursor:pointer; border-right:1px solid var(--glass-border);
@@ -555,7 +586,7 @@ function openSetupModal() {
                             🏠 LOCAL
                         </button>
                         <button id="role-btn-away"
-                            onclick="_setMyTeamRole('away')"
+                            onclick="_setupElegirLocalia('away')"
                             style="flex:1; padding:0.45rem 0.5rem; background:rgba(255,255,255,0.04);
                                    border:none; color:var(--text-muted); font-size:0.72rem; font-weight:800;
                                    cursor:pointer; transition:background 0.15s;">
@@ -793,7 +824,365 @@ function openSetupModal() {
             });
         }
     });
+
+    // ── ⚽ v726 · Datos del partido (tipo, jornada, localía) ──
+    // ⚠️ DESPUÉS de restoreSetupState: si el calendario fija la localía, la
+    // impone sobre la restaurada (y mueve los dos equipos de columna).
+    try { _setupDatosPartidoInit(); }
+    catch (e) { console.warn('[v726] Datos del partido:', e); }
+
+    // ── 📥 v726 · La plantilla propia, sin pasar por GESTIONAR PLANTILLA ──
+    // A los 300 ms: el desplegable de modalidad se rehace a los 100 ms
+    // (arriba) y repuebla los equipos guardados; cargar antes sería pisado.
+    // Si las plantillas aún no han bajado de la nube, lo repite init() al
+    // terminar la sincronización (app-init.js).
+    setTimeout(function () {
+        if (typeof window.cronosAutoCargarPlantillaPropia === 'function') {
+            window.cronosAutoCargarPlantillaPropia();
+        }
+    }, 300);
 }
+
+// ════════════════════════════════════════════════════════════════════
+//  ⚽ v726 · LOS DATOS DEL PARTIDO SE DECIDEN EN LA PANTALLA INICIAL
+// ════════════════════════════════════════════════════════════════════
+//  Encargo del autor (implementar.txt 2026-09-17, IMG_2759 + IMG_2764): «el
+//  usuario puede configurar su equipo como Local en la pantalla principal,
+//  pero al avanzar a la convocatoria y elegir la fecha de Liga del calendario
+//  oficial, el sistema descubre que juega fuera». Tipo de partido, jornada del
+//  calendario y localía tienen que quedar definidos ANTES de «Continuar».
+//
+//  🔑 ESTO CAMBIA UNA DECISIÓN DE v666, Y A PETICIÓN SUYA. Allí el calendario
+//  sólo AVISABA de la localía («una pantalla que no la gobierna»). Ahora la
+//  pantalla que la gobierna es ésta, así que en LIGA con calendario la localía
+//  y el rival los fija la jornada elegida y el interruptor 🏠/✈️ se bloquea.
+//  En Copa, Torneo, Amistoso —o Liga sin calendario importado— sigue libre.
+//
+//  🔑 AL CAMBIAR LA LOCALÍA, LOS EQUIPOS CAMBIAN DE COLUMNA. Las columnas son
+//  los LADOS del encuentro (LOCAL/VISITANTE) y «mi equipo» es un equipo: si
+//  paso a jugar fuera, mi nombre y mis colores se van a la columna VISITANTE.
+//  Sin esto, la plantilla cargada en LOCAL se quedaba rotulando al rival.
+//
+//  🔑 SE PRESELECCIONA LA JORNADA MÁS CERCANA DESDE HOY (al revés que v666 en
+//  la convocatoria): aquí no hay nada escrito que pisar, y el partido de liga
+//  que se va a cronometrar es casi siempre el próximo. Se ve arriba y se cambia.
+//
+//  ⚠️ NO PUEDE IMPEDIR JUGAR. Sin calendario, sin red o sin equipo asignado, la
+//  pantalla queda como antes de v726: localía y rival a mano.
+// ════════════════════════════════════════════════════════════════════
+window.cronosEquipoDelPanel = function () {
+    try {
+        const me = window._cronosCurrentUser;
+        const base = (typeof window.cronosMyTeam === 'function') ? window.cronosMyTeam() : null;
+        if (!me || !base) return null;
+        let clubName = '';
+        if (typeof window.cronosEquiposDeEntrenador === 'function') {
+            const e = (window.cronosEquiposDeEntrenador(me.allRoles, null) || [])
+                .filter(function (x) { return x.teamId === base.teamId; })[0];
+            if (e) clubName = e.clubName || '';
+        }
+        const etiqueta = (typeof window.cronosNombreCategoria === 'function')
+            ? window.cronosNombreCategoria(base.category, base.subcategory)
+            : String(base.category + ' ' + (base.subcategory || '')).trim();
+        return {
+            clubId: base.clubId, teamId: base.teamId,
+            category: base.category, subcategory: base.subcategory,
+            etiqueta: etiqueta || '', clubName: clubName || me.clubName || '',
+        };
+    } catch (e) { return null; }
+};
+
+// El nombre de MI equipo cuando la casilla sigue diciendo «LOCAL»/«VISITANTE»:
+// el del club; y si no se sabe, el del equipo («FUTureFEM C»). Nunca un rótulo
+// de fábrica, que es lo que llegaba al marcador y al visor (captura 10485).
+window.cronosNombrePropioPorDefecto = function () {
+    const eq = window.cronosEquipoDelPanel();
+    const me = window._cronosCurrentUser || {};
+    const club = String((eq && eq.clubName) || me.clubName || '').trim();
+    if (club) return club.toUpperCase();
+    return String((eq && eq.etiqueta) || '').trim().toUpperCase();
+};
+
+function _setupHoy() {
+    return (typeof _cronosLocalDateKey === 'function')
+        ? _cronosLocalDateKey(new Date()) : new Date().toISOString().slice(0, 10);
+}
+
+// La elección del entrenador, POR EQUIPO: cambiar de equipo la descarta.
+function _setupEstadoDatos() {
+    const eq = window.cronosEquipoDelPanel();
+    const teamId = eq ? eq.teamId : '';
+    let d = window._cronosDatosPartido;
+    if (!d || d.teamId !== teamId) {
+        let tipo = '';
+        try { tipo = (JSON.parse(localStorage.getItem('cronos_conv_data') || '{}') || {}).type || ''; }
+        catch (e) { /* sin convocatoria previa */ }
+        d = window._cronosDatosPartido = {
+            teamId: teamId, tipo: tipo || 'liga', fecha: '', hora: '', confirmado: null,
+        };
+    }
+    return d;
+}
+
+// Índice del partido elegido: el que el entrenador fijó (fecha+hora) o, si
+// no, el primero desde hoy; si la temporada ya pasó, el último.
+function _setupIndicePartido(d, lista) {
+    if (!Array.isArray(lista) || !lista.length) return -1;
+    if (d && d.fecha) {
+        for (let i = 0; i < lista.length; i++) {
+            if (lista[i].fecha === d.fecha && (!d.hora || (lista[i].hora || '') === d.hora)) return i;
+        }
+    }
+    const hoy = _setupHoy();
+    for (let i = 0; i < lista.length; i++) {
+        if ((lista[i].fecha || '') >= hoy) return i;
+    }
+    return lista.length - 1;
+}
+
+function _setupFechaCorta(f) {
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(f || ''));
+    return m ? (m[3] + '/' + m[2] + '/' + m[1]) : String(f || '');
+}
+
+function _setupEsc(s) {
+    return (typeof escapeHtml === 'function') ? escapeHtml(String(s == null ? '' : s))
+        : String(s == null ? '' : s).replace(/[&<>"]/g, function (c) {
+            return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c];
+        });
+}
+
+function _setupDatosPartidoInit() {
+    const d = _setupEstadoDatos();
+    const tipoSel = document.getElementById('setup-match-type');
+    if (tipoSel) tipoSel.value = d.tipo;
+
+    const eq = window.cronosEquipoDelPanel();
+    if (!eq || !eq.clubId || !eq.teamId || typeof window.calPartidosDeEquipo !== 'function') {
+        window._setupCal = { teamId: eq ? eq.teamId : '', estado: 'sin-calendario', lista: [] };
+        _setupPintarDatosPartido();
+        return;
+    }
+    const c = window._setupCal;
+    if (c && c.teamId === eq.teamId && c.estado === 'ok') {   // ya leído en esta sesión
+        _setupPintarDatosPartido();
+        return;
+    }
+    const pedido = eq.teamId;
+    window._setupCal = { teamId: pedido, estado: 'cargando', lista: [], desde: Date.now() };
+    _setupPintarDatosPartido();
+    Promise.resolve()
+        .then(function () { return window.calPartidosDeEquipo(eq.clubId, eq.teamId); })
+        .then(function (lista) {
+            if (!window._setupCal || window._setupCal.teamId !== pedido) return;
+            lista = Array.isArray(lista) ? lista : [];
+            // ⚠️ «vacío» NO se guarda como definitivo: puede ser un fallo de red
+            // (calPartidosDeEquipo nunca lanza) y se reintenta al reabrir.
+            window._setupCal = { teamId: pedido, estado: lista.length ? 'ok' : 'vacio', lista: lista };
+            _setupPintarDatosPartido();
+        })
+        .catch(function () {
+            if (window._setupCal && window._setupCal.teamId === pedido) {
+                window._setupCal = { teamId: pedido, estado: 'vacio', lista: [] };
+                _setupPintarDatosPartido();
+            }
+        });
+}
+
+function _setupPintarDatosPartido() {
+    const d = _setupEstadoDatos();
+    const c = window._setupCal || { estado: 'sin-calendario', lista: [] };
+    const box = document.getElementById('setup-cal-box');
+    const sel = document.getElementById('setup-cal');
+    const res = document.getElementById('setup-datos-resumen');
+    if (!box && !sel && !res) return;                    // el panel no está abierto
+    const esLiga = d.tipo === 'liga';
+    if (box) box.style.display = esLiga ? '' : 'none';
+
+    let partido = null;
+    if (esLiga && c.estado === 'ok') {
+        const idx = _setupIndicePartido(d, c.lista);
+        partido = idx >= 0 ? c.lista[idx] : null;
+        if (sel) {
+            const hoy = _setupHoy();
+            const jugados = [], porJugar = [];
+            c.lista.forEach(function (p, i) {
+                const et = (p.jornada ? 'J' + p.jornada + ' · ' : '') + _setupFechaCorta(p.fecha) +
+                           (p.hora ? ' · ' + p.hora : '') + ' · ' +
+                           (p.local === false ? '✈️ en ' : '🏠 vs ') + (p.rival || 'Rival');
+                const op = '<option value="' + i + '"' + (i === idx ? ' selected' : '') + '>' +
+                           _setupEsc(et) + '</option>';
+                ((p.fecha || '') < hoy ? jugados : porJugar).push(op);
+            });
+            sel.innerHTML =
+                (porJugar.length ? '<optgroup label="Próximos partidos">' + porJugar.join('') + '</optgroup>' : '') +
+                (jugados.length ? '<optgroup label="Ya jugados">' + jugados.reverse().join('') + '</optgroup>' : '');
+            sel.value = String(idx);
+            sel.disabled = false;
+        }
+    } else if (sel) {
+        sel.innerHTML = '<option value="">' + (c.estado === 'cargando'
+            ? 'Cargando el calendario oficial…' : 'Sin calendario oficial importado') + '</option>';
+        sel.disabled = true;
+    }
+
+    if (partido) {
+        d.fecha = partido.fecha;
+        d.hora = partido.hora || '';
+        _setupAplicarPartido(partido);
+    } else {
+        _setupLiberarLocalia();
+    }
+
+    if (res) {
+        if (partido) {
+            const fuera = partido.local === false;
+            res.innerHTML = '📅 ' + (partido.jornada ? '<strong>Jornada ' + _setupEsc(partido.jornada) + '</strong> · ' : '') +
+                _setupEsc(_setupFechaCorta(partido.fecha)) + (partido.hora ? ' · ' + _setupEsc(partido.hora) : '') +
+                ' · ' + (fuera ? '✈️ Jugáis <strong style="color:#ff7b72;">FUERA</strong>'
+                               : '🏠 Jugáis <strong style="color:#79c0ff;">EN CASA</strong>') +
+                ' contra <strong style="color:white;">' + _setupEsc(partido.rival || 'Rival') + '</strong>' +
+                (partido.sede ? ' · ' + _setupEsc(partido.sede) : '') +
+                '<br><span style="opacity:0.8;">🔒 En Liga, la localía y el rival los fija el calendario oficial.</span>';
+        } else if (esLiga && c.estado === 'cargando') {
+            res.textContent = '⏳ Leyendo el calendario oficial de tu equipo…';
+        } else if (esLiga) {
+            res.textContent = '📅 Tu equipo no tiene calendario oficial importado: indica la localía y escribe el nombre del rival.';
+        } else {
+            res.textContent = '🤝 Partido sin calendario oficial: indica la localía y escribe el nombre del rival.';
+        }
+    }
+}
+
+window._setupCambiarTipoPartido = function (tipo) {
+    const d = _setupEstadoDatos();
+    d.tipo = tipo || 'amistoso';
+    _setupPintarDatosPartido();
+};
+
+window._setupElegirPartidoCal = function (v) {
+    const d = _setupEstadoDatos();
+    const c = window._setupCal || { lista: [] };
+    const p = c.lista[parseInt(v, 10)];
+    if (!p) return;
+    d.fecha = p.fecha;
+    d.hora = p.hora || '';
+    _setupPintarDatosPartido();
+};
+
+// La jornada elegida manda: localía (con los equipos en su columna) y rival.
+function _setupAplicarPartido(p) {
+    const role = (p.local === false) ? 'away' : 'home';
+    _setupElegirLocalia(role, { forzado: true });
+    ['role-btn-home', 'role-btn-away'].forEach(function (id) {
+        const b = document.getElementById(id);
+        if (!b) return;
+        b.disabled = true;
+        b.style.cursor = 'not-allowed';
+        b.title = 'En Liga la localía la fija el calendario oficial';
+    });
+    const ladoRival = role === 'away' ? 'home' : 'away';
+    const inp = document.getElementById('setup-' + ladoRival + '-name');
+    const miInp = document.getElementById('setup-' + role + '-name');
+    const rival = String(p.rival || '').trim().toUpperCase();
+    // v707 · nunca duplicar mi propio nombre en el otro bando.
+    const mio = String((miInp && miInp.value) || '').trim().toUpperCase();
+    if (inp && rival && rival !== mio) inp.value = rival;
+}
+
+function _setupLiberarLocalia() {
+    ['role-btn-home', 'role-btn-away'].forEach(function (id) {
+        const b = document.getElementById(id);
+        if (!b) return;
+        b.disabled = false;
+        b.style.cursor = 'pointer';
+        b.title = '';
+    });
+}
+
+// Pasa los dos equipos de columna: nombre, colores, plantilla elegida y
+// jugadores cargados. Un rótulo de fábrica NO viaja: cada columna conserva el
+// suyo («LOCAL» sigue en LOCAL).
+function _setupIntercambiarColumnas() {
+    ['name', 'color', 'shorts', 'text'].forEach(function (campo) {
+        const a = document.getElementById('setup-home-' + campo);
+        const b = document.getElementById('setup-away-' + campo);
+        if (!a || !b) return;
+        const va = a.value, vb = b.value;
+        a.value = vb; b.value = va;
+    });
+    const nh = document.getElementById('setup-home-name');
+    const na = document.getElementById('setup-away-name');
+    const fab = function (v) {
+        return (typeof window.cronosNombreDeFabrica === 'function')
+            ? window.cronosNombreDeFabrica(v) : /^(local|visitante)$/i.test(String(v || '').trim());
+    };
+    if (nh && (!String(nh.value || '').trim() || fab(nh.value))) nh.value = 'LOCAL';
+    if (na && (!String(na.value || '').trim() || fab(na.value))) na.value = 'VISITANTE';
+
+    const sh = document.getElementById('saved-teams-home');
+    const sa = document.getElementById('saved-teams-away');
+    if (sh && sa) { const v = sh.value; sh.value = sa.value; sa.value = v; }
+    if (window.loadedTeamPlayers) {
+        const lp = window.loadedTeamPlayers;
+        const h = lp.home; lp.home = lp.away; lp.away = h;
+        if (lp.home === undefined) delete lp.home;
+        if (lp.away === undefined) delete lp.away;
+    }
+}
+
+// El interruptor 🏠/✈️. `forzado` = lo impone el calendario (sin preguntar).
+window._setupElegirLocalia = function (role, opts) {
+    opts = opts || {};
+    role = (role === 'away') ? 'away' : 'home';
+    const hidden = document.getElementById('setup-my-team-role');
+    const actual = hidden ? (hidden.value || 'home') : 'home';
+    if (!opts.forzado) {
+        const b = document.getElementById('role-btn-' + role);
+        if (b && b.disabled) {
+            if (typeof showToast === 'function') showToast('🔒 En Liga la localía la fija el calendario oficial. Cambia la jornada o el tipo de partido.', 3500);
+            return;
+        }
+    }
+    if (role !== actual) _setupIntercambiarColumnas();
+    _setMyTeamRole(role);
+};
+
+// Lo que la pantalla inicial deja decidido pasa a la Convocatoria, que abre
+// ya con el tipo, la fecha, el rival, el campo, la hora y la jornada.
+function _setupVolcarDatosAConvocatoria(d, partido) {
+    let conv = {};
+    try { conv = JSON.parse(localStorage.getItem('cronos_conv_data') || '{}') || {}; }
+    catch (e) { conv = {}; }
+    const hoy = _setupHoy();
+    conv.type = d.tipo;
+    if (partido) {
+        conv.date = partido.fecha || '';
+        conv.time = partido.hora || '';
+        conv.venue = partido.sede || '';
+        conv.rival = partido.rival || '';
+        conv.jornada = partido.jornada == null ? '' : String(partido.jornada);
+    } else {
+        // El rival es el de la columna contraria (o nada): uno guardado de la
+        // convocatoria ANTERIOR ganaba al del partido de hoy (`_convRivalPorDefecto`).
+        const r = (typeof window.cronosNombreRival === 'function') ? window.cronosNombreRival() : '';
+        conv.rival = r || '';
+        conv.jornada = '';
+        if (!conv.date || conv.date < hoy) { conv.date = hoy; conv.time = ''; conv.venue = ''; }
+    }
+    try { localStorage.setItem('cronos_conv_data', JSON.stringify(conv)); } catch (e) {}
+    d.confirmado = { tipo: d.tipo, partido: partido || null };
+}
+
+// 🏷️ v726 · La categoría y subcategoría del partido, para rotularla junto al
+// marcador del entrenador («FUTureFEM C»). Una sola regla, la de las tarjetas.
+window.cronosEtiquetaCategoriaPartido = function () {
+    const cat = String(window._currentMatchCategory || '').replace(/^f(?:7|8|11)_/i, '');
+    if (!cat) return '';
+    const sub = window._currentMatchSubcategory || '';
+    return (typeof window.cronosNombreCategoria === 'function')
+        ? window.cronosNombreCategoria(cat, sub) : (cat + ' ' + sub).trim();
+};
 
 function saveSetupState() {
     window._pendingSetupState = {
@@ -856,6 +1245,46 @@ function restoreSetupState() {
 }
 
 function confirmSetup() {
+    // ── ⚽ v726 · Los datos del partido quedan decididos AQUÍ ──
+    let _datosPartido = null, _partidoCal = null;
+    try {
+        _datosPartido = _setupEstadoDatos();
+        const _tipoSel = document.getElementById('setup-match-type');
+        if (_tipoSel && _tipoSel.value) _datosPartido.tipo = _tipoSel.value;
+        const _cal = window._setupCal || {};
+        // Con el calendario a medio leer, la localía todavía no está decidida.
+        // ⚠️ Con TOPE: sin cobertura en el campo la lectura puede no volver, y
+        // eso no puede impedir cronometrar un partido.
+        if (_datosPartido.tipo === 'liga' && _cal.estado === 'cargando' &&
+            (Date.now() - (_cal.desde || 0)) < 8000) {
+            if (typeof showToast === 'function') showToast('⏳ Leyendo el calendario oficial… pulsa de nuevo en un momento.', 3000);
+            return;
+        }
+        if (_datosPartido.tipo === 'liga' && _cal.estado === 'ok') {
+            const _i = _setupIndicePartido(_datosPartido, _cal.lista);
+            _partidoCal = _i >= 0 ? _cal.lista[_i] : null;
+            // Se re-impone: el DOM no es de fiar (un botón `disabled` se
+            // reactiva desde las herramientas del navegador).
+            if (_partidoCal) _setupAplicarPartido(_partidoCal);
+        }
+    } catch (e) { console.warn('[v726] Datos del partido en confirmSetup:', e); }
+
+    // ── 🏷️ v726 · MI EQUIPO NUNCA SALE COMO «LOCAL»/«VISITANTE» ──
+    // Captura 10485: el visor rotulaba «LOCAL 2 – 0 VISITANTE» porque sin
+    // plantilla cargada la casilla conservaba su rótulo de fábrica, y de aquí
+    // salen el marcador, la retransmisión y los informes.
+    try {
+        const _miLadoSetup = document.getElementById('setup-my-team-role')?.value || 'home';
+        const _miInput = document.getElementById('setup-' + _miLadoSetup + '-name');
+        const _v = _miInput ? String(_miInput.value || '').trim() : '';
+        const _esFab = !_v || (typeof window.cronosNombreDeFabrica === 'function'
+            ? window.cronosNombreDeFabrica(_v) : /^(local|visitante)$/i.test(_v));
+        if (_miInput && _esFab && typeof window.cronosNombrePropioPorDefecto === 'function') {
+            const _nom = window.cronosNombrePropioPorDefecto();
+            if (_nom) _miInput.value = _nom;
+        }
+    } catch (e) { /* un nombre no puede impedir arrancar */ }
+
     TEAM_NAMES.home = document.getElementById('setup-home-name').value.toUpperCase() || 'LOCAL';
     COLORS.home.primary = document.getElementById('setup-home-color').value;
     COLORS.home.shorts = document.getElementById('setup-home-shorts').value;
@@ -1014,6 +1443,11 @@ function confirmSetup() {
         if (t1) t1.textContent = display;
         if (t2) t2.textContent = display;
     })();
+
+    // ⚽ v726 · Después de fijar `_userTeamRole` y los nombres: el rival que se
+    // vuelca es el de la columna contraria a la MÍA.
+    try { if (_datosPartido) _setupVolcarDatosAConvocatoria(_datosPartido, _partidoCal); }
+    catch (e) { console.warn('[v726] No se pudieron pasar los datos a la convocatoria:', e); }
 
     openConvocationModal();
 }

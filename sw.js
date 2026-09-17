@@ -2681,8 +2681,16 @@
 //        90 s (y al pitar el final) lee lo que el servidor tiene, lo compara
 //        con el registro local y vuelve a encolar lo que falte. ⚠️ si la
 //        lectura falla NO repara nada: «no lo sé» no es «no está».
-const VERSION = 'v725';
-const CACHE_NAME = 'cronos-cache-v725';
+// v726 · PANTALLA INICIAL DEL PARTIDO. (1) La plantilla propia se carga sola:
+//        init() pintaba el panel ANTES de bajar `cronos_teams` de la nube y no
+//        repintaba; y `syncSetupMode` soltaba lo elegido en el desplegable.
+//        (2) Tipo de partido y jornada del calendario oficial pasan a la
+//        pantalla inicial; en Liga la jornada fija localía y rival, y la
+//        Convocatoria los hereda bloqueados. (3) Mi equipo ya no sale como
+//        «LOCAL»/«VISITANTE» (club o equipo por defecto) y la categoría se ve
+//        en la cabecera del entrenador y bajo el reloj del visor.
+const VERSION = 'v726';
+const CACHE_NAME = 'cronos-cache-v726';
 
 const ASSETS = [
     './',

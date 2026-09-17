@@ -442,7 +442,10 @@ async function startRealtimeSync() {
                 if (typeof loadStaffConfig === 'function') loadStaffConfig();
                 const setupModal = document.getElementById('setup-modal');
                 if (setupModal && setupModal.style.display !== 'none') {
-                    if (typeof populateSavedTeams === 'function') {
+                    // v726 · con la carga automática de la plantilla propia.
+                    if (typeof window.cronosRefrescarPlantillasDelPanel === 'function') {
+                        window.cronosRefrescarPlantillasDelPanel();
+                    } else if (typeof populateSavedTeams === 'function') {
                         populateSavedTeams('home');
                         populateSavedTeams('away');
                     }

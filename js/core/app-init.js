@@ -1667,6 +1667,12 @@ function init(role) {
     migrateLocalToCloud().then(() => {
         loadEmailConfig();
         loadStaffConfig();
+        // 📥 v726 · Las plantillas acaban de bajar de la nube y el panel ya
+        // estaba pintado (sin ellas). Sin esto salía «Sin plantillas en esta
+        // modalidad» hasta volver de GESTIONAR PLANTILLA. Ver team-persistence.js.
+        if (typeof window.cronosRefrescarPlantillasDelPanel === 'function') {
+            window.cronosRefrescarPlantillasDelPanel();
+        }
         startRealtimeSync();
         cleanupStaleMatches();
     });
