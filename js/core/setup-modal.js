@@ -1310,6 +1310,48 @@ function _confirmSetupAhora() {
         _datosPartido = _setupEstadoDatos();
         const _tipoSel = document.getElementById('setup-match-type');
         if (_tipoSel && _tipoSel.value) _datosPartido.tipo = _tipoSel.value;
+
+        // ══════════════════════════════════════════════════════════════
+        //  🏆 v736 · EL TIPO DE PARTIDO SE SELLA **AQUÍ**, Y NO PUEDE QUEDAR
+        //  VACÍO
+        // ══════════════════════════════════════════════════════════════
+        //  Encargo del autor (implementar.txt 2026-09-18, captura 10551): «el
+        //  valor que el usuario selecciona en el desplegable […] debe viajar y
+        //  sellarse de forma imperativa al pulsar CONTINUAR AL PARTIDO».
+        //
+        //  📏 POR QUÉ HACÍA FALTA, medido sobre su informe de prueba (v735,
+        //  capturas 10548-10549): el tipo sólo vivía en `_cronosDatosPartido`
+        //  —que se pierde al recargar y se REINICIA al cambiar de equipo— y en
+        //  la convocatoria, que puede ser de otro equipo. Su partido del Alevín
+        //  C llegó al informe sin tipo porque, al terminar, ya no quedaba nadie
+        //  a quien preguntar.
+        //
+        //  🔑 Ahora se fija en `window._cronosMatchType`, que es lo que la
+        //  ranura del partido guarda en cada autoguardado (js/core/app-init.js)
+        //  y lo que se restaura al recuperar. Del desplegable al informe hay un
+        //  solo camino, y pasa por el propio partido.
+        //
+        //  ⚠️ SIN VACÍOS: si el desplegable no dijera nada —no debería, arranca
+        //  en Liga— se conserva lo que ya hubiera; y sólo si tampoco hay nada,
+        //  'liga', que es el valor con el que ese menú se abre. Nunca ''.
+        //  ⚠️⚠️ LA VALIDACIÓN NO PUEDE PISAR LO QUE ELIGIÓ EL USUARIO, y esto
+        //  lo cazó la aserción 2s del guard de v726: la primera versión hacía
+        //  «si `cronosTipoPartido` no lo valida → 'liga'», y en un contexto
+        //  donde ese resolutor todavía no ha cargado eso convierte **un
+        //  amistoso en partido de liga**, en silencio y contra lo que dice el
+        //  desplegable. Sin validador se respeta lo elegido; 'liga' sólo es el
+        //  respaldo de cuando no hay NADA que respetar.
+        try {
+            const _tipoElegido = String((_tipoSel && _tipoSel.value) ||
+                                        (_datosPartido && _datosPartido.tipo) ||
+                                        window._cronosMatchType || 'liga').trim().toLowerCase();
+            const _valido = (typeof window.cronosTipoPartido !== 'function') ||
+                            !!window.cronosTipoPartido(_tipoElegido);
+            window._cronosMatchType = _valido ? _tipoElegido : 'liga';
+            _datosPartido.tipo = window._cronosMatchType;
+        } catch (e) {
+            window._cronosMatchType = 'liga';
+        }
         const _cal = window._setupCal || {};
         // Con el calendario a medio leer, la localía todavía no está decidida.
         // ⚠️ Con TOPE: sin cobertura en el campo la lectura puede no volver, y
@@ -2507,6 +2549,13 @@ async function _doResumeMatch(matchId) {
         // tras recuperar un partido jugado de visitante, _userTeamRole se perdía
         // y los informes (filtrados por _cMyTeamKey) quedaban vacíos.
         if (m.myTeamRole) window._userTeamRole = m.myTeamRole;
+        // 🏆 v736 · Y el TIPO DE PARTIDO, por el mismo motivo que la localía:
+        // el informe se genera al terminar, y si se recuperó el partido tras
+        // una recarga, esto es lo único que sabe si era Liga o un amistoso.
+        if (m.matchType && typeof window.cronosTipoPartido === 'function' &&
+            window.cronosTipoPartido(m.matchType)) {
+            window._cronosMatchType = String(m.matchType).trim().toLowerCase();
+        }
 
         // ── Restaurar jugadores ──
         if (Array.isArray(m.players) && m.players.length > 0) {

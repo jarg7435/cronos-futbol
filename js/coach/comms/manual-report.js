@@ -1683,6 +1683,13 @@
                     scoreHome: scoreHome,
                     scoreAway: scoreAway,
                     myTeamRole: myTeamRole,
+                    // 🏆 v735 · Aquí el tipo NO hay que adivinarlo: el formulario
+                    // manual ya lo pregunta (`S.tipoPartido`), y es el mismo
+                    // vocabulario que el resto de la app. Se sella igual que en
+                    // el informe automático para que las tarjetas lo pinten.
+                    matchType: (typeof window.cronosTipoPartido === 'function' &&
+                                window.cronosTipoPartido(S.tipoPartido))
+                                 ? String(S.tipoPartido).toLowerCase() : '',
                     category: S.equipo.category || '',
                     subcategory: S.equipo.subcategory || '',
                     teamId: teamId,

@@ -2751,6 +2751,93 @@ function cronosMyTeamId() {
 //  ⚠️ Y OJO: la pantalla de convocatoria EN VIVO aplica 14/18 SIEMPRE, sin
 //     distinguir liga de amistoso. La distinción es nueva y hoy sólo la conoce
 //     el informe manual.
+// ════════════════════════════════════════════════════════════════════
+//  🏆 v735 · EL TIPO DE PARTIDO, CON UNA SOLA FORMA DE NOMBRARLO
+// ════════════════════════════════════════════════════════════════════
+//  Encargo del autor (implementar.txt 2026-09-18, capturas 10544-10545): que
+//  cada informe diga si el partido fue de Liga, Copa, Torneo o Amistoso,
+//  «para identificar con precisión qué encuentros forman parte de la sumatoria
+//  estadística oficial de la temporada».
+//
+//  🔑 POR QUÉ VIVE AQUÍ Y NO EN CADA PANTALLA. El vocabulario ya estaba
+//  escrito en CUATRO sitios —el desplegable de la pantalla inicial, el de la
+//  convocatoria (v666), el informe manual y los cupos de aquí abajo— y este
+//  proyecto lleva pagando esa factura desde v511: la misma regla en dos sitios
+//  diverge, y el día que diverge nadie sabe cuál manda. Las etiquetas nuevas
+//  salen de aquí, y quien quiera otro icono lo cambia UNA vez.
+//
+//  ⚠️ DEVUELVE null PARA UN TIPO DESCONOCIDO O VACÍO, Y ESO ES DELIBERADO: los
+//  informes anteriores a v735 no llevan el dato y **no se inventa** (decisión
+//  del autor: los antiguos se quedan sin etiqueta). Un valor por defecto aquí
+//  —«Liga», que es el más común— marcaría como oficiales partidos que quizá
+//  fueron amistosos, y este dato existe precisamente para cuadrar la
+//  estadística de la temporada.
+var CRONOS_TIPOS_PARTIDO = {
+    liga:     { icono: '🏆', texto: 'Liga',     color: '#58a6ff', oficial: true  },
+    copa:     { icono: '🏅', texto: 'Copa',     color: '#d2a8ff', oficial: true  },
+    torneo:   { icono: '🎖️', texto: 'Torneo',   color: '#f0883e', oficial: false },
+    amistoso: { icono: '🤝', texto: 'Amistoso', color: '#8b949e', oficial: false },
+};
+
+function cronosTipoPartido(tipo) {
+    var k = String(tipo == null ? '' : tipo).trim().toLowerCase();
+    return CRONOS_TIPOS_PARTIDO[k] ? Object.assign({ tipo: k }, CRONOS_TIPOS_PARTIDO[k]) : null;
+}
+
+// '🏆 Liga' — o '' si no hay tipo registrado (informes anteriores a v735).
+function cronosTipoPartidoEtiqueta(tipo) {
+    var t = cronosTipoPartido(tipo);
+    return t ? (t.icono + ' ' + t.texto) : '';
+}
+
+// ════════════════════════════════════════════════════════════════════
+//  🏆 v736 · EL TIPO SALE DEL PARTIDO, NO DE LO QUE QUEDE POR AHÍ
+// ════════════════════════════════════════════════════════════════════
+//  📏 v735 lo buscaba en `_cronosDatosPartido` y en la convocatoria, y su
+//  informe de prueba salió SIN tipo: la primera se pierde al recargar y se
+//  reinicia al cambiar de equipo; la segunda puede ser de otro equipo. Al
+//  terminar el partido —que es cuando se genera el informe— ya no quedaba
+//  nadie a quien preguntar.
+//
+//  🔑 Ahora manda lo que se selló al pulsar CONTINUAR AL PARTIDO
+//  (`_cronosMatchType`, js/core/setup-modal.js), que además viaja en la RANURA
+//  del partido y se restaura al recuperarlo. El resto de la cascada se queda
+//  como respaldo para los caminos que no pasan por ese botón.
+function cronosTipoPartidoDelPartido() {
+    try {
+        if (cronosTipoPartido(window._cronosMatchType)) {
+            return String(window._cronosMatchType).trim().toLowerCase();
+        }
+    } catch (e) { /* respaldo abajo */ }
+    return '';
+}
+
+// El tipo del partido que se está jugando AHORA, para sellarlo en el informe.
+// Cascada: lo sellado al entrar al partido (v736) → la pantalla inicial (v726)
+// → la convocatoria (v666). Devuelve '' si no consta por ninguna vía: un
+// informe sin etiqueta es mejor que uno con una etiqueta inventada.
+function cronosTipoPartidoActual() {
+    var sellado = cronosTipoPartidoDelPartido();
+    if (sellado) return sellado;
+    try {
+        var d = window._cronosDatosPartido;
+        if (d && cronosTipoPartido(d.tipo)) return String(d.tipo).toLowerCase();
+    } catch (e) { /* se prueba con la convocatoria */ }
+    try {
+        var conv = JSON.parse(localStorage.getItem('cronos_conv_data') || '{}') || {};
+        if (cronosTipoPartido(conv.type)) return String(conv.type).toLowerCase();
+    } catch (e) { /* sin convocatoria previa */ }
+    return '';
+}
+
+if (typeof window !== 'undefined') {
+    window.CRONOS_TIPOS_PARTIDO       = CRONOS_TIPOS_PARTIDO;
+    window.cronosTipoPartido          = cronosTipoPartido;
+    window.cronosTipoPartidoEtiqueta  = cronosTipoPartidoEtiqueta;
+    window.cronosTipoPartidoActual    = cronosTipoPartidoActual;
+    window.cronosTipoPartidoDelPartido = cronosTipoPartidoDelPartido;
+}
+
 function cronosCupoConvocatoria(modalidad, tipoPartido) {
     var f11 = String(modalidad || '').toLowerCase() === 'f11';
     var amistoso = String(tipoPartido || '').toLowerCase() === 'amistoso';

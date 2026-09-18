@@ -441,6 +441,11 @@ window._sendCollectiveReportNow = async function() {
                 scoreHome,
                 scoreAway,
                 myTeamRole:     _cMyTeamKey(),   // 'home' | 'away' — perspectiva del entrenador (resultado V/D/E correcto). CRÍTICO: este doc tiene staffReport:true y lo lee el Panel de Dirección.
+                // 🏆 v735 · Liga / Copa / Torneo / Amistoso. Es lo que permite
+                // saber después qué encuentros cuentan para la estadística
+                // oficial de la temporada. '' si no consta: no se inventa.
+                matchType:      (typeof window.cronosTipoPartidoActual === 'function')
+                                  ? window.cronosTipoPartidoActual() : '',
                 category:       (typeof currentCategory !== 'undefined' ? currentCategory : '') ||
                                  (typeof window.currentCategory !== 'undefined' ? window.currentCategory : ''),
                 subcategory:    _cMatchSubcatFor(me, (typeof currentCategory !== 'undefined' ? currentCategory : '') ||

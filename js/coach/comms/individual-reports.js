@@ -719,6 +719,7 @@ window.openMisInformes = async function openMisInformes() {
                                    ${_enf.fuera?'<span style="font-size:0.6rem;color:var(--text-muted);" title="Jugado fuera de casa">✈️</span>':'<span style="font-size:0.6rem;color:var(--text-muted);" title="Jugado en casa">🏠</span>'}`
                                 : `vs <span style="color:#3fb950;">${typeof escapeHtml==='function'?escapeHtml(m.rival||'Sin rival'):m.rival||'Sin rival'}</span>`}
                             ${res?`<span style="font-size:0.62rem;font-weight:700;color:${rCol};">${res}</span>`:''}
+                            ${typeof window._sdTipoPartidoPill === 'function' ? window._sdTipoPartidoPill(m) : ''}
                         </div>
                         <div style="font-size:0.72rem;color:var(--text-muted);margin-top:2px;display:flex;gap:0.5rem 0.9rem;flex-wrap:wrap;">
                             <span>📅 ${dateStr}</span>

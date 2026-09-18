@@ -243,6 +243,12 @@ async function autoDispatchMatchReports() {
                 scoreHome,
                 scoreAway,
                 myTeamRole:    _cMyTeamKey(),   // 'home' | 'away' — perspectiva del entrenador (resultado V/D/E correcto)
+                // 🏆 v735 · EL TIPO DE PARTIDO SE SELLA AQUÍ, y por eso hay que
+                // sellarlo: sin él, el informe no puede decir después si aquel
+                // encuentro contaba para la estadística oficial de la temporada
+                // o era un amistoso. '' cuando no consta — no se inventa.
+                matchType:     (typeof window.cronosTipoPartidoActual === 'function')
+                                 ? window.cronosTipoPartidoActual() : '',
                 category:      window._currentMatchCategory || '',
                 subcategory:   _cMatchSubcatFor(me, window._currentMatchCategory || ''),
                 // El informe pertenece al EQUIPO. Se sella su clave para que la
@@ -431,6 +437,10 @@ async function autoDispatchMatchReports() {
                 scoreHome,
                 scoreAway,
                 myTeamRole:    _cMyTeamKey(),   // 'home' | 'away' — perspectiva del entrenador (resultado V/D/E correcto)
+                // 🏆 v735 · También en la copia del Área de Familias: el informe
+                // del jugador lo enseña igual que el del cuerpo técnico.
+                matchType:     (typeof window.cronosTipoPartidoActual === 'function')
+                                 ? window.cronosTipoPartidoActual() : '',
                 createdAt:     new Date().toISOString(),
                 playerNumber:  String(dorsal),
                 playerAlias:   player.alias || player.name || '',
@@ -543,6 +553,11 @@ async function autoDispatchMatchReports() {
                     scoreHome,
                     scoreAway,
                     myTeamRole:    _cMyTeamKey(),   // 'home' | 'away' — perspectiva del entrenador (resultado V/D/E correcto)
+                    // 🏆 v735 · El tipo viaja en TODAS las copias del informe:
+                    // si faltara en una, esa pantalla sería la única que no
+                    // sabría si el partido cuenta para la temporada.
+                    matchType:     (typeof window.cronosTipoPartidoActual === 'function')
+                                     ? window.cronosTipoPartidoActual() : '',
                     category:      window._currentMatchCategory || '',
                     subcategory:   _cMatchSubcatFor(me, window._currentMatchCategory || ''),
                     // Clave de equipo: el informe es del equipo, no del autor.

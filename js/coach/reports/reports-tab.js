@@ -1,4 +1,32 @@
 // ════════════════════════════════════════════════════════════════════
+//  🏆 v735 · LA ETIQUETA DEL TIPO DE PARTIDO
+// ════════════════════════════════════════════════════════════════════
+//  Encargo del autor (implementar.txt 2026-09-18, capturas 10544-10545): cada
+//  tarjeta de informe debe decir si el partido fue de Liga, Copa, Torneo o
+//  Amistoso, «para identificar con precisión qué encuentros forman parte de la
+//  sumatoria estadística oficial de la temporada».
+//
+//  ⚠️ SIN TIPO NO HAY ETIQUETA, y es decisión suya: los informes anteriores a
+//  v735 no llevan el dato sellado y aquí NO se deduce. Poner «Liga» por
+//  defecto —el caso más común— marcaría como oficiales partidos que pudieron
+//  ser amistosos, que es justo lo contrario de lo que se pide.
+//
+//  🔑 El vocabulario y los iconos salen de `cronosTipoPartido` (js/core/utils.js):
+//  ya había CUATRO copias de la lista de tipos en el proyecto y ésta no va a
+//  ser la quinta.
+function _sdTipoPartidoPill(m) {
+    if (typeof window.cronosTipoPartido !== 'function') return '';
+    const t = window.cronosTipoPartido(m && (m.matchType || m.tipoPartido));
+    if (!t) return '';
+    const esc = (typeof escapeHtml === 'function') ? escapeHtml : (s) => String(s);
+    return '<span title="Tipo de partido" style="font-size:0.6rem;font-weight:800;letter-spacing:0.4px;' +
+           'padding:1px 7px;border-radius:999px;white-space:nowrap;' +
+           'color:' + t.color + ';background:' + t.color + '1f;border:1px solid ' + t.color + '59;">' +
+           t.icono + ' ' + esc(t.texto.toUpperCase()) + '</span>';
+}
+if (typeof window !== 'undefined') window._sdTipoPartidoPill = _sdTipoPartidoPill;
+
+// ════════════════════════════════════════════════════════════════════
 //  js/coach/reports/reports-tab.js
 //  Pestaña "Informes" del Panel de Dirección: reúne los informes colectivos
 //  de partido que envían los entrenadores (_sdLoadReports), los despliega
@@ -694,6 +722,7 @@ async function _sdLoadReports() {
                                    ${_enf.fuera?'<span style="font-size:0.62rem;color:var(--text-muted);" title="Jugado fuera de casa">✈️</span>':'<span style="font-size:0.62rem;color:var(--text-muted);" title="Jugado en casa">🏠</span>'}`
                                 : `vs <span style="color:var(--primary);">${escapeHtml(m.rival||'Sin rival')}</span>`}
                             ${res ? `<span style="font-size:0.65rem;font-weight:700;letter-spacing:0.5px;color:${rCol};">${res}</span>` : ''}
+                            ${typeof _sdTipoPartidoPill === 'function' ? _sdTipoPartidoPill(m) : ''}
                         </div>
                         <div style="font-size:0.75rem;color:var(--text-muted);margin-top:2px;display:flex;flex-wrap:wrap;gap:0.3rem 0.8rem;">
                             <span>📅 ${dateStr}</span>

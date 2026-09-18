@@ -481,6 +481,25 @@ function _saveMatchStateToStorage() {
             //  lo mismo y sólo uno estaba completo.
             myTeamRole:   window._userTeamRole === 'away' ? 'away' : 'home',
             analyzeAway:  typeof analyzeAway !== 'undefined' ? !!analyzeAway : false,
+            // ══════════════════════════════════════════════════════════
+            //  🏆 v736 · EL TIPO DE PARTIDO VIAJA **EN EL PARTIDO**
+            // ══════════════════════════════════════════════════════════
+            //  Encargo del autor (implementar.txt 2026-09-18, captura 10551):
+            //  «el valor que el usuario selecciona en el desplegable de Tipo de
+            //  partido es el que debe viajar y sellarse de forma imperativa al
+            //  pulsar CONTINUAR AL PARTIDO […] asegurando que nunca se quede
+            //  vacío».
+            //
+            //  🔑 POR QUÉ AQUÍ Y NO EN UNA VARIABLE SUELTA. En v735 el tipo se
+            //  leía de `window._cronosDatosPartido` (se pierde al recargar y se
+            //  reinicia al cambiar de equipo) o de la convocatoria (que puede
+            //  ser de OTRO equipo). Su partido de prueba del Alevín C llegó al
+            //  informe sin tipo justamente por eso. La ranura es lo que
+            //  sobrevive a la recarga y a «Recuperar Partido» — es donde ya
+            //  viajan la localía y la modalidad, y es de donde el informe lo
+            //  puede leer con seguridad al terminar.
+            matchType:    (typeof window.cronosTipoPartidoDelPartido === 'function')
+                            ? window.cronosTipoPartidoDelPartido() : (window._cronosMatchType || ''),
         };
         S.guardar(slotId, state);
     } catch(e) { /* silencioso */ }
@@ -765,6 +784,16 @@ window._restoreActiveMatch = function() {
         const _sabeAnalyze = (typeof state.analyzeAway === 'boolean');
         if (_sabeLocalia) window._userTeamRole = state.myTeamRole;
         if (_sabeAnalyze && typeof analyzeAway !== 'undefined') analyzeAway = state.analyzeAway;
+        // 🏆 v736 · El TIPO DE PARTIDO se restaura por los DOS caminos, igual
+        // que la localía: éste es el del dispositivo y el otro el de la nube
+        // (setup-modal.js). Que uno solo lo hiciera es exactamente cómo nació
+        // el fallo de `myTeamRole` que documenta la nota de arriba.
+        // ⚠️ Sólo si el guardado lo trae: machacar con '' lo que ya puso
+        // `confirmSetup` en esta misma sesión sería peor que no tocar nada.
+        if (state.matchType && typeof window.cronosTipoPartido === 'function' &&
+            window.cronosTipoPartido(state.matchType)) {
+            window._cronosMatchType = String(state.matchType).trim().toLowerCase();
+        }
         // Las tres clases que describen el partido en el <body>. La
         // recuperación por NUBE ya las ponía (setup-modal.js) y esta no: un
         // partido de F11 retomado desde el dispositivo se pintaba con el campo

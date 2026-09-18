@@ -416,6 +416,26 @@ const _RP = (() => {
         //  las dos versiones se separen es scripts/test_cabecera_localia.js:
         //  ejecuta LAS DOS con los mismos datos y exige el MISMO reparto
         //  (nombres, marcador y veredicto).
+        // ════════════════════════════════════════════════════════════════
+        //  🏆 v735 · EL TIPO DE PARTIDO, CON TABLA PROPIA — Y POR LA MISMA
+        //  RAZÓN QUE LA CABECERA DE ARRIBA: este motor es AUTOCONTENIDO y no
+        //  puede mirar al objeto global (la aserción 1c de
+        //  scripts/test_report_engine_module.js exige CERO accesos, y se pone
+        //  roja hasta por una mención en un comentario).
+        //
+        //  ⚠️ Sí, son los mismos cuatro tipos que declara js/core/utils.js, y
+        //  dos copias divergen: por eso el guard de v735 EJECUTA las dos y
+        //  compara clave por clave —icono, texto y color—, igual que hace
+        //  test_cabecera_localia.js con el reparto de localía. Lo que impide la
+        //  divergencia es la comparación, no la buena voluntad.
+        const _TIPOS_INFORME = {
+            liga:     { icono: '🏆', texto: 'Liga',     color: '#58a6ff' },
+            copa:     { icono: '🏅', texto: 'Copa',     color: '#d2a8ff' },
+            torneo:   { icono: '🎖️', texto: 'Torneo',   color: '#f0883e' },
+            amistoso: { icono: '🤝', texto: 'Amistoso', color: '#8b949e' },
+        };
+        const _tipo = _TIPOS_INFORME[String(m.matchType || '').trim().toLowerCase()] || null;
+
         const _yoSoyVisitante = m.myTeamRole === 'away';
         const _miNombre  = esc(clubName || 'CD Local');
         const _suNombre  = esc(m.rival || 'Sin rival');
@@ -462,6 +482,16 @@ const _RP = (() => {
             `<div style="font-size:0.64rem;color:var(--text-muted);">Informe oficial post-partido · Generado automáticamente · No editable</div>` +
             `</div>` +
             `<div style="text-align:right;font-size:0.67rem;">` +
+            // 🏆 v735 · EL TIPO DE PARTIDO, ARRIBA DEL TODO. Encargo del autor
+            // (implementar.txt 2026-09-18): el informe tiene que decir si el
+            // encuentro fue de Liga, Copa, Torneo o Amistoso, porque es lo que
+            // separa lo que suma en la temporada de lo que no.
+            // ⚠️ Sin tipo sellado no se pinta NADA: los informes anteriores a
+            // v735 no lo llevan y aquí no se deduce (decisión del autor).
+            (_tipo
+                ? `<div style="font-weight:800;letter-spacing:0.4px;margin-bottom:2px;color:${_tipo.color};">` +
+                  `${_tipo.icono} ${esc(_tipo.texto.toUpperCase())}</div>`
+                : '') +
             (m.competition ? `<div style="color:#58a6ff;font-weight:600;margin-bottom:1px;">${esc(m.competition)}</div>` : '') +
             (m.category    ? `<div style="color:rgba(255,255,255,0.45);">${esc(m.category)}</div>` : '') +
             `</div></div>` +
