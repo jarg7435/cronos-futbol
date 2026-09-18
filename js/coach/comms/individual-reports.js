@@ -269,6 +269,12 @@ window.openMisInformes = async function openMisInformes() {
                     rival: r.rival, scoreHome: r.scoreHome, scoreAway: r.scoreAway,
                     myTeamRole: r.myTeamRole,   // FIX: propagar rol del equipo para el cálculo V/D/E correcto (visitante)
                     category: r.category||'', venue: r.venue||'',
+                    // 🏆 v737 · El TIPO DE PARTIDO, que este agregado tampoco
+                    // copiaba: el dato estaba en Firestore (medido) pero no
+                    // llegaba ni a la tarjeta ni al motor de informes. Mismo
+                    // caso que en reports-tab.js — los dos agregadores hay que
+                    // tocarlos a la vez.
+                    matchType: r.matchType||'',
                     competition: r.competition||'', matchTime: r.matchTime||'',
                     duration: r.duration||'', stoppageTime: r.stoppageTime||0,
                     createdAt: r.createdAt, coachEmail: r.coachEmail,
@@ -904,6 +910,14 @@ window.openMisInformes = async function openMisInformes() {
             L.push('='.repeat(46));
             if (_enfTxt) L.push(`Encuentro:    ${_enfTxt.titulo}`);
             L.push(`Fecha:        ${fecha}${m.matchTime ? ' · ' + m.matchTime : ''}`);
+            // 🏆 v737 · EL TIPO DE PARTIDO, también en el fichero descargado.
+            // La tarjeta y el informe en pantalla ya lo enseñan desde v735; un
+            // TXT que lo callara contradiría a la pantalla que lo ofrece (misma
+            // regla que se aplicó a P/R en v713). Sin tipo, no hay línea: los
+            // informes antiguos se quedan sin etiqueta, por decisión del autor.
+            const _tipoTxt = (typeof window.cronosTipoPartidoEtiqueta === 'function')
+                ? window.cronosTipoPartidoEtiqueta(m.matchType) : '';
+            if (_tipoTxt)      L.push(`Tipo:         ${_tipoTxt}`);
             if (m.competition) L.push(`Competición:  ${m.competition}`);
             if (m.category)    L.push(`Categoría:    ${m.category}${m.subcategory ? ' ' + m.subcategory : ''}`);
             if (m.venue)       L.push(`Campo:        ${m.venue}`);

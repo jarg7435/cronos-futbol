@@ -1890,6 +1890,13 @@ async function openParentPanel(initialTab) {
                      + (r.playerNumber ? `  (dorsal ${r.playerNumber})` : ''));
                 L.push(`Rival:        ${r.rival || '—'}`);
                 L.push(`Fecha:        ${fecha}`);
+                // 🏆 v737 · El tipo también en el fichero: la tarjeta de arriba
+                // ya lo enseña y un TXT que no lo diga la contradice. Sin tipo
+                // (informes anteriores a v735) no se escribe la línea: no se
+                // inventa un «Liga» que marcaría como oficial un amistoso.
+                const _tipoTxt = (typeof window.cronosTipoPartidoEtiqueta === 'function')
+                    ? window.cronosTipoPartidoEtiqueta(r.matchType) : '';
+                if (_tipoTxt) L.push(`Tipo:         ${_tipoTxt}`);
                 if (r.category) L.push(`Categoría:    ${r.category}`);
                 L.push(`Localía:      ${r.myTeamRole === 'away' ? 'Visitante' : 'Local'}`);
                 L.push(`Resultado:    ${hay ? `${sh} - ${sa}` : '—'}${veredicto ? '  (' + veredicto + ')' : ''}`);
@@ -2093,6 +2100,29 @@ async function openParentPanel(initialTab) {
                     r.injured              ? '🚑' : '',
                 ].filter(Boolean).join('  ');
 
+                // ════════════════════════════════════════════════════════
+                //  🏆 v737 · EL TIPO DE PARTIDO, TAMBIÉN PARA LA FAMILIA
+                // ════════════════════════════════════════════════════════
+                //  El encargo (implementar.txt 2026-09-18) nombra los CUATRO
+                //  roles, y el familiar era el único que no tenía la etiqueta
+                //  en ninguna parte: v735 la puso en las tarjetas del Director
+                //  y del entrenador y en la cabecera del motor de informes, y
+                //  esta pantalla no pasa por ninguno de los tres -- pinta su
+                //  propia tarjeta con los documentos tal cual llegan.
+                //
+                //  El documento de la familia SÍ trae el dato desde v735
+                //  (parent_player_report, js/coach/comms/match-reports-auto.js),
+                //  así que aquí no hace falta agregador ninguno: se lee del
+                //  informe y se pinta con LA MISMA píldora que las otras dos
+                //  tarjetas. Una copia del diseño acabaría diciendo otra cosa.
+                //
+                //  ⚠️ Con guarda `typeof`: reports-tab.js se carga antes que
+                //  este fichero en index.html, pero los arneses ejecutan
+                //  trozos sueltos y no cargan el proyecto entero (mismo motivo
+                //  que la llamada de individual-reports.js).
+                const _tipoPill = (typeof window._sdTipoPartidoPill === 'function')
+                    ? window._sdTipoPartidoPill(r) : '';
+
                 return `
                 <div class="pp-card" style="margin-bottom:1rem;padding:1rem;
                     border-left:3px solid ${tlSec > 0 ? '#58a6ff' : 'rgba(255,255,255,0.1)'};">
@@ -2109,6 +2139,7 @@ async function openParentPanel(initialTab) {
                                     : `vs <span style="color:#58a6ff;">${_esc(r.rival||'Rival')}</span>`}
                                 ${sh != null && sa != null ? `<span style="color:white;opacity:0.9;">${sh}-${sa}</span>` : ''}
                                 ${resultNum ? `<span style="font-size:0.65rem;font-weight:800;letter-spacing:0.5px;color:${rCol};">${resultNum}</span>` : ''}
+                                ${_tipoPill}
                                 ${miniStats ? `<span style="font-size:0.75rem;margin-left:4px;">${miniStats}</span>` : ''}
                             </div>
                             <div style="font-size:0.73rem;color:#7d8590;">📅 ${_esc(r.matchDate||'—')}</div>

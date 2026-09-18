@@ -292,5 +292,109 @@ try {
     fallos++; total++;
 }
 
+// ═════════════════════════════════════════════════════════════════════
+//  8. v737 · EL AGREGADOR SE COMÍA EL CAMPO (y el familiar no lo tenía)
+// ═════════════════════════════════════════════════════════════════════
+//  Reporte del autor (implementar.txt 2026-09-18, capturas 10556-10558): con
+//  v735+v736 YA EN PRODUCCIÓN eligió «Torneo», jugó, y las tarjetas de «Mis
+//  Informes» salieron otra vez sin distintivo.
+//
+//  📏 El dato SÍ estaba escrito en Firestore (medido con
+//  scripts/ops/inspect_tipo_partido.js: los documentos de ese partido traían
+//  `matchType: torneo`). Lo que fallaba estaba después: ni la tarjeta ni el
+//  motor de informes reciben el DOCUMENTO — reciben un objeto que los dos
+//  agrupadores construyen COPIANDO CAMPO A CAMPO, y ninguno de los dos copiaba
+//  `matchType`. La píldora de v735 se llamaba con el campo a `undefined`, y su
+//  regla de «sin tipo no hay etiqueta» hacía el resto: silencio.
+//
+//  🔑 Es EXACTAMENTE la misma trampa que ya se documentó para `subcategory` en
+//  reports-tab.js (2026-07-30). Por eso esta parte no comprueba el pintado —de
+//  eso ya se encarga la parte 5— sino que el campo SOBREVIVE AL AGRUPADO, que
+//  es donde se perdió. Al añadir un campo al informe hay que añadirlo a los DOS.
+//
+//  ⚠️ Y el cuarto rol: el encargo nombra a director, coordinador, entrenador y
+//  familiar. El Área de Familias pinta su PROPIA tarjeta (js/parent/panel.js)
+//  sin pasar por las otras dos, así que no tenía la etiqueta en ninguna parte.
+try {
+    const PANEL = leer('js/parent/panel.js');
+
+    // ── El literal EXACTO que construye cada agrupado, no un regex suelto ──
+    //  Se localiza el objeto que nace en `matches[key] = {` / `byMatch[...] = {`
+    //  y se mira si `matchType` está entre sus claves: así la aserción apunta
+    //  al sitio donde se perdió, y no a cualquier mención del campo en el
+    //  fichero (que las hay, y verdes en falso).
+    const literalTras = (src, marca) => {
+        const i = src.indexOf(marca);
+        if (i < 0) return null;
+        let prof = 0, j = src.indexOf('{', i);
+        if (j < 0) return null;
+        for (let k = j; k < src.length; k++) {
+            if (src[k] === '{') prof++;
+            else if (src[k] === '}') { prof--; if (prof === 0) return src.slice(j, k + 1); }
+        }
+        return null;
+    };
+
+    const litMis = literalTras(MIS, 'matches[key] = {');
+    ok('8a · se localiza el agrupado de «Mis Informes»', !!litMis);
+    ok('8b · 🔑 y copia `matchType` (era el campo que se perdía)',
+       !!litMis && /\bmatchType:/.test(litMis),
+       'sin esto la píldora de v735 recibe undefined y calla');
+
+    const litTab = literalTras(TAB, 'matches[key] = {');
+    ok('8c · se localiza el agrupado del Panel de Dirección', !!litTab);
+    ok('8d · 🔑 y copia `matchType` (Director y Coordinador leen ese objeto)',
+       !!litTab && /\bmatchType:/.test(litTab),
+       'los DOS agregadores hay que tocarlos a la vez, como pasó con subcategory');
+
+    // ── El cuarto rol: la familia ─────────────────────────────────────
+    ok('8e · 🔑 el Área de Familias pinta la MISMA píldora',
+       /_sdTipoPartidoPill\(r\)/.test(PANEL) && /\$\{_tipoPill\}/.test(PANEL),
+       'una copia propia del diseño acabaría diciendo otra cosa del mismo partido');
+
+    // ── Y los ficheros descargados no contradicen a la pantalla ───────
+    ok('8f · el TXT del entrenador escribe el tipo',
+       /cronosTipoPartidoEtiqueta\(m\.matchType\)/.test(MIS) && /Tipo:/.test(MIS));
+    ok('8g · y el TXT de la familia también',
+       /cronosTipoPartidoEtiqueta\(r\.matchType\)/.test(PANEL) && /Tipo:/.test(PANEL));
+    ok('8h · ⚠️ ninguno de los dos inventa la línea sin dato',
+       /if \(_tipoTxt\)\s*L\.push/.test(MIS) && /if \(_tipoTxt\) L\.push/.test(PANEL),
+       'informe antiguo = sin línea, igual que sin píldora');
+
+    // ── La píldora, EJECUTADA con lo que sale del agrupado ─────────────
+    //  Que el campo se copie no basta: se comprueba que la función que pinta
+    //  acepta ese objeto y devuelve la etiqueta. Es el camino completo.
+    {
+        const w = cargarUtils();
+        const sb = {
+            console: { log() {}, warn() {}, error() {} },
+            String, Object, Array, JSON, escapeHtml: (s) => String(s),
+        };
+        sb.window = sb;
+        sb.cronosTipoPartido = w.cronosTipoPartido;
+        vm.createContext(sb);
+        const pill = TAB.match(/function _sdTipoPartidoPill\(m\) \{[\s\S]*?\n\}/);
+        if (pill) {
+            vm.runInContext(pill[0] + '\n;globalThis.P = _sdTipoPartidoPill;', sb);
+            // Un agrupado como el que fabrica «Mis Informes» a partir de los
+            // documentos que él tiene en producción.
+            const agrupado = { matchDate: '2026-09-18', rival: 'Rival', scoreHome: 3,
+                               scoreAway: 1, category: 'f7_alevin', matchType: 'torneo' };
+            const html = sb.P(agrupado);
+            ok('8i · 🔑🔑 su partido del 18/09 («Torneo») SÍ pinta etiqueta',
+               /TORNEO/.test(html) && /🎖/.test(html), html);
+            // Y el mismo agrupado SIN el campo -- el estado de v736 -- calla:
+            // así queda escrito por qué la pantalla salía muda.
+            const mudo = Object.assign({}, agrupado); delete mudo.matchType;
+            ok('8j · y sin el campo (lo que hacía el agregador) no pinta nada',
+               sb.P(mudo) === '',
+               'ésta es la aserción que describe el defecto de v736');
+        }
+    }
+} catch (e) {
+    console.log('  ✗ PARTE 8 se detuvo: ' + (e && e.message));
+    fallos++; total++;
+}
+
 console.log('\n' + (total - fallos) + '/' + total + ' aserciones OK');
 process.exit(fallos ? 1 : 0);

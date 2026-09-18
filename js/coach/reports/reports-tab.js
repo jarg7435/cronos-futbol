@@ -434,6 +434,25 @@ async function _sdLoadReports() {
                     // que al agrupar por el árbol TODOS los informes habrían
                     // caído en "Sin clasificar" pareciendo un fallo del árbol.
                     subcategory:   r.subcategory,
+                    // ══════════════════════════════════════════════════
+                    //  🏆 v737 · Y `matchType` SE PERDÍA EXACTAMENTE IGUAL
+                    // ══════════════════════════════════════════════════
+                    //  Reporte del autor (implementar.txt 2026-09-18, capturas
+                    //  10556-10558): eligió «Torneo», jugó, y el informe salió
+                    //  sin distintivo. v735 lo pintaba y v736 lo sellaba…
+                    //
+                    //  📏 MEDIDO CONTRA PRODUCCIÓN (scripts/ops/inspect_tipo_partido.js):
+                    //  los 30 documentos de ese partido traen `matchType: torneo`.
+                    //  El dato estaba escrito; lo que fallaba era ESTE objeto,
+                    //  que copia campo a campo y no lo copiaba: la tarjeta y el
+                    //  motor de informes reciben este agregado, no el documento.
+                    //
+                    //  🔑 Es la MISMA trampa que la nota de aquí arriba describe
+                    //  para `subcategory` en 2026-07-30. Dos veces el mismo
+                    //  fallo en la misma función: al añadir un campo al informe,
+                    //  hay que añadirlo también a los DOS agregadores (éste y el
+                    //  de js/coach/comms/individual-reports.js).
+                    matchType:     r.matchType,
                     venue:         r.venue,
                     competition:   r.competition,
                     matchTime:     r.matchTime,
