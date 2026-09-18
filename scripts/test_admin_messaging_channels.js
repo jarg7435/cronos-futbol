@@ -518,8 +518,28 @@ console.log('\n── PARTE 9 · 🔑 ninguna rama de rol queda inalcanzable ─
         const t = tabsBlock2.slice(j, tabsBlock2.indexOf('];', j));
         return (t.match(/id: '(\w+)'/g) || []).map(x => x.replace(/id: '|'/g, ''));
     })();
-    const sinResolver = tabsDir.filter(t => !new RegExp(`tabId === '${t}'`).test(ramaDir));
-    ok('9e · 🔑 todas las pestañas del Director tienen resolución dentro de su rama',
+    // ⚠️ v739 · EL INVARIANTE SIGUE SIENDO EL MISMO —ninguna pestaña declarada
+    // puede quedarse sin forma de resolverse— pero ya no todas las pestañas son
+    // de UN rol. El canal común del club ('club') lo comparten cuatro roles, así
+    // que se despacha en una rama TEMPRANA e independiente del rol, al principio
+    // de _loadUnifiedContactList: repetir su resolución dentro de las cuatro
+    // ramas sería justo la duplicación que el resto de este guard persigue.
+    //
+    // 🔑 La excepción es NOMINAL y se comprueba: 'club' sólo se perdona si esa
+    // rama temprana existe DE VERDAD. Cualquier otra pestaña sigue teniendo que
+    // resolverse dentro de la rama de su rol.
+    //  ⚠️ Se busca ANTES del despacho por rol (`i` es donde empieza), no dentro:
+    //  la rama es temprana justo porque no depende del rol, así que por
+    //  definición cae fuera del trozo que este bloque venía analizando.
+    const RESUELTAS_FUERA_DE_ROL = ['club'];
+    const _posClub = s.indexOf("if (tabId === 'club')");
+    const ramaTemprana = _posClub !== -1 && i !== -1 && _posClub < i;
+    ok("9e0 · 🔑 la pestaña compartida 'club' se resuelve ANTES del despacho por rol",
+       ramaTemprana, 'sin ella, ese id se declara y no lo atiende nadie');
+    const sinResolver = tabsDir.filter(t =>
+        !new RegExp(`tabId === '${t}'`).test(ramaDir) &&
+        !(RESUELTAS_FUERA_DE_ROL.indexOf(t) !== -1 && ramaTemprana));
+    ok('9e · 🔑 todas las pestañas del Director tienen resolución alcanzable',
        sinResolver.length === 0, JSON.stringify(sinResolver));
 }
 

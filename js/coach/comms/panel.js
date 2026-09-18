@@ -920,6 +920,13 @@ async function _renderUnifiedMessagingView(role, tab, targetContainerId) {
 
     // Definición de pestañas por rol
     let tabs = [];
+    // 💬 v739 · ¿Es un ENTE INDIVIDUAL? Se resuelve UNA vez y arriba, porque lo
+    // necesitan dos sitios: la etiqueta de la pestaña del entrenador y la
+    // retirada del canal común (que es exclusivo de clubes).
+    const _esEnteIndividual = !!me.individualEntityId ||
+        me.role === 'entrenador_individual' ||
+        (Array.isArray(me.allRoles) && me.allRoles.some(r => r &&
+            (r.role === 'entrenador_individual' || r.role === 'padre_individual')));
     if (role === 'coach') {
         // 🔑 EN UN ENTE INDIVIDUAL NO HAY DIRECTOR: la pestaña se ETIQUETA como
         // "Admin. Individual" (petición del autor tras probarlo), pero conserva
@@ -927,29 +934,31 @@ async function _renderUnifiedMessagingView(role, tab, targetContainerId) {
         // _getCanonicalContext → contexto `coach_director`, que es el que ya
         // comparten el Entrenador y el Administrador Individual: cambiarlo
         // dejaría huérfanos todos los hilos ya creados.
-        const _esEnteIndividual = !!me.individualEntityId ||
-            me.role === 'entrenador_individual' ||
-            (Array.isArray(me.allRoles) && me.allRoles.some(r => r &&
-                (r.role === 'entrenador_individual' || r.role === 'padre_individual')));
         tabs = [
             { id: 'parents', label: 'Familiares', icon: '👨‍👩‍👧' },
             { id: 'director',
               label: _esEnteIndividual ? 'Admin. Individual' : 'Director',
               icon:  _esEnteIndividual ? '👤' : '📋' },
-            { id: 'coordinator', label: 'Coordinador', icon: '🎯' }
+            { id: 'coordinator', label: 'Coordinador', icon: '🎯' },
+            { id: 'club', label: 'Canal Club', icon: '🏟️' }
         ];
     } else if (role === 'director') {
         tabs = [
             { id: 'coordinators', label: 'Coordinadores', icon: '🎯' },
             { id: 'coaches', label: 'Entrenadores', icon: '⚽' },
-            { id: 'clubadmin', label: 'Admin. Club', icon: '🏛️' }
+            { id: 'clubadmin', label: 'Admin. Club', icon: '🏛️' },
+            { id: 'club', label: 'Canal Club', icon: '🏟️' }
         ];
     } else if (role === 'club_admin') {
         tabs = [
             { id: 'director', label: 'Director', icon: '📋' },
-            { id: 'superadmin', label: 'SuperAdmin', icon: '👑' }
+            { id: 'superadmin', label: 'SuperAdmin', icon: '👑' },
+            { id: 'club', label: 'Canal Club', icon: '🏟️' }
         ];
     } else if (role === 'admin_individual') {
+        // ⚠️ SIN canal común: el ente individual no participa (encargo). No es
+        // un olvido — es la única de las cinco listas que no lo lleva, junto a
+        // la del familiar.
         tabs = [
             { id: 'coaches', label: 'Entrenador', icon: '⚽' },
             { id: 'superadmin', label: 'SuperAdmin', icon: '👑' }
@@ -957,13 +966,32 @@ async function _renderUnifiedMessagingView(role, tab, targetContainerId) {
     } else if (role === 'coordinator') {
         tabs = [
             { id: 'director', label: 'Director', icon: '📋' },
-            { id: 'coaches', label: 'Entrenadores', icon: '⚽' }
+            { id: 'coaches', label: 'Entrenadores', icon: '⚽' },
+            { id: 'club', label: 'Canal Club', icon: '🏟️' }
         ];
     } else if (role === 'parent') {
+        // ⚠️ El familiar NO tiene canal común: es la exclusión explícita del
+        // encargo, y además las reglas se lo negarían aunque se pintara.
         tabs = [
             { id: 'coach', label: 'Entrenador', icon: '⚽' }
         ];
     }
+
+    // ══════════════════════════════════════════════════════════════
+    //  💬 v739 · EL CANAL COMÚN ES EXCLUSIVO DE CLUBES
+    // ══════════════════════════════════════════════════════════════
+    //  El ente individual no participa (encargo del autor). Se retira AQUÍ,
+    //  después de construir las listas, y NO dentro de la rama del entrenador.
+    //
+    //  🚨 Y es una corrección, no un capricho: puesto como un `push`
+    //  condicional dentro de esa rama, la lista del render decía tres pestañas
+    //  y la de `_switchUnifiedTab` cuatro — y la aserción 1h de
+    //  test_admin_messaging_channels.js, que compara las DOS listas rol a rol,
+    //  lo cazó en el primer intento. Es exactamente el fallo del que avisa el
+    //  comentario de aquella lista: «el botón se pinta pero al pulsarlo no
+    //  cambia nada». Filtrando al final, las dos listas siguen diciendo lo
+    //  mismo y la exclusión del ente queda en una sola línea visible.
+    if (_esEnteIndividual) tabs = tabs.filter(t => t.id !== 'club');
 
     if (!tabs.find(t => t.id === tab)) tab = tabs[0].id;
 
@@ -1131,11 +1159,15 @@ async function _switchUnifiedTab(tabId) {
     // ⚠️ SEGUNDA LISTA DE PESTAÑAS: tiene que decir lo mismo que la de
     // _renderUnifiedMessagingView. Si se añade una pestaña allí y no aquí, el
     // botón se pinta pero al pulsarlo no cambia nada.
-    if (role === 'coach') tabs = ['parents', 'director', 'coordinator'];
-    else if (role === 'director') tabs = ['coordinators', 'coaches', 'clubadmin'];
-    else if (role === 'coordinator') tabs = ['director', 'coaches'];
+    // 💬 v739 · El 'club' va en las CUATRO listas que lo llevan arriba. Para el
+    // entrenador se añade siempre aquí aunque arriba dependa de que no sea un
+    // ente: esta lista sólo sirve para repintar el subrayado de una pestaña que
+    // ya existe, y en un ente ese botón no se ha pintado.
+    if (role === 'coach') tabs = ['parents', 'director', 'coordinator', 'club'];
+    else if (role === 'director') tabs = ['coordinators', 'coaches', 'clubadmin', 'club'];
+    else if (role === 'coordinator') tabs = ['director', 'coaches', 'club'];
     else if (role === 'parent') tabs = ['coach'];
-    else if (role === 'club_admin') tabs = ['director', 'superadmin'];
+    else if (role === 'club_admin') tabs = ['director', 'superadmin', 'club'];
     else if (role === 'admin_individual') tabs = ['coaches', 'superadmin'];
 
     tabs.forEach(t => {
@@ -1178,6 +1210,53 @@ async function _loadUnifiedContactList(tabId) {
     const listEl = document.getElementById('um-contact-list');
     const badgeEl = document.getElementById('um-filter-badge');
     if (!listEl) return;
+
+    // ══════════════════════════════════════════════════════════════
+    //  💬 v739 · LA PESTAÑA DEL CANAL COMÚN NO TIENE DESTINATARIOS
+    // ══════════════════════════════════════════════════════════════
+    //  El resto del motor gira alrededor de elegir UN contacto y abrir el hilo
+    //  con él. El canal del club no es eso: es un único destino compartido, así
+    //  que esta pestaña se corta ANTES de leer usuarios —no hay lista que
+    //  construir— y pinta el canal en la columna derecha.
+    //
+    //  ⚠️ Se esconde la barra de "Enviar grupal": mandar un grupal DENTRO del
+    //  canal común no significa nada (ya lo lee todo el mundo), y dejarla
+    //  visible ofrecería una acción que no hace lo que su rótulo promete.
+    if (tabId === 'club') {
+        const bulk = document.getElementById('um-bulk-bar');
+        if (bulk) bulk.style.display = 'none';
+        if (badgeEl) badgeEl.style.display = 'none';
+        listEl.innerHTML = `
+            <div style="padding:0.8rem 0.7rem;border-radius:10px;
+                        background:rgba(88,166,255,0.06);border:1px solid rgba(88,166,255,0.2);">
+                <div style="font-weight:700;color:#58a6ff;font-size:0.85rem;">🏟️ Canal del club</div>
+                <div style="font-size:0.72rem;color:var(--text-muted);margin-top:4px;line-height:1.45;">
+                    Un único canal para el administrador, el director deportivo,
+                    los coordinadores y todos los entrenadores (F7 y F11).
+                    Los familiares no lo ven.
+                </div>
+            </div>`;
+        // 📱 En móvil el split es maestro-detalle: sin esto se vería la lista y
+        // el canal quedaría fuera de pantalla, igual que un hilo sin abrir.
+        _umSetShowingChat(true);
+        if (typeof window.ccAbrirCanal === 'function') {
+            await window.ccAbrirCanal('um-chat-view');
+        } else {
+            const cv = document.getElementById('um-chat-view');
+            if (cv) cv.innerHTML = `<div style="padding:2rem;text-align:center;color:#ff5858;">
+                ⚠️ El módulo del canal del club no está cargado.</div>`;
+        }
+        return;
+    }
+
+    // Fuera del canal, la barra de grupal vuelve: la esconde la rama de arriba
+    // y nadie más la tocaba, así que sin esto se quedaría oculta para siempre
+    // en cuanto se visitara el canal una vez.
+    const _bulk = document.getElementById('um-bulk-bar');
+    if (_bulk) _bulk.style.display = '';
+    // Y el oyente en vivo del canal se corta al salir: dejarlo abierto mantiene
+    // una consulta de Firestore por cada visita a la pestaña (v719).
+    if (typeof window._ccCortarOyente === 'function') window._ccCortarOyente();
 
     listEl.innerHTML = '<p style="color:var(--text-muted);text-align:center;padding:2rem;font-size:0.85rem;">⏳ Cargando destinatarios…</p>';
     if (badgeEl) badgeEl.style.display = 'none';

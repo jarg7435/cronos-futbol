@@ -1337,6 +1337,134 @@ service cloud.firestore {
                      request.auth.uid == resource.data.get('staffUid', null));
     }
 
+    // ══════════════════════════════════════════════════════════════════
+    //  💬 v739 · CHAT COMÚN DEL CLUB
+    // ══════════════════════════════════════════════════════════════════
+    //  Encargo del autor (2026-09-18): UN canal por club para los cuatro roles
+    //  de gestión —administrador del club, director deportivo, coordinadores
+    //  (F7 y F11 juntos) y entrenadores—, EXCLUYENDO al familiar. El ente
+    //  individual no participa. El SuperAdmin no pertenece al canal pero
+    //  conserva acceso de supervisión.
+    //
+    //  🚨 POR QUÉ NO VA EN `cronos_messages`, QUE ES DONDE VIVE TODO LO DEMÁS:
+    //  el `allow read` de esa colección incluye `sameClubAsDoc(clubId)` y
+    //  `userDocClubId(clubId)`, y NINGUNA de las dos mira el rol. Cualquier
+    //  miembro autorizado del club —un familiar incluido— puede leer cualquier
+    //  hilo de su club pidiendo el documento. Un canal "sólo técnicos" metido
+    //  ahí estaría escondido en la interfaz y abierto en la base de datos.
+    //
+    //  🔑 LA PERTENENCIA NO SE ESCRIBE, SE DEDUCE DEL ROL. El encargo pide que
+    //  el alta sea automática al registrar a alguien en el club: una lista de
+    //  miembros habría que mantenerla en cada alta, cada baja y cada cambio de
+    //  rol, y el día que se desincronice alguien se queda fuera sin error. Lo
+    //  único que se escribe es lo EXCEPCIONAL: `expelledUids`, la potestad de
+    //  expulsar que el autor reserva al administrador del club.
+    //
+    //  🚨🚨 EL ROL SE LEE DE `users/{uid}.role` Y NUNCA DE `allRoles`. El
+    //  `allow update` de users/{userId} impide que nadie se toque su propio
+    //  'role', 'isAuthorized', 'status' ni 'clubId' — pero `allRoles` NO está
+    //  en esa lista, o sea que es AUTOESCRIBIBLE. Una regla apoyada en
+    //  `allRoles` la falsifica cualquiera poniéndose un rol de entrenador.
+    //
+    //  ⚠️ 'user' Y 'coach' SON LO MISMO AQUÍ: en este proyecto un entrenador se
+    //  guarda con rol 'user' (js/core/app-init.js trata los dos como
+    //  entrenador). La función `isTechStaffByDoc()` de más arriba lista 'coach'
+    //  y NO 'user': copiarla tal cual habría dejado fuera a los entrenadores,
+    //  que son la mitad del canal.
+    //
+    //  ⚠️ NINGÚN ROL DEL ENTE INDIVIDUAL entra en la lista blanca
+    //  ('individual_admin', 'admin_individual', 'entrenador_individual',
+    //  'parent_individual'): el encargo dice que el ente no participa, y una
+    //  lista blanca lo cumple sin tener que enumerar a quién se excluye.
+    function ccEsTecnicoDelClub(clubId) {
+      return isAuth()
+             && clubId != null
+             && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+             && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('clubId', '') == clubId
+             && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('isAuthorized', false) == true
+             && get(/databases/$(database)/documents/users/$(request.auth.uid))
+                  .data.get('role', '') in ['director', 'coordinator', 'coach', 'user', 'club_admin', 'admin'];
+    }
+
+    // ⚠️ `exists()` PRIMERO: la cabecera del canal puede no existir todavía
+    // (club que aún no ha escrito ni un mensaje), y un `get()` sobre un
+    // documento ausente LANZA — y un error equivale a DENY para la condición
+    // ENTERA, no sólo para esta rama. Sin este `exists()`, el canal estaría
+    // cerrado para todo el mundo hasta que alguien creara la cabecera a mano.
+    function ccNoExpulsado(clubId) {
+      return !exists(/databases/$(database)/documents/cronos_staff_channel/$(clubId))
+             || !(request.auth.uid in
+                  get(/databases/$(database)/documents/cronos_staff_channel/$(clubId))
+                    .data.get('expelledUids', []));
+    }
+
+    // Quien EXPULSA es el administrador del club, y sólo él. `isAdminOfClub()`
+    // no sirve aquí: incluye también al director y al coordinador, que en este
+    // canal son miembros como los demás (decisión explícita del autor).
+    function ccEsAdminDelClub(clubId) {
+      return isClubAdmin(clubId) || isClubAdminOf(clubId);
+    }
+
+    // ── Cabecera del canal: una por club. Guarda a los expulsados y la
+    //    marca del último vaciado de temporada. Aquí NO hay mensajes.
+    match /cronos_staff_channel/{clubId} {
+      allow get: if isAuth() && (isSuperAdmin() || ccEsTecnicoDelClub(clubId));
+      // 🔑 Enumerar canales no lo necesita nadie: cada club conoce el suyo por
+      // su clubId. Un `list` abierto sería un censo de clubes.
+      allow list: if isSuperAdmin();
+      allow create, update: if isAuth() && ccEsAdminDelClub(clubId);
+      allow delete: if isSuperAdmin();
+    }
+
+    // ── Los mensajes: UN DOCUMENTO POR MENSAJE, no un array.
+    //  🔑 En el resto de la mensajería los mensajes viven en un array dentro
+    //  del documento del hilo (`cronos_messages/{id}.messages`). Para una
+    //  pareja se aguanta; para un canal con toda la plantilla técnica del club
+    //  son tres problemas a la vez: el tope de 1 MiB por documento, la
+    //  contención de escrituras sobre EL MISMO documento, y que cada apertura
+    //  se descargue el histórico entero. Un documento por mensaje los quita
+    //  los tres y además permite leer sólo los últimos N.
+    //
+    //  ⚠️ COLECCIÓN DE PRIMER NIVEL, NO SUBCOLECCIÓN, y es a propósito: el
+    //  vaciado de temporada (js/admin/superadmin/season-reset.js) y el borrado
+    //  de club consultan `where('clubId','==',x)` sobre colecciones planas. Una
+    //  subcolección habría necesitado `collectionGroup` y un camino aparte.
+    match /cronos_staff_messages/{msgId} {
+      // El `list` se acota solo: la condición depende de `resource.data.clubId`,
+      // así que una consulta sin `where('clubId','==', el suyo)` devolvería
+      // documentos que el lector no puede leer y Firestore la rechaza ENTERA.
+      allow read: if isAuth() && (
+        isSuperAdmin() ||
+        (ccEsTecnicoDelClub(resource.data.get('clubId', null)) &&
+         ccNoExpulsado(resource.data.get('clubId', null)))
+      );
+
+      // 🚨 EL SUPERADMIN NO PUEDE ESCRIBIR AQUÍ, y esto es el encargo al pie de
+      // la letra: «no pertenece al canal, aunque mantiene acceso exclusivo de
+      // supervisión y diagnóstico». Lee y puede purgar; hablar, no.
+      //
+      // ⚠️ El remitente tiene que ser QUIEN FIRMA: sin `senderUid == uid`
+      // cualquier miembro del canal podría escribir un mensaje en nombre de
+      // otro, y el canal no tiene más identidad que ese campo.
+      allow create: if isAuth()
+                    && request.resource.data.get('senderUid', null) == request.auth.uid
+                    && ccEsTecnicoDelClub(request.resource.data.get('clubId', null))
+                    && ccNoExpulsado(request.resource.data.get('clubId', null));
+
+      // Un mensaje enviado no se edita. Que el texto de ayer pueda cambiar hoy
+      // convierte el canal en algo que no se puede citar.
+      allow update: if false;
+
+      // «Cada usuario puede borrar sus propios mensajes» (encargo), el
+      // administrador del club vacía el histórico de temporada, y el
+      // SuperAdmin conserva la purga que ya tiene sobre el resto de colecciones.
+      allow delete: if isAuth() && (
+        isSuperAdmin() ||
+        request.auth.uid == resource.data.get('senderUid', null) ||
+        ccEsAdminDelClub(resource.data.get('clubId', null))
+      );
+    }
+
     // ============================================================
     // COLECCIÓN: cronos_notifications
     // SEC-004/SEC-015: Restrict create

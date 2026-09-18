@@ -38,6 +38,14 @@ window._SA_SEASON_COLS = [
     { col: 'cronos_player_reports',  etiqueta: 'Informes',                  porDefecto: true },
     { col: 'cronos_notifications',   etiqueta: 'Avisos y convocatorias',    porDefecto: true },
     { col: 'cronos_messages',        etiqueta: 'Conversaciones',            porDefecto: false },
+    // 💬 v739 · El canal común del club. Va aquí para que el vaciado de
+    // temporada lo alcance igual que al resto: el encargo pide que el histórico
+    // se vacíe al acabar la temporada, y el administrador del club tiene además
+    // su propio botón dentro del canal (js/coach/comms/club-chat.js).
+    // ⚠️ NO se vacía por defecto, igual que las conversaciones: son mensajes de
+    // personas, no datos deportivos acumulados, y borrarlos sin querer al
+    // resetear la temporada no tiene deshacer.
+    { col: 'cronos_staff_messages',  etiqueta: 'Canal común del club',      porDefecto: false },
     { col: 'cronos_player_links',    etiqueta: 'Vínculos jugador-familiar', porDefecto: false,
       aviso: 'Los familiares y jugadores dejarán de ver al jugador vinculado hasta que se rehagan las vinculaciones.' },
 ];

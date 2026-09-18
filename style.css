@@ -1526,6 +1526,45 @@ input, select {
     .um-sidebar #um-bulk-bar button { min-height: 38px; touch-action: manipulation; }
 }
 
+/* ═══════════════════════════════════════════════════════════════════════════
+   🗂️ v740 · LA BARRA DE PESTAÑAS, EN VARIAS FILAS SI HACE FALTA
+   ═══════════════════════════════════════════════════════════════════════════
+   Reporte del autor (implementar.txt 2026-09-18, capturas 10575 y 10578): con
+   la pestaña «Canal Club» de v739 son CUATRO, y la cuarta se queda cortada o
+   directamente no se ve — en el Director («Coordinadores · Entrenadores ·
+   Admin. Clu…») y en el Entrenador («Familiares · Director · Coordinador ·
+   Ca…»).
+
+   📏 LA CAUSA, MEDIDA: la barra vive en una columna de 340px con `overflow:
+   hidden`, y cada botón se pintaba con `flex:1` + `white-space:nowrap`. `flex:1`
+   reparte el ancho SOBRANTE, pero no puede quitar espacio por debajo del
+   contenido de un botón que no admite salto de línea: cuatro etiquetas de ~110px
+   necesitan ~440px, y lo que no cabe lo recorta el `overflow` del padre. Sin
+   scroll y sin aviso: la pestaña simplemente no existe para quien la mira.
+
+   🔑 SE ELIGE ENVOLVER, NO DESLIZAR, aunque el encargo ofrecía las dos. Con una
+   barra de cuatro elementos el deslizamiento esconde la mitad y hay que
+   descubrir que se puede arrastrar; envolviendo se ven TODAS a la vez y sin
+   interacción. El coste es una fila más de alto, sólo cuando no caben.
+
+   ⚠️ `flex` LLEVA `!important` y `flex-wrap` NO: los botones nacen con `flex:1`
+   en su `style=""` inline (y a eso sólo lo vence una hoja con !important,
+   lección de v422), mientras que `flex-wrap` no se declara inline en la barra,
+   así que una regla normal basta.
+   ═══════════════════════════════════════════════════════════════════════════ */
+.um-tabbar {
+    flex-wrap: wrap;
+    row-gap: 0;
+}
+.um-tab {
+    /* `1 1 auto` y no `1` a secas: el botón puede ENCOGER hasta su contenido en
+       vez de exigir una porción fija, que es lo que desbordaba la barra. */
+    flex: 1 1 auto !important;
+    min-width: max-content;
+    padding: 0.55rem 0.6rem !important;
+    font-size: 0.76rem !important;
+}
+
 /* El corte es 950px por decisión del autor (2026-08-02): con 760px el iPad en
    vertical (768-834px) se quedaba en dos columnas, y prefiere pantalla única
    también ahí. 950 es además el punto de corte que ya usa el resto del
