@@ -398,6 +398,28 @@ window.openMisInformes = async function openMisInformes() {
             return (etiqueta ? etiqueta + (sub ? ' ' + sub : '') : 'Mi equipo');
         };
 
+        // ══════════════════════════════════════════════════════════════
+        //  🔵🔴 v738 · LA CATEGORÍA DE ESTE EQUIPO, para las columnas ▲R/▼P
+        // ══════════════════════════════════════════════════════════════
+        //  El encargo (implementar.txt 2026-09-18, captura 10566) es del
+        //  resumen acumulado, y ESTA pantalla pinta el mismo componente que el
+        //  Panel de Dirección (`ctRenderStatsTable`): si sólo se arreglara
+        //  allí, el entrenador del Alevín seguiría viendo las dos columnas de
+        //  las que su categoría no registra nada.
+        //
+        //  🔑 Misma cascada que la etiqueta de aquí arriba, y en este orden:
+        //  la clave del equipo abierto manda (es la que el candado y el
+        //  acumulado ya usan), y sólo si no se puede resolver se mira el
+        //  primer informe y luego el perfil.
+        //
+        //  ⚠️ DEVUELVE '' CUANDO NO SE SABE, y eso desactiva la regla en vez de
+        //  esconder columnas a ciegas: ver `ctCategoriaRegistraPR`.
+        const _miCatEquipo = () => {
+            if (_catMia) return _catMia;
+            const p0 = (_miParaResumen[0] && _miParaResumen[0].players && _miParaResumen[0].players[0]) || {};
+            return p0.category || me.category || me.categoryLabel || '';
+        };
+
         // Guardado para las descargas, que reacumulan AL PULSAR con la misma
         // función que pintó la tabla (el papel no puede decir otra cosa que
         // la pantalla).
@@ -463,7 +485,7 @@ window.openMisInformes = async function openMisInformes() {
             } catch (_) { /* sin plantilla local, la tabla sale como antes */ }
 
             _miResumenHtml = barra + window.ctRenderStatsTable(
-                _miFilas, { matchCount: _miParaResumen.length }
+                _miFilas, { matchCount: _miParaResumen.length, categoria: _miCatEquipo() }
             );
         }
 

@@ -899,8 +899,12 @@ async function _sdLoadReports() {
                     if (typeof window.ctMergeSquadRows === 'function') {
                         _filas = window.ctMergeSquadRows(_filas, _sq);
                     }
+                    // 🔵🔴 v738 · LA CATEGORÍA DE ESTA RAMA, para decidir si van
+                    // las columnas ▲R / ▼P. El árbol ya la tiene resuelta y
+                    // normalizada aquí mismo: no hay que deducirla de nada.
+                    // La regla vive en `ctCategoriaRegistraPR` (category-tree.js).
                     return _sdStatsBar(arr, catId, subId) + window.ctRenderStatsTable(
-                        _filas, { matchCount: arr.length, guestRows: _inv });
+                        _filas, { matchCount: arr.length, guestRows: _inv, categoria: catId });
                 },
                 renderLeaf: (x) => _sdReportCard(x.m),
                 // v593 · El árbol del coordinador es el de SU modalidad.

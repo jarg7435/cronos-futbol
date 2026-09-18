@@ -746,6 +746,46 @@
         return m ? m[1] : s;
     };
 
+    // ══════════════════════════════════════════════════════════════════
+    //  🔵🔴 v738 · QUÉ CATEGORÍAS REGISTRAN PÉRDIDAS Y RECUPERACIONES
+    // ══════════════════════════════════════════════════════════════════
+    //  Encargo del autor (implementar.txt 2026-09-18, captura 10566): en
+    //  Prebenjamín, Benjamín, Alevín, Infantil y FUTureFEM las columnas ▲R y
+    //  ▼P «no deben mostrarse en el resumen acumulado de la temporada, ya que
+    //  no se aplican en estos niveles». Se mantienen «únicamente para las
+    //  categorías de Cadetes hacia arriba».
+    //
+    //  🔑 SE ESCRIBE COMO LISTA BLANCA, no como lista de exclusión, y por lo
+    //  que dice el encargo: «únicamente». Si mañana se añade una categoría al
+    //  catálogo de arriba, entrará SIN estas columnas y habrá que apuntarla
+    //  aquí a propósito — al revés, una categoría nueva las estrenaría sola y
+    //  nadie se enteraría.
+    //
+    //  🚨 EL ORDEN DE LA LISTA NO IMPORTA PORQUE SE COMPARA POR IGUALDAD, no
+    //  con `includes`. Es la trampa de v511: `'regional_fem'.includes('regional')`
+    //  es TRUE, y una comprobación por subcadena metería a Regional FEM y a
+    //  FUTureFEM en el mismo saco que Regional. Aquí Regional FEM sí lleva las
+    //  columnas (es «Regionales») y FUTureFEM no (está en su lista de ocultar).
+    //
+    //  ⚠️ La normalización es la ÚNICA del proyecto (`ctNormCat`): le llegan
+    //  'f11_regional', 'Alevín C' y 'regional fem' según de dónde salga el
+    //  dato, y aquí no se escribe una segunda copia de esa regla.
+    var CT_CATS_CON_PR = ['cadete', 'juvenil', 'regional', 'regional_fem'];
+    window.CT_CATS_CON_PR = CT_CATS_CON_PR;
+
+    //  ctCategoriaRegistraPR(cat) → true si esa categoría lleva P/R.
+    //  ⚠️ SIN CATEGORÍA DEVUELVE `true`, y es deliberado: quien no sabe de qué
+    //  equipo es la tabla no puede decidir, y esconder columnas por no saber
+    //  sería quitarle datos reales a un Regional. La decisión de aplicar o no
+    //  la regla es de quien llama, que es quien sabe si tiene la categoría.
+    window.ctCategoriaRegistraPR = function (cat) {
+        var c = (typeof window.ctNormCat === 'function')
+            ? window.ctNormCat(cat)
+            : String(cat == null ? '' : cat).trim().toLowerCase();
+        if (!c) return true;
+        return CT_CATS_CON_PR.indexOf(c) !== -1;
+    };
+
     // Devuelve { byCatSub: Map<catId, Map<subId, item[]>>, sinClasificar, total }.
     // ⚠️ DECISIÓN EXPLÍCITA DEL AUTOR (2026-07-30): lo no clasificable NO se
     // descarta, se agrupa aparte. El árbol de usuarios de arriba sí lo descarta,
@@ -1525,9 +1565,16 @@
         //  ⚠️ `opts.mostrarPR === false` permite apagarlas desde quien llama
         //  (el PDF/CSV, por ejemplo) sin tocar el extra.
         // ══════════════════════════════════════════════════════════════
+        // ⚠️ v738 · Y ADEMÁS, LA CATEGORÍA. El extra dice si el club registra
+        // P/R; `opts.categoria` dice si ESTE equipo las tiene. Las dos puertas
+        // se suman: en un club con el extra encendido, el Alevín ya no las
+        // enseña y el Cadete sí (encargo del autor, captura 10566). Sin
+        // `opts.categoria` la regla no se aplica — ver `ctCategoriaRegistraPR`.
         const _prActivo = (opts.mostrarPR === false) ? false
             : (typeof window._cronosExtraEnabled === 'function'
-                 ? window._cronosExtraEnabled('registro_pr') : false);
+                 ? window._cronosExtraEnabled('registro_pr') : false)
+              && (typeof window.ctCategoriaRegistraPR === 'function'
+                 ? window.ctCategoriaRegistraPR(opts.categoria) : true);
         // Celdas de P/R: en rojo las pérdidas y en verde las recuperaciones,
         // los mismos colores con los que se registran en el campo.
         const celPR = (f) => _prActivo
