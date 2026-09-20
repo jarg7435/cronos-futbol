@@ -589,16 +589,27 @@ console.log('\n── PARTE 12 · panel de Direccion ──');
     // ⚠️ LO QUE NO SE TOCA, Y POR QUE — para que no se "arregle" por descuido:
     //  · las pestañas pintan en el div interno #staff-dashboard-content, asi
     //    que NO destruyen el panel y no necesitan ser pantallas propias.
-    //  · la mensajeria del Director/Coordinador se pinta EMBEBIDA en ese mismo
-    //    div (_sdLoadMessages pasa 'staff-dashboard-content'), y en
-    //    _renderUnifiedMessagingView el boton "Volver" solo se pinta para el
-    //    COACH y la ✕ solo en modo modal. O sea que el motor de mensajeria
-    //    —el que el autor pidio proteger— NO esta roto para estos roles y no
-    //    hace falta tocarlo aqui.
+    //
+    //  💬 v741 · LA MENSAJERIA SE SALE DE ESA REGLA, Y POR PETICION EXPRESA
+    //  del autor (implementar.txt 2026-09-18, capturas 10582-10585): «los
+    //  paneles de mensajeria de los diferentes roles deben ser exactamente
+    //  iguales […] el mismo formato amplio, grande y espacioso que tiene el
+    //  panel del administrador del club». Empotrada, la misma pantalla se veia
+    //  a la mitad de ancho, porque el panel anfitrion mide min(96vw,960px).
+    //  Asi que el Director y el Coordinador dejan de pasar contenedor y entran
+    //  por la rama MODAL, la del administrador. Consecuencias, las dos medidas
+    //  aqui: destruye el panel anfitrion (12k2 exige que la raiz vuelva al
+    //  tablero antes, o "Volver" reabriria mensajes en bucle) y ahora SI hay
+    //  un "Volver" que pintar (12l-b).
     ok('12j · las pestañas siguen pintando en el div interno del panel',
        /getElementById\(['"]staff-dashboard-content['"]\)/.test(sd));
-    ok('12k · la mensajeria del Director se pinta EMBEBIDA en ese div',
-       /openDirectorMessaging\(\s*['"]coordinators['"]\s*,\s*['"]staff-dashboard-content['"]\s*\)/.test(sd));
+    ok('12k · 🔑 la mensajeria del Director ya NO se empotra: abre en modal',
+       /openDirectorMessaging\(\s*['"]coordinators['"]\s*\)/.test(sd) &&
+       !/openDirectorMessaging\([^)]*staff-dashboard-content/.test(sd),
+       'con contenedor se pintaba dentro de min(96vw,960px): la mitad de ancho');
+    ok('12k2 · 🚨 y la RAIZ vuelve al tablero antes de abrirla',
+       /navRootScreen\('openStaffDashboard', 'menu'\)[\s\S]{0,400}openDirectorMessaging/.test(sd),
+       'si la raiz siguiera en «mensajes», navBack la reabriria: bucle sin salida');
     const comms = sinCom(leer('js/coach/comms/panel.js'));
     // ⚠️ ACTUALIZADA EN LA RONDA 7 (misma familia que las dos inversiones de la
     // ronda 2). Fijaba la forma vieja —`role === 'coach' ?` con destino cableado
@@ -625,10 +636,17 @@ console.log('\n── PARTE 12 · panel de Direccion ──');
     {
         const hayVuelta = _cargarUmHayVuelta(comms, true);   // con pila: canGoBack = true
         ok('12l-a · el COACH lo conserva (modal)',           hayVuelta('coach', true) === true);
-        ok('12l-b · 🔴 el Director NUNCA (embebido ni modal)',
-           hayVuelta('director', false) === false && hayVuelta('director', true) === false);
-        ok('12l-c · 🔴 tampoco el Coordinador ni el Padre',
-           hayVuelta('coordinator', true) === false && hayVuelta('parent', true) === false);
+        // ⚠️ ACTUALIZADA EN v741 (unificacion de los paneles, ver 12k). El
+        // Director y el Coordinador ya no ven la mensajeria empotrada, asi que
+        // la razon por la que NO podian tener "Volver" —destruiria al anfitrion
+        // que los contiene— deja de aplicarles en modal. Lo que el guard
+        // protege NO cambia y se sigue midiendo abajo: EMBEBIDOS siguen sin
+        // "Volver", y el Padre —que sigue empotrado en su panel— tampoco.
+        ok('12l-b · 🔑 el Director SI, en modal (v741), y NUNCA embebido',
+           hayVuelta('director', true) === true && hayVuelta('director', false) === false);
+        ok('12l-c · 🔑 el Coordinador igual; 🔴 el Padre NUNCA (sigue empotrado)',
+           hayVuelta('coordinator', true) === true && hayVuelta('coordinator', false) === false &&
+           hayVuelta('parent', true) === false && hayVuelta('parent', false) === false);
         ok('12l-d · 🔑 y el Administrador Individual SI, en modal (v626)',
            hayVuelta('admin_individual', true) === true);
         ok('12l-e · ⚠️ pero NUNCA embebido, que ahi lo posee el anfitrion',
@@ -650,6 +668,11 @@ console.log('\n── PARTE 12 · panel de Direccion ──');
            'un "Volver" que deja la pantalla en negro es peor que no tenerlo');
         ok('12l-i · ⚠️⚠️ y tampoco al Administrador de Club sin pila',
            sinPila('club_admin', true) === false);
+        // v741 · Los dos recien llegados pasan por la MISMA puerta: si el modal
+        // de mensajeria fuese la entrada (pila de un solo nivel), navBack caeria
+        // en navExit() y solo ocultaria el contenedor — pantalla en negro.
+        ok('12l-j · ⚠️⚠️ ni al Director ni al Coordinador sin pila (v741)',
+           sinPila('director', true) === false && sinPila('coordinator', true) === false);
     }
 }
 
@@ -995,8 +1018,11 @@ console.log('\n── PARTE 16 · motor de mensajeria unificada ──');
     //    openStaffDashboard garantizan _activeRole director|coordinator.
     const sd = sinCom(leer('js/coach/reports/club-reports.js'));
     const rl = sinCom(leer('js/services/auth/role-launch.js'));
-    ok('16q · la rama else que embeberia el motor como COACH sigue ahi',
-       /openCoachMessaging\('parents', 'staff-dashboard-content'\)/.test(sd));
+    // v741 · La rama sigue siendo inalcanzable y sigue declarada; lo unico que
+    // cambia es que ya no pasa contenedor, como sus dos hermanas (ver 12k).
+    ok('16q · la rama else que abriria el motor como COACH sigue ahi',
+       /openCoachMessaging\('parents'\)/.test(sd) &&
+       !/openCoachMessaging\([^)]*staff-dashboard-content/.test(sd));
     ok('16r · pero role-launch solo deja entrar a director|coordinator',
        /\['director', 'coordinator'\]\.includes\(activeRole\)/.test(rl));
     ok('16s · y el modo prueba fuerza _activeRole a uno de esos dos',

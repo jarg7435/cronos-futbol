@@ -143,10 +143,56 @@ function ccPuedeVerCanal(u) {
 }
 window.ccPuedeVerCanal = ccPuedeVerCanal;
 
-// ¿Es el administrador del club? Es quien puede expulsar y vaciar.
-// ⚠️ A PROPÓSITO NO INCLUYE al director ni al coordinador: el encargo da esa
-// potestad al administrador del club, y en este canal los otros dos son
-// miembros como los demás.
+// ════════════════════════════════════════════════════════════════════
+//  🔐 v742 · QUIÉN PUEDE **GESTIONAR** EL CANAL
+// ════════════════════════════════════════════════════════════════════
+//  Encargo del autor (implementar.txt 2026-09-18, capturas 10587-10591):
+//  «Sólo pueden ver y utilizar el botón de Gestionar el Administrador del Club
+//  y el Director Deportivo. Los Coordinadores y Entrenadores tienen totalmente
+//  prohibido gestionar el canal, por lo que esa opción no debe aparecerles ni
+//  estar accesible bajo ningún concepto».
+//
+//  Dos cambios, y el segundo es el que explica sus capturas:
+//
+//   1. ENTRA EL DIRECTOR DEPORTIVO. En v739 la potestad era sólo del
+//      administrador del club — decisión suya entonces, cambiada ahora.
+//
+//   2. 🚨 SE MIRA TAMBIÉN LA PLAZA ACTIVA, NO SÓLO EL ROL RAÍZ. En sus cuatro
+//      capturas sale «⚙️ Gestionar» en las cuatro plazas —director,
+//      coordinador, entrenador y administrador— porque es LA MISMA CUENTA: su
+//      rol raíz es `club_admin` y el botón preguntaba únicamente por él. Con
+//      una cuenta de un solo rol el defecto es invisible; con una multi-plaza
+//      el entrenador se ve el botón de expulsar. Es exactamente la trampa que
+//      v740 pagó con la FIRMA de los mensajes, en la función de al lado.
+//
+//  🔑 LAS DOS CONDICIONES SE EXIGEN A LA VEZ, Y EL ORDEN IMPORTA:
+//   · el rol RAÍZ concede la potestad — es lo único que las reglas de
+//     Firestore pueden verificar;
+//   · la plaza ACTIVA sólo puede QUITARLA, nunca darla. `_activeRole` y
+//     `allRoles` son AUTOESCRIBIBLES (el `allow update` de users/{uid} no los
+//     protege), así que un criterio que dependiera de ellos para CONCEDER lo
+//     falsificaría cualquiera desde la consola. Restringiendo, no hay nada que
+//     ganar falsificándolo: sólo quitarse a uno mismo un botón.
+//
+//  ⚠️ Sin plaza activa declarada manda el rol raíz: es el caso de las pantallas
+//  que no la fijan, y negarlo ahí dejaría al administrador sin gestión.
+const CC_ROLES_GESTION = ['club_admin', 'admin', 'director'];
+
+function ccPuedeGestionar(u) {
+    u = u || _ccYo();
+    if (!u) return false;
+    // 1) La potestad, por el rol RAÍZ (lo que miran las reglas).
+    if (CC_ROLES_GESTION.indexOf(_ccRolDe(u)) === -1) return false;
+    // 2) El puesto desde el que estoy actuando AHORA.
+    const activo = String((u && u._activeRole) || '').trim().toLowerCase();
+    if (!activo) return true;
+    return CC_ROLES_GESTION.indexOf(activo) !== -1;
+}
+window.ccPuedeGestionar = ccPuedeGestionar;
+
+// ¿Es el ADMINISTRADOR del club? Ya no decide la gestión (eso es
+// `ccPuedeGestionar`), pero sigue haciendo falta para una cosa: a él no se le
+// expulsa. Ver la nota de `ccAbrirGestion`.
 function ccEsAdminDelClub(u) {
     u = u || _ccYo();
     const r = _ccRolDe(u);
@@ -159,7 +205,8 @@ window.ccEsAdminDelClub = ccEsAdminDelClub;
 //  entra en la pestaña se registraría un oyente NUEVO sobre la misma consulta
 //  y el canal se repintaría N veces por mensaje — el fallo por paridad de
 //  listeners que ya costó v719, y aquí con una consulta en vivo detrás.
-window._ccState = { unsub: null, clubId: '', contenedorId: '', expulsados: [], mensajes: [] };
+window._ccState = { unsub: null, clubId: '', contenedorId: '', expulsados: [], mensajes: [],
+                    directorio: null };
 
 function _ccCortarOyente() {
     try { if (typeof window._ccState.unsub === 'function') window._ccState.unsub(); }
@@ -205,10 +252,84 @@ function _ccColorDe(uid) {
 }
 window._ccColorDe = _ccColorDe;
 
-// El correo entero no cabe y no dice nada: «arinagazone@gmail.com» ocupa media
-// burbuja (se ve en su captura 10579). Si hay nombre, el nombre; si no, lo que
-// va antes de la arroba.
+// ════════════════════════════════════════════════════════════════════
+//  🪪 v741 · SE FIRMA CON EL NOMBRE REGISTRADO, NO CON EL CORREO
+// ════════════════════════════════════════════════════════════════════
+//  Encargo del autor (implementar.txt 2026-09-18, capturas 10583-10585): «en
+//  los mensajes del chat se muestra el correo electrónico (arinagazone). Quiero
+//  que desaparezca el correo y se sustituya por el nombre de usuario registrado
+//  junto a su rol».
+//
+//  🚨 LA CAUSA, MEDIDA ANTES DE TOCAR NADA: el mensaje se sellaba con
+//  `yo.name || yo.displayName || yo.email`, y **`name` no existe en este
+//  proyecto**. El usuario de sesión que arma auth.js lleva `firstName`,
+//  `lastName` y `displayName` (js/services/auth.js:1942 y :2213) — jamás
+//  `name`. Así que la cadena caía siempre al correo, y de ahí el «arinagazone»
+//  de sus capturas: no faltaba el nombre en la base de datos, faltaba LEERLO.
+//  El resto de la app ya compone el nombre igual en nueve sitios
+//  (`displayName || [firstName, lastName]`), así que esto no inventa un
+//  criterio nuevo: adopta el que ya existe.
+//
+//  ⚠️ La plaza (`allRoles`) es el ÚLTIMO recurso y no el primero: ahí el nombre
+//  se copia al dar el alta y puede haberse quedado viejo, mientras que la raíz
+//  del documento es lo que el SuperAdmin y el administrador del club mantienen.
+function _ccNombreDe(u) {
+    if (!u) return '';
+    const limpio = (v) => String(v == null ? '' : v).trim();
+    const compuesto = (o) => limpio(o.displayName) ||
+        [limpio(o.firstName), limpio(o.lastName)].filter(Boolean).join(' ') ||
+        limpio(o.name);
+    let n = compuesto(u);
+    if (!n && Array.isArray(u.allRoles)) {
+        for (const r of u.allRoles) { n = r ? compuesto(r) : ''; if (n) break; }
+    }
+    if (n) return n;
+    // Sin NINGÚN nombre registrado se cae al correo SIN dominio. No es lo que
+    // el autor quiere ver, pero una cuenta sin nombre tiene que seguir siendo
+    // distinguible: «Miembro» repetido cinco veces es peor que un alias.
+    const mail = limpio(u.email);
+    return mail.indexOf('@') > 0 ? mail.slice(0, mail.indexOf('@')) : mail;
+}
+window._ccNombreDe = _ccNombreDe;
+
+// ── El directorio de nombres del club ────────────────────────────────
+//  🔑 ARREGLA TAMBIÉN LO YA ESCRITO. El nombre va SELLADO en cada mensaje (y
+//  se queda: quien deja el club debe seguir apareciendo), pero los mensajes
+//  que ya están en producción se sellaron con el correo. Resolviendo el uid
+//  contra el censo del club al abrir el canal, esas burbujas pasan a decir el
+//  nombre sin tocar un solo documento — y quien ya no esté en el censo
+//  conserva su firma original, que para eso se sella.
+//
+//  ⚠️ UNA SOLA LECTURA POR CLUB Y SESIÓN: se cachea por `clubId` porque el
+//  canal se abre y se cierra cada vez que se entra en la pestaña. Si la
+//  consulta falla (permisos, sin red), NO pasa nada: se pinta el nombre
+//  sellado, que es exactamente lo que se pintaba antes de esto.
+async function _ccCargarDirectorio(clubId) {
+    const st = window._ccState;
+    if (st.directorio && st.directorio.clubId === clubId) return st.directorio.nombres;
+    const nombres = {};
+    try {
+        const { db, collection, query, where, getDocs } = await _ccFS();
+        const snap = await getDocs(query(collection(db, 'users'),
+            where('clubId', '==', clubId)));
+        snap.forEach(d => {
+            const n = _ccNombreDe({ uid: d.id, ...d.data() });
+            if (n) nombres[d.id] = n;
+        });
+    } catch (_) { /* sin censo se pinta el nombre sellado en el mensaje */ }
+    st.directorio = { clubId, nombres };
+    return nombres;
+}
+window._ccCargarDirectorio = _ccCargarDirectorio;
+
+// El nombre que se pinta en la burbuja: el del censo si lo hay, y si no el que
+// viajó sellado en el mensaje. El correo entero no cabe y no dice nada
+// («arinagazone@gmail.com» ocupa media burbuja, captura 10579), así que de un
+// correo se pinta lo que va antes de la arroba.
 function _ccNombreCorto(m) {
+    const dir = (window._ccState.directorio && window._ccState.directorio.nombres) || {};
+    const vivo = dir[m && m.senderUid];
+    if (vivo) return vivo;
     const n = String(m && m.senderName || '').trim();
     if (!n) return 'Alguien';
     return n.indexOf('@') > 0 ? n.slice(0, n.indexOf('@')) : n;
@@ -246,7 +367,7 @@ function _ccBurbuja(m, yo, soyAdmin) {
                     background:${col}26;border:1.5px solid ${col}80;color:${col};
                     display:flex;align-items:center;justify-content:center;
                     font-size:0.7rem;font-weight:800;text-transform:uppercase;"
-             title="${_ccEsc(m.senderName || '')}">${_ccEsc(nombre.charAt(0))}</div>`;
+             title="${_ccEsc(nombre + ' · ' + etiq)}">${_ccEsc(nombre.charAt(0))}</div>`;
 
     const cabecera = `
         <div style="display:flex;align-items:center;gap:6px;font-size:0.68rem;
@@ -292,7 +413,7 @@ function _ccPintarMensajes() {
     if (!cont) return;
     const yo = _ccYo();
     if (!yo) return;
-    const soyAdmin = ccEsAdminDelClub(yo);
+    const soyAdmin = ccPuedeGestionar(yo);
     const msgs = window._ccState.mensajes || [];
 
     if (!msgs.length) {
@@ -340,7 +461,9 @@ async function ccAbrirCanal(contenedorId) {
 
     const clubId = yo.clubId;
     window._ccState.clubId = clubId;
-    const soyAdmin = ccEsAdminDelClub(yo);
+    // 🔐 v742 · El botón de gestión lo decide `ccPuedeGestionar`: administrador
+    // o director, y SÓLO desde esa plaza. Ver su nota.
+    const puedeGestionar = ccPuedeGestionar(yo);
 
     cont.innerHTML = `
     <div style="display:flex;flex-direction:column;height:100%;min-height:0;">
@@ -350,7 +473,7 @@ async function ccAbrirCanal(contenedorId) {
             <div style="font-size:0.7rem;color:var(--text-muted);margin-right:auto;">
                 Administrador · Director · Coordinadores · Entrenadores
             </div>
-            ${soyAdmin ? `
+            ${puedeGestionar ? `
             <button onclick="ccAbrirGestion()" class="btn"
                 style="padding:0.3rem 0.6rem;background:rgba(88,166,255,0.1);
                        border:1px solid rgba(88,166,255,0.3);border-radius:6px;
@@ -400,6 +523,13 @@ async function ccAbrirCanal(contenedorId) {
             return;
         }
 
+        // ── 🪪 v741 · El censo de nombres, ANTES de escuchar ─────────────
+        //  Va aquí y no dentro del oyente porque el primer snapshot llega de
+        //  inmediato (a veces de la caché) y pintaría las burbujas con el
+        //  correo antes de que el censo estuviera cargado. Si falla, no
+        //  bloquea: `_ccNombreCorto` se queda con el nombre sellado.
+        await _ccCargarDirectorio(clubId);
+
         // ── Los mensajes, EN VIVO ───────────────────────────────────────
         //  🔑 Éste es el único `onSnapshot` de toda la mensajería, y el canal lo
         //  justifica: un chat compartido que sólo se refresca al enviar no es un
@@ -421,6 +551,16 @@ async function ccAbrirCanal(contenedorId) {
             out.reverse();                       // del más viejo al más nuevo
             window._ccState.mensajes = out;
             _ccPintarMensajes();
+            // 🔴 v743 · LEÍDO HASTA AQUÍ. Va dentro del oyente y no sólo al
+            // abrir: el canal es en vivo, así que lo que llega mientras se
+            // está mirando TAMBIÉN está leído — marcarlo sólo en la apertura
+            // haría que esos mensajes salieran como pendientes al salir.
+            // El guardado en la nube va agrupado (ver `_ubGuardarDiferido`):
+            // una conversación animada cuesta una escritura, no quince.
+            if (out.length && typeof window.ubMarcarCanalLeido === 'function') {
+                const ultimo = out[out.length - 1];
+                window.ubMarcarCanalLeido(String((ultimo && ultimo.createdAt) || ''));
+            }
         }, (err) => {
             // 🚨 UN `onSnapshot` SIN CALLBACK DE ERROR QUEDA MUERTO tras un
             // `permission-denied` y no vuelve a avisar (lección de v717). Aquí
@@ -459,7 +599,10 @@ async function ccEnviar() {
         await addDoc(collection(db, CC_COL_MENSAJES), {
             clubId:     yo.clubId,
             senderUid:  yo.uid,
-            senderName: yo.name || yo.displayName || yo.email || 'Miembro',
+            // 🪪 v741 · EL NOMBRE REGISTRADO. Antes ponía `yo.name` primero, y
+            // ese campo NO EXISTE en el usuario de sesión: la cadena caía
+            // siempre al correo. Ver la nota de `_ccNombreDe`.
+            senderName: _ccNombreDe(yo) || 'Miembro',
             senderRole: _ccRolFirma(yo),
             text:       text,
             createdAt:  new Date().toISOString(),
@@ -492,11 +635,17 @@ async function ccBorrarMensaje(msgId) {
 window.ccBorrarMensaje = ccBorrarMensaje;
 
 // ════════════════════════════════════════════════════════════════════
-//  GESTIÓN DEL ADMINISTRADOR DEL CLUB: expulsar y vaciar
+//  GESTIÓN DEL CANAL (administrador del club y director): expulsar y vaciar
 // ════════════════════════════════════════════════════════════════════
+//  🚨 LAS TRES FUNCIONES PREGUNTAN, NO SÓLO EL BOTÓN. Esconder «Gestionar» no
+//  cierra nada: `ccAbrirGestion()`, `ccCambiarAcceso()` y `ccVaciarCanal()`
+//  están publicadas en `window` y se invocan desde la consola en dos palabras.
+//  El encargo dice «ni estar accesible bajo ningún concepto», y ese «ningún
+//  concepto» son estas tres puertas — más las reglas de Firestore, que son la
+//  única barrera de verdad (las tres de aquí las quita cualquiera con F12).
 async function ccAbrirGestion() {
     const yo = _ccYo();
-    if (!ccEsAdminDelClub(yo)) return;
+    if (!ccPuedeGestionar(yo)) return;
     const cont = document.getElementById('cc-messages');
     if (!cont) return;
 
@@ -517,8 +666,7 @@ async function ccAbrirGestion() {
             if (u.isAuthorized !== true) return;
             miembros.push(u);
         });
-        miembros.sort((a, b) => String(a.name || a.email || '')
-            .localeCompare(String(b.name || b.email || '')));
+        miembros.sort((a, b) => _ccNombreDe(a).localeCompare(_ccNombreDe(b)));
 
         const exp = window._ccState.expulsados || [];
         cont.innerHTML = `
@@ -542,11 +690,20 @@ async function ccAbrirGestion() {
                             border-bottom:1px solid rgba(255,255,255,0.05);opacity:${fuera ? '0.55' : '1'};">
                     <div style="flex:1;min-width:0;">
                         <div style="font-size:0.85rem;color:#e6edf3;font-weight:600;">
-                            ${_ccEsc(u.name || u.email || 'Miembro')}</div>
+                            ${_ccEsc(_ccNombreDe(u) || 'Miembro')}
+                            <span style="font-weight:500;color:var(--text-muted);">
+                                · ${_ccEsc(CC_ETIQUETA_ROL[rol] || rol)}</span></div>
                         <div style="font-size:0.7rem;color:var(--text-muted);">
-                            ${_ccEsc(CC_ETIQUETA_ROL[rol] || rol)}${fuera ? ' · sin acceso al canal' : ''}</div>
+                            ${_ccEsc(u.email || '')}${fuera ? ' · sin acceso al canal' : ''}</div>
                     </div>
-                    ${u.uid === yo.uid ? '<span style="font-size:0.68rem;color:var(--text-muted);">tú</span>' : `
+                    ${u.uid === yo.uid ? '<span style="font-size:0.68rem;color:var(--text-muted);">tú</span>' :
+                      // 🛡️ AL ADMINISTRADOR DEL CLUB NO SE LE EXPULSA, y ahora hace
+                      // falta decirlo: desde v742 el director también gestiona, así
+                      // que podría echar del canal al administrador… que se quedaría
+                      // SIN NINGUNA FORMA DE VOLVER, porque la pantalla del expulsado
+                      // se pinta antes que el botón de gestión. Un estado del que no
+                      // se sale no puede ofrecerse con un clic.
+                      ccEsAdminDelClub(u) ? '<span style="font-size:0.68rem;color:var(--text-muted);">administrador</span>' : `
                     <button onclick="ccCambiarAcceso('${_ccEsc(u.uid)}', ${fuera ? 'false' : 'true'})"
                         style="padding:0.3rem 0.6rem;border-radius:6px;cursor:pointer;font-size:0.7rem;font-weight:700;
                                background:${fuera ? 'rgba(63,185,80,0.12)' : 'rgba(255,88,88,0.1)'};
@@ -577,7 +734,7 @@ window.ccAbrirGestion = ccAbrirGestion;
 // del último vaciado si la cabecera ya existía.
 async function ccCambiarAcceso(uid, expulsar) {
     const yo = _ccYo();
-    if (!ccEsAdminDelClub(yo) || !uid) return;
+    if (!ccPuedeGestionar(yo) || !uid) return;
     try {
         const { db, doc, setDoc } = await _ccFS();
         const exp = (window._ccState.expulsados || []).slice();
@@ -598,12 +755,13 @@ async function ccCambiarAcceso(uid, expulsar) {
 }
 window.ccCambiarAcceso = ccCambiarAcceso;
 
-// Vaciado de fin de temporada, en manos del administrador del club.
+// Vaciado de fin de temporada, en manos del administrador del club y del
+// director deportivo (v742).
 // ⚠️ La consulta va ACOTADA POR clubId, como todas las de season-reset.js: sin
 // acotar borraría el canal de OTROS clubes, y esto no tiene deshacer.
 async function ccVaciarCanal() {
     const yo = _ccYo();
-    if (!ccEsAdminDelClub(yo)) return;
+    if (!ccPuedeGestionar(yo)) return;
     if (!confirm('¿Vaciar el histórico del canal del club?\n\n' +
                  'Se borrarán TODOS los mensajes para todos los miembros. No se puede deshacer.')) return;
     try {

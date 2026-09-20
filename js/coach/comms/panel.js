@@ -873,6 +873,11 @@ window.openIndividualAdminMessaging = openIndividualAdminMessaging;
 //  vive DENTRO del panel anfitrión, que ya tiene su propia vuelta: un segundo
 //  "Volver" ahí desharía la pantalla que lo contiene.
 // ════════════════════════════════════════════════════════════════════
+// Qué dice el botón. Estos tres roles vuelven al TABLERO de su panel —no a una
+// pantalla intermedia—, y decirlo evita la duda de si "Volver" saca de la
+// sesión, que es lo que el autor reportó en v626 y en v638.
+const _UM_VUELTA_AL_MENU = { admin_individual: true, director: true, coordinator: true };
+
 function _umHayVuelta(role, isModalMode) {
     if (!isModalMode) return false;
     // El Entrenador se queda EXACTAMENTE como hasta la v625: su botón no se
@@ -895,7 +900,22 @@ function _umHayVuelta(role, isModalMode) {
     //  sí — pero si algún día se abriera como raíz, un "Volver" que cae en
     //  `navExit()` dejaría la pantalla en negro, que es peor que no tenerlo.
     // ══════════════════════════════════════════════════════════════════
-    if (role !== 'admin_individual' && role !== 'club_admin') return false;
+    // ══════════════════════════════════════════════════════════════════
+    //  💬 v741 · EL DIRECTOR Y EL COORDINADOR ENTRAN EN LA LISTA
+    //
+    //  Hasta ahora quedaban fuera **por una razón que ya no se cumple**: veían
+    //  la mensajería EMBEBIDA dentro de su panel, y un "Volver" ahí habría
+    //  destruido al anfitrión que la contenía. Desde v741 la abren en MODAL
+    //  (unificación de los paneles pedida por el autor), así que su anfitrión
+    //  ya no está debajo: está en la pila, que es justo lo que navBack repinta.
+    //
+    //  🔑 La condición sigue siendo la misma para todos —preguntar a la PILA,
+    //  no al rol— y el `if (!isModalMode) return false` de arriba mantiene
+    //  intacta la protección original: embebidos, estos roles siguen sin
+    //  "Volver". Lo único que cambia es que ahora hay un caso modal.
+    // ══════════════════════════════════════════════════════════════════
+    if (role !== 'admin_individual' && role !== 'club_admin' &&
+        role !== 'director' && role !== 'coordinator') return false;
     return (typeof window.navCanGoBack === 'function') ? !!window.navCanGoBack() : true;
 }
 
@@ -1039,8 +1059,8 @@ async function _renderUnifiedMessagingView(role, tab, targetContainerId) {
                 ${_umHayVuelta(role, isModalMode) ? `
                 <button onclick="navBack()" class="btn"
                     style="font-size:0.75rem;padding:0.35rem 0.8rem;background:rgba(255,255,255,0.05);color:var(--text-muted);border-radius:6px;"
-                    title="${role === 'admin_individual' ? 'Volver a tu panel sin cerrar la sesión' : 'Volver a la pantalla anterior'}">
-                    ${role === 'admin_individual' ? '← Volver al Menú' : '← Volver'}
+                    title="${_UM_VUELTA_AL_MENU[role] ? 'Volver a tu panel sin cerrar la sesión' : 'Volver a la pantalla anterior'}">
+                    ${_UM_VUELTA_AL_MENU[role] ? '← Volver al Menú' : '← Volver'}
                 </button>` : ''}
                 <button onclick="_loadUnifiedContactList((window._umState&&window._umState.activeTab)||'${tab}')" class="btn"
                     style="font-size:0.75rem;padding:0.35rem 0.8rem;background:var(--glass);color:var(--text-muted);border-radius:6px;">
@@ -1129,6 +1149,25 @@ async function _renderUnifiedMessagingView(role, tab, targetContainerId) {
 
     targetEl.innerHTML = innerHTML;
     await _loadUnifiedContactList(tab);
+
+    // ══════════════════════════════════════════════════════════════
+    //  🔴 v744 · ENTRAR AQUÍ ES LEER: el contador de la tarjeta se va a cero.
+    //
+    //  Regla del autor (implementar.txt 2026-09-19): «en el momento exacto en
+    //  que el usuario entra en la sección de mensajería y visualiza los chats,
+    //  el contador debe marcar cero».
+    //
+    //  🔑 VA DESPUÉS DE PINTAR LA LISTA, no antes: la lista señala con su
+    //  propio número qué chats traen novedades, y marcarlo todo primero la
+    //  dejaría muda. Y va SIN `await`, porque el panel ya está en pantalla y
+    //  nadie tiene que esperar a que se guarde una marca.
+    //
+    //  ⚠️ Este es el ÚNICO punto por el que pasan los seis roles (las seis
+    //  funciones open*Messaging no hacen otra cosa que llamar aquí), así que
+    //  la regla se cumple para todos con una sola línea — y un séptimo rol la
+    //  heredaría sin que nadie se acuerde de añadirla.
+    // ══════════════════════════════════════════════════════════════
+    if (typeof window.ubMarcarTodoLeido === 'function') window.ubMarcarTodoLeido();
 }
 
 async function _loadThreadMessages(threadId, perspective) {
@@ -1379,6 +1418,12 @@ async function _loadUnifiedContactList(tabId) {
         const threadsMap = {};
         threadsSnap.forEach(d => { threadsMap[d.id] = { _id: d.id, ...d.data() }; });
         window._umState.threadsMap = threadsMap;
+
+        // 🔴 v744 · Las marcas de lectura, EN MEMORIA antes de pintar la lista.
+        // `ubNoLeidosDeHilo` es síncrona a propósito (se llama una vez por
+        // contacto dentro del `map`) y sin esto devolvería 0 para todos: la
+        // bandeja no señalaría ni un chat con novedades.
+        if (typeof window.ubMarcas === 'function') { try { await window.ubMarcas(); } catch(_) {} }
 
         let contacts = [];
         let filterText = '';
@@ -2059,7 +2104,17 @@ async function _loadUnifiedContactList(tabId) {
             // canonicalizar, cada lado calculaba un id distinto para el MISMO hilo.
             const threadId = _cThreadId(me.uid, c.uid, _getCanonicalContext(window._umState.role, tabId));
             const thread = threadsMap[threadId] || threadsMap[`${me.uid}_${c.uid}`] || threadsMap[`${c.uid}_${me.uid}`] || {};
-            const unread = thread.unreadByCoach || thread.unreadByParent || thread.unreadByStaff || 0;
+            // 🔴 v744 · EL MISMO CRITERIO QUE LA TARJETA DEL PANEL, y por eso
+            // deja de leer `unreadBy*`: esos tres contadores son por CLASE de
+            // rol y se incrementan aunque en el hilo no haya nadie de esa
+            // clase (un mensaje del director al coordinador sube también
+            // `unreadByCoach`). Aquí además se cogía «el primero de los tres
+            // que no fuese cero», sin mirar siquiera cuál me tocaba a mí. Dos
+            // sitios contando distinto es lo que el autor vio en v743: la
+            // tarjeta decía 36 y la bandeja no tenía tantos.
+            const unread = (typeof window.ubNoLeidosDeHilo === 'function')
+                ? window.ubNoLeidosDeHilo(thread._id || threadId, thread)
+                : 0;
             const lastMsg = thread.lastMessage || '— Sin mensajes —';
             const lastTime = thread.lastMessageAt ? new Date(thread.lastMessageAt).toLocaleDateString('es-ES', { day: 'numeric', month: 'short' }) : '';
             const isChecked = window._umState.checkedUids.has(c.uid);
@@ -2368,6 +2423,21 @@ async function _loadUnifiedThreadMessages(threadId, contact) {
             else updData.unreadByStaff = 0;
             await updateDoc(doc(db, 'cronos_messages', snap.id), updData);
         } catch(_) {}
+
+        // 🔴 v743 · Y LA MARCA PROPIA, que es la que alimenta el contador del
+        // tablero. Va ADEMÁS de la de arriba, no en su lugar: los tres
+        // contadores de ahí son por CLASE de rol y en un hilo director ↔
+        // coordinador los dos son «staff», así que el que lee pone a cero el
+        // mismo número que el otro tendría que ver. Esta marca es por PERSONA
+        // y vive en users/{uid}/cronos_data/chat_reads.
+        try {
+            if (typeof window.ubMarcarHiloLeido === 'function') {
+                const _ultimo = messages.length
+                    ? String(messages[messages.length - 1].timestamp || '')
+                    : '';
+                await window.ubMarcarHiloLeido(snap.id, _ultimo || new Date().toISOString());
+            }
+        } catch(_) { /* una marca que falla sólo repite el aviso */ }
 
     } catch(e) {
         console.error('Error al cargar mensajes del hilo:', e);
@@ -2804,6 +2874,10 @@ async function openUnifiedCommsMenu() {
                     <div class="title">Mensajes</div>
                     <div class="desc">Chat con familiares / jugadores · dirección · coordinación</div>
                 </div>
+                <!-- 🔴 v743 · Hueco del contador de mensajes sin leer. Nace
+                     vacío y oculto: el número está en la nube y esta pantalla
+                     no puede esperar por él. -->
+                ${typeof window.ubHuecoBadge === 'function' ? window.ubHuecoBadge('um-badge-mensajes') : ''}
             </button>
 
             <!-- 2. PARTIDOS TERMINADOS -->
@@ -2889,6 +2963,11 @@ async function openUnifiedCommsMenu() {
             transform:none; box-shadow:inset 0 0 0 9999px rgba(0,0,0,0.25);
         }
     </style>`;
+
+    // 🔴 v743 · El número de mensajes sin leer, ya con el menú en pantalla y
+    // SIN `await`: este menú es la puerta del área y no puede quedarse
+    // esperando a Firestore para abrirse.
+    if (typeof window.ubPintarBadge === 'function') window.ubPintarBadge('um-badge-mensajes');
 }
 
 // ════════════════════════════════════════════════════════════════════

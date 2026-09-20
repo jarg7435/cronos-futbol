@@ -80,8 +80,9 @@ const w = cargar();
 // ═════════════════════════════════════════════════════════════════════
 console.log('\n1) 🔑 PANTALLA Y REGLAS DICEN LO MISMO SOBRE QUIÉN ENTRA');
 parte(() => {
-    ok('1a · el módulo publica su criterio de acceso',
-       typeof w.ccPuedeVerCanal === 'function' && typeof w.ccEsAdminDelClub === 'function');
+    ok('1a · el módulo publica su criterio de acceso y el de gestión',
+       typeof w.ccPuedeVerCanal === 'function' && typeof w.ccEsAdminDelClub === 'function' &&
+       typeof w.ccPuedeGestionar === 'function');
 
     // La lista blanca escrita en las reglas, extraída del fichero real.
     const m = RULES.match(/function ccEsTecnicoDelClub[\s\S]*?\.data\.get\('role', ''\) in \[([^\]]+)\]/);
@@ -110,18 +111,54 @@ parte(() => {
        w.ccPuedeVerCanal({ role: 'director' }) === false &&
        w.ccPuedeVerCanal({ clubId: '', role: 'coach' }) === false);
 
-    // 🚨 EXPULSAR ES DEL ADMINISTRADOR. `isAdminOfClub()` de las reglas incluye
-    // al director y al coordinador: usarla habría dado a los tres la potestad
-    // que el autor reserva a uno.
-    ok('1h · 🔑🔑 sólo el ADMINISTRADOR DEL CLUB expulsa y vacía',
-       w.ccEsAdminDelClub({ role: 'club_admin' }) === true &&
-       w.ccEsAdminDelClub({ role: 'admin' }) === true &&
-       w.ccEsAdminDelClub({ role: 'director' }) === false &&
-       w.ccEsAdminDelClub({ role: 'coordinator' }) === false &&
-       w.ccEsAdminDelClub({ role: 'coach' }) === false);
-    ok('1i · y las reglas se lo reservan a la MISMA figura',
-       /function ccEsAdminDelClub\(clubId\)\s*\{\s*return isClubAdmin\(clubId\) \|\| isClubAdminOf\(clubId\);/.test(RULES),
-       'si aquí entrara isAdminOfClub(), el director podría expulsar');
+    // 🚨 GESTIONAR (expulsar y vaciar) ES DE DOS FIGURAS, NO DE CINCO.
+    //  ⚠️ ACTUALIZADA EN v742 por PETICIÓN EXPRESA del autor (implementar.txt
+    //  2026-09-18): «sólo pueden ver y utilizar el botón de Gestionar el
+    //  Administrador del Club y el Director Deportivo». Antes era sólo el
+    //  administrador. Lo que el guard protege NO cambia —que el COORDINADOR y
+    //  el ENTRENADOR no gestionen— y es lo que sigue midiéndose abajo, ahora
+    //  además desde la plaza activa.
+    ok('1h · 🔑🔑 gestionan el ADMINISTRADOR y el DIRECTOR, y nadie más',
+       w.ccPuedeGestionar({ role: 'club_admin' }) === true &&
+       w.ccPuedeGestionar({ role: 'admin' }) === true &&
+       w.ccPuedeGestionar({ role: 'director' }) === true &&
+       w.ccPuedeGestionar({ role: 'coordinator' }) === false &&
+       w.ccPuedeGestionar({ role: 'coach' }) === false &&
+       w.ccPuedeGestionar({ role: 'user' }) === false &&
+       w.ccPuedeGestionar({ role: 'parent' }) === false);
+    //  🚨 EL DEFECTO DE SUS CAPTURAS 10587-10591: la misma cuenta con rol raíz
+    //  `club_admin` veía «Gestionar» actuando de entrenador y de coordinador,
+    //  porque sólo se preguntaba por el rol raíz.
+    ok('1h2 · 🚨🚨 la PLAZA ACTIVA también manda: de entrenador, no se gestiona',
+       w.ccPuedeGestionar({ role: 'club_admin', _activeRole: 'coach' }) === false &&
+       w.ccPuedeGestionar({ role: 'club_admin', _activeRole: 'coordinator' }) === false &&
+       w.ccPuedeGestionar({ role: 'director',  _activeRole: 'coach' }) === false,
+       'en sus 4 capturas salía el botón en las 4 plazas: era la misma cuenta');
+    ok('1h3 · 🔑 y desde una plaza de gestión, sí',
+       w.ccPuedeGestionar({ role: 'club_admin', _activeRole: 'club_admin' }) === true &&
+       w.ccPuedeGestionar({ role: 'club_admin', _activeRole: 'director' }) === true &&
+       w.ccPuedeGestionar({ role: 'director', _activeRole: 'director' }) === true);
+    ok('1h4 · ⚠️⚠️ la plaza activa sólo QUITA, nunca da (es autoescribible)',
+       w.ccPuedeGestionar({ role: 'coach', _activeRole: 'club_admin' }) === false &&
+       w.ccPuedeGestionar({ role: 'coordinator', _activeRole: 'director' }) === false,
+       'si `_activeRole` pudiera conceder, se falsifica desde la consola en dos palabras');
+    ok('1h5 · sin plaza activa declarada manda el rol raíz',
+       w.ccPuedeGestionar({ role: 'club_admin' }) === true &&
+       w.ccPuedeGestionar({ role: 'coach' }) === false);
+    ok('1i · 🔑🔑 y las reglas dicen lo mismo: administrador O director',
+       /function ccPuedeGestionarCanal\(clubId\)\s*\{\s*return ccEsAdminDelClub\(clubId\) \|\| ccEsDirectorDelClub\(clubId\);/.test(RULES),
+       'si aquí entrara isAdminOfClub(), el COORDINADOR podría expulsar');
+    ok('1i2 · ⚠️ el director de las reglas se resuelve por el ROL RAÍZ del documento',
+       /function ccEsDirectorDelClub\(clubId\)[\s\S]{0,700}data\.get\('role', ''\) == 'director'[\s\S]{0,400}data\.get\('isAuthorized', false\) == true/.test(RULES) &&
+       !/function ccEsDirectorDelClub\(clubId\)[\s\S]{0,700}allRoles/.test(RULES),
+       '`allRoles` es autoescribible: una regla apoyada en él la falsifica cualquiera');
+    ok('1i3 · 🚨 y NO exige `status`, que documentos antiguos pueden no tener',
+       !/function ccEsDirectorDelClub\(clubId\)[\s\S]{0,700}status/.test(RULES),
+       'un director sin ese campo vería el botón y recibiría un «permissions» al pulsarlo');
+    ok('1i4 · 🔑 las DOS puertas de escritura usan el mismo criterio',
+       /allow create, update: if isAuth\(\) && ccPuedeGestionarCanal\(clubId\)/.test(RULES) &&
+       /ccPuedeGestionarCanal\(resource\.data\.get\('clubId', null\)\)/.test(RULES),
+       'la cabecera guarda a los expulsados y el borrado vacía el histórico: gestionar es las dos');
 });
 
 // ═════════════════════════════════════════════════════════════════════
@@ -213,8 +250,12 @@ parte(() => {
        idx.fields[1].fieldPath === 'createdAt' && idx.fields[1].order === 'DESCENDING',
        JSON.stringify(idx && idx.fields));
 
+    //  ⚠️ LA VENTANA SUBIÓ A 1400 EN v743, y no es un aflojamiento: el cuerpo
+    //  del oyente creció (ahora marca el canal como leído desde dentro) y el
+    //  `}, (err) =>` se salió de los 900 caracteres. El guard se puso rojo con
+    //  el callback de error INTACTO — medía la distancia, no su existencia.
     ok('4f · 🚨 el onSnapshot lleva callback de ERROR',
-       /onSnapshot\([\s\S]{0,900}\}, \(err\) =>/.test(CHAT),
+       /onSnapshot\([\s\S]{0,1400}\}, \(err\) =>/.test(CHAT),
        'un onSnapshot sin callback de error queda MUERTO tras un permission-denied (v717)');
 });
 
@@ -223,8 +264,14 @@ console.log('\n5) BORRADO, EXPULSIÓN Y VACIADO DE TEMPORADA');
 parte(() => {
     ok('5a · el remitente que se sella es QUIEN FIRMA',
        /senderUid:\s*yo\.uid/.test(CHAT));
+    //  ⚠️ ACTUALIZADA EN v741. Fijaba `senderName: yo.name`… y ESE CAMPO NO
+    //  EXISTE: el usuario de sesión lleva firstName/lastName/displayName, así
+    //  que la cadena caía siempre al correo y el canal firmaba «arinagazone».
+    //  El guard daba verde sobre el defecto porque medía la FORMA de la línea,
+    //  no lo que la línea produce. Lo que protegía —que el nombre y el rol se
+    //  SELLEN y no se resuelvan al leer— no cambia y se sigue midiendo.
     ok('5b · 🔑 el nombre y el rol se SELLAN en el mensaje, no se resuelven al leer',
-       /senderName:\s*yo\.name/.test(CHAT) && /senderRole:\s*_ccRolFirma\(yo\)/.test(CHAT),
+       /senderName:\s*_ccNombreDe\(yo\)/.test(CHAT) && /senderRole:\s*_ccRolFirma\(yo\)/.test(CHAT),
        'quien lo escribió puede cambiar de rol o dejar el club');
     ok('5c · el borrado propio avisa de que es para TODO el canal',
        /Desaparecerá para todos los miembros del canal/.test(CHAT),
@@ -238,6 +285,21 @@ parte(() => {
        /col: 'cronos_staff_messages'/.test(SEASON));
     ok('5g · ⚠️ pero NO viene marcado por defecto (son mensajes de personas)',
        /col: 'cronos_staff_messages'[\s\S]{0,120}porDefecto: false/.test(SEASON));
+    // ── 🔐 v742 · «Ni estar accesible bajo ningún concepto» ───────────
+    //  Esconder el botón no cierra nada: las tres funciones están publicadas
+    //  en `window` y se invocan desde la consola en dos palabras.
+    ok('5d2 · 🚨 las TRES puertas de gestión preguntan, no sólo el botón',
+       /async function ccAbrirGestion\(\)\s*\{\s*const yo = _ccYo\(\);\s*if \(!ccPuedeGestionar\(yo\)\) return;/.test(CHAT) &&
+       /async function ccCambiarAcceso\(uid, expulsar\)\s*\{\s*const yo = _ccYo\(\);\s*if \(!ccPuedeGestionar\(yo\) \|\| !uid\) return;/.test(CHAT) &&
+       /async function ccVaciarCanal\(\)\s*\{\s*const yo = _ccYo\(\);\s*if \(!ccPuedeGestionar\(yo\)\) return;/.test(CHAT),
+       'el encargo dice «ni estar accesible bajo ningún concepto»');
+    ok('5d3 · y el botón «Gestionar» sale del MISMO criterio',
+       /const puedeGestionar = ccPuedeGestionar\(yo\)/.test(CHAT) &&
+       /\$\{puedeGestionar \? `/.test(CHAT) &&
+       !/soyAdmin \? `[\s\S]{0,200}ccAbrirGestion/.test(CHAT));
+    ok('5d4 · 🛡️ al ADMINISTRADOR del club no se le puede expulsar',
+       /ccEsAdminDelClub\(u\) \? '<span[^']*>administrador<\/span>'/.test(CHAT),
+       'la pantalla del expulsado se pinta ANTES que el botón de gestión: no habría vuelta');
     ok('5h · la pertenencia NO se mantiene en una lista: sólo se anota lo excepcional',
        /expelledUids/.test(CHAT) && !/memberUids|miembrosUids/.test(CHAT),
        'el alta es automática al registrar a alguien en el club (encargo)');
@@ -331,6 +393,94 @@ parte(() => {
     ok('7e · las CUATRO pestañas del Director caben en el recuento',
        (PANEL.match(/id: 'club'/g) || []).length >= 4,
        'una por cada rol que tiene canal: coach, director, coordinator, club_admin');
+});
+
+// ═════════════════════════════════════════════════════════════════════
+console.log('\n8) 🪪 v741 · NOMBRE REGISTRADO Y ROL, NUNCA EL CORREO');
+parte(() => {
+    //  Encargo (implementar.txt 2026-09-18, capturas 10583-10585): «desaparece
+    //  el correo y se sustituye por el nombre de usuario registrado junto a su
+    //  rol».
+    //
+    //  🚨 SE MIDE EJECUTANDO, no por la forma de la cadena: el defecto de v740
+    //  era precisamente una cadena con la forma correcta y el campo
+    //  equivocado (`yo.name`, que no existe en este proyecto). Un guard de
+    //  texto lo habría vuelto a dejar pasar.
+    ok('8a · el módulo publica la resolución de nombre', typeof w._ccNombreDe === 'function');
+
+    //  El usuario de sesión REAL, tal y como lo arma js/services/auth.js:1942.
+    //  Ni un `name` a la vista: ése era el campo que se leía.
+    const sesion = { uid: 'u1', email: 'arinagazone@gmail.com', role: 'club_admin',
+                     firstName: 'José Alberto', lastName: null, displayName: null };
+    ok('8b · 🔑🔑 con el usuario REAL de la app sale el NOMBRE, no el correo',
+       w._ccNombreDe(sesion) === 'José Alberto',
+       'devolvió: ' + JSON.stringify(w._ccNombreDe(sesion)));
+    ok('8c · `displayName` manda cuando existe',
+       w._ccNombreDe({ displayName: 'Dámaso RV', firstName: 'Dámaso', email: 'd@x.com' }) === 'Dámaso RV');
+    ok('8d · y si no, nombre y apellido juntos',
+       w._ccNombreDe({ firstName: 'Ana', lastName: 'Ruiz', email: 'ana@x.com' }) === 'Ana Ruiz');
+    ok('8e · ⚠️ la plaza es el ÚLTIMO recurso, no el primero',
+       w._ccNombreDe({ email: 'x@y.com', allRoles: [{ role: 'coach', firstName: 'Luis' }] }) === 'Luis' &&
+       w._ccNombreDe({ firstName: 'Raíz', allRoles: [{ firstName: 'Plaza' }] }) === 'Raíz',
+       'el nombre de la plaza se copia al dar el alta y puede haberse quedado viejo');
+    ok('8f · sin ningún nombre registrado, el correo va SIN dominio',
+       w._ccNombreDe({ email: 'arinagazone@gmail.com' }) === 'arinagazone' &&
+       w._ccNombreDe({}) === '',
+       'una cuenta sin nombre tiene que seguir siendo distinguible');
+
+    // ── El censo arregla lo YA ESCRITO ────────────────────────────────
+    //  Los mensajes que ya están en producción se sellaron con el correo. Sin
+    //  esto, el encargo quedaría cumplido sólo para los mensajes futuros y el
+    //  autor seguiría viendo «arinagazone» en todo su histórico.
+    ok('8g · 🔑 hay censo de nombres del club y se cachea por clubId',
+       typeof w._ccCargarDirectorio === 'function' &&
+       /st\.directorio && st\.directorio\.clubId === clubId/.test(CHAT),
+       'el canal se abre cada vez que se entra en la pestaña: una lectura por sesión');
+    ok('8h · 🔑🔑 el nombre pintado sale del censo ANTES que el sellado',
+       /const vivo = dir\[m && m\.senderUid\];\s*\n\s*if \(vivo\) return vivo;/.test(CHAT),
+       'sin esto, el histórico ya escrito seguiría mostrando el correo');
+    ok('8i · ⚠️ y si el censo no se puede leer, se cae al nombre sellado',
+       /catch \(_\) \{ \/\* sin censo se pinta el nombre sellado/.test(CHAT),
+       'quien ya dejó el club no está en el censo y conserva su firma');
+    ok('8j · el censo se carga ANTES de enganchar el oyente en vivo',
+       CHAT.indexOf('await _ccCargarDirectorio(clubId)') > 0 &&
+       CHAT.indexOf('await _ccCargarDirectorio(clubId)') < CHAT.indexOf('onSnapshot(q,'),
+       'el primer snapshot llega de inmediato y pintaría los correos');
+
+    // ── Nombre Y ROL, que es lo que pide el encargo ───────────────────
+    ok('8k · 🔑 junto al nombre sigue yendo el CARGO, con su etiqueta legible',
+       /\$\{_ccEsc\(etiq\.toUpperCase\(\)\)\}/.test(CHAT) &&
+       /const etiq = CC_ETIQUETA_ROL\[rol\] \|\| 'Miembro'/.test(CHAT),
+       '«José Alberto, entrenador»: el nombre identifica y el cargo sitúa');
+    ok('8l · y el avatar dice las dos cosas al pasar por encima',
+       /title="\$\{_ccEsc\(nombre \+ ' · ' \+ etiq\)\}"/.test(CHAT));
+});
+
+// ═════════════════════════════════════════════════════════════════════
+console.log('\n9) 🖼️ v741 · UN SOLO CONTENEDOR PARA LOS CUATRO PANELES');
+parte(() => {
+    //  Encargo: «los paneles de mensajería de los diferentes roles deben ser
+    //  exactamente iguales […] el mismo formato amplio, grande y espacioso que
+    //  tiene el panel del administrador del club».
+    //
+    //  🔑 NO ERAN DOS DISEÑOS: era el MISMO motor en dos contenedores. Pasarle
+    //  un contenedor lo empotra en el panel anfitrión (960px); no pasárselo lo
+    //  abre en modal, que es lo que ven el Administrador y el Entrenador.
+    const SD = leer('js/coach/reports/club-reports.js');
+    ok('9a · 🔑🔑 el Director ya NO empotra la mensajería en su panel',
+       /openDirectorMessaging\('coordinators'\)/.test(SD) &&
+       !/openDirectorMessaging\([^)]*staff-dashboard-content/.test(SD),
+       'con contenedor se pinta dentro de min(96vw,960px): la mitad de ancho');
+    ok('9b · 🔑🔑 ni el Coordinador',
+       /openCoordinatorMessaging\('director'\)/.test(SD) &&
+       !/openCoordinatorMessaging\([^)]*staff-dashboard-content/.test(SD));
+    ok('9c · 🚨 y la raíz del panel vuelve al TABLERO antes de abrirla',
+       /navRootScreen\('openStaffDashboard', 'menu'\)[\s\S]{0,400}openDirectorMessaging/.test(SD),
+       'si la raíz siguiera en «mensajes», el "Volver" de la mensajería la reabriría: bucle');
+    ok('9d · 🔑 los cuatro roles pasan por el MISMO render',
+       /async function _renderUnifiedMessagingView\(role, tab, targetContainerId\)/.test(PANEL) &&
+       (PANEL.match(/_renderUnifiedMessagingView\(/g) || []).length >= 5,
+       'la unificación no es copiar estilos: es no pasar contenedor');
 });
 
 console.log('\n' + (total - fallos) + '/' + total + ' aserciones OK');

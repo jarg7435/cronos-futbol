@@ -2866,6 +2866,13 @@ window._openCoachCommsMenu = function() {
                         <div style="font-weight:700;font-size:0.9rem;">Mensajes</div>
                         <div style="font-size:0.72rem;color:var(--text-muted);">Chat con familiares / jugadores · dirección · coordinación</div>
                     </div>
+                    <!-- 🔴 v743 · Hueco del contador de mensajes sin leer.
+                         ⚠️ ESTE MENÚ ES EL SEGUNDO: el entrenador tiene DOS
+                         puertas al área (ésta y openUnifiedCommsMenu), y poner
+                         el aviso sólo en una lo deja invisible según por dónde
+                         entre. Por eso el id es distinto: los dos pueden estar
+                         en el DOM a la vez si uno repinta sobre el otro. -->
+                    ${typeof window.ubHuecoBadge === 'function' ? window.ubHuecoBadge('cm-badge-mensajes') : ''}
                 </button>
 
                 <!-- PARTIDOS TERMINADOS · v596 · APAGADA, NO SÓLO MUDA.
@@ -2938,6 +2945,10 @@ window._openCoachCommsMenu = function() {
                 style="color:var(--text-muted);width:100%;">← Volver</button>
         </div>
     </div>`;
+
+    // 🔴 v743 · El contador de mensajes sin leer, con el menú ya pintado y sin
+    // esperar por él.
+    if (typeof window.ubPintarBadge === 'function') window.ubPintarBadge('cm-badge-mensajes');
 };
 
 // ════════════════════════════════════════════════════════════════════

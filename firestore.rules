@@ -1398,11 +1398,57 @@ service cloud.firestore {
                     .data.get('expelledUids', []));
     }
 
-    // Quien EXPULSA es el administrador del club, y sólo él. `isAdminOfClub()`
-    // no sirve aquí: incluye también al director y al coordinador, que en este
-    // canal son miembros como los demás (decisión explícita del autor).
+    // Quien EXPULSA es el administrador del club. `isAdminOfClub()` no sirve
+    // aquí: incluye también al COORDINADOR, que en este canal es un miembro
+    // como los demás (decisión explícita del autor, mantenida en v742).
     function ccEsAdminDelClub(clubId) {
       return isClubAdmin(clubId) || isClubAdminOf(clubId);
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  🔐 v742 · EL DIRECTOR DEPORTIVO TAMBIÉN GESTIONA EL CANAL
+    // ══════════════════════════════════════════════════════════════════
+    //  Encargo del autor (implementar.txt 2026-09-18): «Sólo pueden ver y
+    //  utilizar el botón de Gestionar el Administrador del Club y el Director
+    //  Deportivo. Los Coordinadores y Entrenadores tienen totalmente prohibido
+    //  gestionar el canal». En v739 la potestad era sólo del administrador.
+    //
+    //  ⚠️ NO SE REUTILIZA `isClubDirectorOf()`, y la razón es una sola línea de
+    //  aquella función: exige además `status == 'active'`. Los documentos de
+    //  usuario antiguos de este proyecto pueden no llevar `status` (la baja
+    //  escribe SIEMPRE los dos campos —`status:'removed'` e
+    //  `isAuthorized:false`, admin/club/panel.js—, pero el alta histórica no
+    //  garantiza el primero). Un director sin ese campo vería el botón y
+    //  recibiría un «permissions» al pulsarlo: la peor forma de fallar, y la
+    //  que este canal viene evitando desde v739 manteniendo el criterio de la
+    //  pantalla y el de las reglas DICIENDO LO MISMO.
+    //
+    //  🔑 Por eso copia la forma de `ccEsTecnicoDelClub`, que es el criterio
+    //  que este canal ya usa para todo lo demás: rol RAÍZ (nunca `allRoles`,
+    //  que es autoescribible), mismo club y `isAuthorized == true`.
+    function ccEsDirectorDelClub(clubId) {
+      return isAuth()
+             && clubId != null
+             && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+             && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('role', '') == 'director'
+             && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('clubId', '') == clubId
+             && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('isAuthorized', false) == true;
+    }
+
+    // Los DOS que pueden gestionar, y nadie más. El coordinador y el
+    // entrenador quedan fuera por omisión: es una lista blanca, no una lista
+    // de exclusiones que haya que mantener al día.
+    //
+    // ⚠️ AQUÍ NO SE PUEDE MIRAR LA PLAZA ACTIVA. La pantalla sí lo hace (ver
+    // `ccPuedeGestionar` en js/coach/comms/club-chat.js): un administrador que
+    // entra como entrenador no ve el botón. Pero `_activeRole` vive en el
+    // navegador y es autoescribible, así que una regla apoyada en él no
+    // protegería nada. El reparto es deliberado: las reglas ponen el TECHO
+    // (quién puede gestionar alguna vez) y la pantalla lo estrecha al puesto
+    // desde el que se está actuando. La interfaz es más estricta que las
+    // reglas, nunca al revés.
+    function ccPuedeGestionarCanal(clubId) {
+      return ccEsAdminDelClub(clubId) || ccEsDirectorDelClub(clubId);
     }
 
     // ── Cabecera del canal: una por club. Guarda a los expulsados y la
@@ -1412,7 +1458,9 @@ service cloud.firestore {
       // 🔑 Enumerar canales no lo necesita nadie: cada club conoce el suyo por
       // su clubId. Un `list` abierto sería un censo de clubes.
       allow list: if isSuperAdmin();
-      allow create, update: if isAuth() && ccEsAdminDelClub(clubId);
+      // 🔐 v742 · La cabecera guarda a los EXPULSADOS: escribirla es gestionar.
+      // Administrador del club y director deportivo; nadie más.
+      allow create, update: if isAuth() && ccPuedeGestionarCanal(clubId);
       allow delete: if isSuperAdmin();
     }
 
@@ -1455,13 +1503,17 @@ service cloud.firestore {
       // convierte el canal en algo que no se puede citar.
       allow update: if false;
 
-      // «Cada usuario puede borrar sus propios mensajes» (encargo), el
-      // administrador del club vacía el histórico de temporada, y el
-      // SuperAdmin conserva la purga que ya tiene sobre el resto de colecciones.
+      // «Cada usuario puede borrar sus propios mensajes» (encargo), quien
+      // GESTIONA el canal vacía el histórico de temporada —administrador del
+      // club y, desde v742, director deportivo—, y el SuperAdmin conserva la
+      // purga que ya tiene sobre el resto de colecciones.
+      //
+      // ⚠️ El coordinador y el entrenador NO entran: pueden borrar lo SUYO
+      // (la rama del `senderUid`) y nada más.
       allow delete: if isAuth() && (
         isSuperAdmin() ||
         request.auth.uid == resource.data.get('senderUid', null) ||
-        ccEsAdminDelClub(resource.data.get('clubId', null))
+        ccPuedeGestionarCanal(resource.data.get('clubId', null))
       );
     }
 

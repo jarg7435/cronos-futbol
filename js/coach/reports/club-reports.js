@@ -481,8 +481,12 @@ window.switchStaffTab = async (tab) => {
             { icono: '📊', titulo: 'Informes', color: '#ffd700',
               desc: 'Informes de partido, por equipo y por jugador.',
               onclick: "switchStaffTab('informes')" },
+            // 🔴 v743 · El aviso de mensajes sin leer se rellena DESPUÉS: hay
+            // que ir a buscarlo a la nube y el tablero se pinta en seco. Ver
+            // la llamada a `ubPintarBadge` justo después del innerHTML.
             { icono: '💬', titulo: 'Mensajes', color: '#b478c8',
               desc: 'Mensajería interna con el cuerpo técnico.',
+              badgeId: 'sd-badge-mensajes',
               onclick: "switchStaffTab('mensajes')" },
             { icono: '🎬', titulo: 'Partidos Terminados', color: '#79c0ff',
               desc: 'Repetición y cierre de los partidos ya jugados.',
@@ -532,6 +536,11 @@ window.switchStaffTab = async (tab) => {
             // se cae a la vista de siempre. Un menú que no pinta no puede
             // dejar a un director sin panel.
             : (await switchStaffTab('convocatorias'), '');
+        // 🔴 v743 · Y ahora el número de mensajes sin leer, que llega tarde a
+        // propósito: SIN `await`, para que el tablero no espere a Firestore
+        // para aparecer. Si el módulo no está cargado, la píldora se queda
+        // oculta y no pasa nada más.
+        if (typeof window.ubPintarBadge === 'function') window.ubPintarBadge('sd-badge-mensajes');
         return;
     }
 
@@ -1167,16 +1176,45 @@ function _sdFilaAsistencia(e, r, esMesActual) {
       '</div>';
 }
 
+// ════════════════════════════════════════════════════════════════════
+//  💬 v741 · LA MENSAJERÍA DEL DIRECTOR Y DEL COORDINADOR, A PANTALLA
+//            COMPLETA — EL MISMO CONTENEDOR QUE LA DEL ADMINISTRADOR
+// ════════════════════════════════════════════════════════════════════
+//  Encargo del autor (implementar.txt 2026-09-18, capturas 10582-10585): «los
+//  paneles de mensajería de los diferentes roles deben ser exactamente iguales
+//  […] que todos adopten el mismo formato amplio, grande y espacioso que tiene
+//  actualmente el panel del administrador del club».
+//
+//  🔑 Y NO ERAN DOS DISEÑOS: ES **EL MISMO MOTOR EN DOS CONTENEDORES**. El
+//  Administrador de Club y el Entrenador lo abren en MODAL (`.modal-content`,
+//  ancho 100% con tope del 95% de la pantalla, alto 86vh). El Director y el
+//  Coordinador lo abrían EMBEBIDO en `#staff-dashboard-content`, que vive
+//  dentro de un panel de `min(96vw,960px)` con 1,5rem de relleno: la misma
+//  pantalla, encajada en la mitad de ancho. Se ve midiendo sus capturas: el
+//  canal del administrador ocupa 1.810 px y el del coordinador 810.
+//
+//  Por eso la unificación NO es copiar estilos, sino dejar de pasar el
+//  contenedor: sin él, `_renderUnifiedMessagingView` entra por su rama modal y
+//  pinta EXACTAMENTE lo mismo que ve el administrador del club.
+//
+//  ⚠️ LA RAÍZ DEL PANEL VUELVE AL TABLERO ANTES DE ABRIR. El modal sustituye
+//  el innerHTML de #setup-modal, o sea DESTRUYE el panel anfitrión, y el
+//  "Volver" de la mensajería repinta lo que la pila tenga debajo. Si eso
+//  siguiera siendo la pestaña 'mensajes', volver la reabriría: un bucle del
+//  que sólo se sale cerrando sesión. Guardando 'menu', "Volver" devuelve al
+//  tablero — que es de donde se entró.
 async function _sdLoadMessages() {
     const me = window._getEffectiveUser ? window._getEffectiveUser() : window._cronosCurrentUser;
     const role = me?._activeRole || me?.role || 'director';
 
+    if (typeof navRootScreen === 'function') navRootScreen('openStaffDashboard', 'menu');
+
     if (role === 'director' && typeof openDirectorMessaging === 'function') {
-        await openDirectorMessaging('coordinators', 'staff-dashboard-content');
+        await openDirectorMessaging('coordinators');
     } else if (role === 'coordinator' && typeof openCoordinatorMessaging === 'function') {
-        await openCoordinatorMessaging('director', 'staff-dashboard-content');
+        await openCoordinatorMessaging('director');
     } else if (typeof openCoachMessaging === 'function') {
-        await openCoachMessaging('parents', 'staff-dashboard-content');
+        await openCoachMessaging('parents');
     }
 }
 

@@ -213,17 +213,49 @@ function casos() {
           mocks: mocks('u_admin', { clubId: CLUB_A, isAuthorized: true, role: 'club_admin' }, null),
           existing: MSG_A },
 
-        // ── 6. LA CABECERA: expulsar es cosa del ADMINISTRADOR, y de nadie más.
+        // 🔐 v742 · El DIRECTOR también vacía el histórico (encargo del autor).
+        { n: '5c2 · ✅ el DIRECTOR DEPORTIVO también (v742)', exp: 'ALLOW',
+          req: { auth: { uid: 'u_dir', token: tok({ clubId: CLUB_A }) },
+                 path: `${DB}/cronos_staff_messages/M1`, method: 'delete' },
+          mocks: mocks('u_dir', DIRECTOR_A, null), existing: MSG_A },
+        { n: '5c3 · 🔑🔑 el COORDINADOR NO borra mensajes ajenos', exp: 'DENY',
+          req: { auth: { uid: 'u_coord', token: tok({ clubId: CLUB_A }) },
+                 path: `${DB}/cronos_staff_messages/M1`, method: 'delete' },
+          mocks: mocks('u_coord', COORDINADOR_A, null), existing: MSG_A },
+
+        // ── 6. LA CABECERA: expulsar es del ADMINISTRADOR y del DIRECTOR (v742),
+        //       y de nadie más. El coordinador y el entrenador, fuera.
         { n: '6a · ✅ el administrador del club escribe la lista de expulsados', exp: 'ALLOW',
           req: { auth: { uid: 'u_admin', token: tok({ role: 'club_admin', clubId: CLUB_A }) },
                  path: `${DB}/cronos_staff_channel/${CLUB_A}`, method: 'create',
                  resource: { data: { clubId: CLUB_A, expelledUids: ['u_coach'] } } },
           mocks: mocks('u_admin', { clubId: CLUB_A, isAuthorized: true, role: 'club_admin' }, null) },
-        { n: '6b · 🔑🔑 el DIRECTOR no puede expulsar a nadie', exp: 'DENY',
+        // ⚠️ INVERTIDA EN v742 por petición expresa del autor (implementar.txt
+        //  2026-09-18): «sólo pueden ver y utilizar el botón de Gestionar el
+        //  Administrador del Club y el Director Deportivo». En v739 el director
+        //  era un miembro más. Lo que NO cambia —y es lo que el lote sigue
+        //  midiendo en 6b2 y 6c— es que el coordinador y el entrenador no
+        //  gestionan nada.
+        { n: '6b · 🔑🔑 el DIRECTOR DEPORTIVO SÍ expulsa (v742)', exp: 'ALLOW',
           req: { auth: { uid: 'u_dir', token: tok({ clubId: CLUB_A }) },
                  path: `${DB}/cronos_staff_channel/${CLUB_A}`, method: 'create',
                  resource: { data: { clubId: CLUB_A, expelledUids: ['u_coach'] } } },
           mocks: mocks('u_dir', DIRECTOR_A, null) },
+        { n: '6b2 · 🔑🔑 el COORDINADOR NO, «bajo ningún concepto»', exp: 'DENY',
+          req: { auth: { uid: 'u_coord', token: tok({ clubId: CLUB_A }) },
+                 path: `${DB}/cronos_staff_channel/${CLUB_A}`, method: 'create',
+                 resource: { data: { clubId: CLUB_A, expelledUids: ['u_coach'] } } },
+          mocks: mocks('u_coord', COORDINADOR_A, null) },
+        { n: '6b3 · 🔑 ni un director de OTRO club en éste', exp: 'DENY',
+          req: { auth: { uid: 'u_b', token: tok({ clubId: CLUB_B }) },
+                 path: `${DB}/cronos_staff_channel/${CLUB_A}`, method: 'create',
+                 resource: { data: { clubId: CLUB_A, expelledUids: ['u_coach'] } } },
+          mocks: mocks('u_b', TECNICO_B, null) },
+        { n: '6b4 · 🔑 ni un director con el alta SIN AUTORIZAR', exp: 'DENY',
+          req: { auth: { uid: 'u_pend', token: tok({ clubId: CLUB_A }) },
+                 path: `${DB}/cronos_staff_channel/${CLUB_A}`, method: 'create',
+                 resource: { data: { clubId: CLUB_A, expelledUids: ['u_coach'] } } },
+          mocks: mocks('u_pend', { clubId: CLUB_A, isAuthorized: false, role: 'director' }, null) },
         { n: '6c · 🔑 ni el entrenador puede quitarse a sí mismo de la lista', exp: 'DENY',
           req: { auth: { uid: 'u_coach', token: tok({ clubId: CLUB_A }) },
                  path: `${DB}/cronos_staff_channel/${CLUB_A}`, method: 'update',

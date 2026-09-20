@@ -1471,8 +1471,11 @@ async function openClubAdminPanel(preClubId = null) {
         { icono: '💳', titulo: 'Mi Plan', color: '#ffd700',
           desc: 'Suscripción, facturas y forma de pago.',
           onclick: "caTab('plan')" },
+        // 🔴 v743 · `badgeId`: el contador de mensajes sin leer se rellena
+        //    después del pintado (hay que ir a la nube a por él).
         { icono: '💬', titulo: 'Mensajes', color: '#3fb950',
           desc: 'Canales internos con el SuperAdmin y con tu Director.',
+          badgeId: 'ca-badge-mensajes',
           onclick: "if(typeof openClubAdminMessaging==='function') openClubAdminMessaging('director'); else if(typeof showToast==='function') showToast('⚠️ Mensajería no disponible', 3000);" },
         { icono: '🔄', titulo: 'Ceder Administración', color: '#ff7b72',
           desc: 'Traspasar el club a otro administrador.',
@@ -1508,6 +1511,11 @@ async function openClubAdminPanel(preClubId = null) {
             window._caSeccionActual = 'menu';
             if (barra) { barra.style.display = 'none'; barra.innerHTML = ''; }
             cuerpo.innerHTML = _caMenuHtml;
+            // 🔴 v743 · El aviso de mensajes sin leer, después de pintar y sin
+            // esperar por él. Va aquí y no junto al innerHTML de arriba porque
+            // el tablero se repinta cada vez que se vuelve al menú: si sólo se
+            // rellenara al entrar, el número se perdería en la primera vuelta.
+            if (typeof window.ubPintarBadge === 'function') window.ubPintarBadge('ca-badge-mensajes');
             return;
         }
         if (barra) {

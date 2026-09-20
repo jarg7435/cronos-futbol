@@ -830,8 +830,13 @@ if (typeof window.cronosHayPartidoEnCurso !== 'function') {
 //      subtitulo: 'Elige qué quieres consultar',
 //      opciones: [{ icono:'📋', titulo:'Convocatorias', desc:'…',
 //                   onclick:"switchStaffTab('convocatorias')",
-//                   color:'#3fb950', bloqueado:'', badge:0 }]
+//                   color:'#3fb950', bloqueado:'', badge:0, badgeId:'' }]
 //    })  →  string HTML
+//
+//  🔴 v743 · `badgeId` es para los avisos que NO se saben al pintar (el
+//  contador de mensajes sin leer vive en la nube). Con él la píldora se
+//  escribe igualmente, oculta, y quien tenga el número la rellena por id.
+//  ⚠️ Sigue sin pintarse si la opción está BLOQUEADA, por lo de arriba.
 // ════════════════════════════════════════════════════════════════════
 if (typeof window.cronosTableroHtml !== 'function') {
     window.cronosTableroHtml = function (cfg) {
@@ -848,6 +853,11 @@ if (typeof window.cronosTableroHtml !== 'function') {
             // también el '0' que llega como cadena desde un `.length` formateado.
             const badge = (bloqueado || o.badge == null || o.badge === '' || Number(o.badge) === 0)
                 ? '' : String(o.badge);
+            // 🔴 v743 · El hueco con id tampoco se pinta sobre una opción
+            // bloqueada: si se pintara, quien lo rellena anunciaría avisos de
+            // una puerta cerrada con llave (la regla de arriba, ahora también
+            // para el aviso que llega tarde).
+            const badgeId = bloqueado ? '' : String(o.badgeId || '');
             // Un botón bloqueado no lleva onclick: apagarlo sólo con CSS deja
             // la acción viva para quien pulse igual (la lección de v548 —
             // `disabled` es cosmético).
@@ -871,10 +881,19 @@ if (typeof window.cronosTableroHtml !== 'function') {
                 '<span style="display:flex;align-items:center;justify-content:space-between;' +
                       'width:100%;gap:0.5rem;">' +
                     '<span style="font-size:1.5rem;line-height:1;">' + (bloqueado ? '🔒' : esc(o.icono || '•')) + '</span>' +
-                    (badge ? '<span style="flex:0 0 auto;background:#ff5858;color:white;' +
+                    // 🔴 v743 · `badgeId` — EL HUECO QUE SE RELLENA DESPUÉS.
+                    //  El contador de mensajes sin leer hay que ir a buscarlo a
+                    //  la nube, y el tablero se pinta en seco. Con `badgeId` la
+                    //  píldora se escribe SIEMPRE (oculta si vale 0) y el que
+                    //  cuenta la rellena cuando llega, sin repintar el panel y
+                    //  sin que el panel espere por ella.
+                    ((badge || badgeId) ?
+                        '<span' + (badgeId ? ' id="' + esc(badgeId) + '"' : '') +
+                             ' style="flex:0 0 auto;background:#ff5858;color:white;' +
                                     'font-size:0.72rem;font-weight:800;line-height:1;' +
                                     'padding:0.25rem 0.5rem;border-radius:999px;min-width:1.25rem;' +
-                                    'text-align:center;box-shadow:0 2px 8px rgba(255,88,88,0.45);">' +
+                                    'text-align:center;box-shadow:0 2px 8px rgba(255,88,88,0.45);' +
+                                    (badge ? '' : 'display:none;') + '">' +
                                 esc(badge) + '</span>'
                             : '') +
                 '</span>' +
