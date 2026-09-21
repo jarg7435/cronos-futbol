@@ -2921,7 +2921,7 @@ export async function doAuth() {
                 // un equipo que el ente no tiene.
                 const _cat      = selectedIndTeam ? null : (document.getElementById('auth-category')?.value || null);
                 const _sub      = selectedIndTeam ? null : (document.getElementById('auth-subcat')?.value || null);
-                const _catLbs   = {prebenjamin:'Prebenjamín',benjamin:'Benjamín',alevin:'Alevín',infantil:'Infantil',cadete:'Cadete',juvenil:'Juvenil',regional:'Regional',regional_fem:'Regional FEM',futurefem:'FUTureFEM'};
+                const _catLbs   = {prebenjamin:'Prebenjamín',benjamin:'Benjamín',alevin:'Alevín',infantil:'Infantil',cadete:'Cadete',juvenil:'Juvenil',regional:'Regional',regional_fem:'Regional FEM',futurefem:'FUTureFEM',nacional:'Nacional'};
                 const _catLabel = _cat ? (_catLbs[_cat]||_cat)+(_sub?' '+_sub:'') : null;
                 const _disp     = (firstName && lastName) ? (firstName+' '+lastName).trim() : (firstName || email);
 

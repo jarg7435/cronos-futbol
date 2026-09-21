@@ -6,6 +6,7 @@
 //   · Fútbol 7, Infantil y FUTureFEM ...... cambios LIBRES (como hasta ahora)
 //   · Cadete ............................... 7 cambios · 3 ventanas · sin reingreso
 //   · Juvenil, Regional y Regional FEM ..... 5 cambios · 3 ventanas · sin reingreso
+//   · Nacional (v747) ...................... 5 cambios · 3 ventanas · sin reingreso
 //
 //  Y en los dos regímenes limitados, el DESCANSO da una ventana extra: las 3
 //  son las de parones con el juego en marcha, y lo que se haga en el descanso
@@ -81,6 +82,13 @@
         if (c.indexOf('cadete') !== -1)   return CADETE;
         if (c.indexOf('juvenil') !== -1)  return JUVENIL;
         if (c.indexOf('regional') !== -1) return JUVENIL;
+        // 🆕 v747 · NACIONAL (Tercera RFEF hacia arriba). Mismo régimen que
+        // Regional —5 cambios, 3 ventanas más el descanso— porque es lo que
+        // pide el encargo: «los cambios permitidos continúan siendo hasta 5
+        // cambios en 3 ventanas más el descanso».
+        // 🔑 'nacional' NO contiene 'regional' ni al revés, así que esta línea
+        // no depende del orden: es la única de la cascada que puede decirlo.
+        if (c.indexOf('nacional') !== -1) return JUVENIL;
         if (c.indexOf('infantil') !== -1) return LIBRE;
 
         // ⚠️ Sin categoría reconocible NO se limita nada. Un partido que no

@@ -528,6 +528,12 @@ async function _renderFinishedMatchesTab() {
             // veía nunca su rama.
             if (str.includes('futurefem') || str.includes('future fem') || str.includes('future_fem')) return 'futurefem';
             if (str.includes('region') && str.includes('fem')) return 'regional_fem';
+            // 🆕 v747 · NACIONAL, ANTES DEL RESPALDO GENÉRICO. No comparte
+            // subcadena con 'region', así que el orden frente a las de arriba
+            // da igual; lo que NO da igual es quedar detrás del respaldo final:
+            // 'f11_nacional' se archivaría con el prefijo pegado y su rama no
+            // casaría con la del catálogo.
+            if (str.includes('nacional')) return 'nacional';
             if (str.includes('region')) return 'regional';
             return str.replace(/\s+[abc]$/, '').replace(/[\s-]+/g, '_').replace(/_[abc]$/, '');
         };
@@ -826,7 +832,8 @@ async function _renderFinishedMatchesTab() {
             { id: 'juvenil',      label: 'Juvenil', icon: '👑' },
             { id: 'regional',     label: 'Regional', icon: '🥇' },
             { id: 'regional_fem', label: 'Regional FEM', icon: '🩷' },
-            { id: 'futurefem',    label: 'FUTureFEM', icon: '💗' }
+            { id: 'futurefem',    label: 'FUTureFEM', icon: '💗' },
+            { id: 'nacional',     label: 'Nacional', icon: '🏆' }   // 🆕 v747
         ];
         const SUB_LIST = ['A', 'B', 'C'];
 

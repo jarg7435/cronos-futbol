@@ -180,7 +180,12 @@
         cadete:      5,
         juvenil:     6,
         regional:      7,
-        regional_fem:  7  // F11, 2T x 45' — mismo nivel que Regional
+        regional_fem:  7, // F11, 2T x 45' — mismo nivel que Regional
+        // 🆕 v747 · Nacional es la horquilla MÁS ALTA: por encima de Regional
+        // (Tercera RFEF hacia arriba). El rango ordena de menor a mayor edad,
+        // así que aquí sí va por delante —es el único sitio donde el número
+        // significa nivel y no posición en una lista.
+        nacional:      8
     };
     window.cronosCategoryRank = function (categoria) {
         var id = (typeof window.ctNormCat === 'function')

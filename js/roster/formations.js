@@ -47,32 +47,39 @@ function updateCategoryOptions(forcedMode) {
     const sel = document.getElementById('match-category');
     if (!sel) return; // El select existe solo en ciertos modales — no es un error
 
-    sel.innerHTML = '';
-    if (mode === 'f7') {
-        sel.innerHTML = `
-            <option value="f7_prebenjamín">Prebenjamín (2T x 30')</option>
-        <option value="f7_benjamin">Benjamín (2T x 35')</option>
-        <option value="f7_alevin">Alevín (2T x 35')</option>
-        <option value="f7_infantil">Infantil (2T x 35')</option>
-        <option value="f7_cadete">Cadete (2T x 40')</option>
-        <option value="f7_juvenil">Juvenil (2T x 45')</option>
-        <option value="f7_regional">Regional (2T x 45')</option>
-        <option value="f7_regional_fem">Regional FEM (2T x 45')</option>
-        <option value="f7_futurefem">FUTureFEM (2T x 35')</option>
-        `;
-    } else {
-        sel.innerHTML = `
-            <option value="f11_prebenjamín">Prebenjamín (2T x 30')</option>
-        <option value="f11_benjamin">Benjamín (2T x 35')</option>
-        <option value="f11_alevin">Alevín (2T x 35')</option>
-        <option value="f11_infantil">Infantil (2T x 40')</option>
-        <option value="f11_cadete">Cadete (2T x 40')</option>
-        <option value="f11_juvenil">Juvenil (2T x 45')</option>
-        <option value="f11_regional">Regional (2T x 45')</option>
-        <option value="f11_regional_fem">Regional FEM (2T x 45')</option>
-        <option value="f11_futurefem">FUTureFEM (2T x 35')</option>
-        `;
-    }
+    // ════════════════════════════════════════════════════════════════
+    //  ⏱️ v748 · LOS MINUTOS DE CADA OPCIÓN SALEN DE LA TABLA ÚNICA
+    // ════════════════════════════════════════════════════════════════
+    //  Este desplegable ANUNCIA la duración («Cadete (2T x 40')») y era otra
+    //  de las siete copias de la tabla: escrita a mano, y con dos que ya no
+    //  cuadraban con el cronómetro (Benjamín decía 35' y FUTureFEM 35').
+    //  Un rótulo que promete 35 minutos y un reloj que cuenta 30 es peor que
+    //  no poner el rótulo, así que ahora los dos salen del mismo sitio.
+    //
+    //  ⚠️ EL `value` NO CAMBIA. Es la clave con la que se identifica el equipo
+    //  y con la que se guardaron los partidos de siempre; tocarla dejaría
+    //  huérfano todo lo anterior. Lo único que se genera es la ETIQUETA.
+    //  🚨 Y 'prebenjamín' conserva su tilde en el value, como hasta hoy: el
+    //  respaldo por etiqueta lo busca así (ver el comentario de cache-bust).
+    const CATS = [
+        ['prebenjamín',  'Prebenjamín'],
+        ['benjamin',     'Benjamín'],
+        ['alevin',       'Alevín'],
+        ['infantil',     'Infantil'],
+        ['cadete',       'Cadete'],
+        ['juvenil',      'Juvenil'],
+        ['regional',     'Regional'],
+        ['regional_fem', 'Regional FEM'],
+        ['futurefem',    'FUTureFEM'],
+        ['nacional',     'Nacional'],
+    ];
+    const _mins = (clave) => (typeof window.cronosTiemposCategoria === 'function')
+        ? window.cronosTiemposCategoria(clave, mode).mitad
+        : (mode === 'f11' ? 40 : 30);
+    sel.innerHTML = CATS.map(([clave, etiqueta]) =>
+        '<option value="' + mode + '_' + clave + '">' +
+        etiqueta + " (2T x " + _mins(clave) + "')</option>"
+    ).join('');
     // NO dispatchEvent — elimina bucles y efectos secundarios indeseados
 }
 

@@ -1933,7 +1933,8 @@ async function openClubAdminPanel(preClubId = null) {
         if (!cat) return '';
         const labels = { prebenjamin:'Prebenjamín', benjamin:'Benjamín', alevin:'Alevín',
                          infantil:'Infantil', cadete:'Cadete', juvenil:'Juvenil', regional:'Regional',
-                         regional_fem:'Regional FEM', futurefem:'FUTureFEM' };
+                         regional_fem:'Regional FEM', futurefem:'FUTureFEM',
+                         nacional:'Nacional' };   // 🆕 v747
         return (labels[cat] || cat) + (sub ? ' ' + sub : '');
     }
 

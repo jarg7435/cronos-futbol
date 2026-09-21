@@ -605,7 +605,9 @@ function _getCategoryModality(cat) {
     }
     const c = _normCat(cat);
     if (['prebenjamin', 'benjamin', 'alevin', 'chupete', 'querubin'].includes(c)) return 'f7';
-    if (['infantil', 'cadete', 'juvenil', 'regional', 'regional_fem', 'senior', 'amateur', 'futurefem'].includes(c)) return 'f11';
+    // 🆕 v747 · 'nacional' en la lista de once: se compara por IGUALDAD, así
+    // que no basta con que Regional esté — son dos claves distintas.
+    if (['infantil', 'cadete', 'juvenil', 'regional', 'regional_fem', 'senior', 'amateur', 'futurefem', 'nacional'].includes(c)) return 'f11';
     return 'f7';
 }
 

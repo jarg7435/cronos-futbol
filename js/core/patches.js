@@ -170,8 +170,44 @@
         window._cronos_interval_colorTimers = setInterval(colorAllTimers, 1000);
     }
 
-    // ── 3. Fix cronómetro inicial ────────────────────────────────────
-    var _cronosCorrectHalfTime = null;
+    // ════════════════════════════════════════════════════════════════
+    //  🔴🔴 v749 · EL PARCHE DEL CRONÓMETRO GUARDABA UN VALOR CADUCADO
+    // ════════════════════════════════════════════════════════════════
+    //  Reporte del autor (implementar.txt 2026-09-21, capturas 10653-10657):
+    //  un partido de ALEVÍN arrancaba con los relojes a 45:00 y uno de
+    //  FUTureFEM a 30:00, con la tabla de v748 puesta y el desplegable
+    //  anunciando los minutos correctos.
+    //
+    //  📏 LOS DOS NÚMEROS SON LA PRUEBA, y no son los de ninguna categoría
+    //  equivocada: 45 era lo que quedaba del partido de Regional que había
+    //  montado antes en esa misma sesión, y 30 es el valor con el que NACE
+    //  `half1MaxTime` en app-init.js (página recién cargada). O sea: nadie
+    //  había escrito los minutos de la categoría… o alguien los había
+    //  DESESCRITO después.
+    //
+    //  🔑 LA CAUSA ES UN CAMBIO DE TIEMPO VERBAL. Este parche nació cuando
+    //  `confirmSetup()` era SÍNCRONA: llamarla y leer `half1MaxTime` justo
+    //  después daba el valor recién calculado. Desde que el candado de sesión
+    //  entró en medio, `confirmSetup()` sólo LANZA el trabajo —
+    //
+    //      Promise.resolve(window.cronosSesionAlAbrirPartido())
+    //          .then(function (puede) { if (puede) _confirmSetupAhora(); });
+    //
+    //  — y vuelve de inmediato. Así que la línea de abajo leía el crono del
+    //  partido ANTERIOR, lo guardaba en `_cronosCorrectHalfTime`, y al pulsar
+    //  IR AL PARTIDO lo volvía a IMPONER encima del bueno. El nombre de la
+    //  variable lo decía todo: se llamaba «el correcto» y era el caducado.
+    //
+    //  🔑 POR QUÉ YA NO SE GUARDA NADA. La duración la fija `_confirmSetupAhora`
+    //  —y sólo ella, desde la tabla única de v748— y además pinta el display.
+    //  Aquí no hace falta recordar ningún valor: basta con REPINTAR lo que
+    //  haya en ese momento, que es la única forma de no pisar ni la categoría
+    //  ni lo que el entrenador haya tecleado a mano (`editTimer`).
+    //
+    //  ⚠️ NO SE PUEDE ARREGLAR CON UN `setTimeout`: el trabajo va detrás de una
+    //  lectura de red (el candado mira la plaza en Firestore), así que no hay
+    //  retardo que se pueda dar por bueno. Se quita la captura, no se aplaza.
+    // ════════════════════════════════════════════════════════════════
 
     function _fmtTime(secs) {
         var m = Math.floor(secs / 60);
@@ -179,23 +215,16 @@
         return (m < 10 ? '0' : '') + m + ':' + (s < 10 ? '0' : '') + s;
     }
 
-    function patchConfirmSetupTimer() {
-        if (typeof confirmSetup === 'undefined') { setTimeout(patchConfirmSetupTimer, 200); return; }
-        var orig = window.confirmSetup;
-        window.confirmSetup = function() {
-            orig();
-            _cronosCorrectHalfTime = (typeof half1MaxTime !== 'undefined' && half1MaxTime > 0)
-                ? half1MaxTime : null;
-            if (_cronosCorrectHalfTime) {
-                var display = _fmtTime(_cronosCorrectHalfTime);
-                var t1 = document.getElementById('timer-h1');
-                var t2 = document.getElementById('timer-h2');
-                if (t1) t1.textContent = display;
-                if (t2) t2.textContent = display;
-            }
-        };
+    //  Repinta los dos relojes con la duración que esté puesta AHORA.
+    //  Nunca decide cuál es: sólo la enseña.
+    function _pintarRelojesDesdeEstado() {
+        if (typeof half1MaxTime === 'undefined' || !(half1MaxTime > 0)) return;
+        var t1 = document.getElementById('timer-h1');
+        var t2 = document.getElementById('timer-h2');
+        if (t1) t1.textContent = _fmtTime(half1MaxTime);
+        if (t2) t2.textContent = _fmtTime(
+            (typeof half2MaxTime !== 'undefined' && half2MaxTime > 0) ? half2MaxTime : half1MaxTime);
     }
-    patchConfirmSetupTimer();
 
     function patchGoToTitularTimer() {
         if (typeof goToTitularSelection === 'undefined') { setTimeout(patchGoToTitularTimer, 200); return; }
@@ -206,16 +235,10 @@
             // veredicto y no tocamos los cronometros de un partido inexistente.
             var ok = orig();
             if (ok === false) return false;
-            if (_cronosCorrectHalfTime && _cronosCorrectHalfTime > 0) {
-                half1MaxTime = _cronosCorrectHalfTime;
-                half2MaxTime = _cronosCorrectHalfTime;
-                var display = _fmtTime(_cronosCorrectHalfTime);
-                var t1 = document.getElementById('timer-h1');
-                var t2 = document.getElementById('timer-h2');
-                if (t1) t1.textContent = display;
-                if (t2) t2.textContent = display;
-                try { if (typeof updateMasterUI === 'function') updateMasterUI(); } catch(e) {}
-            }
+            // v749 · Sólo se REPINTA. Escribir aquí `half1MaxTime` es lo que
+            // devolvía al Alevín los 45 minutos del Regional anterior.
+            _pintarRelojesDesdeEstado();
+            try { if (typeof updateMasterUI === 'function') updateMasterUI(); } catch(e) {}
             return ok;
         };
     }
@@ -277,6 +300,7 @@
                 else if (_userCat.includes('infant'))  _targetValue = mode + '_infantil';
                 else if (_userCat.includes('cadet'))   _targetValue = mode + '_cadete';
                 else if (_userCat.includes('juvenil')) _targetValue = mode + '_juvenil';
+                else if (_userCat.includes('nacional'))_targetValue = mode + '_nacional';   // 🆕 v747
                 else if (_userCat.includes('regional'))_targetValue = mode + '_regional';
                 if (_targetValue) {
                     var _opt = _catSel.querySelector('option[value="' + _targetValue + '"]');

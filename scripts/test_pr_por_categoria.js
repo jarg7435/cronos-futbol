@@ -89,10 +89,13 @@ parte(() => {
     ok('1a · el módulo expone la regla',
        typeof w.ctCategoriaRegistraPR === 'function');
 
-    const CON = ['cadete', 'juvenil', 'regional', 'regional_fem'];
+    //  🆕 v747 · NACIONAL entra en la lista blanca. Es la categoría más alta
+    //  del catálogo (Tercera RFEF hacia arriba), así que «de Cadetes hacia
+    //  arriba» —el literal del encargo de v738— la incluye de lleno.
+    const CON = ['cadete', 'juvenil', 'regional', 'regional_fem', 'nacional'];
     const SIN = ['prebenjamin', 'benjamin', 'alevin', 'infantil', 'futurefem'];
 
-    ok('1b · 🔑 las cuatro de Cadete hacia arriba SÍ llevan P/R',
+    ok('1b · 🔑 las de Cadete hacia arriba SÍ llevan P/R',
        CON.every(c => w.ctCategoriaRegistraPR(c) === true),
        CON.filter(c => !w.ctCategoriaRegistraPR(c)).join(', '));
     ok('1c · 🔑 las cinco que nombra el encargo NO las llevan',
@@ -106,7 +109,7 @@ parte(() => {
     const catalogo = (w.CT_CATEGORIES || []).map(c => c.id);
     const clasificadas = CON.concat(SIN).sort().join(',');
     ok('1d · 🚨 NINGUNA categoría del catálogo se queda sin decidir',
-       catalogo.length === 9 && catalogo.slice().sort().join(',') === clasificadas,
+       catalogo.length === 10 && catalogo.slice().sort().join(',') === clasificadas,   // 🆕 v747: 10 con Nacional
        'catálogo: ' + catalogo.join(', '));
 
     ok('1e · la lista blanca está publicada y es la de la regla',

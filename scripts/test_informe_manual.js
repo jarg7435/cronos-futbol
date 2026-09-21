@@ -113,8 +113,11 @@ try {
 } catch (e) { /* se reporta en la parte 5 */ }
 if (cupoReal) win.cronosCupoConvocatoria = cupoReal;
 // La modalidad se deriva de la categoría; aquí basta con la misma cascada.
+// 🆕 v750 · 'nacional' entra en la lista, como en el resolutor de verdad
+// (utils.js, desde v747). Sin ella este doble decía F7 para un Nacional y el
+// cupo salía 14: un guard que se queda atrás tiñe de rojo el código bueno.
 win._cronosMatchModality = function (cat) {
-    return /juvenil|regional|infantil|cadete|senior|futurefem/.test(String(cat)) ? 'f11' : 'f7';
+    return /juvenil|regional|nacional|infantil|cadete|senior|futurefem/.test(String(cat)) ? 'f11' : 'f7';
 };
 
 console.log('── PARTE 1 · la lógica del formulario, ejecutada ──');
@@ -202,14 +205,17 @@ if (MR.duracionPorCategoria) {
     const D = MR.duracionPorCategoria;
     // 🚨 'prebenjamin' CONTIENE 'benjamin': el orden de las comprobaciones es
     //    el bug que report-engine ya pagó una vez.
+    //  ⏱️ v748 · Benjamín baja a 60 (2×30) y FUTureFEM sube a 80 (2×40), por
+    //  el encargo del 2026-09-20. La tabla la manda `cronosTiemposCategoria`.
     ok('1q · 🚨 prebenjamín son 60, no 70', D('prebenjamin') === 60, 'salió ' + D('prebenjamin'));
-    ok('1r · benjamín 70',  D('benjamin') === 70);
+    ok('1r · benjamín 60 (v748)',  D('benjamin') === 60, 'salió ' + D('benjamin'));
     ok('1s · alevín 70',    D('alevin') === 70);
     ok('1t · infantil 80',  D('infantil') === 80);
     ok('1u · cadete 80',    D('cadete') === 80);
     ok('1v · juvenil 90',   D('juvenil') === 90);
     ok('1w · regional 90',  D('regional') === 90);
-    ok('1x · FUTureFEM 70', D('futurefem') === 70);
+    ok('1x · FUTureFEM 80 (v748)', D('futurefem') === 80, 'salió ' + D('futurefem'));
+    ok('1x2 · 🆕 Nacional 90', D('nacional') === 90, 'salió ' + D('nacional'));
 }
 
 // ── MM:SS, no un número ─────────────────────────────────────────────
@@ -878,6 +884,163 @@ if (MR.pintarSucesos && MR.estadoNuevo && cargoElModulo) {
        /onwheel="this\.blur\(\)"/.test(html2));
 
     sandbox.document = docReal;
+}
+
+// ════════════════════════════════════════════════════════════════════
+console.log('\n── PARTE 10 · 🔄 v750 · el cambio: quién sale y quién entra ──');
+// ════════════════════════════════════════════════════════════════════
+//  Encargo del autor (implementar.txt 2026-09-21, capturas 10661-10663): «el
+//  selector de Entra sólo debe mostrar los suplentes de entre los convocados
+//  (el banquillo); el de Sale, sólo los que salieron de titulares, y nunca a
+//  toda la plantilla general». En su captura, «Sale» ofrecía los 18.
+//
+//  🔑 SE EJECUTA, NO SE LEE. Todos son convocados, así que mirar el fuente no
+//  distingue «los titulares» de «todos»: hay que pintar la fila y ver qué
+//  dorsales salen en cada desplegable.
+ok('10·0 · el módulo expone las listas del cambio para poder medirlas',
+   cargoElModulo && typeof MR.cambioListas === 'function',
+   'sin ella las aserciones de esta parte NO SE EJECUTAN');
+
+if (MR.cambioListas && MR.pintarSucesos && MR.estadoNuevo && cargoElModulo) {
+    const els8 = {};
+    const nodo8 = (id) => {
+        if (!els8[id]) {
+            els8[id] = { id: id, _html: '', escrituras: 0, value: '', style: {}, dataset: {} };
+            Object.defineProperty(els8[id], 'innerHTML', {
+                get() { return this._html; },
+                set(v) { this._html = v; this.escrituras++; },
+            });
+        }
+        return els8[id];
+    };
+    const docReal8 = sandbox.document;
+    sandbox.document = { getElementById: nodo8, activeElement: null };
+
+    //  Cuatro convocados: dos titulares (#1, #2) y dos suplentes (#3, #4).
+    const S8 = MR.estadoNuevo();
+    S8.equipo = { clubId: 'C', category: 'regional', subcategory: 'A', teamId: 't' };
+    S8.jugadores = [
+        { ficha: 'F1', dorsal: '1', nombre: 'Uno',    alias: 'UNO' },
+        { ficha: 'F2', dorsal: '2', nombre: 'Dos',    alias: 'DOS' },
+        { ficha: 'F3', dorsal: '3', nombre: 'Tres',   alias: 'TRES' },
+        { ficha: 'F4', dorsal: '4', nombre: 'Cuatro', alias: 'CUATRO' },
+        { ficha: 'F9', dorsal: '9', nombre: 'Nueve',  alias: 'NUEVE' },   // NO convocado
+    ];
+    ['1', '2', '3', '4'].forEach(d => { S8.conv[d] = true; });
+    S8.tit['1'] = true; S8.tit['2'] = true;
+    S8.sucesos = [{ id: 'C1', tipo: 'cambio', minuto: 60, dorsal: '', dorsalEntra: '' }];
+    win._mrState = S8;
+
+    const dorsales = (l) => l.map(j => j.dorsal).join(',');
+    let L = MR.cambioListas('C1');
+    ok('10a · 🔑 pueden SALIR sólo los titulares', dorsales(L.enCampo) === '1,2', dorsales(L.enCampo));
+    ok('10b · 🔑 pueden ENTRAR sólo los suplentes convocados', dorsales(L.banquillo) === '3,4',
+       dorsales(L.banquillo));
+    ok('10c · 🚨 y nunca alguien que no está convocado',
+       !L.enCampo.concat(L.banquillo).some(j => j.dorsal === '9'),
+       'el #9 no fue convocado: no puede salir ni entrar');
+
+    //  El cambio se completa: sale el #1 y entra el #3.
+    S8.sucesos[0].dorsal = '1'; S8.sucesos[0].dorsalEntra = '3';
+    S8.sucesos.push({ id: 'C2', tipo: 'cambio', minuto: 75, dorsal: '', dorsalEntra: '' });
+    L = MR.cambioListas('C2');
+    //  🔑 El que ENTRÓ puede volver a salir: si no, un segundo cambio sobre el
+    //  mismo hueco sería imposible de registrar. Es la única desviación del
+    //  literal del encargo, y es lo que lo hace utilizable.
+    ok('10d · 🔑🔑 el suplente que ya entró SÍ puede salir en el siguiente cambio',
+       dorsales(L.enCampo) === '2,3', dorsales(L.enCampo));
+    ok('10e · ⚠️ y el que ya salió NO vuelve a la lista de los que pueden salir',
+       !L.enCampo.some(j => j.dorsal === '1'), dorsales(L.enCampo));
+    ok('10f · ⚠️ el que ya entró tampoco sigue en el banquillo (nadie entra dos veces)',
+       dorsales(L.banquillo) === '4', dorsales(L.banquillo));
+
+    //  La fila que se edita se excluye del cómputo: su propia elección sigue.
+    L = MR.cambioListas('C1');
+    ok('10g · 🔑 la fila que se está editando no se descarta a sí misma',
+       L.enCampo.some(j => j.dorsal === '1') && L.banquillo.some(j => j.dorsal === '3'),
+       'salen=' + dorsales(L.enCampo) + ' entran=' + dorsales(L.banquillo));
+
+    //  Y ahora, PINTADO: cada desplegable con su lista.
+    MR.pintarSucesos();
+    const h8 = nodo8('mr-sucesos').innerHTML;
+    const trozo = (marca) => {
+        const i = h8.indexOf(marca);
+        if (i < 0) return '';
+        const fin = h8.indexOf('</select>', i);
+        return h8.slice(i, fin < 0 ? i + 800 : fin);
+    };
+    const selSale  = trozo("'C2','dorsal'");
+    const selEntra = trozo("'C2','dorsalEntra'");
+    ok('10h · 🔑 el desplegable de SALE pinta sólo a los que están en el campo',
+       /value="2"/.test(selSale) && /value="3"/.test(selSale) &&
+       !/value="4"/.test(selSale) && !/value="1"/.test(selSale),
+       selSale.replace(/\s+/g, ' ').slice(0, 200));
+    ok('10i · 🔑 el de ENTRA, sólo al banquillo',
+       /value="4"/.test(selEntra) && !/value="2"/.test(selEntra) && !/value="3"/.test(selEntra),
+       selEntra.replace(/\s+/g, ' ').slice(0, 200));
+
+    //  ⚠️ Los demás sucesos NO se filtran: un gol o una tarjeta la puede hacer
+    //  cualquiera que jugase, entrara cuando entrara.
+    S8.sucesos.push({ id: 'G1', tipo: 'gol', minuto: 80, dorsal: '', dorsalEntra: '' });
+    MR.pintarSucesos();
+    const selGol = (function () {
+        const h = nodo8('mr-sucesos').innerHTML;
+        const i = h.indexOf("'G1','dorsal'");
+        return i < 0 ? '' : h.slice(i, h.indexOf('</select>', i));
+    })();
+    ok('10j · ⚠️ un GOL sigue ofreciendo a TODOS los convocados',
+       ['1', '2', '3', '4'].every(d => selGol.indexOf('value="' + d + '"') !== -1),
+       selGol.replace(/\s+/g, ' ').slice(0, 200));
+
+    //  ⚠️ FAIL-OPEN: sin titulares marcados todavía, no se puede dejar el
+    //  desplegable vacío — sería impedir registrar el partido.
+    const S9 = MR.estadoNuevo();
+    S9.equipo = S8.equipo;
+    S9.jugadores = S8.jugadores;
+    ['1', '2', '3', '4'].forEach(d => { S9.conv[d] = true; });
+    S9.sucesos = [{ id: 'X', tipo: 'cambio', minuto: 10, dorsal: '', dorsalEntra: '' }];
+    win._mrState = S9;
+    MR.pintarSucesos();
+    const selSale2 = (function () {
+        const h = nodo8('mr-sucesos').innerHTML;
+        const i = h.indexOf("'X','dorsal'");
+        return i < 0 ? '' : h.slice(i, h.indexOf('</select>', i));
+    })();
+    ok('10k · ⚠️ sin ningún titular marcado, SALE ofrece a todos (no se bloquea)',
+       ['1', '2', '3', '4'].every(d => selSale2.indexOf('value="' + d + '"') !== -1),
+       'un desplegable vacío no protege de nada: sólo impide registrar');
+
+    //  🔑 Y elegir a alguien repinta, para que las demás filas se enteren.
+    win._mrState = S8;
+    MR.pintarSucesos();
+    const antes8 = nodo8('mr-sucesos').escrituras;
+    win._mrSuceso('C2', 'dorsalEntra', '4');
+    ok('10l · 🔑 elegir quién entra repinta las listas de las demás filas',
+       nodo8('mr-sucesos').escrituras > antes8,
+       'sin repintar, otro cambio seguiría ofreciendo a alguien que ya entró');
+
+    sandbox.document = docReal8;
+}
+
+// ── El cupo del informe manual conoce la categoría (v750) ───────────
+//  📏 Su captura: «Regional A … máximo 18 convocados». La llamada se quedó
+//  con dos argumentos cuando la regla pasó a tener tres (v747).
+if (MR.cupo && MR.estadoNuevo && cupoReal) {
+    const SC = MR.estadoNuevo();
+    SC.jugadores = [];
+    const cupoDe = (cat) => {
+        SC.equipo = { clubId: 'C', category: cat, subcategory: 'A', teamId: 't' };
+        win._mrState = SC;
+        return MR.cupo().maxConvocados;
+    };
+    ok('10m · 🔴 un REGIONAL admite 20 convocados en el informe manual', cupoDe('regional') === 20,
+       'dio ' + cupoDe('regional'));
+    ok('10n · 🆕 y un NACIONAL, también', cupoDe('nacional') === 20, 'dio ' + cupoDe('nacional'));
+    ok('10o · ⚠️ el resto del Fútbol 11 se queda en 18',
+       cupoDe('juvenil') === 18 && cupoDe('cadete') === 18, 'juvenil=' + cupoDe('juvenil'));
+    ok('10p · 🚨 y Regional FEM también (decisión suya del 2026-09-20)',
+       cupoDe('regional_fem') === 18, 'dio ' + cupoDe('regional_fem'));
+    ok('10q · el Fútbol 7 no cambia: 14', cupoDe('alevin') === 14, 'dio ' + cupoDe('alevin'));
 }
 
 // Y no sólo los de sucesos: TODOS los campos numéricos del formulario.

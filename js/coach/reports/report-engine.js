@@ -356,31 +356,51 @@ const _RP = (() => {
     //  cronómetro (js/core/setup-modal.js, donde se fijan half1MaxTime y
     //  half2MaxTime). Las dos tablas TIENEN que decir lo mismo: ésta atribuye
     //  los minutos que se muestran a cada jugador, no sólo la escala del Gantt.
-    //    prebenjamín  2×30 = 60      infantil  2×40 = 80
-    //    benjamín     2×35 = 70      cadete    2×40 = 80
-    //    alevín       2×35 = 70      juvenil   2×45 = 90
-    //    FUTureFEM    2×35 = 70      regional  2×45 = 90
-    //                                Reg. FEM  2×45 = 90
-    //  El margen que permite el cronómetro (+10 min en F7, +15 en F11) es
-    //  prolongación y protección ante cortes de conexión: NO forma parte de la
-    //  base reglamentaria y se muestra aparte, como `+N'` (ver buildHeader).
+    //  ⏱️ v748 · TABLA OFICIAL DEL AUTOR (implementar.txt 2026-09-20):
+    //    prebenjamín  2×30 = 60      infantil   2×40 = 80
+    //    benjamín     2×30 = 60      cadete     2×40 = 80
+    //    alevín       2×35 = 70      juvenil    2×45 = 90
+    //    FUTureFEM    2×40 = 80      regional   2×45 = 90
+    //                                Reg. FEM   2×45 = 90
+    //                                NACIONAL   2×45 = 90
+    //  (cambian Benjamín, de 70 a 60, y FUTureFEM, de 70 a 80).
+    //  El margen que permite el cronómetro —10' hasta Alevín y 15' de Infantil
+    //  hacia arriba, por CATEGORÍA desde v748— es prolongación y protección
+    //  ante cortes de conexión: NO forma parte de la base reglamentaria y se
+    //  muestra aparte, como `+N'` (ver buildHeader).
     //
     //  ⚠️ EL ORDEN DE ESTAS COMPROBACIONES IMPORTA: 'prebenjamin' CONTIENE
     //  'benjamin'. Si se invierten, prebenjamín vuelve a resolverse como
     //  benjamín — que es exactamente el bug que esto corrige. La parte 2f del
     //  test recorre las siete categorías para impedir que vuelva.
+    //  ⏱️ v748 · LOS MINUTOS OFICIALES, ACTUALIZADOS AL ENCARGO DEL 2026-09-20:
+    //  Benjamín pasa a 60 (2×30) y FUTureFEM a 80 (2×40).
+    //
+    //  🚨 ESTA TABLA SE QUEDA ESCRITA AQUÍ, Y NO ES UN DESCUIDO. El primer
+    //  intento la hizo llamar a `cronosTiemposCategoria` (utils.js) y el guard
+    //  1c de test_report_engine_module.js lo tumbó en el acto: este motor es
+    //  un módulo PURO —cero `window`, cero `document`, cero `try`— y por eso
+    //  se puede ejecutar en un sandbox desnudo y desde el visor. Llamar a la
+    //  tabla global le habría costado esa propiedad.
+    //
+    //  🔑 LO QUE IMPIDE QUE LAS DOS DIVERJAN ES UN GUARD, NO UNA LLAMADA: la
+    //  parte 7 de test_tiempos_por_categoria.js recorre las diez categorías y
+    //  compara ESTA cascada con `cronosTiemposCategoria`. Si una cambia y la
+    //  otra no, se pone roja.
     const getTotMin = m => {
         if (m.duration) return parseInt(m.duration) || 60;
         const cat = (m.category || '').toLowerCase();
+        //  ⚠️ EL ORDEN IMPORTA: 'prebenjamin' CONTIENE 'benjamin' (hoy los dos
+        //  duran 60, pero la mezcla volvería el día que se separen) y
+        //  'regional_fem' contiene 'regional' (los dos, 90).
         if (cat.includes('prebenjamin') || cat.includes('prebenjamín')) return 60;
-        // FUTureFEM: F7, 2T x 35' = 70. Va antes que nada por coherencia con el
-        // resto de la cascada; no comparte subcadena con ninguna otra clave.
-        if (cat.includes('futurefem'))                                  return 70;
-        if (cat.includes('benjamin')    || cat.includes('benjamín'))    return 70;
+        if (cat.includes('futurefem'))                                  return 80;
+        if (cat.includes('benjamin')    || cat.includes('benjamín'))    return 60;
         if (cat.includes('alevin')      || cat.includes('alevín'))      return 70;
         if (cat.includes('infantil'))                                   return 80;
         if (cat.includes('cadete'))                                     return 80;
-        if (cat.includes('juvenil') || cat.includes('regional') || cat.includes('senior')) return 90;
+        if (cat.includes('juvenil') || cat.includes('regional') ||
+            cat.includes('nacional') || cat.includes('senior')) return 90;
         return 60; // genérico
     };
 

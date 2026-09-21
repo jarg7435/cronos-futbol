@@ -252,6 +252,7 @@ window._cronosGeneratePlayerId = function(index) {
     else if (cat.includes('futurefem')) prefix = 'FF';
     else if (cat.includes('regional') && cat.includes('fem')) prefix = 'RF';
     else if (cat.includes('regional')) prefix = 'RG';
+    else if (cat.includes('nacional')) prefix = 'NC';   // 🆕 v747
 
     var num = String(index + 1).padStart(2, '0');
     return prefix + sub + num;

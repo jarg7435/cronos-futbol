@@ -174,15 +174,19 @@
     // jugó el partido entero. Aquí sólo se usa como VALOR POR DEFECTO del
     // formulario —el entrenador lo puede cambiar—, y lo que se teclee viaja en
     // `duration`, que el motor respeta por encima de la tabla.
+    //  ⏱️ v748 · Por la tabla única (utils.js). Era la tercera copia de la
+    //  misma cascada, y el formulario manual es justo donde una divergencia se
+    //  ve antes: propone los minutos del partido.
     function _mrDuracionPorCategoria(cat) {
+        if (typeof window.cronosTiemposCategoria === 'function') {
+            return window.cronosTiemposCategoria(cat, '').totalMin;
+        }
         var c = String(cat || '').toLowerCase();
-        if (c.indexOf('prebenjamin') !== -1 || c.indexOf('prebenjamín') !== -1) return 60;
-        if (c.indexOf('futurefem') !== -1) return 70;
-        if (c.indexOf('benjamin') !== -1 || c.indexOf('benjamín') !== -1) return 70;
+        if (c.indexOf('prebenj') !== -1 || c.indexOf('benjamin') !== -1 || c.indexOf('benjamín') !== -1) return 60;
         if (c.indexOf('alevin') !== -1 || c.indexOf('alevín') !== -1) return 70;
-        if (c.indexOf('infantil') !== -1) return 80;
-        if (c.indexOf('cadete') !== -1) return 80;
-        if (c.indexOf('juvenil') !== -1 || c.indexOf('regional') !== -1 || c.indexOf('senior') !== -1) return 90;
+        if (c.indexOf('futurefem') !== -1 || c.indexOf('infantil') !== -1 || c.indexOf('cadete') !== -1) return 80;
+        if (c.indexOf('juvenil') !== -1 || c.indexOf('regional') !== -1 ||
+            c.indexOf('nacional') !== -1 || c.indexOf('senior') !== -1) return 90;
         return 60;
     }
 
@@ -1149,7 +1153,14 @@
         var S = window._mrState;
         var mod = _mrModalidad();
         if (typeof window.cronosCupoConvocatoria === 'function') {
-            return window.cronosCupoConvocatoria(mod, S.tipoPartido);
+            // 🆕 v750 · LA CATEGORÍA, QUE DESDE v747 ES LO QUE DECIDE ENTRE 18
+            // Y 20. Esta llamada se quedó con dos argumentos cuando la regla
+            // pasó a tener tres, así que el informe manual de un REGIONAL
+            // seguía topando en 18 —«máximo 18 convocados» decía su captura—
+            // mientras la convocatoria en directo ya dejaba 20. La categoría
+            // es la MISMA que ya se usa aquí al lado para la modalidad.
+            return window.cronosCupoConvocatoria(mod, S.tipoPartido,
+                                                 (S.equipo && S.equipo.category) || '');
         }
         return { modalidad: mod, tipo: S.tipoPartido,
                  maxConvocados: 0, maxTitulares: 0, _sinRegla: true };
@@ -1236,8 +1247,70 @@
         return S.jugadores.filter(function (j) { return S.conv[j.dorsal]; });
     }
 
-    function _mrSelectJugador(valor, accion) {
-        var opts = '<option value="">— jugador —</option>' + _mrConvocados().map(function (j) {
+    // ════════════════════════════════════════════════════════════════
+    //  🔄 v750 · EN UN CAMBIO, QUIÉN PUEDE SALIR Y QUIÉN PUEDE ENTRAR
+    // ════════════════════════════════════════════════════════════════
+    //  Encargo del autor (implementar.txt 2026-09-21, capturas 10661-10663):
+    //  «el selector de Entra sólo debe mostrar los jugadores suplentes de
+    //  entre los convocados (el banquillo); el de Sale, sólo los que salieron
+    //  de titulares, y nunca a toda la plantilla general».
+    //
+    //  📏 En su captura, el desplegable de «Sale» ofrecía los 18 convocados,
+    //  titulares y suplentes mezclados.
+    //
+    //  🔑 SE CALCULA QUIÉN ESTÁ EN EL CAMPO, NO SÓLO QUIÉN EMPEZÓ. Tomado al
+    //  pie de la letra —«sólo los titulares»—, un suplente que entra en el
+    //  minuto 60 no podría ser sustituido en el 75, que es un cambio
+    //  perfectamente normal y quedaría imposible de registrar. Así que «puede
+    //  salir» = empezó de titular **o** ya entró en otro cambio, y no ha
+    //  salido todavía. Es la misma idea con otras palabras: quien está dentro.
+    //
+    //  🔑 Y «puede entrar» = convocado, no titular, y que no haya entrado ya
+    //  en otro cambio: nadie entra dos veces.
+    //
+    //  ⚠️ LA FILA QUE SE ESTÁ PINTANDO SE EXCLUYE DEL CÓMPUTO (`idExcluir`).
+    //  Sin eso, el jugador elegido en esa misma fila se descartaría a sí mismo
+    //  y su propio desplegable saldría sin él.
+    function _mrCambioListas(idExcluir) {
+        var S = window._mrState;
+        var conv = _mrConvocados();
+        var entraron = {}, salieron = {};
+        S.sucesos.forEach(function (s) {
+            if (!s || s.tipo !== 'cambio' || s.id === idExcluir) return;
+            if (s.dorsalEntra) entraron[s.dorsalEntra] = true;
+            if (s.dorsal)      salieron[s.dorsal] = true;
+        });
+        return {
+            enCampo: conv.filter(function (j) {
+                return (S.tit[j.dorsal] || entraron[j.dorsal]) && !salieron[j.dorsal];
+            }),
+            banquillo: conv.filter(function (j) {
+                return !S.tit[j.dorsal] && !entraron[j.dorsal];
+            }),
+            conv: conv,
+        };
+    }
+
+    //  ⚠️ FAIL-OPEN: si la lista sale VACÍA —porque todavía no se ha marcado a
+    //  ningún titular, que es el estado en el que se entra a esta pantalla—
+    //  se ofrecen todos los convocados. Un desplegable vacío no protege de
+    //  nada: sólo impide registrar el partido, que es peor.
+    function _mrListaOTodos(lista, conv) {
+        return (lista && lista.length) ? lista : conv;
+    }
+
+    function _mrSelectJugador(valor, accion, lista) {
+        var jugadores = lista || _mrConvocados();
+        //  🔑 EL VALOR YA ELEGIDO SIEMPRE ESTÁ EN SU LISTA. Si el entrenador
+        //  desmarca «De inicio» a alguien que ya figuraba en un cambio, su
+        //  fila seguiría diciendo su nombre pero el <select> no tendría esa
+        //  opción: el navegador la pintaría vacía y el dato se perdería en
+        //  silencio al siguiente repintado.
+        if (valor && !jugadores.some(function (j) { return j.dorsal === String(valor); })) {
+            var suelto = _mrConvocados().filter(function (j) { return j.dorsal === String(valor); });
+            jugadores = suelto.concat(jugadores);
+        }
+        var opts = '<option value="">— jugador —</option>' + jugadores.map(function (j) {
             return '<option value="' + _mrE(j.dorsal) + '"' + (String(valor) === j.dorsal ? ' selected' : '') +
                    '>#' + _mrE(j.dorsal) + ' ' + _mrE(j.alias) + '</option>';
         }).join('');
@@ -1296,11 +1369,21 @@
                     'onwheel="this.blur()" title="Minuto del partido" ' +
                     'style="' + _MR_INPUT + 'width:4.2rem;text-align:center;">' +
                 "<span style=\"font-size:0.66rem;color:var(--text-muted);\">'</span>" +
+                //  🔄 v750 · En un CAMBIO cada desplegable tiene su lista: el
+                //  que sale, de entre los que están en el campo; el que entra,
+                //  del banquillo. El resto de sucesos —gol, tarjeta, lesión—
+                //  siguen ofreciendo a todos los convocados: los puede hacer
+                //  cualquiera que haya jugado, entrara cuando entrara.
                 (s.tipo === 'cambio'
-                    ? '<span style="font-size:0.68rem;color:#ff5858;font-weight:700;">Sale</span>' +
-                      _mrSelectJugador(s.dorsal, "_mrSuceso('" + s.id + "','dorsal',this.value)") +
-                      '<span style="font-size:0.68rem;color:#3fb950;font-weight:700;">Entra</span>' +
-                      _mrSelectJugador(s.dorsalEntra, "_mrSuceso('" + s.id + "','dorsalEntra',this.value)")
+                    ? (function () {
+                          var L = _mrCambioListas(s.id);
+                          return '<span style="font-size:0.68rem;color:#ff5858;font-weight:700;">Sale</span>' +
+                              _mrSelectJugador(s.dorsal, "_mrSuceso('" + s.id + "','dorsal',this.value)",
+                                               _mrListaOTodos(L.enCampo, L.conv)) +
+                              '<span style="font-size:0.68rem;color:#3fb950;font-weight:700;">Entra</span>' +
+                              _mrSelectJugador(s.dorsalEntra, "_mrSuceso('" + s.id + "','dorsalEntra',this.value)",
+                                               _mrListaOTodos(L.banquillo, L.conv));
+                      })()
                     : _mrSelectJugador(s.dorsal, "_mrSuceso('" + s.id + "','dorsal',this.value)")) +
                 "<button onclick=\"_mrQuitarSuceso('" + s.id + "')\" title=\"Quitar\" style=\"" +
                     'background:rgba(255,88,88,0.1);border:1px solid rgba(255,88,88,0.3);color:#ff5858;' +
@@ -1354,6 +1437,17 @@
         else s[campo] = valor;
         if (campo === 'tipo') {
             if (valor !== 'cambio') s.dorsalEntra = '';
+            _mrPintarSucesos();
+        }
+        //  🔄 v750 · Elegir quién sale o quién entra CAMBIA LAS LISTAS DE LAS
+        //  DEMÁS FILAS: el que acaba de entrar ya no está en el banquillo y el
+        //  que sale deja de estar en el campo. Sin este repintado, un segundo
+        //  cambio seguiría ofreciendo a alguien que ya entró.
+        //  ⚠️ Sólo en los cambios, y sólo al tocar un jugador: el minuto se
+        //  refresca casilla a casilla a propósito (respeta el foco de quien
+        //  está escribiendo), y rehacer la lista entera en cada tecla sería
+        //  volver a ese defecto.
+        else if (s.tipo === 'cambio' && (campo === 'dorsal' || campo === 'dorsalEntra')) {
             _mrPintarSucesos();
         }
         // Los minutos calculados sí cambian, pero se refrescan CASILLA A
@@ -2008,6 +2102,10 @@
         pintarPartido: _mrPintarPartido,
         problemas: _mrProblemas,
         cupo: _mrCupo,
+        // 🔄 v750 · Quién puede salir y quién puede entrar en un cambio. Se
+        // expone para poder EJECUTARLA: medir el texto no distingue «los
+        // titulares» de «todos los convocados» cuando todos son convocados.
+        cambioListas: _mrCambioListas,
         usaCalendario: _mrUsaCalendario,
         aplicarDelCalendario: _mrAplicarDelCalendario,
         preseleccion: _mrPreseleccion,

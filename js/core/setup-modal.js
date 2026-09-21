@@ -335,7 +335,11 @@ function openSetupModal() {
                 // ninguna otra clave, así que necesita su propia mención: sin
                 // ella al entrenador no se le ofrecería ninguna modalidad.
                 if (rcat.includes('prebenjamin') || rcat.includes('benjamin') || rcat.includes('alevin')) hasF7 = true;
-                if (rcat.includes('infantil') || rcat.includes('cadete') || rcat.includes('juvenil') || rcat.includes('regional') || rcat.includes('futurefem')) hasF11 = true;
+                // 🆕 v747 · Nacional también es F11, y como 'futurefem'
+                // necesita su propia mención: 'nacional' no comparte subcadena
+                // con 'regional'. Sin ella, al entrenador de Nacional no se le
+                // ofrecería ninguna modalidad.
+                if (rcat.includes('infantil') || rcat.includes('cadete') || rcat.includes('juvenil') || rcat.includes('regional') || rcat.includes('futurefem') || rcat.includes('nacional')) hasF11 = true;
                 if (rcat.startsWith('f7_')) hasF7 = true;
                 if (rcat.startsWith('f11_')) hasF11 = true;
             });
@@ -1514,22 +1518,29 @@ function _confirmSetupAhora() {
     window._currentMatchCategory = category;
     window._currentMatchSubcategory =
         _subImpuesta || document.getElementById('match-subcategory')?.value || 'A';
-    let defaultTime = 30;
-
-    if (category.includes('prebenjamin')) {
-        defaultTime = 30;
-    } else if (category.includes('futurefem')) {
-        defaultTime = 35;               // F7, 2T x 35' (decisión del autor)
-    } else if (category.includes('benjamin') || category.includes('alevin')) {
-        defaultTime = 35;
-    } else if (category.includes('infantil') || category.includes('cadete')) {
-        defaultTime = 40;
-    } else if (category.includes('juvenil') || category.includes('regional')) {
-        defaultTime = 45;
-    } else if (currentMode === 'f11') {
-        defaultTime = 40;
+    // ══════════════════════════════════════════════════════════════════
+    //  ⏱️ v748 · LOS TIEMPOS POR DEFECTO SALEN DE LA TABLA ÚNICA
+    // ══════════════════════════════════════════════════════════════════
+    //  Aquí vivía una cascada propia de categorías (30/35/40/45), y era una de
+    //  las SIETE copias de la misma tabla que había en el repositorio. Ahora
+    //  manda `cronosTiemposCategoria` (utils.js), que es la que dice también
+    //  el añadido, los minutos del informe y la etiqueta del desplegable.
+    //
+    //  🔴 ESTA COPIA NO CONOCÍA A NACIONAL: caía en el respaldo de F11 y el
+    //  partido nacía con 40' por mitad en vez de 45'.
+    //
+    //  🔑 ES UN VALOR POR DEFECTO, NO UNA IMPOSICIÓN. El entrenador cambia la
+    //  duración de cada mitad cuando quiera con `editTimer` (timer/core.js), y
+    //  al recuperar un partido mandan los tiempos GUARDADOS, no los de la
+    //  categoría. El encargo lo pide expresamente: «libertad total».
+    //
+    //  ⚠️ El respaldo, si utils.js no hubiera cargado, es el que había antes:
+    //  40' en once y 30' en siete. Nunca «sin límite».
+    let defaultTime;
+    if (typeof window.cronosTiemposCategoria === 'function') {
+        defaultTime = window.cronosTiemposCategoria(category, currentMode).mitad;
     } else {
-        defaultTime = 30;
+        defaultTime = (currentMode === 'f11') ? 40 : 30;
     }
 
     half1MaxTime = defaultTime * 60;
@@ -2477,7 +2488,14 @@ async function _doResumeMatch(matchId) {
         let activeAddedSec = 0;
         let shouldAutoEndFirstHalf = false;
         let shouldAutoEndMatch = false;
-        const maxAddedSecs = (currentMode === 'f11') ? 900 : 600; // 15 min F11, 10 min F7
+        // ⏱️ v748 · El añadido, por CATEGORÍA (tabla única en utils.js).
+        // ⚠️ Se pregunta DESPUÉS de restaurar `_currentMatchCategory` —tres
+        // líneas más arriba—, que es de donde sale la categoría del partido
+        // que se está recuperando; preguntando antes se aplicaría la del
+        // partido anterior.
+        const maxAddedSecs = (typeof window.cronosAnadidoSegundos === 'function')
+            ? window.cronosAnadidoSegundos(currentMode)
+            : ((currentMode === 'f11') ? 900 : 600);
 
         if (autonomousElapsedSec !== null) {
             // Modo AUTÓNOMO: el tiempo real de la parte activa es el derivado desde

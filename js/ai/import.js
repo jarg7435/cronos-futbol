@@ -171,18 +171,52 @@ function openConvocationModal() {
     let maxConvoked = currentMode === 'f7' ? 14 : 18;
     let maxTitulares = currentMode === 'f7' ? 7 : 11;
     let maxConvokedTxt = String(maxConvoked);
+    //  🆕 v747 · ¿Esta categoría lleva el cupo ampliado (Regional/Nacional)?
+    //  Lo DICE la propia regla en su respuesta; aquí no se vuelve a decidir,
+    //  que sería la segunda copia de un criterio que ya existe.
+    let cupoAmpliado = false;
 
     function _convTipoActual() {
         const el = document.getElementById('conv-type');
         return (el && el.value) || savedConv.type || 'amistoso';
     }
 
+    // ════════════════════════════════════════════════════════════════
+    //  🆕 v747 · LA CATEGORÍA TAMBIÉN DECIDE EL CUPO
+    // ════════════════════════════════════════════════════════════════
+    //  Regional y Nacional convocan 20; el resto del once, 18. Así que esta
+    //  pantalla tiene que saber de qué categoría es el partido.
+    //
+    //  🔑 NO SE ESCRIBE UNA CASCADA NUEVA. `CronosSubRules.categoriaActual()`
+    //  ya resuelve esto —y su comentario lo dice: es «la MISMA cascada que usa
+    //  el semáforo», porque dos cascadas para el mismo dato ya produjeron un
+    //  fallo en v562—. Aquí se reutiliza tal cual: partido en curso →
+    //  desplegable de categoría → categoría del entrenador.
+    function _convCategoriaActual() {
+        try {
+            if (window.CronosSubRules && typeof window.CronosSubRules.categoriaActual === 'function') {
+                const c = window.CronosSubRules.categoriaActual();
+                if (c) return c;
+            }
+        } catch (e) { /* respaldo abajo */ }
+        const me = window._cronosCurrentUser;
+        const sel = document.getElementById('match-category');
+        return (sel && sel.value) || window._currentMatchCategory ||
+               (me && (me.category || me.categoryLabel)) || '';
+    }
+    //  ⚠️ SE PUBLICA PORQUE LA OTRA PUERTA VIVE EN OTRA FUNCIÓN.
+    //  `goToTitularSelection()` —el botón de IR AL PARTIDO— está fuera de
+    //  `openConvocationModal()`, así que no alcanza esta declaración. Sin
+    //  publicarla, esa puerta se quedaría con un respaldo más pobre y las dos
+    //  capas podrían volver a decir cosas distintas del mismo partido.
+    window._convCategoriaActual = _convCategoriaActual;
+
     // Recalcula los cupos con la regla única y refresca lo que los muestra.
     function _convRecalcularCupos() {
         const tipo = _convTipoActual();
         let cupo = null;
         if (typeof window.cronosCupoConvocatoria === 'function') {
-            cupo = window.cronosCupoConvocatoria(currentMode, tipo);
+            cupo = window.cronosCupoConvocatoria(currentMode, tipo, _convCategoriaActual());
         }
         if (!cupo) {
             // ⚠️ Sin la regla cargada NO se inventa una tabla de repuesto: se
@@ -193,6 +227,7 @@ function openConvocationModal() {
             maxConvokedTxt = String(maxConvoked);
         } else {
             maxTitulares = cupo.maxTitulares;
+            cupoAmpliado = !!cupo.ampliado;
             if (cupo.maxConvocados == null) {
                 maxConvoked = Number.MAX_SAFE_INTEGER;
                 maxConvokedTxt = 'sin tope';
@@ -205,6 +240,60 @@ function openConvocationModal() {
         const elT = document.getElementById('conv-max-tit');
         if (elC) elC.textContent = (maxConvokedTxt === 'sin tope') ? 'sin tope' : ('de ' + maxConvokedTxt + ' max');
         if (elT) elT.textContent = 'min ' + minForMatch + ' · max ' + maxTitulares;
+        _convPintarAviso();
+    }
+
+    // ════════════════════════════════════════════════════════════════
+    //  📌 v747 · EL AVISO ORIENTATIVO DE LA CONVOCATORIA
+    // ════════════════════════════════════════════════════════════════
+    //  Dice, con la categoría delante, cuántos se pueden convocar, cuántos
+    //  salen de inicio y qué margen de cambios hay. Se repinta con cada
+    //  recálculo de cupos, así que cambiar el tipo de partido lo actualiza.
+    //
+    //  🔑 NO ESCRIBE NINGÚN NÚMERO PROPIO: los convocados y los titulares
+    //  salen de `cronosCupoConvocatoria` (ya calculados arriba) y los cambios
+    //  de `CronosSubRules.reglasDe`, que es la misma tabla que avisará durante
+    //  el partido. Un cartel informativo que diga una cosa y el partido otra
+    //  es peor que no ponerlo.
+    function _convPintarAviso() {
+        const caja = document.getElementById('conv-aviso-cupo');
+        if (!caja) return;
+        const cat = _convCategoriaActual();
+        //  La etiqueta sale del CATÁLOGO (category-tree.js), no de un mapa
+        //  escrito aquí: es el único sitio donde 'Nacional' se escribe una vez.
+        const etiqueta = (typeof window.ctCategoriaLabel === 'function')
+            ? window.ctCategoriaLabel(cat) : '';
+        const modo = currentMode === 'f7' ? 'Fútbol 7' : 'Fútbol 11';
+        const cabecera = '📋 <strong>Antes de convocar</strong> · ' +
+                         (etiqueta ? etiqueta + ' · ' : '') + modo;
+
+        const linea1 = (maxConvokedTxt === 'sin tope')
+            ? 'Es un <strong>amistoso</strong>: puedes convocar <strong>sin límite</strong> ' +
+              '(no hay acta federativa que lo acote).'
+            : 'Puedes convocar <strong>hasta ' + maxConvokedTxt + ' jugadores</strong>' +
+              //  ⚠️ Sin decir cuántos convoca «el resto»: sería un número
+              //  escrito a mano en un cartel, y este aviso existe justamente
+              //  para que no haya dos versiones de la misma cuenta.
+              (cupoAmpliado ? ' (esta categoría tiene el cupo ampliado).' : '.');
+        const linea2 = 'De ellos, <strong>' + maxTitulares + ' salen de titulares</strong> ' +
+                       '(los que marques en naranja) y el resto esperan en el banquillo. ' +
+                       'Hacen falta <strong>' + minForMatch + '</strong> para poder empezar.';
+
+        //  Los cambios, contados por la misma tabla que luego avisa en el campo.
+        let linea3 = '';
+        try {
+            if (window.CronosSubRules && typeof window.CronosSubRules.reglasDe === 'function') {
+                const r = window.CronosSubRules.reglasDe(cat, currentMode);
+                linea3 = r.ilimitado
+                    ? '🔄 Cambios <strong>libres</strong> en esta categoría.'
+                    : '🔄 Hasta <strong>' + r.maxCambios + ' cambios</strong> en <strong>' +
+                      r.maxVentanas + ' ventanas</strong>, más la del <strong>descanso</strong>.';
+            }
+        } catch (e) { /* sin la tabla de cambios el aviso vale igual */ }
+
+        caja.innerHTML = '<div style="color:#3fb950; margin-bottom:0.25rem;">' + cabecera + '</div>' +
+                         '<div style="color:var(--text);">' + linea1 + ' ' + linea2 + '</div>' +
+                         (linea3 ? '<div style="color:var(--text-muted); margin-top:0.2rem;">' + linea3 + '</div>' : '');
     }
 
     // ════════════════════════════════════════════════════════════════
@@ -252,6 +341,20 @@ function openConvocationModal() {
                     1\u00ba click: <span style="color:var(--primary);font-weight:700;">Convocado</span> \u00b7 2\u00ba click: <span style="color:#f0883e;font-weight:900;background:rgba(240,136,62,0.15);padding:2px 8px;border-radius:4px;">TITULAR</span> \u00b7 3\u00ba click: Quitar \u00b7 M&iacute;n <span style="color:#f0883e;font-weight:700;">${minForMatch}</span> titulares para partido
                 </p>
             </div>
+
+            <!-- \u2500\u2500 \u{1F4CC} v747 \u00b7 EL AVISO ORIENTATIVO, ANTES DE ELEGIR A NADIE \u2500\u2500
+                 Encargo del autor (2026-09-20): \u00abun mensaje orientativo para el
+                 entrenador antes de hacer la convocatoria que especifique
+                 claramente la selecci\u00f3n \u2014los convocados posibles, de 18 a 20
+                 seg\u00fan la categor\u00eda, y los 11 titulares\u2014, de modo que el cuerpo
+                 t\u00e9cnico lo tenga siempre claro\u00bb.
+                 \u{1F511} Va ARRIBA DEL TODO y no junto a los contadores: cuando el
+                 entrenador llega a los contadores ya ha empezado a elegir, y
+                 esto es justamente lo que tiene que saber ANTES. Lo rellena
+                 _convPintarAviso() con la MISMA regla que aplica el cupo. -->
+            <div id="conv-aviso-cupo" style="border-radius:10px; padding:0.7rem 0.9rem;
+                        margin-bottom:0.8rem; font-size:0.76rem; line-height:1.55;
+                        background:rgba(63,185,80,0.08); border:1px solid rgba(63,185,80,0.28);"></div>
 
             <!-- \u2500\u2500 DATOS DEL PARTIDO \u2500\u2500 -->
             <div style="background:rgba(88,166,255,0.06); border:1px solid rgba(88,166,255,0.2);
@@ -910,7 +1013,14 @@ function goToTitularSelection() {
     if (typeof window.cronosCupoConvocatoria === 'function') {
         const _tipo = (document.getElementById('conv-type') && document.getElementById('conv-type').value) ||
                       (window._savedConvData && window._savedConvData.type) || 'amistoso';
-        const _cupo = window.cronosCupoConvocatoria(currentMode, _tipo);
+        // 🆕 v747 · La categoría va también aquí: es la puerta de IR AL PARTIDO
+        // y tiene que aplicar el MISMO cupo que la pantalla de convocatoria, o
+        // vuelve la contradicción que documenta el comentario de arriba (una
+        // capa permite veinte y la siguiente rechaza con «máximo 18»).
+        const _cat = (typeof window._convCategoriaActual === 'function')
+                   ? window._convCategoriaActual()
+                   : (window._currentMatchCategory || '');
+        const _cupo = window.cronosCupoConvocatoria(currentMode, _tipo, _cat);
         if (_cupo) maxConvocados = (_cupo.maxConvocados == null) ? Number.MAX_SAFE_INTEGER : _cupo.maxConvocados;
     }
 

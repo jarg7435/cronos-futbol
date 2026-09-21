@@ -208,8 +208,10 @@ if (typeof window._cronosMatchModality !== 'function') {
         // 2b) Heurística por etiqueta legible (sin acentos).
         const norm = raw.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
         // 'futurefem' es F7 y 'regional_fem' F11 (éste ya entra por 'regional').
+        // 🆕 v747 · 'nacional' es F11 y NO entra por 'regional': son dos palabras
+        // distintas (ninguna contiene a la otra), así que se nombra aparte.
         if (/(prebenjamin|benjamin|alevin|prebenj|chupete|querubin)/.test(norm)) return 'f7';
-        if (/(infantil|cadete|juvenil|regional|senior|amateur|aficionado|futurefem)/.test(norm)) return 'f11';
+        if (/(infantil|cadete|juvenil|regional|nacional|senior|amateur|aficionado|futurefem)/.test(norm)) return 'f11';
         return '';
     };
 }
@@ -1101,6 +1103,7 @@ if (typeof window._cronosCategoriaValor !== 'function') {
         if (c.includes('infant'))                       return m + '_infantil';
         if (c.includes('cadet'))                        return m + '_cadete';
         if (c.includes('juvenil'))                      return m + '_juvenil';
+        if (c.includes('nacional'))                     return m + '_nacional';   // 🆕 v747
         if (c.includes('regional'))                     return m + '_regional';
         return null;
     };
@@ -1301,8 +1304,10 @@ if (typeof window._cronosMatchModality !== 'function') {
         // 2b) Heurística por etiqueta legible (sin acentos).
         const norm = raw.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
         // 'futurefem' es F7 y 'regional_fem' F11 (éste ya entra por 'regional').
+        // 🆕 v747 · 'nacional' es F11 y NO entra por 'regional': son dos palabras
+        // distintas (ninguna contiene a la otra), así que se nombra aparte.
         if (/(prebenjamin|benjamin|alevin|prebenj|chupete|querubin)/.test(norm)) return 'f7';
-        if (/(infantil|cadete|juvenil|regional|senior|amateur|aficionado|futurefem)/.test(norm)) return 'f11';
+        if (/(infantil|cadete|juvenil|regional|nacional|senior|amateur|aficionado|futurefem)/.test(norm)) return 'f11';
         return '';
     };
 }
@@ -1708,7 +1713,17 @@ if (typeof window.getCategoryGroupKey !== 'function') {
         if (normCat.includes('juvenil')) {
             return 'juvenil';
         }
-        if (normCat.includes('regional') || normCat.includes('senior') || normCat.includes('aficionado') || normCat.includes('amateur')) {
+        // 🆕 v747 · NACIONAL COMPARTE EL GRUPO 'regional', y es deliberado.
+        //  El grupo es la unidad con la que el Director configura semáforos e
+        //  informes a familias (`clubs/{id}.categoryConfigs`). Darle grupo
+        //  propio a Nacional lo haría nacer SIN configuración, y este proyecto
+        //  ya sabe lo que eso significa: en v586, partir un grupo en dos
+        //  habría reabierto los informes individualizados que un Director
+        //  tenía cerrados. Nacional es fútbol senior igual que Regional, así
+        //  que hereda su bloque; si algún día quiere configurarlos por
+        //  separado, se le da grupo propio y se añade a CRONOS_GRUPOS_CONFIG.
+        if (normCat.includes('regional') || normCat.includes('nacional') ||
+            normCat.includes('senior') || normCat.includes('aficionado') || normCat.includes('amateur')) {
             return 'regional';
         }
         if (cat.startsWith('f7_')) return 'f7';
@@ -2757,19 +2772,19 @@ function cronosMyTeamId() {
 //     `null` obliga a quien llama a preguntarse si hay tope, que es la
 //     pregunta correcta.
 //
-//  ⚠️⚠️ ESTA FUNCIÓN NACE COMO LA DEFINICIÓN ÚNICA, PERO NO ES LA ÚNICA COPIA
-//     QUE HAY HOY EN EL REPOSITORIO. Los números 14/18 y 7/11 están además
-//     escritos en línea en js/ai/import.js (la pantalla de convocatoria en
-//     vivo, ×2), js/core/event-listeners.js y js/shared/whatsapp-email.js.
-//     NO se han tocado en esta ronda a propósito: son el camino del partido en
-//     directo, no se pueden probar sin navegador, y el encargo era el
-//     formulario manual. 👉 Si algún día cambian los cupos, hay que mirar LOS
-//     CINCO SITIOS — o, mejor, hacer que los otros cuatro llamen aquí. Queda
-//     escrito para que no se descubra por sorpresa (lección de v551).
+//  ✅ v747 · YA ES LA DEFINICIÓN ÚNICA DE VERDAD. Hasta aquí este párrafo
+//     avisaba de que los números 14/18 y 7/11 estaban además escritos a mano
+//     en js/ai/import.js (×2), js/core/event-listeners.js y
+//     js/shared/whatsapp-email.js, y de que el día que cambiaran habría que
+//     mirar LOS CINCO SITIOS. Ese día llegó —Regional y Nacional pasan a 20—
+//     y se hizo lo que el propio aviso recomendaba: los otros cuatro LLAMAN
+//     AQUÍ, cada uno con su respaldo estricto por si utils.js no hubiera
+//     cargado. Lo que queda escrito a mano en esas cuatro líneas es sólo ese
+//     respaldo, nunca el camino normal (lección de v551).
 //
-//  ⚠️ Y OJO: la pantalla de convocatoria EN VIVO aplica 14/18 SIEMPRE, sin
-//     distinguir liga de amistoso. La distinción es nueva y hoy sólo la conoce
-//     el informe manual.
+//  🔑 Y LOS CUATRO PASAN LA CATEGORÍA, que es lo que decide entre 18 y 20. Si
+//     un quinto sitio necesitara el cupo, que llame aquí con los tres datos:
+//     modalidad, tipo de partido y categoría.
 // ════════════════════════════════════════════════════════════════════
 //  🏆 v735 · EL TIPO DE PARTIDO, CON UNA SOLA FORMA DE NOMBRARLO
 // ════════════════════════════════════════════════════════════════════
@@ -2857,13 +2872,151 @@ if (typeof window !== 'undefined') {
     window.cronosTipoPartidoDelPartido = cronosTipoPartidoDelPartido;
 }
 
-function cronosCupoConvocatoria(modalidad, tipoPartido) {
+// ════════════════════════════════════════════════════════════════════
+//  🆕 v747 · EL CUPO YA NO DEPENDE SÓLO DE LA MODALIDAD
+// ════════════════════════════════════════════════════════════════════
+//  Encargo del autor (implementar.txt 2026-09-20): «en la categoría Regional,
+//  ampliar el número máximo de convocados a 20 (antes 18). En la nueva
+//  categoría Nacional, también 20. Los titulares se mantienen en 11».
+//
+//  🔑 ANTES EL CUPO SE DERIVABA DE LA MODALIDAD Y YA: F7 → 14, F11 → 18. Eso
+//  valía mientras todas las categorías de once compartieran acta. Ya no: el
+//  acta de Regional y de Nacional admite 20 y la de Juvenil o Cadete sigue en
+//  18. Por eso entra la CATEGORÍA como tercer dato — opcional, para que
+//  ninguna pantalla que todavía no la pase se quede sin cupo.
+//
+//  ⚠️ SIN CATEGORÍA SE DEVUELVE EL TOPE ESTRICTO (18), NO EL AMPLIO. «No sé
+//  qué categoría es» no puede significar «pueden ir veinte»: el estricto sólo
+//  molesta, el amplio deja pasar un acta inválida (la regla de v617).
+//
+//  🚨 'regional_fem' CONTIENE 'regional' — la trampa de v511, que en este
+//  proyecto ya ha costado siete cascadas. Aquí importa de verdad: el autor
+//  decidió EXPRESAMENTE (2026-09-20) que Regional FEM se queda en 18, así que
+//  el femenino se descarta ANTES de mirar nada más.
+//  ⚠️ TODO LO QUE NECESITA VIVE DENTRO DE LA FUNCIÓN, y no es estilo: varios
+//  guards EXTRAEN este bloque del fichero y lo ejecutan solo, en un sandbox
+//  (test_convocatoria_tipo_y_calendario.js, test_informe_manual.js). Unas
+//  constantes declaradas fuera quedaban fuera del recorte y la función
+//  reventaba con un ReferenceError — lo cazó el guard en el primer intento.
+// ════════════════════════════════════════════════════════════════════
+//  ⏱️ v748 · LOS TIEMPOS OFICIALES DE PARTIDO, EN UNA SOLA TABLA
+// ════════════════════════════════════════════════════════════════════
+//  Encargo del autor (implementar.txt 2026-09-20, capturas 10644-10645):
+//
+//    Prebenjamín y Benjamín ........ 30' por mitad (60') · añadido 10'
+//    Alevín ........................ 35' por mitad (70') · añadido 10'
+//    Infantil, FUTureFEM y Cadete .. 40' por mitad (80') · añadido 15'
+//    Juvenil, Regional y Nacional .. 45' por mitad (90') · añadido 15'
+//
+//  🔑 Y LO MÁS IMPORTANTE DEL ENCARGO, QUE NO ES UNA TABLA: «la opción que
+//  permite modificar manualmente los cronos debe seguir totalmente vigente».
+//  Esto es SÓLO EL VALOR POR DEFECTO, el que se carga al montar el partido.
+//  En cuanto el entrenador toca una mitad (`editTimer`, timer/core.js) manda
+//  lo suyo, y al recuperar un partido se restauran los tiempos GUARDADOS, no
+//  los de la categoría — eso ya estaba y no se toca.
+//
+//  ⚠️ TRES NÚMEROS CAMBIAN RESPECTO A LO QUE HABÍA, y conviene saberlo:
+//   · Benjamín pasa de 35' a 30' por mitad;
+//   · FUTureFEM pasa de 35' a 40' (el autor lo agrupa con Infantil y Cadete);
+//   · Infantil jugado en F7 pasa de 10' a 15' de añadido — el añadido deja de
+//     derivarse de la MODALIDAD y pasa a derivarse de la CATEGORÍA, que es lo
+//     que el encargo describe.
+//
+//  🔴 Y SE ARREGLA UN HUECO DE v747: NACIONAL no estaba en la cascada del
+//  cronómetro (sí en la de los informes), así que caía en el respaldo de F11
+//  y nacía con 40' por mitad en vez de 45'.
+//
+//  🚨 EL ORDEN ES LA LÓGICA, otra vez (v511): 'prebenjamin' CONTIENE
+//  'benjamin' y 'regional_fem' CONTIENE 'regional'. Las dos FEM y el
+//  prebenjamín van DELANTE o se resuelven como su vecino.
+//
+//  ⚠️ TODO VIVE DENTRO DE LA FUNCIÓN: varios guards extraen estas reglas del
+//  fichero y las ejecutan solas (lección de v747, que estrenó el fallo).
+function cronosTiemposCategoria(categoria, modalidad) {
+    var c = String(categoria == null ? '' : categoria).trim().toLowerCase()
+        .normalize('NFD').replace(/[̀-ͯ]/g, '');
+    var f11 = String(modalidad || '').toLowerCase() === 'f11';
+    var mitad, anadido;
+
+    if (c.indexOf('futurefem') !== -1)                       { mitad = 40; anadido = 15; }
+    else if (c.indexOf('prebenj') !== -1)                    { mitad = 30; anadido = 10; }
+    else if (c.indexOf('benjamin') !== -1)                   { mitad = 30; anadido = 10; }
+    else if (c.indexOf('alevin') !== -1)                     { mitad = 35; anadido = 10; }
+    else if (c.indexOf('infantil') !== -1)                   { mitad = 40; anadido = 15; }
+    else if (c.indexOf('cadete') !== -1)                     { mitad = 40; anadido = 15; }
+    else if (c.indexOf('juvenil') !== -1)                    { mitad = 45; anadido = 15; }
+    // Nacional y Regional (con su FEM, que ya jugaba 45') van juntos: son el
+    // fútbol senior. 'nacional' no comparte subcadena con 'regional'.
+    else if (c.indexOf('nacional') !== -1)                   { mitad = 45; anadido = 15; }
+    else if (c.indexOf('regional') !== -1 || c.indexOf('senior') !== -1 ||
+             c.indexOf('aficionado') !== -1 || c.indexOf('amateur') !== -1)
+                                                             { mitad = 45; anadido = 15; }
+    //  ⚠️ Categoría que no sabemos leer: se conserva el respaldo que había
+    //  antes de v748 (40' en once, 30' en siete). No se inventa un partido
+    //  más largo de lo que nadie pidió.
+    else if (f11)                                            { mitad = 40; anadido = 15; }
+    else                                                     { mitad = 30; anadido = 10; }
+
+    return {
+        mitad:     mitad,              // minutos de CADA parte
+        anadido:   anadido,            // minutos de añadido máximo por parte
+        totalMin:  mitad * 2,          // duración reglamentaria del encuentro
+        mitadSec:  mitad * 60,
+        anadidoSec: anadido * 60,
+    };
+}
+
+//  El añadido máximo del partido QUE SE ESTÁ JUGANDO, en segundos.
+//  🔑 La categoría se resuelve con LA MISMA cascada que el semáforo y las
+//  reglas de cambio (`CronosSubRules.categoriaActual`): dos cascadas para el
+//  mismo dato ya produjeron un fallo en v562.
+//  ⚠️ Si no hay nada cargado, el respaldo es el de siempre —por modalidad—,
+//  que es exactamente lo que se aplicaba hasta v748.
+function cronosAnadidoSegundos(modalidad) {
+    var modo = modalidad ||
+        (typeof window !== 'undefined' && typeof window.currentMode !== 'undefined'
+            ? window.currentMode : '');
+    var cat = '';
+    try {
+        if (typeof window !== 'undefined') {
+            cat = (window.CronosSubRules && typeof window.CronosSubRules.categoriaActual === 'function')
+                ? window.CronosSubRules.categoriaActual()
+                : (window._currentMatchCategory || '');
+        }
+    } catch (e) { cat = ''; }
+    if (typeof cronosTiemposCategoria === 'function') {
+        return cronosTiemposCategoria(cat, modo).anadidoSec;
+    }
+    return (String(modo).toLowerCase() === 'f11') ? 900 : 600;
+}
+
+function cronosCupoConvocatoria(modalidad, tipoPartido, categoria) {
+    var AMPLIADO = 20;   // Regional y Nacional
+    var F11      = 18;   // el resto del fútbol once
+    var F7       = 14;
+
     var f11 = String(modalidad || '').toLowerCase() === 'f11';
     var amistoso = String(tipoPartido || '').toLowerCase() === 'amistoso';
+
+    var c = String(categoria == null ? '' : categoria).trim().toLowerCase()
+        .normalize('NFD').replace(/[̀-ͯ]/g, '');
+    //  Sin categoría, el tope estricto. Con 'fem' dentro, también: Regional
+    //  FEM se queda en 18 por decisión expresa del autor (2026-09-20), y
+    //  'regional_fem' CONTIENE 'regional' —la trampa de v511—, así que el
+    //  femenino se descarta ANTES de mirar nada más.
+    //  'nacional' no contiene 'regional' ni al revés: van en la misma línea
+    //  porque son las dos categorías del acta ampliada, no por orden.
+    var ampliado = !!c && c.indexOf('fem') === -1 &&
+                   (c.indexOf('nacional') !== -1 || c.indexOf('regional') !== -1);
+    // El cupo ampliado es de once: en fútbol 7 no hay categoría que lo tenga.
+    ampliado = f11 && ampliado;
+
+    var tope = f11 ? (ampliado ? AMPLIADO : F11) : F7;
     return {
         modalidad:     f11 ? 'f11' : 'f7',
         tipo:          amistoso ? 'amistoso' : 'liga',
-        maxConvocados: amistoso ? null : (f11 ? 18 : 14),   // null = sin tope
+        ampliado:      ampliado,
+        maxConvocados: amistoso ? null : tope,             // null = sin tope
         maxTitulares:  f11 ? 11 : 7,
     };
 }
@@ -3078,6 +3231,8 @@ window.CRONOS_COLOR_RETRO  = CRONOS_COLOR_RETRO;
 
 window.cronosFueTitular   = cronosFueTitular;
 window.cronosCupoConvocatoria = cronosCupoConvocatoria;
+window.cronosTiemposCategoria = cronosTiemposCategoria;   // ⏱️ v748
+window.cronosAnadidoSegundos  = cronosAnadidoSegundos;
 window.cronosTeamSlug     = cronosTeamSlug;
 window.cronosTeamId       = cronosTeamId;
 window.cronosTeamIdOfDoc  = cronosTeamIdOfDoc;

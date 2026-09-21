@@ -2694,7 +2694,7 @@
 //        fija el calendario) ese banquillo está oculto y la tarjeta no se veía.
 //        Y el orden del banquillo ya no la sube por encima de los suplentes.
 const VERSION = 'v736';
-const CACHE_NAME = 'cronos-cache-v746';
+const CACHE_NAME = 'cronos-cache-v750';
 
 const ASSETS = [
     './',

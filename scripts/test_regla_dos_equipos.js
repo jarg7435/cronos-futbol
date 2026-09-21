@@ -123,13 +123,24 @@ console.log('\n── PARTE 2b · FUTureFEM: F11 en TODOS los clasificadores ─
     ok('2b2 · y sí en la F11 (las DOS copias del bloque duplicado)',
        (UT.match(/aficionado\|futurefem\)/g) || []).length === 2,
        'utils.js tiene el bloque duplicado: hay que cambiar los dos');
+    //  ⚠️ v747 · ESTAS DOS SE MEDÍAN POR EL FINAL EXACTO DE LA LÍNEA, y al
+    //  entrar 'nacional' en las dos listas se pusieron rojas con FUTureFEM
+    //  intacto: medían la FORMA, no el hecho. Ahora preguntan lo que de
+    //  verdad importa —que 'futurefem' esté en la rama de F11 y no en la de
+    //  F7—, así que la próxima categoría no las vuelve a teñir sin motivo.
+    //  (Es la lección que este proyecto ya tiene escrita: un guard desfasado
+    //  desorienta el arreglo.)
     ok('2b3 · el clasificador de informes también lo da como F11',
-       /'amateur', 'futurefem'\]\.includes\(c\)\) return 'f11'/.test(CP),
+       /'futurefem'[^\]]*\]\.includes\(c\)\) return 'f11'/.test(CP),
        'los informes seguirían agrupándolo como F7');
-    ok('2b4 · al entrenador de FUTureFEM se le ofrece F11',
-       /includes\('regional'\) \|\| rcat\.includes\('futurefem'\)\) hasF11/.test(SM) &&
-       !/includes\('alevin'\) \|\| rcat\.includes\('futurefem'\)\) hasF7/.test(SM),
-       'el modo del partido seguiría saliendo F7');
+    {
+        // La rama de F7 y la de F11 del selector de modalidad, por separado.
+        const _lineaF7  = (SM.match(/^.*hasF7 = true;.*$/m) || [''])[0];
+        const _lineaF11 = (SM.match(/^.*hasF11 = true;.*$/m) || [''])[0];
+        ok('2b4 · al entrenador de FUTureFEM se le ofrece F11',
+           /futurefem/.test(_lineaF11) && !/futurefem/.test(_lineaF7),
+           'el modo del partido seguiría saliendo F7');
+    }
     // ══════════════════════════════════════════════════════════════════
     //  🔄 v586 · FUTureFEM ESTRENA GRUPO DE SEMÁFORO — Y FUE UNA DECISIÓN
     //

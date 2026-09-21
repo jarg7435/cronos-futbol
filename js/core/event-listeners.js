@@ -323,10 +323,14 @@ function setupEventListeners() {
                     const maxRecoverySec = 1800;
                     lostSec = Math.min(lostSec, maxRecoverySec);
                     lastTickTime = now - (lostMs % 1000);
+                    // ⏱️ v748 · El tope al recuperar tiempo perdido también es
+                    // el añadido de la CATEGORÍA (tabla única en utils.js).
+                    const _add = (typeof window.cronosAnadidoSegundos === 'function')
+                        ? window.cronosAnadidoSegundos() : 900;
                     if (matchPhase === '1st_half') {
-                        masterTimeH1 = Math.min(masterTimeH1 + lostSec, half1MaxTime + 900);
+                        masterTimeH1 = Math.min(masterTimeH1 + lostSec, half1MaxTime + _add);
                     } else if (matchPhase === '2nd_half') {
-                        masterTimeH2 = Math.min(masterTimeH2 + lostSec, half2MaxTime + 900);
+                        masterTimeH2 = Math.min(masterTimeH2 + lostSec, half2MaxTime + _add);
                     }
                     players.forEach(p => { if (p.status === 'field') p.time += lostSec; });
                     updateMasterUI();
@@ -380,7 +384,22 @@ function spawnInitialPlayers() {
     // Bloque B: arrancar siempre el marcador de goles no asignados a cero.
     window._cronosExtraGoals = { home: 0, away: 0 };
     const defaultStartersLimit = currentMode === 'f7' ? 7 : 11;
-    const defaultTotalCount = currentMode === 'f7' ? 14 : 18;
+    // 🆕 v747 · CUÁNTAS FICHAS SE CREAN SIN CONVOCATORIA, por la regla única.
+    //  La cabecera de `cronosCupoConvocatoria` (utils.js) avisaba de que estos
+    //  números estaban escritos a mano en CINCO sitios y de que el día que
+    //  cambiaran habría que mirarlos todos. Ese día es hoy: Regional y
+    //  Nacional convocan 20, y un equipo que arranca sin convocatoria tiene
+    //  que poder colocar a los veinte.
+    //  ⚠️ Se pide el cupo de COMPETICIÓN (tipo 'liga'), no el del amistoso:
+    //  esto es cuántas fichas se preparan, y «sin tope» no se puede dibujar.
+    let defaultTotalCount = currentMode === 'f7' ? 14 : 18;
+    if (typeof window.cronosCupoConvocatoria === 'function') {
+        const _cat = (window.CronosSubRules && typeof window.CronosSubRules.categoriaActual === 'function')
+            ? window.CronosSubRules.categoriaActual()
+            : (window._currentMatchCategory || '');
+        const _cupo = window.cronosCupoConvocatoria(currentMode, 'liga', _cat);
+        if (_cupo && _cupo.maxConvocados) defaultTotalCount = _cupo.maxConvocados;
+    }
     const homeColors = COLORS.home;
     const homeConvocation = window.activeConvocation;
     const loadedHome = window.loadedTeamPlayers?.['home'];

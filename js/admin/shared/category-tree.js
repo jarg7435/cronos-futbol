@@ -42,6 +42,11 @@
         { id: 'regional',     label: 'Regional' },
         { id: 'regional_fem', label: 'Regional FEM' },
         { id: 'futurefem',    label: 'FUTureFEM' },
+        // 🆕 v747 · NACIONAL: de Tercera RFEF hacia arriba, hasta Primera
+        // División. Va AL FINAL —decisión suya (2026-09-20)— y no intercalada
+        // encima de Regional: así ninguna categoría existente cambia de sitio
+        // en las pantallas que el club ya conoce.
+        { id: 'nacional',     label: 'Nacional' },
     ];
     const CT_SUBCATS = ['A', 'B', 'C'];
     const _validCatIds = new Set(CT_CATEGORIES.map(c => c.id));
@@ -770,7 +775,31 @@
     //  ⚠️ La normalización es la ÚNICA del proyecto (`ctNormCat`): le llegan
     //  'f11_regional', 'Alevín C' y 'regional fem' según de dónde salga el
     //  dato, y aquí no se escribe una segunda copia de esa regla.
-    var CT_CATS_CON_PR = ['cadete', 'juvenil', 'regional', 'regional_fem'];
+    //  🆕 v747 · NACIONAL ENTRA EN LA LISTA, y se apunta a propósito: el
+    //  encargo de v738 dice «de Cadetes hacia arriba» y Nacional está por
+    //  encima de Regional, así que le tocan las columnas. Es justamente el
+    //  caso que avisaba el párrafo de arriba: una categoría nueva NO las
+    //  estrena sola.
+    // ── 🆕 v747 · LA ETIQUETA LEGIBLE, DESDE EL CATÁLOGO ─────────────
+    //  `ctNormCat` ya traduce cualquier forma ('f11_nacional', 'Nacional A')
+    //  al id del catálogo; lo que faltaba era el camino de vuelta. Se resuelve
+    //  SOBRE `CT_CATEGORIES` —no con un mapa nuevo— porque este proyecto ya
+    //  arrastra cinco copias de esas etiquetas y cada copia es una que se
+    //  olvidará el día que entre la siguiente categoría.
+    //  ⚠️ Si no está en el catálogo devuelve lo que le llegó, limpio: un club
+    //  puede tener categorías suyas y vale más enseñar «SENIOR» que nada.
+    window.ctCategoriaLabel = function (cat) {
+        var c = (typeof window.ctNormCat === 'function')
+            ? window.ctNormCat(cat)
+            : String(cat == null ? '' : cat).trim().toLowerCase();
+        if (!c) return '';
+        for (var i = 0; i < CT_CATEGORIES.length; i++) {
+            if (CT_CATEGORIES[i].id === c) return CT_CATEGORIES[i].label;
+        }
+        return String(cat == null ? '' : cat).replace(/^f\d+[_-]/i, '').trim();
+    };
+
+    var CT_CATS_CON_PR = ['cadete', 'juvenil', 'regional', 'regional_fem', 'nacional'];
     window.CT_CATS_CON_PR = CT_CATS_CON_PR;
 
     //  ctCategoriaRegistraPR(cat) → true si esa categoría lleva P/R.

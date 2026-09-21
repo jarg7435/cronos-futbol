@@ -78,16 +78,20 @@ console.log('── PARTE 1 · fuente única del vocabulario ──');
 {
     const sb = build();
     ok('1a · el módulo publica CT_CATEGORIES', Array.isArray(sb.CT_CATEGORIES));
-    ok('1b · con las 9 categorías', sb.CT_CATEGORIES.length === 9,
+    ok('1b · con las 10 categorías', sb.CT_CATEGORIES.length === 10,
        'son ' + (sb.CT_CATEGORIES || []).length);
     // 🔑 LA NOMENCLATURA ES LITERAL (autor, 2026-08-12): 'Regional FEM' y
     // 'FUTureFEM' con ESA capitalización, y colocadas justo detrás de
     // 'Regional'. Un "arreglo" de mayúsculas o de orden pone esto rojo.
-    ok('1b2 · las dos FEM van detrás de Regional y con su literal exacto',
+    // 🆕 v747 · Y 'Nacional' AL FINAL, detrás de las dos FEM: decisión expresa
+    // del autor (2026-09-20) para que la categoría nueva no mueva de sitio a
+    // ninguna de las que el club ya tiene en pantalla.
+    ok('1b2 · las dos FEM detrás de Regional, y Nacional la última',
        JSON.stringify(sb.CT_CATEGORIES.slice(6)) === JSON.stringify([
            { id: 'regional',     label: 'Regional' },
            { id: 'regional_fem', label: 'Regional FEM' },
            { id: 'futurefem',    label: 'FUTureFEM' },
+           { id: 'nacional',     label: 'Nacional' },
        ]), JSON.stringify(sb.CT_CATEGORIES.slice(6)));
     ok('1c · y A/B/C', JSON.stringify(sb.CT_SUBCATS) === '["A","B","C"]',
        JSON.stringify(sb.CT_SUBCATS));
@@ -236,9 +240,10 @@ if (!API_OK) { ok('5 · omitida: falta la API genérica', false); } else {
     // trampas de acotado ya documentadas en test_nav_stack.js.
     const marcado = (h) => h.replace(/<style>[\s\S]*?<\/style>/g, '');
 
-    ok('5a · pinta las 9 categorías', (html.match(/class="ct-tree-cat"/g) || []).length === 9,
+    // 🆕 v747 · 10 categorías desde que entró Nacional (antes 9).
+    ok('5a · pinta las 10 categorías', (html.match(/class="ct-tree-cat"/g) || []).length === 10,
        'pintadas: ' + (html.match(/class="ct-tree-cat"/g) || []).length);
-    ok('5b · 27 subcategorías (9×3)', (html.match(/class="ct-tree-sub"/g) || []).length === 27);
+    ok('5b · 30 subcategorías (10×3)', (html.match(/class="ct-tree-sub"/g) || []).length === 30);
     ok('5c · la hoja sale del callback', /class="hoja">Informe uno</.test(html));
     ok('5d · 🔑 arranca TODO PLEGADO (decisión del autor)', !/ct-tree-open/.test(marcado(html)));
     ok('5e · el nodo "Sin clasificar" aparece si hay huérfanos',

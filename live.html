@@ -1822,15 +1822,15 @@
      así los envoltorios lo resuelven en cada llamada y no al cargar, para que
      un cambio de orden no los deje mirando a `undefined` para siempre.
      ══════════════════════════════════════════════════════════════════ -->
-<script src="js/shared/live-feed.js?v=v746"></script>
+<script src="js/shared/live-feed.js?v=v750"></script>
 <!-- 🔊 v709 · Las melodías de cada suceso (gol, amarilla, roja, cambio,
      lesión), compartidas con el panel en vivo del Área de Familias. Este visor
      le presta su AudioContext, que es el que lleva el keep-alive de iOS. -->
-<script src="js/shared/live-sound.js?v=v746"></script>
+<script src="js/shared/live-sound.js?v=v750"></script>
 <!-- 🔴🔴🔴 v721 · El caché en disco de Firestore es de UNA sola cuenta (ver
      js/shared/fs-cache-mode.js). El visor lo comparte con la app, así que
      tiene que decidir con la MISMA regla y antes de crear su instancia. -->
-<script src="js/shared/fs-cache-mode.js?v=v746"></script>
+<script src="js/shared/fs-cache-mode.js?v=v750"></script>
 
 <!-- ══ FIREBASE ══════════════════════════════════════════════════ -->
 <script type="module">
@@ -5816,6 +5816,7 @@ function _sinSemaforoLive() {
         if (!n) continue;
         if (n.indexOf('juvenil')    !== -1) return true;
         if (n.indexOf('regional')   !== -1) return true;   // Regional FEM entra aquí
+        if (n.indexOf('nacional')   !== -1) return true;   // 🆕 v747 · no contiene 'regional'
         if (n.indexOf('senior')     !== -1) return true;
         if (n.indexOf('aficionado') !== -1) return true;
         if (n.indexOf('amateur')    !== -1) return true;
@@ -5873,7 +5874,9 @@ function _timerColorFor(timeSec, data) {
         if (raw.includes('infant')) return s === 'B' ? 'infantil_b' : s === 'C' ? 'infantil_c' : 'infantil_a';
         if (raw.includes('cadet')) return s === 'B' ? 'cadete_b' : s === 'C' ? 'cadete_c' : 'cadete_a';
         if (raw.includes('juvenil')) return 'juvenil';
-        if (raw.includes('regional') || raw.includes('senior') || raw.includes('aficionad')) return 'regional';
+        // 🆕 v747 · Nacional comparte el grupo 'regional' (ver cronosGrupoDe en
+        // utils.js): mismo semáforo y misma configuración del Director.
+        if (raw.includes('regional') || raw.includes('nacional') || raw.includes('senior') || raw.includes('aficionad')) return 'regional';
         return 'f7';
     };
     const groupKey = getGroupFn(cat, sub);
@@ -6170,6 +6173,7 @@ const _LIVE_CAT_ETIQUETAS = {
     regional:     'REGIONAL',
     regional_fem: 'REGIONAL FEM',
     futurefem:    'FUTUREFEM',
+    nacional:     'NACIONAL',   // 🆕 v747
 };
 
 // v464 · Longitud a partir de la cual la etiqueta baja de tamaño. Es una
@@ -6204,7 +6208,8 @@ function _liveCatNombre(cat) {
     // 'regional_fem' CONTIENE 'regional', así que va DELANTE o la categoría
     // femenina se rotularía REGIONAL en todas las tarjetas.
     const claves = ['prebenjamin', 'benjamin', 'alevin', 'infantil',
-                    'cadete', 'juvenil', 'futurefem', 'regional_fem', 'regional'];
+                    'cadete', 'juvenil', 'futurefem', 'regional_fem', 'regional',
+                    'nacional'];   // 🆕 v747 · sin conflicto de subcadena con ninguna
     for (let i = 0; i < claves.length; i++) {
         if (norm.includes(claves[i])) return _LIVE_CAT_ETIQUETAS[claves[i]];
     }
@@ -7593,9 +7598,9 @@ setInterval(function() {
 }
 </style>
 <!-- v434 · Inmutabilidad: antes de retroactive-modal.js, que la consulta. -->
-<script src="js/match/immutability.js?v=v746"></script>
-<script src="js/match/replay/replay-player.js?v=v746"></script>
-<script src="js/match/events/retroactive-modal.js?v=v746"></script>
+<script src="js/match/immutability.js?v=v750"></script>
+<script src="js/match/replay/replay-player.js?v=v750"></script>
+<script src="js/match/events/retroactive-modal.js?v=v750"></script>
 
 <!-- ══════════════════════════════════════════════════════════════════
      🟩 v577 · FRANJA DE VERSIÓN TAMBIÉN EN EL VISOR
@@ -7608,7 +7613,7 @@ setInterval(function() {
      El sello lo escribe `scripts/cache-bust.js` a partir del CACHE_NAME de
      sw.js, nunca a mano: un número puesto a mano miente en cuanto alguien
      olvida cambiarlo (v527 lo encontró mintiendo 185 versiones seguidas). -->
-<div id="cronos-version-badge" data-version="v746" style="position:fixed;bottom:calc(4px + env(safe-area-inset-bottom, 0px));right:6px;z-index:2147483000;pointer-events:none;background:rgba(0,0,0,0.55);color:#2ea043;font-family:monospace;font-size:0.6rem;font-weight:700;letter-spacing:0.5px;padding:2px 6px;border-radius:4px;">CHRONOS v746</div>
+<div id="cronos-version-badge" data-version="v750" style="position:fixed;bottom:calc(4px + env(safe-area-inset-bottom, 0px));right:6px;z-index:2147483000;pointer-events:none;background:rgba(0,0,0,0.55);color:#2ea043;font-family:monospace;font-size:0.6rem;font-weight:700;letter-spacing:0.5px;padding:2px 6px;border-radius:4px;">CHRONOS v750</div>
 <script>
 /* 🧪 v577 · Y DE QUÉ ENTORNO ES ESA VERSIÓN.
    El problema real del autor no era no ver la versión: era no saber si la

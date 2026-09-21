@@ -255,8 +255,8 @@ const htmlF11 = sbT.window.ctRenderTree(Object.assign({}, opciones, { modalidad:
 ok('4a · ⚠️⚠️ SIN opts.modalidad el marcado es BYTE A BYTE el de siempre '
    + '(cinco pestañas comparten este módulo y sus guards comparan el HTML)',
    htmlSinFiltro === sbT.window.ctRenderTree(Object.assign({}, opciones, { modalidad: '' })));
-ok('4b · sin filtro salen las 9 categorías del catálogo',
-   (htmlSinFiltro.match(/ct-tree-cat"/g) || []).length === 9,
+ok('4b · sin filtro salen las 10 categorías del catálogo (v747: entra Nacional)',
+   (htmlSinFiltro.match(/ct-tree-cat"/g) || []).length === 10,
    (htmlSinFiltro.match(/ct-tree-cat"/g) || []).length);
 ok('4c · 🔑 con modalidad f7 el árbol NO trae Cadete ni Juvenil: al '
    + 'coordinador de F7 no se le enseñan las ramas de la otra modalidad a cero',

@@ -344,8 +344,14 @@ function tick() {
     if (clampedDeltaSec >= 1) {
         lastTickTime += clampedDeltaSec * 1000;
 
-        // Límite de añadido por modalidad: F11=15 min, F7=10 min
-        const maxAddedSecs = (typeof currentMode !== 'undefined' && currentMode === 'f11') ? 900 : 600;
+        // ⏱️ v748 · Límite de añadido POR CATEGORÍA (10' hasta Alevín, 15' de
+        // Infantil hacia arriba), por la tabla única de utils.js. Antes se
+        // derivaba de la modalidad y un Infantil de F7 se quedaba en 10'.
+        // ⚠️ El respaldo es el de siempre, por modalidad: este reloj corre en
+        // el camino crítico del partido y no puede depender de una carga.
+        const maxAddedSecs = (typeof window.cronosAnadidoSegundos === 'function')
+            ? window.cronosAnadidoSegundos()
+            : ((typeof currentMode !== 'undefined' && currentMode === 'f11') ? 900 : 600);
         let shouldAutoEnd1 = false;
         let shouldAutoEnd2 = false;
 

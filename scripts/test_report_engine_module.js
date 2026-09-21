@@ -236,14 +236,18 @@ function walk(dir, out) {
     // 'f7_prebenjamin') Y las etiquetas acentuadas, porque los informes
     // antiguos o importados pueden traerlas.
     {
+        //  ⏱️ v748 · TABLA ACTUALIZADA AL ENCARGO DEL 2026-09-20: Benjamín baja
+        //  a 60 (2×30) y FUTureFEM sube a 80 (2×40). Entra también Nacional.
         const OFICIAL = [
             ['f7_prebenjamin', 60], ['Prebenjamín', 60], ['prebenjamin', 60], ['PREBENJAMIN', 60],
-            ['f7_benjamin', 70],    ['Benjamín', 70],
+            ['f7_benjamin', 60],    ['Benjamín', 60],
             ['f7_alevin', 70],      ['Alevín', 70],
             ['f11_infantil', 80],   ['Infantil A', 80],
+            ['f11_futurefem', 80],  ['FUTureFEM', 80],
             ['f11_cadete', 80],     ['Cadete', 80],
             ['f11_juvenil', 90],    ['Juvenil', 90],
             ['f11_regional', 90],   ['Regional', 90],  ['Senior', 90],
+            ['f11_nacional', 90],   ['Nacional', 90],
         ];
         const malos = OFICIAL.filter(([c, esperado]) => headerDur({ category: c }) !== esperado)
                              .map(([c, esperado]) => c + ': ' + headerDur({ category: c }) + ' (esperado ' + esperado + ')');
@@ -254,12 +258,21 @@ function walk(dir, out) {
         headerDur({ category: 'Veteranos' }) === 60 && headerDur({}) === 60);
     // ⚠️ LA TRAMPA QUE CAUSÓ EL BUG: 'prebenjamin' CONTIENE 'benjamin'. Si
     // alguien reordena las comprobaciones, prebenjamín vuelve a resolverse como
-    // benjamín (70 en vez de 60). Esta aserción es el cortafuegos.
-    ok('2d · ⚠️ prebenjamín NO se resuelve como benjamín pese a contener su nombre',
+    // benjamín. Esta aserción era el cortafuegos… y desde v748 YA NO PUEDE
+    // SERLO: el autor puso a las dos categorías en 30' por mitad, así que las
+    // dos valen 60 y el número dejó de distinguirlas.
+    //
+    // 🔑 SE DICE EN VOZ ALTA EN VEZ DE BORRARLA. El cortafuegos pasa a ser la
+    // 2e, que mide el ORDEN en el propio código, y lo que se comprueba aquí es
+    // que las dos siguen dando el valor oficial —y que la vecina que SÍ tiene
+    // otro número (Alevín, 70) no se las traga.
+    ok('2d · ⚠️ prebenjamín y benjamín valen los dos 60 (v748) sin comerse a Alevín',
         headerDur({ category: 'f7_prebenjamin' }) === 60
-        && headerDur({ category: 'f7_benjamin' }) === 70
-        && headerDur({ category: 'f7_prebenjamin' }) !== headerDur({ category: 'f7_benjamin' }),
-        { pre: headerDur({ category: 'f7_prebenjamin' }), ben: headerDur({ category: 'f7_benjamin' }) });
+        && headerDur({ category: 'f7_benjamin' }) === 60
+        && headerDur({ category: 'f7_alevin' }) === 70,
+        { pre: headerDur({ category: 'f7_prebenjamin' }),
+          ben: headerDur({ category: 'f7_benjamin' }),
+          alev: headerDur({ category: 'f7_alevin' }) });
     ok('2e · y el orden de las comprobaciones lo garantiza en el propio código',
         BLOCK.indexOf("cat.includes('prebenjamin')") < BLOCK.indexOf("cat.includes('benjamin')"));
     ok('2f · las tres grafías de prebenjamín dan lo mismo',

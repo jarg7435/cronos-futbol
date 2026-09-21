@@ -681,17 +681,19 @@ function walk(dir, out) {
         const h = container.innerHTML;
         ok('5a · título del club con el total',
             h.includes('Partidos Terminados del Club (2)'));
-        ok('5b · pinta las 9 categorías siempre, con o sin partidos',
+        // 🆕 v747 · Son DIEZ desde que entró Nacional (Tercera RFEF hacia
+        // arriba), y va la última de la lista igual que en el catálogo.
+        ok('5b · pinta las 10 categorías siempre, con o sin partidos',
             ['Prebenjamín', 'Benjamín', 'Alevín', 'Infantil', 'Cadete', 'Juvenil',
-             'Regional', 'Regional FEM', 'FUTureFEM']
+             'Regional', 'Regional FEM', 'FUTureFEM', 'Nacional']
                 .every(c => h.includes(c)));
         ok('5c · y las 3 subcategorías en cada una',
-            (h.match(/Subcategoría A/g) || []).length === 9
-            && (h.match(/Subcategoría B/g) || []).length === 9
-            && (h.match(/Subcategoría C/g) || []).length === 9,
+            (h.match(/Subcategoría A/g) || []).length === 10
+            && (h.match(/Subcategoría B/g) || []).length === 10
+            && (h.match(/Subcategoría C/g) || []).length === 10,
             { a: (h.match(/Subcategoría A/g) || []).length });
         ok('5d · contador por categoría en singular y plural',
-            h.includes('1 partido') && (h.match(/0 partidos/g) || []).length === 7,
+            h.includes('1 partido') && (h.match(/0 partidos/g) || []).length === 8,
             (h.match(/0 partidos/g) || []).length);
         ok('5e · las categorías con partidos vienen expandidas y las vacías colapsadas',
             h.includes('▼') && h.includes('►'));

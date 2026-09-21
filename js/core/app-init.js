@@ -747,16 +747,23 @@ window._restoreActiveMatch = function() {
         let shouldAutoEndFirstHalf = false;
         let shouldAutoEndMatch = false;
 
+        // ⏱️ v748 · El añadido sale de la tabla única (utils.js), por CATEGORÍA.
+        // Aquí estaba escrito 900 en seco —15 minutos para todos—, así que un
+        // Prebenjamín recuperado tras cerrar la pestaña podía seguir contando
+        // cinco minutos más de los que su categoría permite.
+        const _anadidoSec = (typeof window.cronosAnadidoSegundos === 'function')
+            ? window.cronosAnadidoSegundos()
+            : 900;
         if (elapsedSec > 0) {
             if (matchPhase === '1st_half') {
-                const limit1 = half1MaxTime + 900; // Reglamentario + 15 min de añadido
+                const limit1 = half1MaxTime + _anadidoSec;
                 const remaining = Math.max(0, limit1 - (state.masterTimeH1 || 0));
                 activeAddedSec = Math.min(elapsedSec, remaining);
                 if (elapsedSec >= remaining) {
                     shouldAutoEndFirstHalf = true;
                 }
             } else if (matchPhase === '2nd_half') {
-                const limit2 = half2MaxTime + 900; // Reglamentario + 15 min de añadido
+                const limit2 = half2MaxTime + _anadidoSec;
                 const remaining = Math.max(0, limit2 - (state.masterTimeH2 || 0));
                 activeAddedSec = Math.min(elapsedSec, remaining);
                 if (elapsedSec >= remaining) {
@@ -1234,6 +1241,12 @@ async function showFinishedMatches() {
             // ANTES de la comprobación genérica (ver finished-matches-tab.js).
             if (str.includes('futurefem') || str.includes('future fem') || str.includes('future_fem')) return 'futurefem';
             if (str.includes('region') && str.includes('fem')) return 'regional_fem';
+            // 🆕 v747 · NACIONAL, ANTES DEL RESPALDO GENÉRICO. No comparte
+            // subcadena con 'region', así que el orden frente a las de arriba
+            // da igual; lo que NO da igual es quedar detrás del respaldo final:
+            // 'f11_nacional' se archivaría con el prefijo pegado y su rama no
+            // casaría con la del catálogo.
+            if (str.includes('nacional')) return 'nacional';
             if (str.includes('region')) return 'regional';
             return str.replace(/\s+[abc]$/, '').replace(/[\s-]+/g, '_').replace(/_[abc]$/, '');
         };

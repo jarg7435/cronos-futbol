@@ -275,8 +275,8 @@ parte('PARTE 8 · alwaysSubHeader', () => {
         renderLeaf: () => '', alwaysSubHeader: true,
         renderSubHeader: (arr, catId, subId) => { vistas.push(catId + '|' + subId); return ''; },
     });
-    ok('8a · 🔑 con alwaysSubHeader se pregunta por TODAS las ramas (9×3)',
-       vistas.length === 27, vistas.length);
+    ok('8a · 🔑 con alwaysSubHeader se pregunta por TODAS las ramas (10×3, v747)',
+       vistas.length === 30, vistas.length);
 
     // Y sin la opción, el comportamiento de siempre: cero llamadas si no hay nada.
     vistas = [];

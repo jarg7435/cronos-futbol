@@ -355,8 +355,11 @@ console.log('\n── PARTE 3 · el calendario oficial en LIGA ──');
         //    repositorio. Esta ronda NO podía añadir un quinto: el cupo se pide
         //    a `cronosCupoConvocatoria`, y lo que queda en import.js es sólo el
         //    respaldo estricto para cuando utils.js no haya cargado.
-        ok('5a · la convocatoria pide el cupo a la regla única',
-           /window\.cronosCupoConvocatoria\(currentMode,\s*tipo\)/.test(IMPORT_JS));
+        //  🆕 v747 · Y SE LE PASA LA CATEGORÍA, que desde hoy es lo que decide
+        //  entre 18 y 20 (Regional y Nacional amplían). Pidiendo el cupo con
+        //  dos datos, esta pantalla volvería a topar en 18 a un Regional.
+        ok('5a · la convocatoria pide el cupo a la regla única, con la categoría',
+           /window\.cronosCupoConvocatoria\(currentMode,\s*tipo,\s*_convCategoriaActual\(\)\)/.test(IMPORT_JS));
         ok('5b · ⚠️ y su respaldo es el ESTRICTO, no «sin límite»',
            /No sé|no se inventa una tabla de repuesto/.test(IMPORT_JS) ||
            /maxConvoked = currentMode === 'f7' \? 14 : 18;/.test(IMPORT_JS));
@@ -446,8 +449,12 @@ console.log('\n── PARTE 3 · el calendario oficial en LIGA ──');
         // 🔴 Y el tope de convocados de esta función tiene que conocer el tipo:
         //    con v666 la convocatoria deja pasar 20 en un amistoso, y este `if`
         //    los rechazaba con «Máximo 14». Una capa permite, la otra deniega.
-        ok('6m · 🔴 el tope de IR AL PARTIDO también pide el cupo a la regla única',
-           /cronosCupoConvocatoria\(currentMode, _tipo\)/.test(goto),
+        //  🆕 v747 · Con la CATEGORÍA, y por la misma razón que el 5a: si esta
+        //  puerta pidiera el cupo sin ella, un Regional que acaba de convocar
+        //  a 20 se encontraría un «máximo 18» al pulsar IR AL PARTIDO — la
+        //  contradicción de arriba, otra vez y en el peor sitio.
+        ok('6m · 🔴 el tope de IR AL PARTIDO pide el cupo con tipo Y categoría',
+           /cronosCupoConvocatoria\(currentMode,\s*_tipo,\s*_cat\)/.test(goto),
            'el amistoso con 20 convocados se bloquearía al arrancar');
     }
 

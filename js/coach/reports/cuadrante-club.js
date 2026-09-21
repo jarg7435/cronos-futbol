@@ -244,8 +244,12 @@ function _cqEspacioImplicito(c) {
 
 // Orden por defecto de las filas: de MAYOR a MENOR edad, como el cuadrante en
 // papel del club. CT_CATEGORIES va de menor a mayor, así que se invierte.
+// 🆕 v747 · 'nacional' se AÑADE AL FINAL, no en cabeza: es la decisión que
+// tomó el autor para el catálogo (2026-09-20) —la categoría nueva no mueve de
+// sitio a ninguna de las que el club ya tiene en su cuadrante— y las dos
+// listas tienen que contar lo mismo.
 const CQ_ORDEN_CAT = ['regional','regional_fem','futurefem','juvenil','cadete',
-                      'infantil','alevin','benjamin','prebenjamin'];
+                      'infantil','alevin','benjamin','prebenjamin','nacional'];
 
 // ════════════════════════════════════════════════════════════════════
 //  📅 v609 · EL CALENDARIO OFICIAL SE PROPONE, NO SE IMPONE
