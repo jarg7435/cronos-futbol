@@ -48,6 +48,7 @@ function buildSandbox({ elements = {}, clubsStore = {}, usersStore = {}, current
     const toasts = [];
     const saTabCalls = [];
     const httpsCallableCalls = [];
+    const invitacionesAcunadas = [];
     const renderCategoryTreeCalls = [];
 
     const els = {};
@@ -114,6 +115,16 @@ function buildSandbox({ elements = {}, clubsStore = {}, usersStore = {}, current
                 renderCategoryTreeCalls.push({ users, opts });
                 return '<div class="fake-tree">' + users.length + ' usuarios</div>';
             },
+            // 🔒 SEC-INV2 (Fase 0, 2026-09-22) · EL ACUÑADOR DE INVITACIONES.
+            //   El alta dirigida al ente mandaba su correo SIN token, y el
+            //   servidor componía el enlace clásico con el destinatario dentro
+            //   de la URL. Ahora se acuña primero: sin este doble, el envío ni
+            //   se intenta.
+            cronosCrearInvitacion: async (d) => {
+                invitacionesAcunadas.push(d);
+                const tok = 'tok' + invitacionesAcunadas.length;
+                return { token: tok, url: 'https://x/?invite=' + tok };
+            },
         },
         document: { getElementById: (id) => els[id] || null },
         confirm: () => confirmReturns,
@@ -146,7 +157,7 @@ function buildSandbox({ elements = {}, clubsStore = {}, usersStore = {}, current
     sandbox.__toasts = toasts;
     vm.runInContext(stubs + block, sandbox);
 
-    return { sandbox, els, clubsStore, usersStore, setDocCalls, updateDocCalls, deleteDocCalls, toasts, saTabCalls, httpsCallableCalls, renderCategoryTreeCalls };
+    return { sandbox, els, clubsStore, usersStore, setDocCalls, updateDocCalls, deleteDocCalls, toasts, saTabCalls, httpsCallableCalls, invitacionesAcunadas, renderCategoryTreeCalls };
 }
 
 (async () => {
@@ -330,13 +341,21 @@ function buildSandbox({ elements = {}, clubsStore = {}, usersStore = {}, current
 
     console.log('\n── PARTE 12 · saCreateIndividualForEntityConfirm — email de invitación ──');
     {
-        const { sandbox, httpsCallableCalls } = buildSandbox({
+        const { sandbox, httpsCallableCalls, invitacionesAcunadas } = buildSandbox({
             elements: { 'cife-email': { value: 'invite@x.com' }, 'cife-role': { value: 'user' }, 'cife-sendemail': { checked: true } },
             clubsStore: { ent1: { name: 'Ente', usedSlots: {} } },
             usersStore: {},
         });
         await sandbox.window.saCreateIndividualForEntityConfirm('ent1');
         ok('12a · sendEmail marcado + fa.functions -> llama sendInviteEmail', httpsCallableCalls.some(c => c.name === 'sendInviteEmail' && c.payload.to === 'invite@x.com'));
+        // 🔒 SEC-INV2 · y va CON TOKEN: sin él el servidor metía el correo del
+        //    destinatario dentro de la URL del enlace de alta.
+        ok('12a2 · 🔑🔑 se acuña la invitación ANTES de enviar',
+           invitacionesAcunadas.length === 1 && invitacionesAcunadas[0].email === 'invite@x.com',
+           JSON.stringify(invitacionesAcunadas));
+        ok('12a3 · 🔑🔑 y el envío lleva `inviteToken`',
+           httpsCallableCalls.some(c => c.name === 'sendInviteEmail' && /^tok\d+$/.test(c.payload.inviteToken || '')),
+           JSON.stringify(httpsCallableCalls.map(c => c.payload)));
     }
     {
         const { sandbox, httpsCallableCalls } = buildSandbox({

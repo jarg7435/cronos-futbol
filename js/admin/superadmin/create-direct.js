@@ -258,12 +258,33 @@ window.saCreateIndividualConfirm = async function() {
                 _saHideSpinner();
                 _saToast('✅ ' + email + ' reactivado como ' + (window.ROLE_META[role]?.label || role) + '.', 5000);
 
-                // Enviar email si está marcado
+                // ════════════════════════════════════════════════════════
+                //  🔒 SEC-INV2 (Fase 0, 2026-09-22) · ESTE CORREO SALÍA CON EL
+                //  DESTINATARIO DENTRO DE LA URL.
+                //
+                //  La llamada no mandaba `inviteToken`, y `sendInviteEmail`
+                //  (functions/index.js) componía entonces el enlace clásico:
+                //  `?register=true&email=…&role=…&clubName=…`. O sea que el
+                //  agujero que v633 cerró en la Secretaría seguía abierto de
+                //  par en par en las ALTAS DIRIGIDAS — tres sitios que nadie
+                //  volvió a mirar porque el defecto se documentó como «el de
+                //  secretary.js».
+                //
+                //  🔑 Se acuña el token ANTES de llamar. Y si no se puede
+                //  acuñar, NO SE ENVÍA: el alta ya está hecha y el SuperAdmin
+                //  puede reenviar la invitación desde Secretaría. Mandar un
+                //  correo con el dato en claro no es el plan B de nada.
+                // ════════════════════════════════════════════════════════
                 if (sendEmail && fa.functions) {
                     try {
+                        const inv = await window.cronosCrearInvitacion({ email:email, role:role, clubName:'' });
                         const sendEmailFn = httpsCallable(fa.functions, 'sendInviteEmail');
-                        await sendEmailFn({ to:email, role:role, clubName:'' });
-                    } catch(ee) { console.warn('[saCreateIndividualConfirm] Email no enviado:', ee.message); }
+                        await sendEmailFn({ to:email, role:role, clubName:'', inviteToken: inv.token });
+                    } catch(ee) {
+                        console.warn('[saCreateIndividualConfirm] Email no enviado:', ee.message);
+                        _saToast('⚠️ Usuario reactivado, pero no se pudo enviar la invitación. ' +
+                                 'Reenvíala desde Secretaría.', 6000);
+                    }
                 }
 
                 saTab('individuals');
@@ -297,12 +318,19 @@ window.saCreateIndividualConfirm = async function() {
             createdAt:       new Date().toISOString(),
         });
 
-        // Enviar email si está marcado
+        // 🔒 SEC-INV2 · con token opaco, como el camino de reactivación de
+        //    arriba (ver allí el porqué completo). Sin `inviteToken` el
+        //    servidor componía el enlace con el correo en claro.
         if (sendEmail && fa.functions) {
             try {
+                const inv = await window.cronosCrearInvitacion({ email:email, role:role, clubName:'' });
                 const sendEmailFn = httpsCallable(fa.functions, 'sendInviteEmail');
-                await sendEmailFn({ to:email, role:role, clubName:'' });
-            } catch(ee) { console.warn('[saCreateIndividualConfirm] Email no enviado:', ee.message); }
+                await sendEmailFn({ to:email, role:role, clubName:'', inviteToken: inv.token });
+            } catch(ee) {
+                console.warn('[saCreateIndividualConfirm] Email no enviado:', ee.message);
+                _saToast('⚠️ Usuario creado, pero no se pudo enviar la invitación. ' +
+                         'Reenvíala desde Secretaría.', 6000);
+            }
         }
 
         _saHideSpinner();

@@ -308,9 +308,20 @@ console.log('\n4) 📤 Los tres caminos de salida acuñan');
        /_limpiarFormularioSecretaria[\s\S]*?window\._secTokenActual = null/.test(SEC),
        'si no, la siguiente invitación reutilizaría la anterior');
 
-    ok('4f · si no se puede acuñar, se cae al enlace clásico PERO SE AVISA',
-       /No se pudo generar el enlace seguro/.test(SEC),
-       'degradar en silencio devolvería el correo a la URL sin decirlo');
+    // 🔒 SEC-INV2 (Fase 0, 2026-09-22) · ESTA ASERCIÓN EXIGÍA LO CONTRARIO.
+    //   Decía: «si no se puede acuñar, se cae al enlace clásico PERO SE AVISA»,
+    //   y daba VERDE a la degradación mientras hubiera un aviso. El aviso no
+    //   arregla nada: el correo de la familia salía igual dentro de la URL.
+    //   Ahora se exige que NO haya caída. Se deja escrita la que había porque
+    //   un guard que cambia de bando sin decirlo desorienta al siguiente.
+    ok('4f · 🔑🔑 si no se puede acuñar, NO se envía nada: se avisa y se para',
+       /No se ha podido generar el enlace seguro/.test(SEC) &&
+       /No se ha enviado la invitación/.test(SEC),
+       'el aviso tiene que ir con la parada, no con la degradación');
+
+    ok('4g · 🔑🔑 y ya no queda NINGÚN camino al enlace con el correo dentro',
+       !/register=true/.test(_secCod) && !/cronosInviteUrl\(/.test(_secCod),
+       'mientras el destino exista, sigue siendo un sitio al que caerse');
 }
 
 console.log('\n5) ✉️ El servidor compone la URL, no el cliente');
@@ -325,9 +336,17 @@ console.log('\n5) ✉️ El servidor compone la URL, no el cliente');
     ok('5c · la dirección la monta con su propia constante APP_URL',
        /inviteUrl = APP_URL \+ '\/\?invite=' \+ encodeURIComponent\(tokenLimpio\)/.test(FUNCS));
 
-    ok('5d · ⚠️ sin token sigue valiendo el enlace clásico (compatibilidad)',
-       /inviteParams\.set\('register', 'true'\)/.test(FUNCS),
-       'los enlaces ya enviados tienen que seguir funcionando');
+    // 🔒 SEC-INV2 (Fase 0, 2026-09-22) · TAMBIÉN ESTA CAMBIA DE BANDO.
+    //   Exigía que el servidor compusiera el enlace clásico cuando no venía
+    //   token, «porque los enlaces ya enviados tienen que seguir funcionando».
+    //   Confundía RESOLVER un enlace viejo (invite-prefill.js, intacto, y lo
+    //   cubre 6c) con FABRICAR uno nuevo. Fabricarlo era la fuga: tres altas
+    //   dirigidas llamaban sin token y sus correos llevaban el destinatario
+    //   dentro de la URL.
+    ok('5d · 🔑🔑 sin token válido el servidor RECHAZA, no compone nada',
+       !/inviteParams\.set\('register', 'true'\)/.test(FUNCS) &&
+       /invalid-argument'[\s\S]{0,200}enlace seguro/.test(FUNCS),
+       'el cliente viejo de una PWA cacheada seguiría pidiendo el enlace con PII');
 
     ok('5e · el cliente le pasa el token en la llamada',
        /sendEmail\(\{ to, subject, body, role, clubName, inviteToken \}\)/.test(SEC));

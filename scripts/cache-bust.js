@@ -2,8 +2,21 @@
 // Sincroniza un parametro ?v=<VERSION> en todos los <script src="js/..."> de
 // index.html, derivando la version del CACHE_NAME de sw.js (fuente de verdad).
 // Idempotente: elimina cualquier ?v= previo antes de reescribir.
-// Uso: node scripts/cache-bust.js
+// Uso: node scripts/cache-bust.js          → escribe
+//      node scripts/cache-bust.js --check  → NO escribe; sale con 1 si algo
+//                                            se habria quedado desincronizado.
+//
+// ⚠️ v751 (Fase 0) · EL MODO --check EXISTE POR EL BUILD.
+//   Este script hay que ACORDARSE de lanzarlo tras subir el CACHE_NAME, y un
+//   paso que hay que recordar se olvida justo el dia que importa: un despliegue
+//   con los `?v=` viejos deja a medio mundo con los modulos cacheados de la
+//   version anterior, sin ningun sintoma — la pagina simplemente se comporta
+//   como una version vieja (la leccion de v422 y v427). `npm run build` lanza
+//   este modo y CORTA, asi que el olvido ya no puede llegar a produccion.
 const fs = require('fs');
+
+const SOLO_COMPROBAR = process.argv.includes('--check');
+const desincronizados = [];
 
 const sw = fs.readFileSync('sw.js', 'utf8');
 // Lee la constante real, no los comentarios: const CACHE_NAME = 'cronos-cache-vNNN';
@@ -25,7 +38,8 @@ const files = ['index.html', 'live.html'];
 const resumen = [];
 
 for (const file of files) {
-  let html = fs.readFileSync(file, 'utf8');
+  const original = fs.readFileSync(file, 'utf8');
+  let html = original;
 
   // Solo scripts LOCALES (src="js/..."). Evita CDNs (https://...).
   // Captura: <script ... src="js/....js"  + (opcional ?v=...)  + "
@@ -74,8 +88,35 @@ for (const file of files) {
     }
   );
 
-  fs.writeFileSync(file, html);
+  if (html !== original) desincronizados.push(file);
+  if (!SOLO_COMPROBAR) fs.writeFileSync(file, html);
   resumen.push(`${file}: ${count} scripts + ${countCss} hoja(s) de estilo + ${countVer} sello(s) de version`);
 }
 
-console.log(`cache-bust: -> ?v=${VERSION}\n  ` + resumen.join('\n  '));
+// ⚠️ v751 (Fase 0) · Y EL SELLO QUE LLEVA EL PROPIO SERVICE WORKER.
+//   `const VERSION` de sw.js prefija cada linea de registro del SW. Estaba
+//   clavado a mano en 'v736' con el CACHE_NAME ya en 'v750': catorce versiones
+//   de desfase en el dato que se mira JUSTO cuando hay que averiguar que copia
+//   tiene un navegador. Es el mismo defecto que la insignia de la cabecera
+//   —clavada en "v341" durante 185 versiones— y se arregla igual: lo escribe
+//   este script, que no se olvida.
+{
+  const original = sw;
+  const nuevo = original.replace(/(const\s+VERSION\s*=\s*')v\d+(';)/, `$1${VERSION}$2`);
+  if (nuevo !== original) {
+    desincronizados.push('sw.js');
+    if (!SOLO_COMPROBAR) fs.writeFileSync('sw.js', nuevo);
+  }
+  resumen.push(`sw.js: sello de registro del SW -> ${VERSION}`);
+}
+
+console.log(`cache-bust${SOLO_COMPROBAR ? ' (--check)' : ''}: -> ?v=${VERSION}\n  ` + resumen.join('\n  '));
+
+if (SOLO_COMPROBAR && desincronizados.length) {
+  console.error('\n❌ DESINCRONIZADO: ' + desincronizados.join(', '));
+  console.error('   El CACHE_NAME de sw.js dice ' + VERSION + ', pero esos ficheros');
+  console.error('   llevan otra cosa. Desplegar asi sirve los modulos VIEJOS desde');
+  console.error('   la cache del navegador, sin ningun sintoma visible.');
+  console.error('   Arreglo:  node scripts/cache-bust.js');
+  process.exit(1);
+}

@@ -1495,28 +1495,37 @@ if (typeof window._cronosParseRoleValue !== 'function') {
 if (typeof window.CRONOS_APP_URL !== 'string') {
     window.CRONOS_APP_URL = 'https://cronos-futbol-app.web.app';
 }
-if (typeof window.cronosInviteUrl !== 'function') {
-    window.cronosInviteUrl = function(datos) {
-        const d = datos || {};
-        const p = new URLSearchParams();
-        // `register=true` es lo que de verdad deja al invitado EN el
-        // formulario de alta. No cambiar por `invite` sin leer la nota de
-        // arriba: `invite` sólo quita el onboarding.
-        p.set('register', 'true');
-        const email = (d.email == null ? '' : String(d.email)).trim();
-        if (email) p.set('email', email);
-        const role = (d.role == null ? '' : String(d.role)).trim();
-        if (role) p.set('role', role);
-        const club = (d.clubName == null ? '' : String(d.clubName)).trim();
-        if (club) p.set('clubName', club);
-        return window.CRONOS_APP_URL + '/?' + p.toString();
-    };
-}
+
+// ════════════════════════════════════════════════════════════════════
+//  🔒 SEC-INV2 (Fase 0, 2026-09-22) · AQUÍ VIVÍA `cronosInviteUrl`, Y SE HA
+//  BORRADO. La nota de arriba describe lo que hacía: meter `email`, `role` y
+//  `clubName` EN CLARO en la URL de invitación.
+//
+//  🔑 POR QUÉ BORRARLA Y NO SÓLO DEJAR DE LLAMARLA. La v633 la conservó
+//  «para que los enlaces ya enviados sigan funcionando», y ese razonamiento
+//  confundía dos cosas distintas:
+//    · RESOLVER un enlace viejo que ya está en el buzón de alguien lo hace
+//      `js/services/auth/invite-prefill.js`, que acepta las dos formas. Eso
+//      SIGUE INTACTO y es lo único que hacía falta conservar.
+//    · FABRICAR uno nuevo no lo necesita nadie desde v633. Y mientras la
+//      función existiera, seguía siendo un destino al que caerse: era
+//      exactamente lo que hacía `_secEnlaceReal` cuando fallaba el acuñado.
+//
+//  Una vía de degradación que no se puede tomar es la única que no se toma.
+//  El único fabricante de enlaces es ahora `cronosCrearInvitacion` (más
+//  abajo): token opaco de 128 bits, con caducidad y de un solo uso.
+//
+//  ⚠️ `CRONOS_APP_URL` se queda: la usa `cronosCrearInvitacion` para componer
+//  el enlace bueno, y también gift-passes.js.
+//
+//  Guard: scripts/test_invitacion_sin_degradar.js
+// ════════════════════════════════════════════════════════════════════
 
 // ════════════════════════════════════════════════════════════════════
 //  🎟️ SEC-INV (2026-08-26) · LA INVITACIÓN, CON TOKEN OPACO
 //
-//  `cronosInviteUrl` (arriba) mete el correo, el rol y el club EN CLARO en la
+//  El enlace clásico —`cronosInviteUrl`, que vivía justo arriba y que
+//  SEC-INV2 ya ha borrado— metía el correo, el rol y el club EN CLARO en la
 //  URL. Eso queda en el historial del navegador, en los registros del servidor
 //  de correo y en la cabecera `Referer`. Y el enlace no caducaba ni se
 //  consumía: valía para siempre y para quien lo reenviara.
@@ -1526,9 +1535,12 @@ if (typeof window.cronosInviteUrl !== 'function') {
 //  secreto**, y por eso su regla permite `get` sin autenticación (quien abre
 //  la invitación aún no tiene cuenta) pero prohíbe `list`.
 //
-//  ⚠️ `cronosInviteUrl` SE QUEDA, y no es descuido: los enlaces ya enviados
-//  con la forma antigua tienen que seguir funcionando. El resolutor de
-//  invite-prefill.js acepta las dos.
+//  🔒 SEC-INV2 (2026-09-22) · ÉSTE ES YA EL ÚNICO FABRICANTE DE ENLACES.
+//  Hasta la Fase 0 convivía con el clásico y la Secretaría se caía a él
+//  cuando esto fallaba. Ya no hay a dónde caerse: si esto no puede acuñar,
+//  no hay invitación. Los enlaces VIEJOS que ya estén en un buzón siguen
+//  abriéndose — de eso se encarga el resolutor de invite-prefill.js, que
+//  acepta las dos formas y no se ha tocado.
 //
 //  ⚠️ NO SE LLAMA AL TECLEAR. Crear un documento por pulsación sería
 //  inaceptable: la Secretaría lo invoca al ENVIAR o al COPIAR, y cachea el

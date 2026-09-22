@@ -1,31 +1,34 @@
-﻿{
+{
   "name": "chronos-futbol",
   "version": "1.0.0",
   "description": "CHRONOS FUTBOL — Control de tiempos de juego para futbol base",
   "private": true,
   "scripts": {
     "dev": "firebase serve --only hosting,functions",
-    "build": "echo TODO && exit 0",
+    "build": "node scripts/build.js",
+    "verify": "npm run build && npm test",
     "lint": "eslint js/ functions/ --ext .js",
     "lint:fix": "eslint js/ functions/ --ext .js --fix",
     "format": "prettier --write \"js/**/*.js\" \"functions/**/*.js\" \"*.json\" \"*.html\"",
     "format:check": "prettier --check \"js/**/*.js\" \"functions/**/*.js\"",
     "test": "node scripts/run-tests.js",
-    "deploy:staging": "firebase deploy --only hosting:live,firestore --project staging",
-    "deploy:prod": "firebase deploy --only hosting:live --project production",
+    "backup:auth": "node scripts/ops/exporta_auth.js",
+    "backup:estado": "node scripts/ops/copias_estado.js",
+    "deploy:staging": "npm run build && firebase deploy --only hosting:live,firestore --project staging",
+    "deploy:prod": "npm run build && firebase deploy --only hosting:live --project production",
     "deploy:prod:rules": "firebase deploy --only firestore:rules --project production",
     "deploy:prod:function": "firebase deploy --project production --only",
     "clean": "rm -rf dist/ .firebase/ functions/node_modules/",
     "fresh": "npm run clean && npm install && cd functions && npm install"
   },
   "dependencies": {
-    "firebase-admin": "^13.10.0"
+    "firebase-admin": "^14.4.0"
   },
   "devDependencies": {
-    "eslint": "^9.0.0",
-    "prettier": "^3.2.0",
     "@eslint/js": "^9.0.0",
-    "firebase-tools": "^13.0.0"
+    "eslint": "^9.0.0",
+    "firebase-tools": "^15.30.2",
+    "prettier": "^3.2.0"
   },
   "engines": {
     "node": ">=18.0.0"

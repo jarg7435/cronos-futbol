@@ -556,46 +556,70 @@ function buildSandbox({ elements = {}, secMethod = 'email', hasFunctions = true,
     //   correo, justo encima, que es el único envío que queda.
 
     // ═══════════════════════════════════════════════════════════════════
-    console.log('\n── PARTE 16 · v594 · el constructor CANÓNICO (js/core/utils.js) ──');
+    console.log('\n── PARTE 16 · 🔒 SEC-INV2 · el constructor clásico YA NO EXISTE ──');
     // ═══════════════════════════════════════════════════════════════════
-    //  ⚠️⚠️ ESTA PARTE EXISTE POR UN AGUJERO QUE DESTAPÓ EL RED-CHECK.
-    //  El sandbox de arriba NO carga utils.js, así que secretary.js cae a su
-    //  respaldo interno: al romper `cronosInviteUrl` a propósito, las
-    //  aserciones 13a-13e siguieron TODAS en verde. O sea, el guard no
-    //  protegía la función que de verdad usa el navegador — sólo la copia de
-    //  emergencia. Se prueba aquí directamente, contra el fichero real.
+    //  ⚠️⚠️ ESTA PARTE EXISTE POR UN AGUJERO QUE DESTAPÓ EL RED-CHECK, y la
+    //  lección se queda porque sigue valiendo: el sandbox de arriba NO carga
+    //  utils.js, así que secretary.js caía a su respaldo interno. Al romper
+    //  `cronosInviteUrl` a propósito, las aserciones 13a-13e siguieron TODAS
+    //  en verde: el guard no protegía la función que usa el navegador, sólo la
+    //  copia de emergencia. Por eso aquí se lee el fichero REAL.
+    //
+    //  🔒 SEC-INV2 (Fase 0, 2026-09-22) · LO QUE SE EXIGE SE HA DADO LA VUELTA.
+    //  Hasta hoy 16a-16f comprobaban que el enlace clásico —`?register=true&
+    //  email=…&role=…&clubName=…`— estuviera bien construido en los dos lados.
+    //  Estaba bien construido, sí: y llevaba el correo de la familia dentro de
+    //  una URL que acaba en el historial, en los registros del servidor de
+    //  correo y en la cabecera `Referer`. Ahora se exige que NO SE PUEDA
+    //  CONSTRUIR EN NINGÚN LADO. Se deja escrito lo que había, porque un guard
+    //  que cambia de bando en silencio desorienta al siguiente que lo lea.
+    //
+    //  ⚠️ Esto NO rompe los enlaces ya enviados: RESOLVERLOS es cosa de
+    //  invite-prefill.js, que acepta las dos formas y no se ha tocado
+    //  (lo cubre test_invitacion_token_opaco.js, aserción 6c).
     {
         const vm2 = require('vm');
         const sbU = { console: { log() {}, warn() {}, error() {} }, URLSearchParams };
         sbU.window = sbU;
         vm2.createContext(sbU);
         vm2.runInContext(fs.readFileSync(path.join(ROOT, 'js', 'core', 'utils.js'), 'utf8'), sbU);
-        const build = sbU.window.cronosInviteUrl;
-        ok('16a · utils.js publica cronosInviteUrl', typeof build === 'function');
-        if (typeof build === 'function') {
-            const u = build({ email: 'ana@x.com', role: 'user', clubName: 'CD Prueba' });
-            ok('16b · 🔑 register=true, NUNCA invite=true (ver la nota de utils.js)',
-               /register=true/.test(u) && !/invite=true/.test(u), u);
-            ok('16c · arrastra correo, rol y club', /ana%40x\.com/.test(u) && /role=user/.test(u) && /clubName=CD/.test(u), u);
-            ok('16d · apunta al dominio de producción', u.indexOf('https://cronos-futbol-app.web.app/?') === 0, u);
-            const vacio = build({});
-            ok('16e · sin datos sigue siendo un enlace válido de alta',
-               /register=true/.test(vacio) && !/email=/.test(vacio), vacio);
-        }
+
+        ok('16a · 🔑🔑 utils.js ya NO publica `cronosInviteUrl`',
+           typeof sbU.window.cronosInviteUrl === 'undefined',
+           'mientras el fabricante exista, sigue siendo un sitio al que caerse');
+
+        ok('16b · 🔑 el único fabricante de enlaces es `cronosCrearInvitacion`',
+           typeof sbU.window.cronosCrearInvitacion === 'function');
+
+        ok('16c · y `CRONOS_APP_URL` se queda: la usa el enlace bueno',
+           sbU.window.CRONOS_APP_URL === 'https://cronos-futbol-app.web.app',
+           sbU.window.CRONOS_APP_URL);
+
+        ok('16d · la invitación caduca y se acuña con aleatoriedad de verdad',
+           sbU.window.CRONOS_INVITE_DIAS === 14 &&
+           /crypto\.getRandomValues/.test(fs.readFileSync(path.join(ROOT, 'js', 'core', 'utils.js'), 'utf8')));
     }
     {
-        // 🔑 Y QUE LOS DOS LADOS NO SE SEPAREN. La Cloud Function construye su
-        // propio enlace (no acepta el del cliente, a propósito: reenviar por
-        // correo una URL que llega en el payload es una vía de suplantación).
-        // Si alguien cambia una forma y no la otra, el invitado del correo y
-        // el del WhatsApp acaban en sitios distintos — sin ningún error.
+        // 🔑 Y QUE LOS DOS LADOS NO SE SEPAREN. El cliente manda el TOKEN y la
+        // Cloud Function compone la dirección con su propia constante (aceptar
+        // una URL del payload sería phishing con la marca de la plataforma).
+        // Lo que se vigila ahora es que NINGUNO de los dos sepa fabricar el
+        // enlace con datos personales dentro.
         const fnSrc = fs.readFileSync(path.join(ROOT, 'functions', 'index.js'), 'utf8');
         const bloque = fnSrc.slice(fnSrc.indexOf('exports.sendInviteEmail'), fnSrc.indexOf('exports.registerStaffUid'));
-        ok('16f · la Function usa la MISMA forma de enlace que el cliente',
-           /inviteParams\.set\('register',\s*'true'\)/.test(bloque) &&
-           /inviteParams\.set\('email'/.test(bloque) &&
-           /inviteParams\.set\('role'/.test(bloque) &&
-           /inviteParams\.set\('clubName'/.test(bloque));
+
+        ok('16e · 🔑🔑 la Function ya no compone el enlace con correo/rol/club',
+           !/inviteParams\.set\('register',\s*'true'\)/.test(bloque) &&
+           !/inviteParams\.set\('email'/.test(bloque));
+
+        // ⚠️ El `invalid-argument` se ata al `if` del token: esta función ya
+        //    lanza ese mismo código dos veces más, por el destinatario.
+        ok('16f · 🔑🔑 y sin token válido RECHAZA la llamada',
+           /!\/\^\[A-Za-z0-9_-\]\{8,64\}\$\/\.test\(tokenLimpio\)\)\s*\{[\s\S]{0,500}?HttpsError\(\s*\n?\s*'invalid-argument'/.test(bloque),
+           'un navegador con el Service Worker viejo seguiría pidiendo el enlace con PII');
+
+        ok('16g · el enlace que compone es el del token, y con su propia APP_URL',
+           /inviteUrl = APP_URL \+ '\/\?invite=' \+ encodeURIComponent\(tokenLimpio\)/.test(bloque));
     }
 
     // ═══════════════════════════════════════════════════════════════════

@@ -683,12 +683,20 @@ window.saCreateIndividualForEntityConfirm = async function(entityId) {
             }
         } catch(se) { console.warn('[saCreateIndividualForEntityConfirm] usedSlots update failed:', se.message); }
 
-        // Enviar email
+        // 🔒 SEC-INV2 (Fase 0, 2026-09-22) · con token opaco. Sin `inviteToken`
+        //    el servidor componía `?register=true&email=…&role=…`, y el correo
+        //    de esta alta dirigida salía con el destinatario dentro de la URL.
+        //    El porqué completo, en create-direct.js (mismo defecto, tres sitios).
         if (sendEmail && fa.functions) {
             try {
+                const inv = await window.cronosCrearInvitacion({ email:email, role:role, clubName:'' });
                 const sendEmailFn = httpsCallable(fa.functions, 'sendInviteEmail');
-                await sendEmailFn({ to:email, role:role, clubName:'' });
-            } catch(ee) { console.warn('[saCreateIndividualForEntityConfirm] Email no enviado:', ee.message); }
+                await sendEmailFn({ to:email, role:role, clubName:'', inviteToken: inv.token });
+            } catch(ee) {
+                console.warn('[saCreateIndividualForEntityConfirm] Email no enviado:', ee.message);
+                _saToast('⚠️ Usuario creado, pero no se pudo enviar la invitación. ' +
+                         'Reenvíala desde Secretaría.', 6000);
+            }
         }
 
         _saHideSpinner();

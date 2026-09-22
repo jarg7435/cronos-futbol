@@ -94,7 +94,24 @@ presentaci*n/
 # SCRIPTS DE INVESTIGACION/DEBUG PUNTUAL CONTRA PRODUCCION (Admin SDK)
 # Nunca deben vivir en functions/ (se empaqueta en cada deploy) ni commitearse:
 # acceden a produccion directamente y no forman parte del producto.
-scripts/ops/
+#
+# ⚠️ OJO AL PATRON: es `scripts/ops/*` y NO `scripts/ops/`. Excluyendo la
+# CARPETA, git ni siquiera mira dentro y las excepciones `!` de abajo no
+# funcionarian. Excluyendo su CONTENIDO, si.
+scripts/ops/*
+
+# ── EXCEPCIONES (2026-09-23) ─────────────────────────────────────────
+# Estas dos NO son investigacion puntual: son HERRAMIENTA DEL PRODUCTO y
+# tienen que viajar con el repositorio.
+#   · copias_estado.js  → `npm run backup:estado`, y ademas lo LEE el guard
+#     scripts/test_copias_seguridad.js: sin el fichero, en un clon nuevo el
+#     guard no falla, REVIENTA.
+#   · exporta_auth.js   → `npm run backup:auth`, paso obligatorio del
+#     procedimiento de RECUPERACION.md (Auth no viaja en la copia).
+# Lo que sigue fuera, y con razon: los `backup_users_*.json`, que llevan
+# datos personales reales, y el resto de scripts de un solo uso.
+!scripts/ops/copias_estado.js
+!scripts/ops/exporta_auth.js
 
 # ACCESOS DIRECTOS DE WINDOWS (no son producto)
 # El proyecto vive en el Escritorio, asi que Windows deja aqui sus .lnk («APP

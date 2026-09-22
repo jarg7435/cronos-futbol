@@ -38,6 +38,7 @@ function buildSandbox({ elements = {}, usersStore = {}, currentUserEmail = 'sa@c
     const toasts = [];
     const saTabCalls = [];
     const httpsCallableCalls = [];
+    const invitacionesAcunadas = [];
     const spinners = [];
 
     const els = {};
@@ -82,6 +83,16 @@ function buildSandbox({ elements = {}, usersStore = {}, currentUserEmail = 'sa@c
                 parent:            { label: 'Padre/Madre/Tutor' },
             },
             _cronosCurrentUser: currentUserEmail ? { email: currentUserEmail } : undefined,
+            // 🔒 SEC-INV2 (Fase 0, 2026-09-22) · EL ACUÑADOR DE INVITACIONES.
+            //   Antes el correo de estas altas dirigidas salía SIN token, y el
+            //   servidor componía entonces el enlace clásico con el correo del
+            //   destinatario dentro de la URL. Ahora se acuña aquí primero, así
+            //   que sin este doble la llamada ni siquiera llega a hacerse.
+            cronosCrearInvitacion: async (d) => {
+                invitacionesAcunadas.push(d);
+                const tok = 'tok' + invitacionesAcunadas.length;
+                return { token: tok, url: 'https://x/?invite=' + tok };
+            },
         },
         document: {
             getElementById: (id) => els[id] || null,
@@ -113,7 +124,7 @@ function buildSandbox({ elements = {}, usersStore = {}, currentUserEmail = 'sa@c
     sandbox.__toasts = toasts;
     vm.runInContext(stubs + block, sandbox);
 
-    return { sandbox, els, usersStore, setDocCalls, updateDocCalls, toasts, saTabCalls, httpsCallableCalls, spinners };
+    return { sandbox, els, usersStore, setDocCalls, updateDocCalls, toasts, saTabCalls, httpsCallableCalls, invitacionesAcunadas, spinners };
 }
 
 (async () => {
@@ -197,7 +208,7 @@ function buildSandbox({ elements = {}, usersStore = {}, currentUserEmail = 'sa@c
 
     console.log('\n── PARTE 7 · saCreateIndividualConfirm — reactivar usuario removido/bloqueado ──');
     {
-        const { sandbox, updateDocCalls, toasts, saTabCalls, httpsCallableCalls } = buildSandbox({
+        const { sandbox, updateDocCalls, toasts, saTabCalls, httpsCallableCalls, invitacionesAcunadas } = buildSandbox({
             elements: {
                 'ci-email': { value: 'reactivar@x.com' }, 'ci-name': { value: 'Juan' },
                 'ci-role': { value: 'user' }, 'ci-plan': { value: 'basic' }, 'ci-sendemail': { checked: true },
@@ -213,6 +224,15 @@ function buildSandbox({ elements = {}, usersStore = {}, currentUserEmail = 'sa@c
         ok('7e · toast de reactivación con la etiqueta del rol', toasts.some(t => /reactivado/i.test(t) && /Entrenador Individual/.test(t)));
         ok('7f · vuelve a la pestaña individuals', saTabCalls.includes('individuals'));
         ok('7g · sendEmail marcado + fa.functions -> llama sendInviteEmail', httpsCallableCalls.some(c => c.name === 'sendInviteEmail' && c.payload.to === 'reactivar@x.com'));
+        // 🔒 SEC-INV2 · y el correo va CON TOKEN. Sin él, el servidor componía
+        //    `?register=true&email=reactivar@x.com&role=…`: el destinatario,
+        //    dentro de una URL que acaba en historiales y registros de correo.
+        ok('7g2 · 🔑🔑 se acuña la invitación ANTES de enviar',
+           invitacionesAcunadas.length === 1 && invitacionesAcunadas[0].email === 'reactivar@x.com',
+           JSON.stringify(invitacionesAcunadas));
+        ok('7g3 · 🔑🔑 y el envío lleva `inviteToken`, nunca los datos en la URL',
+           httpsCallableCalls.some(c => c.name === 'sendInviteEmail' && /^tok\d+$/.test(c.payload.inviteToken || '')),
+           JSON.stringify(httpsCallableCalls.map(c => c.payload)));
     }
 
     console.log('\n── PARTE 8 · saCreateIndividualConfirm — usuario nuevo ──');

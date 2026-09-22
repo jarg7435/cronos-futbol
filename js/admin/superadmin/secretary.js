@@ -345,35 +345,52 @@ async function _secEnlaceReal() {
     const cache = window._secTokenActual;
     if (cache && cache.clave === clave && cache.url) return cache.url;
 
-    if (typeof window.cronosCrearInvitacion === 'function') {
-        try {
-            const inv = await window.cronosCrearInvitacion({
-                email: email, role: roleVal, clubName: club,
-            });
-            window._secTokenActual = { clave: clave, url: inv.url, token: inv.token };
-            return inv.url;
-        } catch (e) {
-            // ⚠️ SE CAE AL ENLACE ANTIGUO, y no es descuido: sin esto, un fallo
-            // de red dejaría a la Secretaría SIN PODER INVITAR A NADIE. El
-            // enlace viejo funciona —el resolutor acepta las dos formas—, pero
-            // lleva el correo a la vista y no caduca. Por eso se AVISA en vez
-            // de degradar en silencio.
-            console.warn('[secretaría] no se pudo acuñar el token:', e && e.message);
-            if (typeof _saToast === 'function') {
-                _saToast('⚠️ No se pudo generar el enlace seguro. Se usa el clásico.', 5000);
-            }
-        }
+    // ════════════════════════════════════════════════════════════════
+    //  🔒 SEC-INV2 (Fase 0, 2026-09-22) · AQUÍ NO HAY RESPALDO. A PROPÓSITO.
+    //
+    //  Hasta hoy, si `cronosCrearInvitacion` no existía o fallaba, esta
+    //  función CAÍA al enlace clásico: `?register=true&email=…&role=…&
+    //  clubName=…`, con el correo de la familia EN CLARO dentro de la URL.
+    //  Y una URL no se queda en el correo: va al historial del navegador, al
+    //  registro del servidor de correo, a la cabecera `Referer`, a la captura
+    //  de pantalla que alguien reenvía por un grupo. Ese enlace además NO
+    //  CADUCABA y NO SE CONSUMÍA: valía para siempre y para quien lo tuviera.
+    //
+    //  🔑 EL RAZONAMIENTO DE v633 ESTABA DEL REVÉS. Decía: «sin el respaldo,
+    //  un fallo de red dejaría a la Secretaría SIN PODER INVITAR A NADIE».
+    //  Cierto — y esa es exactamente la conducta correcta. Un fallo al acuñar
+    //  no es una emergencia: es esperar a que vuelva la red. Degradar convierte
+    //  un problema de diez segundos en un dato personal publicado para siempre,
+    //  y lo hace justo cuando nadie está mirando.
+    //
+    //  ⚠️ NO SE DEVUELVE UNA CADENA VACÍA NI null: se LANZA. Un valor de
+    //  relleno se colaría dentro del `{enlace}` del correo y saldría un aviso
+    //  interno —o una URL a medias— hacia una familia. Quien llama tiene que
+    //  enterarse y parar; los dos caminos de salida (copiar y enviar) lo hacen.
+    //
+    //  Guard: scripts/test_invitacion_sin_degradar.js
+    // ════════════════════════════════════════════════════════════════
+    if (typeof window.cronosCrearInvitacion !== 'function') {
+        throw new Error('El generador de invitaciones seguras no está cargado. Recarga la página.');
     }
 
-    const url = (typeof window.cronosInviteUrl === 'function')
-        ? window.cronosInviteUrl({ email: email, role: roleVal, clubName: club })
-        : ('https://cronos-futbol-app.web.app/?register=true' +
-           (email ? '&email=' + encodeURIComponent(email) : '') +
-           (roleVal ? '&role=' + encodeURIComponent(roleVal) : '') +
-           (club ? '&clubName=' + encodeURIComponent(club) : ''));
-    // No se cachea el respaldo: así el siguiente intento vuelve a probar el
-    // camino bueno en lugar de quedarse clavado en el malo.
-    return url;
+    let inv;
+    try {
+        inv = await window.cronosCrearInvitacion({
+            email: email, role: roleVal, clubName: club,
+        });
+    } catch (e) {
+        console.warn('[secretaría] no se pudo acuñar el token:', e && e.message);
+        throw new Error('No se ha podido generar el enlace seguro de invitación. ' +
+                        'Comprueba la conexión y vuelve a intentarlo.');
+    }
+
+    if (!inv || !inv.url || !inv.token) {
+        throw new Error('El enlace seguro de invitación ha vuelto incompleto. Inténtalo de nuevo.');
+    }
+
+    window._secTokenActual = { clave: clave, url: inv.url, token: inv.token };
+    return inv.url;
 }
 window._secEnlaceReal = _secEnlaceReal;
 
@@ -659,9 +676,17 @@ window.saCopiarEnlace = async function() {
     const link = document.getElementById('sec-link');
     // 🎟️ v633 · Copiar es UNA DE LAS DOS PUERTAS que acuñan el token (la otra
     // es enviar). Hasta aquí el campo sólo enseñaba el aviso de pendiente.
+    // 🔒 SEC-INV2 · si el acuñado falla, `_secEnlaceReal` LANZA en vez de
+    //    devolver el enlace clásico con el correo dentro. Aquí se dice POR QUÉ
+    //    no hay enlace: «todavía no hay enlace que copiar» mandaba a mirar el
+    //    formulario cuando lo que pasaba era que no había red.
     let url = '';
     try { url = await _secEnlaceReal(); }
-    catch (e) { console.warn('[saCopiarEnlace]', e && e.message); }
+    catch (e) {
+        console.warn('[saCopiarEnlace]', e && e.message);
+        _saToast('⚠️ ' + ((e && e.message) || 'No se ha podido generar el enlace seguro.'), 6000);
+        return;
+    }
     if (link && url) link.value = url;
     if (!url) { _saToast('⚠️ Todavía no hay enlace que copiar', 2500); return; }
     try {
@@ -723,7 +748,21 @@ window.saSendInviteEmail = async function() {
 
     // 🎟️ v633 · Se acuña el token ANTES de componer nada: el cuerpo lleva
     // `{enlace}` y sin esto saldría el aviso de "pendiente" dentro del correo.
-    await _secEnlaceReal();
+    //
+    // 🔒 SEC-INV2 · Y SI NO SE PUEDE ACUÑAR, NO SE ENVÍA NADA. Antes esta
+    //    llamada no podía fallar porque degradaba sola al enlace con el correo
+    //    en claro; ahora lanza, y hay que parar AQUÍ: más abajo se compone el
+    //    cuerpo y se abre el correo local, así que seguir adelante mandaría a
+    //    la familia un mensaje con el aviso de «pendiente» donde va el enlace.
+    //    Se para antes del spinner, que aún no se ha mostrado.
+    try {
+        await _secEnlaceReal();
+    } catch (e) {
+        console.warn('[saSendInviteEmail] sin enlace seguro:', e && e.message);
+        _saToast('⚠️ ' + ((e && e.message) || 'No se ha podido generar el enlace seguro.') +
+                 ' No se ha enviado la invitación.', 6000);
+        return;
+    }
     const inviteToken = (window._secTokenActual || {}).token || '';
 
     // 🔑 SE ENVÍA LA PLANTILLA YA SUSTITUIDA, no las marcas: el servidor no
