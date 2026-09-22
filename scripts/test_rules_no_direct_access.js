@@ -355,20 +355,34 @@ function casos() {
         //  usan muchas pantallas para leer SU club por id, y si se hubiera
         //  caido el sintoma seria media aplicacion vacia sin un solo error.
         // ══════════════════════════════════════════════════════════════
-        { n: '7a · 🔑 `clubs`: el `get` por id sigue abierto a cualquier sesion',
-          col: 'clubs', exp: 'ALLOW', auth: adminConClaims, doc: docAdmin,
+        // 🔒 SEC-L05 (Fase 1b, 2026-09-22) · ESTOS TRES CAMBIAN DE BANDO.
+        //   Exigian que el `get` siguiera ABIERTO a cualquier sesion, con este
+        //   motivo escrito al lado: «restringir el `get` es OTRA decision: aqui
+        //   solo se cerro el volcado». Esa decision ya se ha tomado. El alta
+        //   —lo unico que leia `clubs` sin pertenecer a nada— se movio al
+        //   espejo `clubs_public`, y con eso el `get` ya se puede acotar.
+        //   Se deja escrito lo que habia: un guard que cambia de bando en
+        //   silencio desorienta al siguiente que lo lea.
+        //
+        //   ⚠️ El id del documento aqui es `D1` y el club del admin es `clubA`:
+        //   por eso estos tres son AJENOS. La cobertura completa por persona
+        //   —incluido que al miembro legitimo NO se le ha quitado el `get`—
+        //   vive en scripts/test_clubs_get_rules.js, 14 casos.
+        { n: '7a · 🔑🔑 `clubs`: el `get` de un club AJENO ya NO se permite',
+          col: 'clubs', exp: 'DENY', auth: adminConClaims, doc: docAdmin,
           method: 'get', existing: { name: 'CD X', adminEmail: 'otro@x.es' },
-          why: 'hay que conocer el id: ahi no hay cosecha, y lo lee media aplicacion' },
+          why: 'se llevaba el adminEmail: el correo del administrador de la plataforma' },
 
-        { n: '7b · …tambien para un club que NO es el suyo (no se ha colado un dueño)',
-          col: 'clubs', exp: 'ALLOW', auth: adminConClaims, doc: docAdmin,
+        { n: '7b · …ni aunque el documento traiga otro dueño',
+          col: 'clubs', exp: 'DENY', auth: adminConClaims, doc: docAdmin,
           method: 'get', existing: { name: 'CD Ajeno', adminEmail: 'nadie@x.es', adminUid: 'otro' },
-          why: 'restringir el `get` es OTRA decision: aqui solo se cerro el volcado' },
+          why: 'la pertenencia se mide contra el ID de la ruta, no contra el contenido' },
 
-        { n: '7c · ⚠️ y la regla NO se averia con un club sin `adminEmail`',
-          col: 'clubs', exp: 'ALLOW', auth: adminConClaims, doc: docAdmin,
+        { n: '7c · 🔑 el MIEMBRO de ese club sí lo sigue leyendo (no se ha perdido el get)',
+          col: 'clubs', docId: CLUB, exp: 'ALLOW', auth: adminConClaims, doc: docAdmin,
           method: 'get', existing: { name: 'CD Viejo' },
-          why: 'documentos legacy sin el campo: una regla que LANZA se lee como permiso mal puesto' },
+          why: 'ESTE es el riesgo caro del cambio: si se cayera, media aplicacion vacia sin un error. ' +
+               'Y ademas un club sin `adminEmail` no puede AVERIAR la regla' },
 
         { n: '7d · el SuperAdmin sigue pudiendo crear clubes',
           col: 'clubs', exp: 'ALLOW', auth: sa, doc: null,

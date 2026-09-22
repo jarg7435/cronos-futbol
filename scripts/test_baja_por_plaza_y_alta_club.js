@@ -136,8 +136,25 @@ ok('2d · el escrito va acotado a un objeto _permitido', PERM.length > 50);
 ok('2f · sí escribe allRoles (que es a lo que viene el alta)', /allRoles:\s*freshAllRoles/.test(PERM));
 ok('2g · y se guarda con merge:true (no reemplaza el documento)', /\{ merge: true \}/.test(PERM));
 // ⚠️ La lista prohibida de la regla es el cierre de SEC-C1: no se relaja.
-ok('2h · la regla sigue prohibiendo esos campos al propio usuario',
-   /hasAny\(\['role', 'isAuthorized', 'status', 'clubId', 'clubName', 'authorizedAt', 'authorizedBy', 'blockedAt'\]\)/.test(RULES));
+//
+// 🔑 SE MIDE LA PROPIEDAD, NO LA CADENA LITERAL. Antes esto era un regex con
+//    la lista EXACTA entre corchetes, así que se ponía rojo cuando la lista se
+//    hacía MÁS ESTRICTA — que es justo lo contrario de lo que vigila. Lo pagó
+//    SEC-R02 (Fase 1, 2026-09-22) al añadir `createdAt`: la batería señaló un
+//    endurecimiento como si fuera una regresión. Un guard que castiga el
+//    arreglo enseña a desactivar el guard.
+//    Ahora se exige que CADA campo esté dentro del `hasAny`, y añadir uno
+//    nuevo no molesta; quitar cualquiera de ellos sigue poniéndolo rojo.
+{
+    const _m = RULES.match(/!request\.resource\.data\.diff\(resource\.data\)\.affectedKeys\(\)\s*\.hasAny\(\[([^\]]*)\]\)/);
+    const _lista = _m ? _m[1] : '';
+    const _prohibidos = ['role', 'isAuthorized', 'status', 'clubId', 'clubName',
+                         'authorizedAt', 'authorizedBy', 'blockedAt'];
+    const _faltan = _prohibidos.filter(c => !new RegExp("'" + c + "'").test(_lista));
+    ok('2h · la regla sigue prohibiendo esos campos al propio usuario',
+       !!_m && _faltan.length === 0,
+       _faltan.length ? ('faltan en la lista: ' + _faltan.join(', ')) : 'no se encontró el hasAny');
+}
 
 // 🔑 v551 sigue vigente: los roles vivos se conservan y el nuevo se AÑADE.
 ok('2i · los roles vivos previos se conservan (v551)',

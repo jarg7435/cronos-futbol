@@ -266,8 +266,22 @@ console.log('\n── PARTE 3 · generar: una entidad PROPIA por pase ──');
             /allow list: if isSuperAdmin\(\)/.test(rInv));
         ok('7f · ⚠️ y consumir sigue limitado a usedAt/usedBy del propio uid',
             /hasOnly\(\['usedAt', 'usedBy'\]\)/.test(rInv));
-        ok('7g · 🔑 fundar la entidad sigue siendo exclusivo del SuperAdmin',
-            /match \/clubs\/\{clubId\}[\s\S]{0,900}allow create: if isSuperAdmin\(\)/.test(RULES));
+        // 🔑 SE ACOTA AL BLOQUE, NO A 900 CARACTERES. Antes esto buscaba
+        //    `allow create` dentro de una ventana de 900 caracteres desde el
+        //    `match /clubs/{clubId}`. Eso no mide una propiedad, mide una
+        //    DISTANCIA: al documentar la regla del `get` en SEC-L05 (Fase 1b)
+        //    el `create` se fue más allá de la ventana y el guard se puso rojo
+        //    por un comentario. Ahora se recorta el bloque de verdad —hasta el
+        //    siguiente `match /`— y da igual lo que crezca por dentro.
+        {
+            const _ini = RULES.indexOf('match /clubs/{clubId} {');
+            const _resto = RULES.slice(_ini + 10);
+            const _fin = _ini + 10 + _resto.indexOf('match /');
+            const _bloque = _ini === -1 ? '' : RULES.slice(_ini, _fin);
+            ok('7g · 🔑 fundar la entidad sigue siendo exclusivo del SuperAdmin',
+                _ini !== -1 && /allow create: if isSuperAdmin\(\);/.test(_bloque),
+                _ini === -1 ? 'no se encontró el match de clubs' : _bloque.slice(-200));
+        }
     }
 
     console.log('\n────────────────────────────────────────────');

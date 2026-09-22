@@ -89,6 +89,51 @@ service cloud.firestore {
                 );
     }
 
+    // ══════════════════════════════════════════════════════════════════
+    //  🔒 SEC-R01 (Fase 1, 2026-09-22) · UNO SE OCULTA A SÍ MISMO, Y A NADIE MÁS
+    //
+    //  `isStaffRoleByDoc()` (justo arriba) da por staff a CUALQUIERA que esté
+    //  autorizado y tenga `allRoles` no vacío — un familiar incluido. Y
+    //  `allRoles` **lo escribe el propio usuario**: no está en la lista
+    //  prohibida del `allow update` de `users`, y no puede estarlo, porque el
+    //  alta y el canje de código de invitación lo escriben de verdad
+    //  (auth.js:3420, parent/panel.js:1396). O sea que esa condición es
+    //  AUTOAFIRMABLE y no se puede arreglar exigiendo más de ella sin romper
+    //  a gente legítima.
+    //
+    //  🔑 ASÍ QUE NO SE ARREGLA QUIÉN ENTRA, SE ARREGLA QUÉ PUEDE HACER. La
+    //  rama que protege sólo existe para que alguien se OCULTE un informe de
+    //  SU panel, y eso es «añadirme a mí a una lista». Tal y como estaba, el
+    //  `hasOnly(['dismissedByStaff'])` dejaba REESCRIBIR la lista entera: se
+    //  podía borrar la ocultación de otros, o meter el uid del Director para
+    //  esconderle un informe de su propio panel. Ahora la lista sólo puede
+    //  CRECER, y sólo conmigo.
+    //
+    //  🔑 SE ADMITEN LAS DOS FORMAS DE CLAVE, y no es un adorno: desde v2 la
+    //  unidad es la PLAZA, no la persona (`dismissKey` = uid + '_' + rol, en
+    //  reports-tab.js:363), porque una misma cuenta puede ser Director Y
+    //  Coordinador y oculta por separado en cada panel. Aceptar sólo el uid
+    //  pelado dejaría fuera el caso real que motivó esa decisión.
+    //
+    //  ⚠️ `hasAll` impide QUITAR; `hasOnly` impide AÑADIR a otro. Hacen falta
+    //  las dos: cada una sola deja media puerta abierta.
+    //
+    //  Guard: scripts/test_sec_r01_rules.js
+    // ══════════════════════════════════════════════════════════════════
+    function soloSeAnyadeUnoMismo(campo) {
+      return request.resource.data.get(campo, []) is list
+             && request.resource.data.get(campo, []).hasAll(resource.data.get(campo, []))
+             && request.resource.data.get(campo, []).hasOnly(
+                  resource.data.get(campo, []).concat([
+                    request.auth.uid,
+                    request.auth.uid + '_director',
+                    request.auth.uid + '_coordinator',
+                    request.auth.uid + '_coach',
+                    request.auth.uid + '_club_admin',
+                    request.auth.uid + '_individual_admin'
+                  ]));
+    }
+
     function sameClub(clubId) {
       return isClubAdmin(clubId) || isIndividualAdmin(clubId);
     }
@@ -648,10 +693,48 @@ service cloud.firestore {
       // Acotada por los DOS lados: el documento tiene que ser YA de su club
       // (isAdminOfClub sobre el clubId EXISTENTE, nunca el entrante) y solo
       // puede cambiar los campos de isMembershipDecision().
+      // ══════════════════════════════════════════════════════════════════
+      //  🔒 SEC-R02 (Fase 1, 2026-09-22) · `createdAt` ENTRA EN LA LISTA
+      //
+      //  `transitionalRead()` (arriba) concede una ventana de gracia de 5
+      //  minutos a la cuenta recién creada que aún no tiene claims, y la mide
+      //  así:  request.time - users/{uid}.createdAt < 5 min.
+      //
+      //  🚨 PERO `createdAt` NO ESTABA EN ESTA LISTA, así que lo escribía el
+      //  propio usuario. Poniéndose `createdAt: <ahora>` cuando quisiera,
+      //  reabría la ventana indefinidamente — y su propio comentario la
+      //  describe como «ventana de gracia NO renovable». La regla decía una
+      //  cosa y hacía otra, que es la peor clase de regla.
+      //
+      //  ⚠️ ALCANCE HONESTO: esto NO era escalada entre clubes. La ventana
+      //  exige además `users/{uid}.clubId == clubId`, y el `clubId` de la raíz
+      //  sí está protegido desde SEC-C1. Lo que se renovaba era el acceso a
+      //  documentos del PROPIO club antes de tener los claims. Se cierra
+      //  porque una excepción temporal que no caduca deja de ser temporal.
+      //
+      //  ⚠️ NO ROMPE EL ALTA: `createdAt` se escribe al CREAR el documento, y
+      //  eso pasa por `allow create`, que es otra regla. Medido en el cliente
+      //  antes de tocar esto: ninguna escritura a `users/{miUid}` posterior al
+      //  alta incluye `createdAt` — el propio auth.js lo dice por escrito en
+      //  su lista `_permitido` («`createdAt` tampoco se toca: el documento ya
+      //  existe y su fecha de alta no es de hoy»).
+      //
+      //  🔑 LO QUE **NO** SE TOCA, Y POR QUÉ: `allRoles`, `isIndividual`,
+      //  `individualEntityId` e `individualOwnerId` siguen siendo escribibles
+      //  por su dueño. No es descuido: auth.js:3420 (alta sobre cuenta ya
+      //  existente) y parent/panel.js:1396 (canje del código de invitación)
+      //  los escriben de verdad, y prohibirlos rompería las dos cosas. La
+      //  defensa de esos campos no es impedir que se escriban, sino NO
+      //  FIARSE de ellos: el backend ya los corrobora contra `clubs/`
+      //  (SEC-F04/F05) y SEC-R01 acaba de quitarle a `allRoles` lo único que
+      //  todavía concedía por su cuenta en las reglas.
+      //
+      //  Guard: scripts/test_sec_r01_rules.js (PARTE 2)
+      // ══════════════════════════════════════════════════════════════════
       allow update: if isSuperAdmin() ||
         (isAuth() && request.auth.uid == userId
           && !request.resource.data.diff(resource.data).affectedKeys()
-              .hasAny(['role', 'isAuthorized', 'status', 'clubId', 'clubName', 'authorizedAt', 'authorizedBy', 'blockedAt'])
+              .hasAny(['role', 'isAuthorized', 'status', 'clubId', 'clubName', 'authorizedAt', 'authorizedBy', 'blockedAt', 'createdAt'])
         ) ||
         (isAdminOfClub(resource.data.get('clubId', null)) && isMembershipDecision());
 
@@ -721,7 +804,61 @@ service cloud.firestore {
     //  Vuelta atras: `allow read: if isAuth();` y `deploy:prod:rules`.
     // ══════════════════════════════════════════════════════════════════
     match /clubs/{clubId} {
-      allow get: if isAuth();
+      // ══════════════════════════════════════════════════════════════════
+      //  🔒 SEC-L05 (Fase 1b, 2026-09-22) · EL `get` DEJA DE SER PARA TODOS
+      //
+      //  SEC-L04 (Paso 2) partió `read` en `get` + `list` y cerró el `list`,
+      //  que era el volcado. El `get` se dejó abierto a cualquier autenticado
+      //  con este razonamiento: «hay que conocer el id, ahí no hay cosecha
+      //  posible». Era cierto a medias: sin enumeración no se puede barrer la
+      //  colección, pero CUALQUIER cuenta —un familiar de otro club— que
+      //  supiera un id se leía el documento entero, con `adminEmail` dentro.
+      //
+      //  🔑 POR QUÉ NO SE PUDO CERRAR ANTES, Y POR QUÉ AHORA SÍ. El ALTA leía
+      //  `clubs/{id}` para saber el nombre de la entidad y si ya tenía
+      //  administrador, y quien se está registrando **todavía no pertenece a
+      //  nada**: ninguna rama de pertenencia podía cubrirlo, así que acotar el
+      //  `get` rompía el registro entero. La Fase 1b mueve esas seis lecturas
+      //  al espejo `clubs_public` (nombre, tipo, estado y el BOOLEANO
+      //  `hasAdmin`), y con eso el alta deja de necesitar `clubs`.
+      //
+      //  🚨 EL ORDEN DE DESPLIEGUE NO ES NEGOCIABLE: functions (el espejo) →
+      //  backfill_clubs_public.js → cliente → y SOLO ENTONCES esta regla.
+      //  Al revés, el alta se queda sin saber si hay admin y el registrante
+      //  entra con el rol equivocado, sin un solo error visible.
+      //
+      //  ⚠️ LAS RAMAS SON LAS MISMAS QUE YA USA EL RESTO DEL FICHERO, y cada
+      //  una cubre una forma real de pertenecer, medidas contra los 26 puntos
+      //  de lectura que quedan (11 del SuperAdmin, el resto gente de su propio
+      //  club). `transitionalRead` se incluye a propósito: `role-launch.js`
+      //  lee el club al arrancar la sesión, y los claims pueden no haber
+      //  llegado todavía.
+      //
+      //  Guard: scripts/test_clubs_get_rules.js — 14 casos ejecutados contra
+      //  la Rules API, con un ALLOW por lote (la trampa de `request.time`).
+      // ══════════════════════════════════════════════════════════════════
+      //  🚨 EL DUEÑO SE MIRA EN `resource.data`, NO CON `isClubAdminOf()`.
+      //  La primera versión de esta regla llamaba a ese ayudante, que hace
+      //  `exists()` + `get()` sobre `clubs/{clubId}`… que es EXACTAMENTE el
+      //  documento que se está leyendo. Dos consecuencias, y la segunda es
+      //  grave: una lectura de más por cada acceso, y —lo que lo destapó— la
+      //  regla pasaba a poder AVERIARSE por un fallo de esa llamada. Un error
+      //  de evaluación DENIEGA, así que el caso salía «bien» por el motivo
+      //  equivocado: denegaba por avería, no por lógica. Lo cazó el guard
+      //  `test_rules_no_direct_access` mirando `errorPosition`, que es la
+      //  única forma de distinguir las dos cosas.
+      //  Aquí `resource.data` ES ese documento, ya cargado y gratis. Es además
+      //  lo que el `allow list` de abajo lleva haciendo desde SEC-L04.
+      allow get: if isAuth() && (
+                   isSuperAdmin() ||
+                   sameClub(clubId) ||
+                   sameClubAsDoc(clubId) ||
+                   userDocClubId(clubId) ||
+                   resource.data.get('adminUid', '') == request.auth.uid ||
+                   (('email' in request.auth.token) &&
+                    resource.data.get('adminEmail', '') == request.auth.token.email) ||
+                   transitionalRead(clubId)
+                 );
       allow list: if isAuth() && (
                     isSuperAdmin() ||
                     (('email' in request.auth.token) &&
@@ -1679,19 +1816,32 @@ service cloud.firestore {
         // compartido NO se borra: cada rol ve/oculta de forma independiente. Solo
         // se permite modificar el campo dismissedByStaff (no se toca el contenido
         // del informe), restringido a UIDs listados en staffUids del propio doc.
+        // 🔒 SEC-R01 · y sólo puede AÑADIRSE A SÍ MISMO (ver el ayudante).
+        //    Estar en `staffUids` es pertenencia de verdad, no autoafirmable,
+        //    pero el `hasOnly` de abajo dejaba igualmente reescribir la lista
+        //    entera y borrar la ocultación de los demás destinatarios.
         (resource.data.get('staffUids', null) != null &&
          request.auth.uid in resource.data.get('staffUids', []) &&
          request.resource.data.diff(resource.data).affectedKeys()
-            .hasOnly(['dismissedByStaff'])) ||
+            .hasOnly(['dismissedByStaff']) &&
+         soloSeAnyadeUnoMismo('dismissedByStaff')) ||
         // FIX (permisos dismiss): el staff (director/coordinador, según su doc
         // users/{uid}.role) puede ocultar de SU panel CUALQUIER informe añadiendo
         // su UID a dismissedByStaff, incluso si el doc NO trae staffUids ni un
         // clubId que case con users/{uid}.clubId (docs legacy o variantes
         // _coach_pN / _pN). Se restringe a modificar SOLO dismissedByStaff, así
         // que no puede alterar el contenido del informe de otros usuarios.
+        // 🔒 SEC-R01 (Fase 1, 2026-09-22) · ÉSTA ERA LA PUERTA ANCHA.
+        //    `isStaffRoleByDoc()` es AUTOAFIRMABLE —basta con estar autorizado
+        //    y escribirse una entrada en el propio `allRoles`—, así que esta
+        //    rama dejaba a cualquier cuenta del sistema REESCRIBIR ENTERA la
+        //    lista `dismissedByStaff` de CUALQUIER informe: borrar la
+        //    ocultación de otros, o esconderle un informe al Director metiendo
+        //    su uid. Ahora la lista sólo puede crecer, y sólo con uno mismo.
         (isStaffRoleByDoc() &&
          request.resource.data.diff(resource.data).affectedKeys()
-            .hasOnly(['dismissedByStaff'])) ||
+            .hasOnly(['dismissedByStaff']) &&
+         soloSeAnyadeUnoMismo('dismissedByStaff')) ||
         // FIX v2: padres pueden añadir su UID a dismissedBy para ocultar
         // informes de su panel sin afectar a otros usuarios.
         (request.auth.uid == resource.data.get('parentUid', null) &&

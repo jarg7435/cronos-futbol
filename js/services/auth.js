@@ -2664,7 +2664,11 @@ export async function doAuth() {
                 let _bloquea = null;
                 for (const _id of _ajenas) {
                     try {
-                        const _s = await _m.getDoc(_m.doc(fa.db, 'clubs', _id));
+                        // 🔒 SEC-L05 (Fase 1b) · por el ESPEJO, no por `clubs`.
+                        //    Aquí sólo hacen falta `name` y `type`, que el espejo
+                        //    tiene. Leerlo de `clubs` obligaba a dejar esa colección
+                        //    abierta a cualquier autenticado, con `adminEmail` dentro.
+                        const _s = await _m.getDoc(_m.doc(fa.db, 'clubs_public', _id));
                         if (_s.exists()) {
                             const _e = _s.data() || {};
                             _bloquea = { id: _id, nombre: _e.name || _id,
@@ -2718,14 +2722,42 @@ export async function doAuth() {
             registerUnderIndividual = true;
             try {
                 const m = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
-                // Leer la entidad individual: buscar en clubs (type=individual) primero, luego individuals
-                let indivSnap = await m.getDoc(m.doc(fa.db, 'clubs', selectedIndivId));
+                // ═══════════════════════════════════════════════════════════
+                //  🔒 SEC-L05 (Fase 1b, 2026-09-22) · POR EL ESPEJO, Y SIN EL
+                //  CORREO DEL DUEÑO
+                //
+                //  Esto leía `clubs/{id}` en claro para sacar `adminEmail`, y
+                //  era LA razón de que `clubs.get` siguiera abierto a cualquier
+                //  autenticado: el correo del administrador de la plataforma,
+                //  servido a todo el que abre el formulario de alta.
+                //
+                //  🔑 Y RESULTA QUE ESE CORREO NO LO LEE NADIE. Se rastrearon
+                //  sus 12 apariciones: TODAS son escrituras
+                //  (`individualOwnerEmail: …`) hacia `users` y
+                //  `platform_requests`. Ni un panel, ni una function, ni una
+                //  notificación lo consultan — el dueño del ente encuentra sus
+                //  solicitudes por `individualOwnerId`, el ID, nunca por el
+                //  correo (js/admin/individual/panel.js:285,294,353,383).
+                //  O sea que se estaba exponiendo un dato personal para
+                //  rellenar un campo que nadie mira. Deja de pedirse: es a la
+                //  vez el arreglo de seguridad y la minimización que pide el
+                //  paquete de protección de datos.
+                //
+                //  ⚠️ `individualOwnerEmail` SE SIGUE ESCRIBIENDO donde ya se
+                //  escribía, sólo que valdrá `null` salvo que el propio usuario
+                //  lo teclee en el formulario. No se retiran esas escrituras
+                //  aquí: el campo existe en documentos antiguos y quitarlo es
+                //  una migración de datos, no un arreglo de seguridad.
+                // ═══════════════════════════════════════════════════════════
+                let indivSnap = await m.getDoc(m.doc(fa.db, 'clubs_public', selectedIndivId));
                 let _isFromClubs = indivSnap.exists() && indivSnap.data().type === 'individual';
                 if (!_isFromClubs) {
                     indivSnap = await m.getDoc(m.doc(fa.db, 'individuals', selectedIndivId));
                 }
                 if (indivSnap.exists()) {
                     const _indData = indivSnap.data();
+                    // Del espejo NO viene correo. De `individuals` (la otra rama)
+                    // sí puede venir, y ahí se respeta lo que ya había.
                     individualOwnerEmail = _indData.adminEmail || _indData.email || null;
 
                     // ═══ VERIFICACIÓN ROBUSTECIDA DE hasAdmin ═══
@@ -2839,7 +2871,8 @@ export async function doAuth() {
         if (clubId) {
             try {
                 const m = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
-                const clubSnap = await m.getDoc(m.doc(fa.db, 'clubs', clubId));
+                // 🔒 SEC-L05 (Fase 1b) · sólo se quiere el NOMBRE: espejo.
+                const clubSnap = await m.getDoc(m.doc(fa.db, 'clubs_public', clubId));
                 if (clubSnap.exists()) {
                     clubName = clubSnap.data().name || null;
                 }
@@ -2873,15 +2906,16 @@ export async function doAuth() {
             if (_entityId && !_ownerEmail) {
                 try {
                     const _m2 = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
-                    // Buscar en clubs (type=individual) primero
-                    let _entDoc = await _m2.getDoc(_m2.doc(fa.db, 'clubs', _entityId));
-                    if (_entDoc.exists() && _entDoc.data().type === 'individual') {
-                        _ownerEmail = _entDoc.data().adminEmail || _entDoc.data().email || _ownerEmail;
-                    } else {
-                        // Fallback a colección 'individuals'
-                        _entDoc = await _m2.getDoc(_m2.doc(fa.db, 'individuals', _entityId));
-                        if (_entDoc.exists()) _ownerEmail = _entDoc.data().email || _entDoc.data().adminEmail || _ownerEmail;
-                    }
+                    // 🔒 SEC-L05 (Fase 1b) · AQUÍ SE RETIRÓ LA CONSULTA A `clubs`.
+                    //    Este bloque existía SÓLO para sacar el `adminEmail` de la
+                    //    entidad, y el espejo público no lo lleva a propósito: es
+                    //    el dato que se está protegiendo. Como `_ownerEmail` no lo
+                    //    consume nadie (ver la nota larga más arriba), no se
+                    //    sustituye por nada — se deja de pedir.
+                    //    La rama de `individuals` SÍ se conserva: es otra colección,
+                    //    con sus propias reglas, y no es lo que cierra la Fase 1b.
+                    const _entDoc = await _m2.getDoc(_m2.doc(fa.db, 'individuals', _entityId));
+                    if (_entDoc.exists()) _ownerEmail = _entDoc.data().email || _entDoc.data().adminEmail || _ownerEmail;
                 } catch(_) {}
             }
 
@@ -2897,8 +2931,13 @@ export async function doAuth() {
                 // NOTA: No bloqueamos si no hay admin — el entrenador puede registrarse
                 // y quedará pendiente de que el admin lo apruebe
                 if (_entityId) {
-                    // Buscar en clubs (type=individual) primero, luego individuals
-                    let _entSnap = await _m.getDoc(_m.doc(fa.db, 'clubs', _entityId));
+                    // 🔒 SEC-L05 (Fase 1b) · el ESPEJO para la entidad de `clubs`.
+                    //    De aquí sólo se necesita saber si YA HAY ADMINISTRADOR
+                    //    —de eso depende si este registro entra como admin o como
+                    //    sub-usuario pendiente—, y el espejo lo lleva ya derivado
+                    //    de hasAdmin/adminEmail/adminUid (SEC-L05 en functions).
+                    //    El correo del dueño no viene, y no hace falta.
+                    let _entSnap = await _m.getDoc(_m.doc(fa.db, 'clubs_public', _entityId));
                     let _entFromClubs = _entSnap.exists() && _entSnap.data().type === 'individual';
                     if (!_entFromClubs) {
                         _entSnap = await _m.getDoc(_m.doc(fa.db, 'individuals', _entityId));
@@ -3584,7 +3623,10 @@ export async function doAuth() {
             //     del arranque de sesión.
             if (duplicate && duplicate.clubId) {
                 try {
-                    const dupClubSnap = await fa.getDoc(fa.doc(fa.db, 'clubs', duplicate.clubId));
+                    // 🔒 SEC-L05 (Fase 1b) · aquí sólo se pregunta si la entidad
+                    //    EXISTE (para no borrar roles de un club vivo). El espejo
+                    //    responde a eso igual de bien, y sin abrir `clubs`.
+                    const dupClubSnap = await fa.getDoc(fa.doc(fa.db, 'clubs_public', duplicate.clubId));
                     const _desdeCache = !!(dupClubSnap.metadata && dupClubSnap.metadata.fromCache);
                     if (!dupClubSnap.exists() && !_desdeCache) {
                         const cleanedRoles = currentRoles.filter(r =>
