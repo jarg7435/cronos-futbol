@@ -75,9 +75,13 @@ if (!fs.existsSync(KEY_PATH)) {
        '\n  Coloca sa-key.json en la raiz o exporta SA_KEY_PATH=/ruta/a/key.json');
 }
 
+// 🔧 v751 · Por `_admin_compat` y no por `firebase-admin` a pelo: la v14 borro
+//    `admin.firestore()`, `admin.auth()` y `admin.credential`, que es justo lo
+//    que usa este script. El adaptador no hace nada con la v13 y restituye lo
+//    que falta con la v14 (ver su cabecera y la leccion de v633).
 let admin;
 try {
-  admin = require('firebase-admin');
+  admin = require('./_admin_compat');
 } catch (e) {
   fail('firebase-admin no esta instalado. Ejecuta: npm install');
 }
