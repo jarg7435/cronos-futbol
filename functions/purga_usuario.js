@@ -285,7 +285,8 @@ async function ejecutarPurga(db, uid, opciones) {
         else resumen.seudonimizados++;
     }
 
-    if (simular) { resumen.plan = escrituras.map((e) => ({ tipo: e.tipo, col: e.col, datos: e.datos })); return resumen; }
+    // `ruta` (v754c): la limpieza del histórico enseña QUÉ documento tocaría.
+    if (simular) { resumen.plan = escrituras.map((e) => ({ tipo: e.tipo, col: e.col, ruta: claveRef(e.ref), datos: e.datos })); return resumen; }
 
     for (let i = 0; i < escrituras.length; i += LOTE) {
         const trozo = escrituras.slice(i, i + LOTE);
