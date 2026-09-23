@@ -1250,10 +1250,15 @@ exports.syncUserChanges = functions.firestore
 
     if (!after) {
       console.log(`Usuario ${userId} eliminado`);
+      // 🛡️ v754b · SIN EL CORREO. Esto salta justo cuando la purga
+      //    (deleteUserData) borra `users/{uid}`: guardar aquí `before.email`
+      //    devolvía el dato personal a la base un segundo después de
+      //    borrarlo. Visto en producción con la cuenta de juguete del
+      //    2026-09-23. Nadie lee este campo (ni la app ni el panel del SA).
+      //    Guard: scripts/test_purga_usuario.js, parte 7.
       await admin.firestore().collection('notifications').add({
         type: 'user_deleted',
         userId,
-        email: before?.email,
         deletedAt: admin.firestore.FieldValue.serverTimestamp(),
         read: false,
       });

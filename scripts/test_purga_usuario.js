@@ -75,14 +75,28 @@ function baseFalsa(semilla) {
             return {
                 delete: (ref) => ops.push({ t: 'd', ref }),
                 update: (ref, d) => ops.push({ t: 'u', ref, d }),
+                // 🔑 v754b · COMO FIRESTORE DE VERDAD: el lote es ATÓMICO y un
+                //    `update` sobre un documento que no existe (o que el MISMO
+                //    lote acaba de borrar) lo tumba ENTERO con NOT_FOUND. La
+                //    versión anterior lo ignoraba en silencio y por eso no veía
+                //    que la purga podía borrar y actualizar el mismo documento.
                 commit: async () => {
+                    const vivo = (ref) => ref.__sub ? !!(sub[ref.__sub] || {})[ref.__id]
+                                                    : !!(datos[ref.__col] || {})[ref.__id];
+                    const muertos = new Set();
+                    const clave = (ref) => (ref.__sub || ref.__col) + '/' + ref.__id;
+                    for (const o of ops) {
+                        if (o.t === 'd') muertos.add(clave(o.ref));
+                        else if (muertos.has(clave(o.ref)) || !vivo(o.ref)) {
+                            throw new Error('5 NOT_FOUND: No document to update: ' + clave(o.ref));
+                        }
+                    }
                     for (const o of ops) {
                         if (o.t === 'd') {
                             if (o.ref.__sub) { delete (sub[o.ref.__sub] || {})[o.ref.__id]; borrados.push(o.ref.__sub + '/' + o.ref.__id); }
                             else { delete (datos[o.ref.__col] || {})[o.ref.__id]; borrados.push(o.ref.__col + '/' + o.ref.__id); }
                         } else {
-                            const d = (datos[o.ref.__col] || {})[o.ref.__id];
-                            if (d) Object.assign(d, o.d);
+                            Object.assign(datos[o.ref.__col][o.ref.__id], o.d);
                         }
                     }
                 },
@@ -111,6 +125,21 @@ const semilla = () => ({
                      staffUids: [YO, OTRO], dismissedBy: [YO + '_director', OTRO] },
         // informe ajeno → intacto
         rep_ajeno: { coachUid: OTRO, jugador: 'OTRO MENOR', texto: 'intacto' },
+        // v754b · 🚨 coincide por DOS caminos (es su copia de familiar Y lo
+        // escribió él): borrar + seudonimizar + limpiar lista sobre el MISMO
+        // documento. Tiene que quedar BORRADO y sin tumbar el lote.
+        rep_doble: { parentUid: YO, coachUid: YO, coachName: 'Yo', staffUids: [YO] },
+    },
+    // v754b · LOS AVISOS: la copia que RECIBIÓ es suya; la que ENVIÓ la tiene
+    // otra persona y se queda sin su autoría.
+    cronos_notifications: {
+        n_recibido: { type: 'convocatoria', parentUid: YO, userId: YO, coachUid: OTRO, players: ['1. MENOR'] },
+        n_enviado:  { type: 'convocatoria', parentUid: OTRO, coachUid: YO, coachEmail: 'yo@x.es',
+                      coachName: 'Yo', players: ['1. MENOR'], dismissedBy: [YO, OTRO] },
+        n_club:     { type: 'convocatoria', coachUid: YO, coachEmail: 'yo@x.es', clubId: 'C1' },
+        n_a_mi:     { type: 'convocatoria', parentUid: YO, coachUid: YO, coachEmail: 'yo@x.es', dismissedBy: [YO] },
+        n_oculto:   { type: 'convocatoria', parentUid: OTRO, coachUid: OTRO, dismissedBy: [YO + '_director', OTRO] },
+        n_ajeno:    { type: 'convocatoria', parentUid: OTRO, coachUid: OTRO, coachEmail: 'otro@x.es' },
     },
     cronos_staff_messages: { m1: { senderUid: YO, senderName: 'Yo', texto: 'hola' },
                              m2: { senderUid: OTRO, texto: 'ajeno' } },
@@ -208,6 +237,32 @@ console.log('\n══ 🛡️ Fase 4·1 · la purga borra lo suyo y respeta lo d
        D.succession_requests.su1.outgoingAdminEmail === null);
 
     // ════════════════════════════════════════════════════════════════
+    console.log('\n4b) 📬 v754b · Los avisos (cronos_notifications)');
+    const N = D.cronos_notifications;
+    ok('4e · 🔑 el aviso que RECIBIÓ se borra (es su copia)', !N.n_recibido);
+    ok('4f · el que ENVIÓ a otro se queda, con el contenido',
+       !!N.n_enviado && N.n_enviado.players[0] === '1. MENOR');
+    ok('4g · …pero sin su uid, nombre ni correo',
+       N.n_enviado && N.n_enviado.coachUid === BORRADO_UID &&
+       N.n_enviado.coachName === BORRADO_NOMBRE && N.n_enviado.coachEmail === null, N.n_enviado);
+    ok('4h · …y sale de su `dismissedBy`, que conserva al otro',
+       N.n_enviado && N.n_enviado.dismissedBy.indexOf(YO) === -1 && N.n_enviado.dismissedBy.indexOf(OTRO) !== -1,
+       N.n_enviado && N.n_enviado.dismissedBy);
+    ok('4i · el aviso al club entero pierde la autoría', N.n_club && N.n_club.coachUid === BORRADO_UID && N.n_club.coachEmail === null);
+    ok('4j · 🔑 el que se envió A SÍ MISMO se borra', !N.n_a_mi);
+    ok('4k · 🔑 un aviso ajeno que él ocultó pierde su clave por plaza (`uid_rol`)',
+       N.n_oculto && N.n_oculto.dismissedBy.join('|').indexOf(YO) === -1 && N.n_oculto.dismissedBy.indexOf(OTRO) !== -1,
+       N.n_oculto && N.n_oculto.dismissedBy);
+    ok('4l · 🔴 el aviso ajeno ni se toca',
+       N.n_ajeno && N.n_ajeno.coachUid === OTRO && N.n_ajeno.coachEmail === 'otro@x.es');
+
+    console.log('\n4c) 🚨 v754b · Un documento, UNA escritura');
+    ok('4m · 🔑🔑 el informe que coincide por dos caminos queda BORRADO',
+       !D.cronos_player_reports.rep_doble);
+    ok('4n · 🔑🔑 y NINGÚN lote se cayó (borrar + actualizar el mismo doc = NOT_FOUND)',
+       r.fallos.length === 0, r.fallos);
+
+    // ════════════════════════════════════════════════════════════════
     console.log('\n5) 👀 Se puede SIMULAR antes de apretar');
     const db2 = baseFalsa(semilla());
     // ⚠️ SE SIEMBRA IGUAL QUE EL REAL, subcolecciones incluidas. Sin esto, 5c
@@ -233,7 +288,7 @@ console.log('\n══ 🛡️ Fase 4·1 · la purga borra lo suyo y respeta lo d
     for (const c of ['push_tokens', 'cronos_role_sessions', 'platform_requests', 'slot_requests',
                      'cronos_player_reports', 'cronos_staff_messages', 'cronos_staff_threads',
                      'cronos_player_links', 'succession_requests', 'deletion_requests',
-                     'cronos_messages', 'audit_logs', 'billing_invoices']) {
+                     'cronos_messages', 'audit_logs', 'billing_invoices', 'cronos_notifications']) {
         ok('6a · `' + c + '` tiene trato declarado', cubiertas.has(c));
     }
     ok('6b · 🔑 las subcolecciones de users están declaradas',
@@ -241,6 +296,60 @@ console.log('\n══ 🛡️ Fase 4·1 · la purga borra lo suyo y respeta lo d
     ok('6c · no hubo fallos ni se alcanzó el tope', r.fallos.length === 0 && r.topeAlcanzado.length === 0,
        { fallos: r.fallos, tope: r.topeAlcanzado });
     ok('6d · el resumen desglosa por colección', Object.keys(r.porColeccion).length >= 8, Object.keys(r.porColeccion));
+
+    // ════════════════════════════════════════════════════════════════
+    console.log('\n7) ✉️ v754b · Después de la purga no puede reaparecer su correo');
+    //  `syncUserChanges` salta cuando la purga borra `users/{uid}` y escribía
+    //  en `notifications` un aviso `user_deleted` CON EL CORREO: el dato
+    //  volvía a la base justo después de borrarlo (visto en producción en la
+    //  prueba con cuenta de juguete del 2026-09-23). Se EJECUTA el handler
+    //  real de functions/index.js con Firebase sustituido por dobles.
+    const escritos = await (async () => {
+        const Module = require('module');
+        const fs = require('fs');
+        const vm = require('vm');
+        const capturas = [];
+        const handlers = {};
+        // Un doble "comodín": cualquier cadena de llamadas devuelve otro
+        // comodín, salvo cuando recibe una función, que es el handler.
+        const comodin = () => new Proxy(function () {}, {
+            get: (_, k) => (k === 'then' ? undefined : comodin()),
+            apply: (_, __, args) => {
+                const fn = args.find((a) => typeof a === 'function');
+                return fn ? { __handler: fn } : comodin();
+            },
+        });
+        const fsFalso = () => ({
+            collection: (col) => ({
+                add: async (d) => { capturas.push({ col, d }); return { id: 'x' }; },
+                doc: () => ({ set: async (d) => { capturas.push({ col, d }); }, get: async () => ({ exists: false, data: () => ({}) }),
+                              update: async () => {}, delete: async () => {} }),
+                where: () => ({ get: async () => ({ docs: [], empty: true, forEach() {} }) }),
+            }),
+        });
+        const admin = { initializeApp() {}, firestore: Object.assign(fsFalso, {
+            FieldValue: { serverTimestamp: () => 'TS', increment: (n) => n, arrayUnion: (...a) => a, arrayRemove: (...a) => a, delete: () => 'DEL' } }) };
+        const stubs = {
+            'firebase-functions/v1': comodin(), 'firebase-functions': comodin(),
+            'firebase-admin': admin, 'nodemailer': comodin(),
+            'firebase-admin/firestore': { getFirestore: fsFalso, FieldValue: admin.firestore.FieldValue, Timestamp: {}, FieldPath: {}, GeoPoint: {} },
+        };
+        const src = fs.readFileSync(path.join(ROOT, 'functions', 'index.js'), 'utf8');
+        const exp = {};
+        const req = (m) => stubs[m] || (m.indexOf('./') === 0 ? require(path.join(ROOT, 'functions', m)) : comodin());
+        vm.runInNewContext(src, { require: req, exports: exp, module: { exports: exp }, console: { log() {}, warn() {}, error() {} },
+                                  process, Buffer, setTimeout, Date, JSON, Object, Array, String, Math, Promise, Error });
+        const h = exp.syncUserChanges && exp.syncUserChanges.__handler;
+        if (!h) return null;
+        await h({ before: { data: () => ({ email: 'yo@x.es', role: 'parent' }) }, after: { data: () => undefined } },
+                { params: { userId: YO } });
+        return capturas;
+    })().catch((e) => ({ error: e.message }));
+
+    ok('7a · se pudo ejecutar el `syncUserChanges` real', Array.isArray(escritos), escritos);
+    const aviso = Array.isArray(escritos) ? escritos.find((c) => c.d && c.d.type === 'user_deleted') : null;
+    ok('7b · 🔑🔑 el aviso `user_deleted` NO lleva su correo',
+       !aviso || JSON.stringify(aviso.d).indexOf('yo@x.es') === -1, aviso);
 
     console.log('\n──────────────────────────────────────────────────────────');
     console.log('Resultado: ' + pass + '/' + (pass + fail) + (fail ? '  ❌' : '  ✅'));

@@ -210,6 +210,13 @@ await admin.firestore().collection('users').doc(uid).delete();
 `clubs/*/attendance*`, `cronos_player_links`, `push_tokens`, `cronos_role_sessions`,
 `users/{uid}/cronos_data`, `users/{uid}/sa_privado`, `pseudonym_map`, `audit_logs`.
 
+> **✅ Estado a 2026-09-23 (v754b):** cerrado. La cascada vive en
+> `functions/purga_usuario.js` (tabla `PLAN`) y está **probada en producción** con una
+> cuenta de juguete. Esa prueba destapó tres cosas más, ya corregidas: los avisos
+> recibidos/enviados (`cronos_notifications`) no estaban en el plan; `syncUserChanges`
+> volvía a guardar el **correo** en `notifications` (`user_deleted`) justo después de la
+> purga; y un documento que coincidía por dos campos tumbaba el lote atómico entero.
+
 La política promete 30 días para todo. **Hay que cerrar la brecha por uno de los dos
 lados**, y mi recomendación es ampliar la función:
 

@@ -93,9 +93,17 @@ const PLAN = [
     { col: 'slot_requests',        campos: ['userId'],                     trato: 'borrar' },
     // La copia que el FAMILIAR tiene del informe de su hijo es suya.
     { col: 'cronos_player_reports', campos: ['parentUid'],                 trato: 'borrar' },
+    // v754b · Los avisos que RECIBIÓ (convocatorias, planificaciones…): cada
+    // destinatario tiene su propia copia (`parentUid`/`userId` = él), así que
+    // la suya se va. Hueco visto en la prueba real del 2026-09-23.
+    { col: 'cronos_notifications', campos: ['parentUid', 'userId'],        trato: 'borrar' },
 
     // 🎭 COMPARTIDO: se le quita la autoria, el contenido se queda
     { col: 'cronos_player_reports', campos: ['coachUid'],                  trato: 'seudonimizar',
+      renombrar: { coachUid: BORRADO_UID, coachName: BORRADO_NOMBRE, coachEmail: null } },
+    // v754b · …y los que ENVIÓ: la copia es del destinatario y habla de sus
+    // jugadores; se queda sin autoría (`coachName` lo sella v754).
+    { col: 'cronos_notifications', campos: ['coachUid'],                  trato: 'seudonimizar',
       renombrar: { coachUid: BORRADO_UID, coachName: BORRADO_NOMBRE, coachEmail: null } },
     { col: 'cronos_staff_threads',  campos: ['coachUid'],                  trato: 'seudonimizar',
       renombrar: { coachUid: BORRADO_UID, coachName: BORRADO_NOMBRE } },
@@ -133,6 +141,8 @@ const LISTAS = [
     { col: 'cronos_player_reports', campo: 'dismissedBy' },
     { col: 'cronos_player_reports', campo: 'dismissedByStaff' },
     { col: 'cronos_messages',       campo: 'participants', seudonimizarAutores: true },
+    // v754b · quien oculta un aviso se apunta aquí (events-tab.js, `me.uid`).
+    { col: 'cronos_notifications',  campo: 'dismissedBy' },
 ];
 
 // Subcolecciones de `users/{uid}` que NO se van con el documento padre.
@@ -178,8 +188,30 @@ async function ejecutarPurga(db, uid, opciones) {
         resumen.porColeccion[col] = c;
     };
 
+    /* 🚨🚨 v754b · UN DOCUMENTO, UNA ESCRITURA.
+       Un mismo documento puede coincidir por VARIOS caminos: el informe que es
+       su copia de familiar (`parentUid`) Y que escribió él (`coachUid`), o el
+       aviso que se envió a sí mismo. Antes se empujaban las dos operaciones y
+       el lote llevaba «borrar» y luego «actualizar» sobre el mismo documento:
+       Firestore rechaza el `update` con NOT_FOUND y, como el lote es ATÓMICO,
+       **se perdía el lote entero** — hasta 400 escrituras, la ficha del
+       usuario incluida. Lo destapó el guard al hacer su base falsa atómica.
+       Regla: borrar gana a actualizar; dos actualizaciones se FUNDEN.
+       Devuelve true si la operación cuenta (para no inflar el desglose). */
     const escrituras = [];
-    const empujar = (op) => { escrituras.push(op); };
+    const porDoc = new Map();
+    const claveRef = (ref) => ref.path || ((ref.__sub || ref.__col) + '/' + ref.__id);
+    const empujar = (op) => {
+        const k = claveRef(op.ref);
+        const prev = porDoc.get(k);
+        if (!prev) { porDoc.set(k, op); escrituras.push(op); return true; }
+        if (prev.tipo === 'borrar') return false;
+        if (op.tipo === 'borrar') {
+            escrituras[escrituras.indexOf(prev)] = op; porDoc.set(k, op); return true;
+        }
+        Object.assign(prev.datos, op.datos);
+        return false;
+    };
 
     // ── 1. El documento del usuario y sus SUBCOLECCIONES ──────────────
     // 🚨 El orden importa: primero las hijas. Si se borra el padre y luego
@@ -193,8 +225,7 @@ async function ejecutarPurga(db, uid, opciones) {
             }
         } catch (e) { resumen.fallos.push('users/' + uid + '/' + sub + ': ' + e.message); }
     }
-    empujar({ tipo: 'borrar', ref: db.collection('users').doc(uid), col: 'users' });
-    anota('users', 'borrados');
+    if (empujar({ tipo: 'borrar', ref: db.collection('users').doc(uid), col: 'users' })) anota('users', 'borrados');
 
     // ── 2. El plan declarado ──────────────────────────────────────────
     for (const p of PLAN) {
@@ -207,15 +238,13 @@ async function ejecutarPurga(db, uid, opciones) {
 
             for (const d of docs) {
                 if (p.trato === 'borrar') {
-                    empujar({ tipo: 'borrar', ref: d.ref, col: p.col });
-                    anota(p.col, 'borrados');
+                    if (empujar({ tipo: 'borrar', ref: d.ref, col: p.col })) anota(p.col, 'borrados');
                 } else {
                     const cambios = Object.assign({}, p.renombrar);
                     // El campo por el que se encontro tambien se sustituye:
                     // si no, el vinculo con la persona seguiria ahi.
                     if (!(campo in cambios)) cambios[campo] = BORRADO_UID;
-                    empujar({ tipo: 'actualizar', ref: d.ref, datos: cambios, col: p.col });
-                    anota(p.col, 'seudonimizados');
+                    if (empujar({ tipo: 'actualizar', ref: d.ref, datos: cambios, col: p.col })) anota(p.col, 'seudonimizados');
                 }
             }
         }
@@ -241,13 +270,11 @@ async function ejecutarPurga(db, uid, opciones) {
                 if (datos.senderUid === uid) { cambios.senderUid = BORRADO_UID; cambios.senderName = BORRADO_NOMBRE; }
                 if (datos.authorUid === uid) { cambios.authorUid = BORRADO_UID; cambios.authorName = BORRADO_NOMBRE; }
                 if (!Object.keys(cambios).length) continue;
-                empujar({ tipo: 'actualizar', ref: d.ref, datos: cambios, col: l.col });
-                anota(l.col, 'seudonimizados');
+                if (empujar({ tipo: 'actualizar', ref: d.ref, datos: cambios, col: l.col })) anota(l.col, 'seudonimizados');
                 continue;
             }
 
-            empujar({ tipo: 'actualizar', ref: d.ref, datos: { [l.campo]: limpia }, col: l.col });
-            anota(l.col, 'listas');
+            if (empujar({ tipo: 'actualizar', ref: d.ref, datos: { [l.campo]: limpia }, col: l.col })) anota(l.col, 'listas');
         }
     }
 
