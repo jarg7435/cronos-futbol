@@ -2703,8 +2703,8 @@
 //        delega en `_ccNombreDe` (criterio de v741). Los envíos sellan ya
 //        `coachName`; los antiguos se resuelven por `coachUid` contra el censo
 //        del club, y sólo sin nada cae al correo SIN dominio.
-const VERSION = 'v756';
-const CACHE_NAME = 'cronos-cache-v756';
+const VERSION = 'v757';
+const CACHE_NAME = 'cronos-cache-v757';
 
 const ASSETS = [
     './',

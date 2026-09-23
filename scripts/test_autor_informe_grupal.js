@@ -118,5 +118,25 @@ parte('PARTE 4 · «Enviado por» de los avisos: familias y Dirección', () => {
         /items\.some\(it => !it\.coachName\)[\s\S]{0,120}_ccCargarDirectorio\(clubId\)/.test(ev));
 });
 
+parte('PARTE 5 · v757 · «Mis Informes de Partido» descarga el colectivo como Dirección', () => {
+    const src = leer('js/coach/comms/individual-reports.js');
+    const mi = sinCom(src);
+    ok('5a · existe miExportInforme', /window\.miExportInforme = \(key64, fmt\) =>/.test(mi));
+    const i = mi.indexOf('window.miExportInforme =');
+    const cuerpo = mi.slice(i, mi.indexOf('};', i));
+    ok('5b · 🔑 usa el MISMO módulo que Dirección (rxExportarInformePDF / CSV)',
+        /window\.rxExportarInformeCSV\(m\)/.test(cuerpo) && /window\.rxExportarInformePDF\(m, cuerpo/.test(cuerpo));
+    ok('5c · 🔑 y el MISMO motor visual (_RP.build)', /_RP\.build\(m, window\._cronosCurrentUser\)/.test(cuerpo));
+    ok('5d · 🚨 sin `await` antes de abrir la ventana (bloqueo de ventanas emergentes)', !/await/.test(cuerpo));
+    ok('5e · botones 🖨️ y 📊 en la tarjeta, sin desplegar',
+        /miExportInforme\('\$\{key64\}','pdf'\)"\s*title="Descargar este informe grupal en PDF"/.test(mi) &&
+        /miExportInforme\('\$\{key64\}','csv'\)"\s*title="Descargar este informe grupal en CSV/.test(mi));
+    ok('5f · y en la barra del informe desplegado', /🖨️ Descargar PDF/.test(mi) && /📊 Descargar CSV/.test(mi));
+    ok('5g · sin el módulo cargado no se pinta ningún botón',
+        /const _miPuedeExpInforme = typeof window\.rxExportarInformePDF === 'function' &&/.test(mi));
+    ok('5h · el agregador copia subcategory (la cabecera imprime «regional B»)',
+        /subcategory: r\.subcategory\|\|''/.test(mi));
+});
+
 console.log('\n' + (FALLOS ? '❌ ' + FALLOS + ' FALLO(S)' : '✅ TODO VERDE'));
 process.exit(FALLOS ? 1 : 0);

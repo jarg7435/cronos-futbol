@@ -269,6 +269,9 @@ window.openMisInformes = async function openMisInformes() {
                     rival: r.rival, scoreHome: r.scoreHome, scoreAway: r.scoreAway,
                     myTeamRole: r.myTeamRole,   // FIX: propagar rol del equipo para el cálculo V/D/E correcto (visitante)
                     category: r.category||'', venue: r.venue||'',
+                    // v757 · la subcategoría, que la cabecera del PDF grupal
+                    // imprime («regional B») y este agregado no copiaba.
+                    subcategory: r.subcategory||'',
                     // 🏆 v737 · El TIPO DE PARTIDO, que este agregado tampoco
                     // copiaba: el dato estaba en Firestore (medido) pero no
                     // llegaba ni a la tarjeta ni al motor de informes. Mismo
@@ -681,6 +684,18 @@ window.openMisInformes = async function openMisInformes() {
             && typeof window.cronosPurgarPartido === 'function';
         const _miPuedePurgarMasivo = _miHayMS && _miPuedePurgar;
 
+        // 🖨️ v757 · DESCARGA DEL INFORME COLECTIVO (PDF / CSV), IGUAL QUE EN
+        // DIRECCIÓN (encargo del autor, implementar.txt 2026-09-24, capturas
+        // 10758-10760). No es una copia: se llama al MISMO módulo
+        // (reports-export.js · rxExportarInforme*) con el MISMO motor _RP, así
+        // que el papel del entrenador y el del Director son idénticos. Sin el
+        // módulo cargado no se pinta ningún botón.
+        const _miPuedeExpInforme = typeof window.rxExportarInformePDF === 'function' &&
+                                   typeof window.rxExportarInformeCSV === 'function';
+        const _miBtnExp = 'background:rgba(88,166,255,0.1);border:1px solid rgba(88,166,255,0.3);' +
+            'color:#58a6ff;padding:0.4rem;border-radius:6px;cursor:pointer;' +
+            'display:flex;align-items:center;justify-content:center;transition:all 0.2s;';
+
         let _miBarraSel = '';
         if (_miHayMS) {
             const _acciones = [{
@@ -763,6 +778,11 @@ window.openMisInformes = async function openMisInformes() {
                         ${m.players.length} jugadores<br>▼ Ver Gantt
                     </div>
                     <div style="display:flex;align-items:center;gap:5px;padding-left:0.5rem;border-left:1px solid rgba(255,255,255,0.08);">
+                        ${_miPuedeExpInforme ? `
+                        <button onclick="event.stopPropagation(); miExportInforme('${key64}','pdf')"
+                                title="Descargar este informe grupal en PDF" style="${_miBtnExp}">🖨️</button>
+                        <button onclick="event.stopPropagation(); miExportInforme('${key64}','csv')"
+                                title="Descargar este informe grupal en CSV (Excel)" style="${_miBtnExp}">📊</button>` : ''}
                         <button onclick="event.stopPropagation(); miEliminarInforme('${key64}')"
                                 title="Ocultar este informe de MI panel (los demás roles lo siguen viendo)"
                                 style="background:rgba(255,88,88,0.1);border:1px solid rgba(255,88,88,0.3);
@@ -804,6 +824,13 @@ window.openMisInformes = async function openMisInformes() {
                             // Añadir botones de acción al final del informe visual
                             const btns = `
                             <div style="display:flex;gap:0.75rem;flex-wrap:wrap;margin-top:1.5rem;padding-top:1rem;border-top:1px solid rgba(255,255,255,0.08);">
+                                ${_miPuedeExpInforme ? `
+                                <button onclick="miExportInforme('${key64}','pdf')"
+                                    style="padding:0.5rem 1rem;background:rgba(88,166,255,0.1);border:1px solid rgba(88,166,255,0.3);border-radius:8px;color:#58a6ff;font-size:0.75rem;font-weight:700;cursor:pointer;display:flex;align-items:center;gap:5px;">
+                                    🖨️ Descargar PDF</button>
+                                <button onclick="miExportInforme('${key64}','csv')"
+                                    style="padding:0.5rem 1rem;background:rgba(88,166,255,0.1);border:1px solid rgba(88,166,255,0.3);border-radius:8px;color:#58a6ff;font-size:0.75rem;font-weight:700;cursor:pointer;display:flex;align-items:center;gap:5px;">
+                                    📊 Descargar CSV</button>` : ''}
                                 <button onclick="miDescargarInforme('${key64}')"
                                     style="padding:0.5rem 1rem;background:rgba(88,166,255,0.1);border:1px solid rgba(88,166,255,0.3);border-radius:8px;color:#58a6ff;font-size:0.75rem;font-weight:700;cursor:pointer;display:flex;align-items:center;gap:5px;">
                                     📥 Descargar TXT</button>
@@ -841,6 +868,32 @@ window.openMisInformes = async function openMisInformes() {
             }
             detail.style.display = isOpen ? 'none' : 'block';
             if (card) card.style.borderColor = isOpen ? 'rgba(63,185,80,0.15)' : 'rgba(63,185,80,0.55)';
+        };
+
+        // ── 🖨️ v757 · Descargar el informe colectivo en PDF / CSV ─────────
+        //  Réplica exacta de `sdExportInforme` (reports-tab.js): el PDF lleva
+        //  el informe visual completo, así que se construye al pulsar aunque
+        //  la tarjeta esté plegada. ⚠️ Es una ventana nueva: nada de `await`
+        //  antes de `rxExportarInformePDF`, o el navegador la bloquearía por
+        //  no venir de un gesto del usuario.
+        window.miExportInforme = (key64, fmt) => {
+            const key = decodeURIComponent(escape(atob(key64)));
+            const m   = window._misInformesData?.[key];
+            if (!m) {
+                if (typeof showToast==='function') showToast('⚠️ No se encontró el informe', 2500);
+                return;
+            }
+            if (fmt === 'csv') { window.rxExportarInformeCSV(m); return; }
+            let cuerpo = '';
+            try {
+                if (typeof _RP === 'undefined' || typeof _RP.build !== 'function')
+                    throw new Error('Motor de informes no disponible. Reintenta en unos segundos.');
+                cuerpo = _RP.build(m, window._cronosCurrentUser);
+            } catch (err) {
+                if (typeof showToast==='function') showToast('⚠️ Error al generar el informe: ' + err.message, 4000);
+                return;
+            }
+            window.rxExportarInformePDF(m, cuerpo, { club: (me && (me.clubName || me.clubId)) || '' });
         };
 
         // ── Exportar informe del entrenador como TXT ──────────────────────
