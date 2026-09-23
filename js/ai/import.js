@@ -506,6 +506,11 @@ function openConvocationModal() {
                                color:var(--primary); font-weight:700; font-size:0.78rem; padding:0.5rem;">
                         \u{1F4E4} ENVIAR CONVOCATORIA
                     </button>
+                    <button class="btn" onclick="cronosImprimirConvocatoriaActual()" title="Imprimir o guardar como PDF"
+                        style="background:rgba(37,99,235,0.18); border:1px solid rgba(37,99,235,0.55);
+                               color:#79c0ff; font-weight:700; font-size:0.78rem; padding:0.5rem 0.8rem; white-space:nowrap;">
+                        \u{1F5A8}️ PDF
+                    </button>
                 </div>
 
                 <div id="conv-invalid-msg" style="display:none; font-size:0.72rem; font-weight:700;
@@ -952,6 +957,61 @@ function saveConvPlayers() {
         '| _savedConvokedPlayers:', window._savedConvokedPlayers.length,
         window._savedConvokedPlayers.map(p => p.alias || p.name));
 }
+
+// ── 🖨️ v753 · IMPRIMIR / PDF DE LA CONVOCATORIA EN PANTALLA ──
+//  Imprime LO QUE HAY DELANTE (aunque no se haya enviado todavía), con el
+//  mismo motor que el Cuadrante (rxImprimirConvocatoria → rxImprimir).
+//  Titulares = filas en estado "titular"; suplentes = "convocado".
+function cronosImprimirConvocatoriaActual() {
+    if (typeof window.rxImprimirConvocatoria !== 'function') {
+        if (typeof showToast === 'function') showToast('⚠️ El módulo de impresión no está cargado', 3500);
+        return;
+    }
+    const data = saveConvData();
+    const roster = window.cronosPlantillaAmbas();
+    const myPlayers = roster[currentMode] || [];
+    const rows = document.querySelectorAll('#conv-grid-container .conv-row[data-state="convocado"], #conv-grid-container .conv-row[data-state="titular"]');
+    const jugadores = Array.from(rows).map(r => {
+        const p = myPlayers[parseInt(r.dataset.index)];
+        if (!p) return null;
+        const org = p.isGuest
+            ? ((typeof window._cronosTeamRosterLabel === 'function')
+                ? window._cronosTeamRosterLabel(p.originCategory, p.originSubcategory)
+                : [p.originCategory, p.originSubcategory].filter(Boolean).join(' '))
+            : '';
+        return { num: String(p.number || ''), name: p.alias || p.name || '', origin: org || '',
+                 titular: r.dataset.state === 'titular' };
+    }).filter(Boolean);
+    if (!jugadores.length) {
+        if (typeof showToast === 'function') showToast('⚠️ Marca al menos un convocado para imprimir', 3500);
+        return;
+    }
+    const me = window._cronosCurrentUser || {};
+    const cat = me._activeRoleData?.category || me.category || '';
+    const sub = me._activeRoleData?.subcategory || me.subcategory || '';
+    const equipo = (typeof window._cronosTeamRosterLabel === 'function' && window._cronosTeamRosterLabel(cat, sub))
+        || [cat, sub].filter(Boolean).join(' ');
+    const TIPOS = { liga: 'Liga', copa: 'Copa', amistoso: 'Amistoso', torneo: 'Torneo' };
+    const fecha = data.date
+        ? new Date(data.date + 'T12:00:00').toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
+        : '';
+    window.rxImprimirConvocatoria({
+        club:         me.clubName || '',
+        equipo,
+        tipo:         TIPOS[data.type] || data.type || '',
+        jornada:      data.type === 'liga' ? data.jornada : '',
+        fecha,
+        hora:         data.time ? data.time + ' h' : '',
+        presentacion: data.meettime ? data.meettime + ' h' : '',
+        lugar:        data.venue,
+        rival:        data.rival,
+        mensaje:      data.message,
+        estado:       (window.rxNombreDe && window.rxNombreDe(me)) ? 'Entrenador: ' + window.rxNombreDe(me) : '',
+        jugadores,
+        pie: 'Chronos Fútbol · convocatoria generada desde el panel del entrenador.',
+    });
+}
+window.cronosImprimirConvocatoriaActual = cronosImprimirConvocatoriaActual;
 
 // ── IR AL PARTIDO (desde convocatoria con 3 estados: convocado/titular) ──
 // v506 · DEVUELVE true si el partido ARRANCA y false si se ABORTA. No es

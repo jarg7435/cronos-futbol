@@ -10,6 +10,8 @@
       "**/node_modules/**",
       "CAPTURAS/**",
       "CALENDARIOS/**",
+      "AUDITOR*A/**",
+      "**/*.pdf",
       "Presentaci*n/**",
       "presentaci*n/**",
       "firestore.rules",

@@ -263,6 +263,7 @@ window._sendTrainingNotification = async function() {
             type: 'planificacion_semanal', clubId: me.clubId || null,
             userId: uid,                                  // ← FIX (C3): campo que las reglas verifican
             parentUid: uid, coachUid: me.uid, coachEmail: me.email,
+            coachName: (typeof window._ccNombreDe === 'function' ? window._ccNombreDe(me) : '') || '',
             category: _trCat, subcategory: _trSub,
             datetime, location, notes,
             createdAt: new Date().toISOString(),
@@ -434,6 +435,8 @@ window._sendTrainingNotificationV2 = async function() {
                 parentUid:     uid,          // el que buscan los paneles receptores
                 coachUid:      me.uid,
                 coachEmail:    me.email || '',
+                // v753b · el NOMBRE, para el imprimible de Dirección (no el correo).
+                coachName:     (typeof window._ccNombreDe === 'function' ? window._ccNombreDe(me) : '') || '',
                 category:      _cat,
                 subcategory:   _sub,
                 weekStartDate: weekKey,

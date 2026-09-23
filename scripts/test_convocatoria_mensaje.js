@@ -152,8 +152,12 @@ parte('PARTE 3 · el recorrido completo, de la plantilla a la tarjeta', () => {
           originCategory: 'alevin', originSubcategory: 'C' },
     ];
     vm.createContext(sb);
+    // v753 · la etiqueta vive en `_cronosConvLabel` (la comparte `starters`),
+    // justo encima: se cargan las dos funciones.
+    const i0 = src.indexOf('function _cronosConvLabel(');
     const i = src.indexOf('function _cronosResolvePlayersArr(');
-    vm.runInContext(src.slice(i, src.indexOf('\n}', i) + 2), sb);
+    vm.runInContext(src.slice(i0, src.indexOf('\n}', i0) + 2) + '\n' +
+                    src.slice(i, src.indexOf('\n}', i) + 2), sb);
 
     const arr = sb._cronosResolvePlayersArr();
     ok('3a · salen los dos convocados', arr.length === 2, arr);

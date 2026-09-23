@@ -968,6 +968,7 @@ async function saveConvocationToFirestore() {
             type:       'convocatoria',
             clubId:     me.clubId || null,
             coachEmail: me.email  || '',
+            coachName:  (typeof window._ccNombreDe === 'function' ? window._ccNombreDe(me) : '') || '',
             coachUid:   me.uid    || '',
             category:   me.category    || me._activeRoleData?.category || me.categoryLabel || null,
             subcategory:me.subcategory || me._activeRoleData?.subcategory || null,
@@ -1074,13 +1075,26 @@ function _cronosConvExtra(sv) {
     return '';
 }
 
-function _cronosResolvePlayersArr() {
-    let playersArr = [];
+// 🖨️ v753 · QUIÉN SALE DE TITULAR, para el documento imprimible de Dirección.
+// `players` sigue siendo el array de cadenas de siempre (lo consumen cuatro
+// vistas); `starters` es un array PARALELO con las MISMAS cadenas de los que
+// salen de inicio. Se compara por igualdad de cadena, así que se construye
+// con el mismo `_cronosConvLabel` que `players`, nunca con otra fórmula.
+// Devuelve null si no hay fuente de verdad (y entonces NO se guarda el campo:
+// vacío significaría «ningún titular», que es falso).
+function _cronosResolveStartersArr() {
+    const src = window._savedConvokedPlayers;
+    if (!Array.isArray(src) || !src.length) return null;
+    return src.filter(p => p && p.initialStatus === 'field')
+              .map(_cronosConvLabel).filter(s => s.length > 0);
+}
+window._cronosResolveStartersArr = _cronosResolveStartersArr;
 
-    // 1) Fuente de verdad: _savedConvokedPlayers
-    if (window._savedConvokedPlayers && window._savedConvokedPlayers.length) {
-        console.log('[_cronosResolvePlayersArr] primer jugador raw:', JSON.stringify(window._savedConvokedPlayers[0]));
-        playersArr = window._savedConvokedPlayers.map(p => {
+// La etiqueta de UN convocado: "15. CUCO" (+ " (Alevín C)" si es de apoyo).
+// v753 · sacada del `map` de _cronosResolvePlayersArr SIN cambiar una línea,
+// para que `starters` se construya con la misma fórmula que `players`.
+function _cronosConvLabel(p) {
+            if (!p) return '';
             // Intentar TODOS los campos posibles del roster
             const num = p.number || p.dorsal || p.num || '';
             const alias = p.alias || p.name || p.surname || p.playerName || p.displayName || '';
@@ -1106,7 +1120,15 @@ function _cronosResolvePlayersArr() {
                 if (_org) label += ' (' + _org + ')';
             }
             return label;
-        }).filter(s => s.length > 0);
+}
+
+function _cronosResolvePlayersArr() {
+    let playersArr = [];
+
+    // 1) Fuente de verdad: _savedConvokedPlayers
+    if (window._savedConvokedPlayers && window._savedConvokedPlayers.length) {
+        console.log('[_cronosResolvePlayersArr] primer jugador raw:', JSON.stringify(window._savedConvokedPlayers[0]));
+        playersArr = window._savedConvokedPlayers.map(_cronosConvLabel).filter(s => s.length > 0);
         console.log('[_cronosResolvePlayersArr] jugadores desde _savedConvokedPlayers:', playersArr.length, playersArr);
         // Si el mapeo dio 0 pero había elementos, usar cualquier clave con texto
         if (!playersArr.length && window._savedConvokedPlayers.length) {
@@ -1242,6 +1264,7 @@ async function publishConvocationToApp() {
     const extra      = _cronosConvExtra(sv);   // 💥 antes: sv.type (el TIPO de partido)
     // Construir playersArr con la lógica compartida (fuente de verdad → DOM → localStorage)
     const playersArr = _cronosResolvePlayersArr();
+    const startersArr = _cronosResolveStartersArr();
 
     if (!playersArr.length) {
         showToast('⚠️ No hay jugadores convocados. Vuelve y marca jugadores.', 5000);
@@ -1269,11 +1292,17 @@ async function publishConvocationToApp() {
             parentUid:  uid,
             coachUid:   me.uid,
             coachEmail: me.email   || '',
+            // v753b · el NOMBRE, para el imprimible de Dirección (no el correo).
+            coachName:  (typeof window._ccNombreDe === 'function' ? window._ccNombreDe(me) : '') || '',
             category:    me.category    || null,
             subcategory: me.subcategory || null,
             matchDate:  dateStr,
             rival, meettime, kickoff, venue, extra,
             players:    playersArr,
+            // v753 · para el imprimible de Dirección (ver _cronosResolveStartersArr)
+            ...(startersArr ? { starters: startersArr } : {}),
+            matchType:  sv.type    || '',
+            jornada:    sv.jornada || '',
             fullText,
             createdAt:  new Date().toISOString(),
         });
@@ -1365,6 +1394,7 @@ window.publishConvocationToAppV2 = async function() {
 
     // Construir playersArr con la lógica compartida (fuente de verdad → DOM → localStorage)
     const playersArr = _cronosResolvePlayersArr();
+    const startersArr = _cronosResolveStartersArr();
 
     if (!playersArr.length) {
         showToast('⚠️ No hay jugadores convocados. Vuelve y marca jugadores.', 5000);
@@ -1404,12 +1434,18 @@ window.publishConvocationToAppV2 = async function() {
             parentUid:  uid,
             coachUid:   me.uid,
             coachEmail: me.email   || '',
+            // v753b · el NOMBRE, para el imprimible de Dirección (no el correo).
+            coachName:  (typeof window._ccNombreDe === 'function' ? window._ccNombreDe(me) : '') || '',
             category:    me.category    || me._activeRoleData?.category || me.categoryLabel || null,
             subcategory: me.subcategory || me._activeRoleData?.subcategory || null,
             targetRole: role || null,
             matchDate:  dateStr,
             rival, meettime, kickoff, venue, extra,
             players:    playersArr,
+            // v753 · para el imprimible de Dirección (ver _cronosResolveStartersArr)
+            ...(startersArr ? { starters: startersArr } : {}),
+            matchType:  sv.type    || '',
+            jornada:    sv.jornada || '',
             fullText,
             createdAt:  new Date().toISOString(),
         });

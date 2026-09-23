@@ -2693,8 +2693,18 @@
 //        pintaba siempre en el banquillo LOCAL; jugando fuera (que desde v726
 //        fija el calendario) ese banquillo está oculto y la tarjeta no se veía.
 //        Y el orden del banquillo ya no la sube por encima de los suplentes.
-const VERSION = 'v752';
-const CACHE_NAME = 'cronos-cache-v752';
+// v753 · CONVOCATORIA Y PLANIFICACIÓN SEMANAL EN PAPEL. Botón «🖨️ PDF» en la
+//        Convocatoria y la Planificación del entrenador, y «Imprimir /
+//        Descargar PDF» en el «Ver» de Dirección. Mismo motor que el Cuadrante
+//        (rxImprimir). La convocatoria enviada guarda ya `starters` para que
+//        Dirección imprima titulares y suplentes; las antiguas salen en una
+//        sola lista, avisándolo.
+// v754 · EL PDF DICE EL NOMBRE DEL ENTRENADOR, NO SU CORREO. `rxNombreDe`
+//        delega en `_ccNombreDe` (criterio de v741). Los envíos sellan ya
+//        `coachName`; los antiguos se resuelven por `coachUid` contra el censo
+//        del club, y sólo sin nada cae al correo SIN dominio.
+const VERSION = 'v754';
+const CACHE_NAME = 'cronos-cache-v754';
 
 const ASSETS = [
     './',

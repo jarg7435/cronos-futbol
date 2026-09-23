@@ -418,6 +418,17 @@ async function _sdLoadEvents(type) {
             const d = snap;
             const isC = d.type === 'convocatoria';
             const isPlan = d.type === 'planificacion_semanal';
+            // v753 · el aviso abierto, para el botón «Imprimir» (va por
+            // `window` porque el botón es un onclick en línea del overlay).
+            window._sdAvisoAbierto = d;
+            // v753b · el censo de nombres del club (una lectura por sesión,
+            // cacheada en club-chat.js) se pide YA, al abrir el detalle: así
+            // está listo cuando se pulse «Imprimir» y la impresión no tiene
+            // que esperar (un `await` antes de `window.open` haría que el
+            // navegador bloqueara la ventana por no venir de un gesto).
+            if (d.clubId && !d.coachName && typeof window._ccCargarDirectorio === 'function') {
+                window._ccCargarDirectorio(d.clubId).catch(() => {});
+            }
 
             // Mostrar en modal in-app (no alert)
             const overlay = document.createElement('div');
@@ -487,6 +498,13 @@ async function _sdLoadEvents(type) {
                 <div style="text-align:right;margin-top:1rem;">
                     <span style="font-size:0.7rem;color:var(--text-muted);">Enviado: ${d.createdAt?new Date(d.createdAt).toLocaleString('es-ES',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}):''}</span>
                 </div>
+                ${(isC || (isPlan && Array.isArray(d.days))) ? `
+                <button onclick="window.cronosImprimirAviso && window.cronosImprimirAviso(window._sdAvisoAbierto)"
+                    style="width:100%;margin-top:0.9rem;padding:0.6rem;background:#2563eb;
+                           border:1px solid #2563eb;border-radius:8px;color:#fff;
+                           font-weight:700;cursor:pointer;font-size:0.88rem;">
+                    🖨️ Imprimir / Descargar PDF
+                </button>` : ''}
                 <button onclick="(function(){var el=document.getElementById('sd-detail-overlay');if(el)el.remove();})()"
                     style="width:100%;margin-top:0.9rem;padding:0.6rem;background:rgba(88,166,255,0.15);
                            border:1px solid rgba(88,166,255,0.3);border-radius:8px;color:var(--primary);
@@ -755,3 +773,129 @@ function cronosRenderPlanSemanal(d) {
                 </div>`;
 }
 window.cronosRenderPlanSemanal = cronosRenderPlanSemanal;
+
+// ════════════════════════════════════════════════════════════════════
+//  🖨️ v753 · IMPRIMIR UN AVISO ENVIADO (Convocatoria / Planificación)
+//
+//  Traduce el documento de `cronos_notifications` a los datos que piden
+//  rxImprimirConvocatoria / rxImprimirPlanSemanal (reports-export.js), que a
+//  su vez imprimen con `rxImprimir`: el MISMO motor que el Cuadrante.
+//
+//  ⚠️ La planificación enviada NO guarda tipo, equipación y duración por
+//  separado: training-notify.js los une en `note` como
+//  «tipo · equipación · duración». Aquí se separan por su contenido (mismo
+//  criterio que `_lineasDe` de arriba); si algún día viajan estructurados,
+//  mandan los campos.
+// ════════════════════════════════════════════════════════════════════
+const _CRONOS_TIPO_PARTIDO = { liga: 'Liga', copa: 'Copa', amistoso: 'Amistoso', torneo: 'Torneo' };
+
+function _cronosEquipoDeAviso(d) {
+    if (typeof window._cronosTeamRosterLabel === 'function') {
+        const l = window._cronosTeamRosterLabel(d.category, d.subcategory);
+        if (l) return l;
+    }
+    return [d.category, d.subcategory].filter(Boolean).join(' ');
+}
+
+// v753b · QUIÉN ENVIÓ EL AVISO, por su NOMBRE (encargo del autor: la cabecera
+// no debe llevar el correo). Orden: el nombre sellado en el envío (desde
+// v753b) → el censo del club por `coachUid` (avisos anteriores; lo precarga
+// sdViewEventDetail) → el correo SIN dominio, sólo si no hay nada más.
+function _cronosNombreEntrenadorAviso(d) {
+    const n = String(d.coachName || '').trim();
+    if (n) return n;
+    const dir = window._ccState && window._ccState.directorio;
+    if (dir && dir.nombres && d.coachUid && dir.nombres[d.coachUid]) return dir.nombres[d.coachUid];
+    const m = String(d.coachEmail || '').trim();
+    return m.indexOf('@') > 0 ? m.slice(0, m.indexOf('@')) : m;
+}
+
+function _cronosDiaDePlan(dy) {
+    const out = { tipo: '', duracion: '', equipaciones: '', nota: '' };
+    if (dy.tipo || dy.duracion || dy.minutos || dy.equipaciones) {
+        out.tipo = dy.tipo || ''; out.duracion = dy.duracion || dy.minutos || '';
+        out.equipaciones = dy.equipaciones || ''; out.nota = dy.note || '';
+        return out;
+    }
+    const resto = [];
+    String(dy.note || '').split(/\s*[•·|]\s*/).map(s => s.trim()).filter(Boolean).forEach((t, i) => {
+        const low = t.toLowerCase();
+        if (!out.tipo && /^(entrenamiento|descanso|partido\b.*|amistoso|liga|copa|torneo)$/.test(low)) out.tipo = t;
+        else if (!out.duracion && /\bmin\w*\b|^\d+\s*(h|')?$/.test(low)) out.duracion = t;
+        else if (!out.equipaciones && /equip|ch[aá]ndal|ropa|camiseta|peto/.test(low)) out.equipaciones = t;
+        else resto.push(t);
+    });
+    // Formato del entrenador: el trozo que queda en medio es la equipación.
+    if (!out.equipaciones && out.tipo && resto.length && dy.note && /·/.test(dy.note)) out.equipaciones = resto.shift();
+    out.nota = resto.join(' · ');
+    return out;
+}
+
+window.cronosImprimirAviso = function (d) {
+    if (!d) return;
+    if (typeof window.rxImprimirConvocatoria !== 'function' || typeof window.rxImprimirPlanSemanal !== 'function') {
+        if (typeof showToast === 'function') showToast('⚠️ El módulo de impresión no está cargado', 3500);
+        return;
+    }
+    const me = window._cronosCurrentUser || {};
+    const enviado = d.createdAt
+        ? 'Enviado: ' + new Date(d.createdAt).toLocaleString('es-ES', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+        : '';
+
+    if (d.type === 'convocatoria') {
+        const players = Array.isArray(d.players) ? d.players : [];
+        // `starters` sólo existe desde v753. Si no está, o no casa con nadie,
+        // NO se sabe quién es titular (null), y el documento lo dice.
+        const st = Array.isArray(d.starters) ? new Set(d.starters.map(String)) : null;
+        const casa = st && players.some(p => st.has(String(p)));
+        const usable = st && (casa || st.size === 0);
+        const jugadores = players.map((p, i) => {
+            const f = (typeof window._cronosFormatConvokedPlayer === 'function')
+                ? window._cronosFormatConvokedPlayer(p, i)
+                : { num: String(i + 1), name: String(p == null ? '' : p), origin: '' };
+            return { num: f.num, name: f.name, origin: f.origin, titular: usable ? st.has(String(p)) : null };
+        });
+        window.rxImprimirConvocatoria({
+            club:         me.clubName || '',
+            equipo:       _cronosEquipoDeAviso(d),
+            tipo:         _CRONOS_TIPO_PARTIDO[d.matchType] || d.matchType || '',
+            jornada:      d.jornada || '',
+            fecha:        d.matchDate && d.matchDate !== '—' ? d.matchDate : '',
+            hora:         d.kickoff ? d.kickoff + ' h' : '',
+            presentacion: d.meettime ? d.meettime + ' h' : '',
+            lugar:        d.venue || '',
+            rival:        d.rival || '',
+            mensaje:      d.extra || '',
+            estado:       [_cronosNombreEntrenadorAviso(d) ? 'Entrenador: ' + _cronosNombreEntrenadorAviso(d) : '', enviado].filter(Boolean),
+            jugadores,
+            pie: 'Chronos Fútbol · convocatoria enviada por el cuerpo técnico e impresa desde el Panel de Dirección.',
+        });
+        return;
+    }
+
+    if (d.type === 'planificacion_semanal') {
+        const lunes = d.weekStartDate ? new Date(d.weekStartDate + 'T12:00:00') : null;
+        const fLarga = (x) => x.toLocaleDateString('es-ES', { day: 'numeric', month: 'long', year: 'numeric' });
+        const dom = lunes ? new Date(lunes.getTime() + 6 * 86400000) : null;
+        const dias = (Array.isArray(d.days) ? d.days : []).map((dy, i) => {
+            const partes = _cronosDiaDePlan(dy || {});
+            let fecha = '';
+            if (lunes) {
+                const x = new Date(lunes.getTime() + i * 86400000);
+                fecha = String(x.getDate()).padStart(2, '0') + '/' + String(x.getMonth() + 1).padStart(2, '0');
+            }
+            return { dia: dy.day || '', fecha, hora: dy.time || '', lugar: dy.venue || '',
+                     tipo: partes.tipo, duracion: partes.duracion, equipaciones: partes.equipaciones, nota: partes.nota };
+        });
+        window.rxImprimirPlanSemanal({
+            club:   me.clubName || '',
+            equipo: _cronosEquipoDeAviso(d),
+            desde:  lunes ? fLarga(lunes) : '',
+            hasta:  dom ? fLarga(dom) : '',
+            estado: [_cronosNombreEntrenadorAviso(d) ? 'Entrenador: ' + _cronosNombreEntrenadorAviso(d) : '', enviado].filter(Boolean),
+            notas:  [d.location ? 'Ubicación: ' + d.location : '', d.notes || ''].filter(Boolean).join('\n'),
+            dias,
+            pie: 'Chronos Fútbol · planificación enviada por el cuerpo técnico e impresa desde el Panel de Dirección.',
+        });
+    }
+};

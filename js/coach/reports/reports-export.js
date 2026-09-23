@@ -441,8 +441,13 @@
                     '</div>' +
                 '</div>' +
                 (opts.cuerpo || '') +
-                '<div class="rx-pie">Chronos Fútbol · documento generado desde el Panel de Dirección. ' +
-                    'Los datos proceden de los informes enviados por los entrenadores.</div>' +
+                // v753 · `pie` opcional: la convocatoria y la planificación se
+                // imprimen TAMBIÉN desde el panel del entrenador, y ahí «generado
+                // desde el Panel de Dirección» sería mentira. Sin `pie`, el texto
+                // de siempre (lo que ya imprimían el cuadrante y los informes).
+                '<div class="rx-pie">' + (opts.pie ? _rxEsc(opts.pie)
+                    : 'Chronos Fútbol · documento generado desde el Panel de Dirección. ' +
+                      'Los datos proceden de los informes enviados por los entrenadores.') + '</div>' +
                 // ⚠️ En el visor interno ESTE botón sobra: la barra de arriba ya
                 // trae el suyo, y el de dentro imprimiría igual pero sin el
                 // «✕ Cerrar» al lado. En la ventana nueva se queda, que es el
@@ -468,6 +473,210 @@
             titulo:   titulo,
             doc:      montarDoc(true),    // ventana nueva: con auto-print
             docVisor: montarDoc(false),   // visor interno: sin él
+        });
+    };
+
+    // ════════════════════════════════════════════════════════════════
+    //  🖨️ v753 · CONVOCATORIA Y PLANIFICACIÓN SEMANAL EN PAPEL
+    //
+    //  Encargo del autor (implementar.txt 2026-09-23 + capturas 10730-10735):
+    //  que la Convocatoria (entrenador y Dirección) y la Planificación Semanal
+    //  (entrenador y Dirección) se impriman «idéntico al Cuadrante Semanal de
+    //  Instalaciones»: cabecera corporativa, metadatos y tablas.
+    //
+    //  🔑 NO ES UN MOTOR NUEVO: los dos documentos se montan con
+    //  `window.rxImprimir`, el MISMO que imprime el cuadrante
+    //  (cuadrante-club.js). Cabecera, CSS de papel, auto-print en PC y visor
+    //  interno en iPad (v681) salen de ahí. Aquí sólo se compone el CUERPO.
+    //
+    //  🔑 CADA DOCUMENTO TIENE DOS FUENTES y por eso recibe DATOS YA
+    //  NORMALIZADOS, no un documento de Firestore: el entrenador imprime lo que
+    //  tiene en pantalla (aún sin enviar) y Dirección imprime lo que se le
+    //  envió. Quien llama traduce su forma a la de aquí.
+    // ════════════════════════════════════════════════════════════════
+    // rxNombreDe(usuario) → el NOMBRE de una persona, nunca su correo.
+    //  v753b · encargo del autor: la cabecera decía «Entrenador:
+    //  arinagazone@gmail.com». Se delega en `_ccNombreDe` (club-chat.js), el
+    //  criterio que ya fijó v741 —`displayName`, luego nombre+apellidos, luego
+    //  la plaza—, porque `name` NO existe en este proyecto. El respaldo local
+    //  es sólo por si ese módulo no estuviera cargado.
+    window.rxNombreDe = function (u) {
+        if (!u) return '';
+        if (typeof window._ccNombreDe === 'function') return window._ccNombreDe(u);
+        const l = function (v) { return String(v == null ? '' : v).trim(); };
+        const n = l(u.displayName) || [l(u.firstName), l(u.lastName)].filter(Boolean).join(' ');
+        if (n) return n;
+        const m = l(u.email);
+        return m.indexOf('@') > 0 ? m.slice(0, m.indexOf('@')) : m;
+    };
+
+    function _rxFila(etq, val) {
+        if (val == null || String(val).trim() === '') return '';
+        return '<tr><td class="rx-l" style="width:34%;font-weight:700;color:#1d4ed8;">' + _rxEsc(etq) +
+               '</td><td class="rx-l">' + _rxEsc(val) + '</td></tr>';
+    }
+
+    function _rxTablaJugadores(lista, conPapel) {
+        if (!lista.length) return '<div class="rx-vacio">Ninguno.</div>';
+        return '<table class="rx-tabla"><thead><tr>' +
+                '<th style="width:70px;">Dorsal</th><th class="rx-l">Jugador</th>' +
+                (conPapel ? '<th style="width:110px;">Papel</th>' : '') +
+                '<th class="rx-l" style="width:30%;">Observaciones</th>' +
+            '</tr></thead><tbody>' +
+            lista.map(function (j) {
+                return '<tr>' +
+                    '<td><span class="rx-dorsal">' + _rxEsc(j.num || '—') + '</span></td>' +
+                    '<td class="rx-l" style="font-weight:700;color:#111827;">' + _rxEsc(j.name || '—') + '</td>' +
+                    (conPapel ? '<td>' + (j.titular ? '<strong style="color:#c2410c;">TITULAR</strong>' : 'Suplente') + '</td>' : '') +
+                    '<td class="rx-l">' + (j.origin ? 'Jugador de apoyo · ' + _rxEsc(j.origin) : '') + '</td>' +
+                '</tr>';
+            }).join('') +
+            '</tbody></table>';
+    }
+
+    // rxImprimirConvocatoria({ club, equipo, tipo, jornada, fecha, hora,
+    //   presentacion, lugar, rival, mensaje, estado, pie,
+    //   jugadores: [{ num, name, origin, titular: true|false|null }] })
+    //  `titular: null` = no se sabe (convocatorias enviadas antes de v753, que
+    //  no guardaban quién salía de inicio): se imprime UNA lista y se dice por
+    //  qué, en vez de inventarse una división en titulares y suplentes.
+    window.rxImprimirConvocatoria = function (c) {
+        c = c || {};
+        const jug = (c.jugadores || []).filter(function (j) { return j && (j.name || j.num); });
+        const conoce = jug.length > 0 && jug.every(function (j) { return j.titular === true || j.titular === false; });
+        const tit = conoce ? jug.filter(function (j) { return j.titular; }) : [];
+        const sup = conoce ? jug.filter(function (j) { return !j.titular; }) : [];
+
+        const datos =
+            '<div class="rx-block"><div class="rx-block-title">Datos del partido</div>' +
+            '<table class="rx-tabla"><tbody>' +
+                _rxFila('Equipo', c.equipo) +
+                _rxFila('Rival', c.rival ? 'vs ' + c.rival : '') +
+                _rxFila('Tipo de partido', c.tipo) +
+                _rxFila('Jornada', c.jornada) +
+                _rxFila('Fecha', c.fecha) +
+                _rxFila('Hora del partido', c.hora) +
+                _rxFila('Hora de presentación', c.presentacion) +
+                _rxFila('Lugar / Campo', c.lugar) +
+            '</tbody></table></div>';
+
+        const resumen =
+            '<div style="background:#eff6ff;border:2px solid #2563eb;border-radius:6px;padding:8px 12px;' +
+                 'margin-bottom:14px;display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap;">' +
+                '<div style="font-size:11px;font-weight:800;color:#1d4ed8;">TOTAL DE CONVOCADOS</div>' +
+                '<div style="font-size:11px;font-weight:800;color:#111827;">' + jug.length + ' convocados' +
+                    (conoce ? ' · ' + tit.length + ' titulares · ' + sup.length + ' suplentes' : '') + '</div>' +
+            '</div>';
+
+        let listas;
+        if (conoce) {
+            listas =
+                '<div class="rx-block"><div class="rx-block-title">Titulares (' + tit.length + ')</div>' +
+                    _rxTablaJugadores(tit, false) + '</div>' +
+                '<div class="rx-block"><div class="rx-block-title">Suplentes (' + sup.length + ')</div>' +
+                    _rxTablaJugadores(sup, false) + '</div>';
+        } else {
+            listas =
+                '<div class="rx-block"><div class="rx-block-title">Convocados (' + jug.length + ')</div>' +
+                    _rxTablaJugadores(jug, false) +
+                    (jug.length ? '<div style="font-size:8.5px;color:#6b7280;margin-top:6px;">Esta convocatoria no ' +
+                        'registra qué jugadores salen de titulares (se envió antes de que la aplicación lo guardara).</div>' : '') +
+                '</div>';
+        }
+
+        const mensaje = c.mensaje
+            ? '<div class="rx-block"><div class="rx-block-title">Mensaje del entrenador</div>' +
+              '<div style="font-size:11px;color:#374151;background:#fff7ed;border:1px solid #fdba74;' +
+                  'border-radius:6px;padding:8px 12px;white-space:pre-wrap;">' + _rxEsc(c.mensaje) + '</div></div>'
+            : '';
+
+        return window.rxImprimir({
+            titulo:    'Convocatoria' + (c.rival ? ' · vs ' + c.rival : ''),
+            subtitulo: [c.equipo, c.fecha].filter(Boolean).join(' · '),
+            // `estado`: cadena o lista de líneas (Entrenador, Enviado…).
+            meta:      [c.club ? 'Club: ' + c.club : ''].concat(c.estado || []),
+            cuerpo:    '<div class="rx-block"><div class="rx-block-title">Convocatoria oficial</div>' + resumen + '</div>' +
+                       datos + listas + mensaje,
+            pie:       c.pie || 'Chronos Fútbol · convocatoria generada desde la aplicación del club.',
+            apaisado:  false,
+        });
+    };
+
+    // rxImprimirPlanSemanal({ club, equipo, desde, hasta, estado, pie, notas,
+    //   dias: [{ dia, fecha, tipo, hora, duracion, lugar, equipaciones, nota }] })
+    //  Siempre siete filas: un día sin nada también se lee («Descanso»), igual
+    //  que en la tarjeta de pantalla.
+    window.rxImprimirPlanSemanal = function (p) {
+        p = p || {};
+        const dias = p.dias || [];
+        let nEnt = 0, nPar = 0, nDes = 0;
+        const filas = dias.map(function (d) {
+            const tipo = String(d.tipo || '').trim();
+            const vacio = !tipo && !d.hora && !d.lugar && !d.duracion && !d.equipaciones && !d.nota;
+            const descanso = vacio || /^descanso\b/i.test(tipo);
+            const partido = !descanso && /\b(partido|amistoso|liga|copa|torneo)\b/i.test(tipo + ' ' + (d.nota || ''));
+            if (descanso) nDes++; else if (partido) nPar++; else nEnt++;
+            const fondo = partido ? 'background:#ecfdf5;' : descanso ? 'background:#f9fafb;' : '';
+            const tipoCap = tipo ? tipo.charAt(0).toUpperCase() + tipo.slice(1) : '';
+            const tipoTxt = descanso ? '<em style="color:#9ca3af;">Descanso</em>'
+                : (partido ? '<strong style="color:#047857;">⚽ ' + _rxEsc(tipoCap || 'Partido') + '</strong>'
+                           : _rxEsc(tipoCap || '—'));
+            // Un descanso no tiene hora, lugar ni equipación: la parrilla del
+            // entrenador suele conservar los valores de la semana copiada, y en
+            // papel «Descanso · 20:00 · CAMPO» se leería como una convocatoria.
+            const c = function (v) { return descanso || !v ? '<span class="rx-cero">—</span>' : _rxEsc(v); };
+            return '<tr style="' + fondo + '">' +
+                '<td class="rx-l" style="font-weight:800;color:#111827;">' + _rxEsc(d.dia || '') +
+                    (d.fecha ? '<div style="font-size:9px;color:#6b7280;font-weight:600;">' + _rxEsc(d.fecha) + '</div>' : '') + '</td>' +
+                '<td>' + tipoTxt + '</td>' +
+                '<td>' + c(d.hora) + '</td>' +
+                '<td>' + c(d.duracion) + '</td>' +
+                '<td class="rx-l">' + c(d.lugar) + '</td>' +
+                '<td class="rx-l">' + c(d.equipaciones) + '</td>' +
+                '<td class="rx-l">' + (d.nota ? _rxEsc(d.nota) : '') + '</td>' +
+            '</tr>';
+        }).join('');
+
+        const resumen =
+            '<div style="background:#eff6ff;border:2px solid #2563eb;border-radius:6px;padding:8px 12px;' +
+                 'margin-bottom:10px;display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap;">' +
+                '<div style="font-size:11px;font-weight:800;color:#1d4ed8;">RESUMEN DE LA SEMANA</div>' +
+                '<div style="font-size:11px;font-weight:800;color:#111827;">' +
+                    nEnt + ' entrenamiento' + (nEnt === 1 ? '' : 's') + ' · ' +
+                    nPar + ' partido' + (nPar === 1 ? '' : 's') + ' · ' +
+                    nDes + ' descanso' + (nDes === 1 ? '' : 's') + '</div>' +
+            '</div>';
+
+        const tabla = dias.length
+            ? '<table class="rx-tabla"><thead><tr>' +
+                  '<th class="rx-l" style="width:110px;">Día</th><th>Tipo de actividad</th><th>Hora</th>' +
+                  '<th>Duración</th><th class="rx-l">Lugar</th><th class="rx-l">Equipación</th>' +
+                  '<th class="rx-l">Observaciones</th>' +
+              '</tr></thead><tbody>' + filas + '</tbody></table>'
+            : '<div class="rx-vacio">Esta semana no tiene ninguna actividad registrada.</div>';
+
+        const leyenda = '<div style="display:flex;gap:12px;flex-wrap:wrap;font-size:8.5px;color:#4b5563;margin-top:6px;">' +
+            '<span><span style="display:inline-block;width:9px;height:9px;background:#ffffff;border:1px solid #d1d5db;vertical-align:-1px;"></span> Entrenamiento</span>' +
+            '<span><span style="display:inline-block;width:9px;height:9px;background:#ecfdf5;border:1px solid #6ee7b7;vertical-align:-1px;"></span> Partido</span>' +
+            '<span><span style="display:inline-block;width:9px;height:9px;background:#f9fafb;border:1px solid #e5e7eb;vertical-align:-1px;"></span> Descanso</span>' +
+        '</div>';
+
+        const notas = p.notas
+            ? '<div class="rx-block"><div class="rx-block-title">Notas</div>' +
+              '<div style="font-size:11px;color:#374151;background:#f8fafc;border-radius:6px;padding:8px 12px;' +
+                  'white-space:pre-wrap;">' + _rxEsc(p.notas) + '</div></div>'
+            : '';
+
+        return window.rxImprimir({
+            titulo:    'Planificación semanal · entrenamientos y partidos',
+            subtitulo: [p.equipo, (p.desde && p.hasta) ? 'Semana del ' + p.desde + ' al ' + p.hasta
+                                                        : (p.desde ? 'Semana del ' + p.desde : '')]
+                           .filter(Boolean).join(' · '),
+            meta:      [p.club ? 'Club: ' + p.club : ''].concat(p.estado || []),
+            cuerpo:    '<div class="rx-block"><div class="rx-block-title">Estructura semanal</div>' +
+                           resumen + tabla + leyenda + '</div>' + notas,
+            pie:       p.pie || 'Chronos Fútbol · planificación generada desde la aplicación del club.',
+            apaisado:  true,   // 7 columnas: en vertical el lugar y la equipación se parten
         });
     };
 

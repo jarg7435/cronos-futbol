@@ -150,6 +150,7 @@ function renderTrainingWeek() {
 
             <div style="margin-top:0.8rem; display:flex; gap:0.5rem; justify-content:flex-end; flex-wrap:wrap;">
                 <button class="btn" onclick="(function(){if(typeof saveTrainingWeek==='function'){try{saveTrainingWeek();}catch(e){}} if(typeof _cronosOpenRoleSelector==='function'){_cronosOpenRoleSelector('entrenamiento');}else if(typeof openTrainingNotification==='function'){openTrainingNotification();}})()" style="padding:0.45rem 1.1rem; font-size:0.76rem; background:rgba(88,166,255,0.15); border:1px solid rgba(88,166,255,0.4); color:var(--primary); font-weight:700;">📲 ENVIAR</button>
+                <button class="btn" onclick="printTrainingWeek()" title="Imprimir o guardar como PDF" style="padding:0.45rem 0.9rem; font-size:0.76rem; background:rgba(37,99,235,0.18); border:1px solid rgba(37,99,235,0.55); color:#79c0ff; font-weight:700;">🖨️ PDF</button>
                 <button class="btn" onclick="copyTrainingWeek()" style="padding:0.45rem 0.9rem; font-size:0.76rem; background:rgba(240,136,62,0.1); border:1px solid rgba(240,136,62,0.3); color:#f0883e;">📋 COPIAR</button>
                 ${localStorage.getItem('cronos_week_clipboard') ? '<button class="btn" onclick="pasteTrainingWeek()" style="padding:0.45rem 0.9rem; font-size:0.76rem; background:rgba(121,192,255,0.1); border:1px solid rgba(121,192,255,0.35); color:#79c0ff;">📋 PEGAR</button>' : ''}
                 <button class="btn" onclick="clearTrainingWeek()" style="padding:0.45rem 0.9rem; font-size:0.76rem; background:rgba(255,88,88,0.08); border:1px solid rgba(255,88,88,0.25); color:#ff5858;">🗑️ LIMPIAR</button>
@@ -196,6 +197,50 @@ function saveTrainingWeek() {
 
     if (typeof showToast === 'function') showToast('✅ Semana guardada correctamente', 3000);
 }
+
+// 🖨️ v753 · IMPRIMIR / PDF DE LA SEMANA EN PANTALLA
+//  Lee los MISMOS inputs que saveTrainingWeek (lo que hay delante, guardado o
+//  no) y lo imprime con el motor del Cuadrante (rxImprimirPlanSemanal →
+//  rxImprimir). Siempre siete filas: un día vacío sale como «Descanso».
+function printTrainingWeek() {
+    if (typeof window.rxImprimirPlanSemanal !== 'function') {
+        if (typeof showToast === 'function') showToast('⚠️ El módulo de impresión no está cargado', 3500);
+        return;
+    }
+    const monday = _getWeekMonday(window._trWeekOffset || 0);
+    const sunday = new Date(monday); sunday.setDate(monday.getDate() + 6);
+    const NOMBRES = ['Lunes','Martes','Miércoles','Jueves','Viernes','Sábado','Domingo'];
+    const leer = (ds, campo) => {
+        const el = document.querySelector('[data-day="' + ds + '"][data-field="' + campo + '"]');
+        return el ? String(el.value || '').trim() : '';
+    };
+    const dias = NOMBRES.map((dia, i) => {
+        const f = new Date(monday); f.setDate(monday.getDate() + i);
+        const ds = _cronosLocalDateKey(f);
+        return {
+            dia,
+            fecha: String(f.getDate()).padStart(2, '0') + '/' + String(f.getMonth() + 1).padStart(2, '0'),
+            tipo: leer(ds, 'tipo'), hora: leer(ds, 'hora'), duracion: leer(ds, 'duracion'),
+            lugar: leer(ds, 'lugar'), equipaciones: leer(ds, 'equipaciones'),
+        };
+    });
+    const me = window._cronosCurrentUser || {};
+    const cat = me._activeRoleData?.category || me.category || '';
+    const sub = me._activeRoleData?.subcategory || me.subcategory || '';
+    const equipo = (typeof window._cronosTeamRosterLabel === 'function' && window._cronosTeamRosterLabel(cat, sub))
+        || [cat, sub].filter(Boolean).join(' ');
+    const fLarga = d => d.toLocaleDateString('es-ES', { day: 'numeric', month: 'long', year: 'numeric' });
+    window.rxImprimirPlanSemanal({
+        club:   me.clubName || '',
+        equipo,
+        desde:  fLarga(monday),
+        hasta:  fLarga(sunday),
+        estado: (window.rxNombreDe && window.rxNombreDe(me)) ? 'Entrenador: ' + window.rxNombreDe(me) : '',
+        dias,
+        pie: 'Chronos Fútbol · planificación generada desde el panel del entrenador.',
+    });
+}
+window.printTrainingWeek = printTrainingWeek;
 
 function clearTrainingWeek() {
     if (!confirm('¿Limpiar todos los datos de esta semana?')) return;
