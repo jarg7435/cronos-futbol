@@ -209,7 +209,9 @@ console.log('\n── PARTE 2 · la tarjeta del aviso dentro de la hoja ──')
 
     ok('2a · la etiqueta ENTRENAMIENTO sigue ahí', /📅 ENTRENAMIENTO/.test(h));
     ok('2b · y la tarjeta sd-card', /class="sd-card"/.test(h));
-    ok('2c · con el autor del envío', h.includes('Enviado por ' + escHtml('ana@x.com')));
+    // v755 · el autor por su nombre: sin nombre ni censo, el correo SIN dominio.
+    ok('2c · con el autor del envío (nunca el correo entero)',
+        h.includes('Enviado por ana') && !h.includes('ana@x.com'));
     ok('2d · el sitio en la subLínea', h.includes(escHtml('Campo 1')));
     ok('2e · el botón de ver detalle', /sdViewEventDetail\('t1'\)/.test(h));
     ok('2f · y el de descartar', /sdDeleteNotif\('t1'\)/.test(h));

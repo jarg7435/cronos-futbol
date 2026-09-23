@@ -238,6 +238,7 @@ async function autoDispatchMatchReports() {
                 clubId:        me.clubId || null,
                 coachUid:      me.uid,
                 coachEmail:    me.email,
+                coachName:     (typeof window._ccNombreDe === 'function' ? window._ccNombreDe(me) : '') || '',   // v755
                 matchDate:     new Date().toISOString().split('T')[0],
                 rival:         rivalName,
                 scoreHome,
@@ -432,6 +433,7 @@ async function autoDispatchMatchReports() {
                 clubId:        me.clubId || null,
                 coachUid:      me.uid,
                 coachEmail:    me.email,
+                coachName:     (typeof window._ccNombreDe === 'function' ? window._ccNombreDe(me) : '') || '',   // v755
                 matchDate:     new Date().toISOString().split('T')[0],
                 rival:         rivalName,
                 scoreHome,
@@ -548,6 +550,7 @@ async function autoDispatchMatchReports() {
                     clubId:        me.clubId || null,
                     coachUid:      me.uid,
                     coachEmail:    me.email,
+                    coachName:     (typeof window._ccNombreDe === 'function' ? window._ccNombreDe(me) : '') || '',   // v755
                     matchDate:     new Date().toISOString().split('T')[0],
                     rival:         rivalName,
                     scoreHome,

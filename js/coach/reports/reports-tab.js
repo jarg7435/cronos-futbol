@@ -424,6 +424,9 @@ async function _sdLoadReports() {
                     myTeamRole:    r.myTeamRole,   // FIX: propagar rol del equipo para el cálculo V/D/E correcto (visitante)
                     coachEmail:    r.coachEmail,
                     coachUid:      r.coachUid,
+                    // v755 · el NOMBRE del autor, sellado desde v755 (antes no
+                    // viajaba y la ficha firmaba con el correo). Ver abajo.
+                    coachName:     r.coachName,
                     createdAt:     r.createdAt,
                     // Campos opcionales (enriquecen la cabecera)
                     category:      r.category,
@@ -504,6 +507,30 @@ async function _sdLoadReports() {
         // El índice de deduplicación era un andamio: fuera antes de que estos
         // objetos lleguen a window._sdMatchData y al motor de informes _RP.
         Object.values(matches).forEach(m => { delete m._byPlayer; });
+
+        // ══════════════════════════════════════════════════════════════
+        //  👤 v755 · LA AUTORÍA, POR NOMBRE (implementar.txt 2026-09-23)
+        // ══════════════════════════════════════════════════════════════
+        //  La ficha, el motor _RP y el PDF/CSV firmaban con `coachEmail`.
+        //  Los informes ya escritos no llevan `coachName`, pero el censo del
+        //  club YA está leído arriba (`_sdUserDocs`, paso 2): se resuelve el
+        //  `coachUid` contra él sin tocar un solo documento ni hacer otra
+        //  consulta. Se sella en el objeto agregado, que es lo que reciben la
+        //  tarjeta, el motor y la exportación (ver la nota de v737 arriba).
+        {
+            const _sdNombres = {};
+            if (typeof window._ccNombreDe === 'function') {
+                _sdUserDocs.forEach(u => {
+                    const n = window._ccNombreDe({ uid: u.id, ...u });
+                    if (n) _sdNombres[u.id] = n;
+                });
+            }
+            Object.values(matches).forEach(m => {
+                if (typeof window._ccNombreAutor === 'function') {
+                    m.coachName = window._ccNombreAutor(m, _sdNombres) || m.coachName;
+                }
+            });
+        }
 
         // Ordenar por fecha descendente
         const sorted = Object.values(matches).sort((a, b) =>
@@ -747,7 +774,7 @@ async function _sdLoadReports() {
                             <span>📅 ${dateStr}</span>
                             ${score !== '—' ? `<span>⚽ <strong style="color:${rCol};">${score}</strong></span>` : ''}
                             ${m.category ? `<span style="color:#58a6ff;">${escapeHtml(m.category)}</span>` : ''}
-                            <span>👤 ${escapeHtml(m.coachEmail||'Entrenador')}</span>
+                            <span>👤 ${escapeHtml(m.coachName||'Entrenador')}</span>
                         </div>
                     </div>
                     <div style="text-align:right;flex-shrink:0;display:flex;flex-direction:column;align-items:flex-end;gap:3px;">

@@ -2834,6 +2834,14 @@ window.ppNotifsByType = async function(type) {
 
         items.sort((a,b) => (b.createdAt||'').localeCompare(a.createdAt||''));
 
+        // 👤 v755 · «Enviado por» con el NOMBRE, no el correo. Los avisos
+        // anteriores a v753b no llevan `coachName`: se resuelven por
+        // `coachUid` contra el censo del club (una lectura por sesión,
+        // cacheada en club-chat.js; si falla, se pinta el correo sin dominio).
+        if (clubId && items.some(it => !it.coachName) && typeof window._ccCargarDirectorio === 'function') {
+            await window._ccCargarDirectorio(clubId).catch(() => {});
+        }
+
         // Auto-borrar exceso
         if (items.length > MAX) {
             const toDelete = items.splice(MAX);
@@ -2984,7 +2992,7 @@ window.ppNotifsByType = async function(type) {
                 ${d.extra?`<div style="font-size:0.85rem;padding:0.8rem;background:rgba(240,136,62,0.06);border:1px solid rgba(240,136,62,0.15);border-radius:8px;margin-bottom:0.8rem;font-style:italic;">💬 ${typeof escapeHtml==='function'?escapeHtml(d.extra):d.extra}</div>`:''}
 
                 <div style="font-size:0.68rem;color:var(--text-muted);text-align:right;margin-bottom:0.8rem;">
-                    Enviado por: ${typeof escapeHtml==='function'?escapeHtml(d.coachEmail||'Entrenador'):d.coachEmail||'Entrenador'} · ${d.createdAt?new Date(d.createdAt).toLocaleString('es-ES',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}):''}
+                    Enviado por: ${(() => { const a = (typeof window._ccNombreAutor === 'function' ? window._ccNombreAutor(d) : String(d.coachName || d.coachEmail || '').split('@')[0].trim()) || 'Entrenador'; return typeof escapeHtml==='function' ? escapeHtml(a) : a; })()} · ${d.createdAt?new Date(d.createdAt).toLocaleString('es-ES',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}):''}
                 </div>
 
                 <button onclick="(function(){var el=document.getElementById('pp-notif-detail-overlay');if(el)el.remove();})()"

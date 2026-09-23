@@ -510,6 +510,17 @@
         return m.indexOf('@') > 0 ? m.slice(0, m.indexOf('@')) : m;
     };
 
+    // _rxAutor(m) → quién firma un informe: `_ccNombreAutor` (club-chat.js),
+    //  nombre sellado → censo → correo SIN dominio. Nunca el correo entero.
+    function _rxAutor(m) {
+        if (!m) return '';
+        if (typeof window._ccNombreAutor === 'function') return window._ccNombreAutor(m);
+        const n = String(m.coachName || '').trim();
+        if (n) return n;
+        const e = String(m.coachEmail || '').trim();
+        return e.indexOf('@') > 0 ? e.slice(0, e.indexOf('@')) : e;
+    }
+
     function _rxFila(etq, val) {
         if (val == null || String(val).trim() === '') return '';
         return '<tr><td class="rx-l" style="width:34%;font-weight:700;color:#1d4ed8;">' + _rxEsc(etq) +
@@ -1033,7 +1044,8 @@
             ['Campo', m.venue || '—'],
             ['Localía', m.myTeamRole === 'away' ? 'Visitante' : 'Local'],
             ['Resultado', v.marcador + (v.veredicto ? ' (' + v.veredicto + ')' : '')],
-            ['Entrenador', m.coachEmail || '—'],
+            // v755 · por su NOMBRE, no su correo (mismo criterio que v753b).
+            ['Entrenador', _rxAutor(m) || '—'],
             ['Convocados', jug.length],
         ];
         if (hayPR) {
@@ -1093,7 +1105,7 @@
             meta: [
                 meta.club ? 'Club: ' + meta.club : '',
                 [m.category, m.subcategory].filter(Boolean).join(' '),
-                m.coachEmail || '',
+                _rxAutor(m) ? 'Entrenador: ' + _rxAutor(m) : '',
             ],
             // 🔑 Apaisado: el Gantt del motor es una línea temporal por
             // jugador y en vertical se parte por la mitad.

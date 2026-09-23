@@ -658,6 +658,7 @@ window._executeReportsSend = async function(method) {
                                     clubId:        me.clubId || null,
                                     coachUid:      me.uid,
                                     coachEmail:    me.email,
+                                    coachName:     (typeof window._ccNombreDe === 'function' ? window._ccNombreDe(me) : '') || '',   // v755
                                     matchDate:     new Date().toISOString().split('T')[0],
                                     rival:         rivalName,
                                     scoreHome,
@@ -874,6 +875,7 @@ window._executeReportsSend = async function(method) {
                 await setDoc(doc(db, 'cronos_player_reports', rptId), {
                     matchId, type: 'collective_match_report', clubId: me.clubId || null,
                     coachUid: me.uid, coachEmail: me.email,
+                    coachName: (typeof window._ccNombreDe === 'function' ? window._ccNombreDe(me) : '') || '',   // v755
                     matchDate: new Date().toISOString().split('T')[0],
                     rival: rivalName, scoreHome, scoreAway,
                     myTeamRole: _cMyTeamKey(),   // 'home' | 'away' — perspectiva del entrenador (resultado V/D/E correcto)

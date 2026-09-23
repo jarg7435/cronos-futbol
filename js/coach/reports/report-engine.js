@@ -538,7 +538,11 @@ const _RP = (() => {
             `<span>⏱ <span style="color:rgba(255,255,255,0.7);">${durStr}</span></span>` +
             (stopMin > 0 ? `<span>⌛ Descuento: <strong style="color:#58a6ff;">+${stopMin}'</strong></span>` : '') +
             (m.venue ? `<span>📍 ${esc(m.venue)}</span>` : '') +
-            `<span>👤 ${esc(m.coachEmail || 'Entrenador')}</span>` +
+            // v755 · el AUTOR por su NOMBRE, nunca el correo entero. El motor
+            // es puro (sin globales): `coachName` lo resuelven los agregadores
+            // con `_ccNombreAutor` (club-chat.js); aquí sólo el último recurso.
+            `<span>👤 ${esc(String(m.coachName || '').trim() ||
+                String(m.coachEmail || '').split('@')[0].trim() || 'Entrenador')}</span>` +
             `</div>` +
             `</div>`
         );

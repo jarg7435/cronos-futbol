@@ -202,6 +202,13 @@ async function _sdLoadEvents(type) {
             }
         }
 
+        // 👤 v755 · «Enviado por» con el NOMBRE: los avisos sin `coachName`
+        // (anteriores a v753b) se resuelven contra el censo del club, una
+        // lectura por sesión cacheada en club-chat.js.
+        if (clubId && items.some(it => !it.coachName) && typeof window._ccCargarDirectorio === 'function') {
+            await window._ccCargarDirectorio(clubId).catch(() => {});
+        }
+
         if (!items.length) {
             const label = type === 'convocatoria' ? 'convocatorias' : 'avisos de entrenamiento';
             // ⚠️ v593 · UN VACÍO POR ACOTAMIENTO NO ES EL MISMO VACÍO. Si al
@@ -362,7 +369,7 @@ async function _sdLoadEvents(type) {
                     <div style="font-weight:700;font-size:0.92rem;margin-bottom:0.2rem;">${title}</div>
                     <div style="font-size:0.75rem;color:var(--text-muted);">
                         ${isConv && d.players ? `👥 ${d.players.length} convocados · ` : ''}
-                        ${d.coachEmail ? 'Enviado por ' + escapeHtml(d.coachEmail) : ''}
+                        ${(d.coachName || d.coachEmail) ? 'Enviado por ' + escapeHtml(_cronosNombreEntrenadorAviso(d)) : ''}
                         ${subLine}
                     </div>
                 </div>
@@ -802,6 +809,8 @@ function _cronosEquipoDeAviso(d) {
 // v753b) → el censo del club por `coachUid` (avisos anteriores; lo precarga
 // sdViewEventDetail) → el correo SIN dominio, sólo si no hay nada más.
 function _cronosNombreEntrenadorAviso(d) {
+    // v755 · la regla vive ahora en club-chat.js (la usa también el Informe Grupal).
+    if (typeof window._ccNombreAutor === 'function') return window._ccNombreAutor(d);
     const n = String(d.coachName || '').trim();
     if (n) return n;
     const dir = window._ccState && window._ccState.directorio;

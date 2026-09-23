@@ -436,6 +436,8 @@ window._sendCollectiveReportNow = async function() {
                 clubId:         me.clubId || null,
                 coachUid:       me.uid,
                 coachEmail:     me.email,
+                // v755 · el NOMBRE de quien firma (la ficha y el PDF no enseñan el correo).
+                coachName:      (typeof window._ccNombreDe === 'function' ? window._ccNombreDe(me) : '') || '',
                 matchDate:      matchDateISO,
                 rival,
                 scoreHome,

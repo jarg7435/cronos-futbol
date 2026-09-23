@@ -292,6 +292,35 @@ function _ccNombreDe(u) {
 }
 window._ccNombreDe = _ccNombreDe;
 
+// ── El AUTOR de un documento (informe, aviso), por su nombre ─────────
+//  v755 · encargo del autor (implementar.txt 2026-09-23, capturas 10755-10756):
+//  el Informe Grupal seguía firmando «arinagazone@gmail.com» en la cabecera
+//  del PDF y en la ficha del partido. v753b ya lo había arreglado para la
+//  convocatoria y la planificación, pero con una función privada de
+//  events-tab.js; ésta es la misma regla, compartida:
+//    1. el nombre SELLADO en el documento (`coachName`, desde v753b/v755);
+//    2. el censo de nombres que pase quien llama (uid → nombre);
+//    3. el directorio del club ya cargado (`_ccCargarDirectorio`);
+//    4. si el autor soy yo, mi propio nombre;
+//    5. el correo SIN dominio, sólo si no hay nada más.
+function _ccNombreAutor(d, nombres) {
+    if (!d) return '';
+    const limpio = (v) => String(v == null ? '' : v).trim();
+    const n = limpio(d.coachName);
+    if (n) return n;
+    const uid = limpio(d.coachUid || d.createdBy);
+    if (uid) {
+        if (nombres && nombres[uid]) return nombres[uid];
+        const dir = window._ccState && window._ccState.directorio;
+        if (dir && dir.nombres && dir.nombres[uid]) return dir.nombres[uid];
+        const me = window._cronosCurrentUser;
+        if (me && me.uid === uid) { const mio = _ccNombreDe(me); if (mio) return mio; }
+    }
+    const mail = limpio(d.coachEmail);
+    return mail.indexOf('@') > 0 ? mail.slice(0, mail.indexOf('@')) : mail;
+}
+window._ccNombreAutor = _ccNombreAutor;
+
 // ── El directorio de nombres del club ────────────────────────────────
 //  🔑 ARREGLA TAMBIÉN LO YA ESCRITO. El nombre va SELLADO en cada mensaje (y
 //  se queda: quien deja el club debe seguir apareciendo), pero los mensajes

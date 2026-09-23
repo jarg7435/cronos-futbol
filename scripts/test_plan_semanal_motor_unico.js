@@ -151,7 +151,7 @@ try {
            /wp-day-match/.test(clasesDe(h, 'Martes')) && /wp-day-match/.test(clasesDe(h, 'Jueves')));
         ok('2e · 🔴 ya no sale la lista de renglones ("min-width:80px")', !/min-width:80px/.test(h));
         ok('2f · conserva su marco: PLANIFICACIÓN SEMANAL, "Enviado por" y Cerrar',
-           /PLANIFICACIÓN SEMANAL/.test(h) && /Enviado por: arinagazone@gmail.com/.test(h) && /✕ Cerrar/.test(h));
+           /PLANIFICACIÓN SEMANAL/.test(h) && /Enviado por: arinagazone · /.test(h) && !/arinagazone@gmail\.com/.test(h) /* v755: nombre, nunca el correo */ && /✕ Cerrar/.test(h));
     }
 
     // ───────────────────────────────────────────────────────────────────────

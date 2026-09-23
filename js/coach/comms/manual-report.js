@@ -1772,6 +1772,7 @@
                     clubId: clubId || null,
                     coachUid: me.uid,
                     coachEmail: me.email || '',
+                    coachName: (typeof window._ccNombreDe === 'function' ? window._ccNombreDe(me) : '') || '',   // v755
                     matchDate: p.fecha,
                     rival: p.rival,
                     scoreHome: scoreHome,

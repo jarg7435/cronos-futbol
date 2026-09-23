@@ -394,7 +394,9 @@ function walk(dir, out) {
             h.includes('vs ' + escHtml('CD <Rival>')) && !h.includes('vs CD <Rival>'));
         ok('4d · venue en la subLínea, escapado', h.includes(escHtml('Campo "A"')));
         ok('4e · cuenta de convocados', h.includes('👥 2 convocados'));
-        ok('4f · autor del envío', h.includes('Enviado por ' + escHtml('e@x.com')));
+        // v755 · el autor por su nombre: sin nombre ni censo, el correo SIN dominio.
+        ok('4f · autor del envío (nunca el correo entero)',
+            h.includes('Enviado por e') && !h.includes('e@x.com'));
         ok('4g · los dos botones usan escapeAttr sobre el id',
             h.includes(`sdDeleteNotif('c1')`) && h.includes(`sdViewEventDetail('c1')`));
     }

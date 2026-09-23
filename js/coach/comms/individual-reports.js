@@ -278,6 +278,9 @@ window.openMisInformes = async function openMisInformes() {
                     competition: r.competition||'', matchTime: r.matchTime||'',
                     duration: r.duration||'', stoppageTime: r.stoppageTime||0,
                     createdAt: r.createdAt, coachEmail: r.coachEmail,
+                    // v755 · para firmar por NOMBRE (club-chat.js · _ccNombreAutor).
+                    coachUid: r.coachUid || '',
+                    coachName: (typeof window._ccNombreAutor === 'function' ? window._ccNombreAutor(r) : '') || r.coachName || '',
                     _playerMap: {}, players: [],
                 };
             }
@@ -945,7 +948,8 @@ window.openMisInformes = async function openMisInformes() {
             if (m.venue)       L.push(`Campo:        ${m.venue}`);
             L.push(`Localía:      ${m.myTeamRole === 'away' ? 'Visitante' : 'Local'}`);
             L.push(`Resultado:    ${hayResultado ? `${sh} - ${sa}` : '—'}${veredicto ? '  (' + veredicto + ')' : ''}`);
-            if (m.coachEmail) L.push(`Entrenador:   ${m.coachEmail}`);
+            const _autor = (typeof window._ccNombreAutor === 'function') ? window._ccNombreAutor(m) : (m.coachEmail || '');
+            if (_autor) L.push(`Entrenador:   ${_autor}`);
             L.push('');
 
             // ── RESUMEN: las mismas cuatro cifras que encabezan el informe de
