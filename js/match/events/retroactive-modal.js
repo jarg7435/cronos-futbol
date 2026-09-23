@@ -200,6 +200,37 @@
                         <span>🔒 Sólo lo ve el cuerpo técnico: historial del partido e informe.</span>
                         <span id="retro-comment-count" style="flex-shrink:0;">0 / 500</span>
                     </div>
+                    <!-- ══════════════════════════════════════════════════════
+                         🛡️ Fase 4 (2026-09-22) · EL AVISO DE DATOS DE SALUD
+
+                         Éste es el ÚNICO texto libre de la aplicación que
+                         acaba dentro de cronos_player_reports: los despachos
+                         copian matchComments en cada documento del cuerpo
+                         técnico. O sea, lo que se escriba aquí se guarda
+                         junto a los datos de un MENOR.
+
+                         🔑 La app no registra salud en ningún sitio a
+                         propósito —la asistencia sólo admite una causa
+                         genérica «médico», sin diagnóstico ni texto—, pero
+                         esa protección se cae si alguien la escribe AQUÍ a
+                         mano. No se puede impedir por código sin mutilar el
+                         campo; lo que sí se puede es decirlo donde se está
+                         escribiendo, que es el único momento en que sirve.
+
+                         ⚠️ El aviso va DEBAJO del contador y no dentro del
+                         placeholder: un placeholder desaparece en cuanto se
+                         teclea la primera letra, justo cuando haría falta.
+
+                         🚨 SIN COMILLAS INVERTIDAS EN ESTE COMENTARIO. Todo
+                         este HTML vive dentro de un template literal de JS:
+                         una sola comilla invertida lo CIERRA y el fichero
+                         deja de compilar. Es la trampa de v596 y v641, y me
+                         la comí escribiendo justo este aviso.
+                         ══════════════════════════════════════════════════ -->
+                    <div style="margin-top:0.4rem; padding:0.4rem 0.55rem; border-radius:6px; background:rgba(248,81,73,0.08); border:1px solid rgba(248,81,73,0.28); font-size:0.66rem; color:#ff9b93; line-height:1.35;">
+                        ⚠️ <strong>No anotes datos de salud</strong> (lesiones concretas, diagnósticos, medicación)
+                        ni información personal ajena al partido. Es un informe deportivo sobre menores.
+                    </div>
                 </div>
 
                 <!-- Jugador Entrante (para cambios) -->

@@ -1822,15 +1822,15 @@
      así los envoltorios lo resuelven en cada llamada y no al cargar, para que
      un cambio de orden no los deje mirando a `undefined` para siempre.
      ══════════════════════════════════════════════════════════════════ -->
-<script src="js/shared/live-feed.js?v=v750"></script>
+<script src="js/shared/live-feed.js?v=v752"></script>
 <!-- 🔊 v709 · Las melodías de cada suceso (gol, amarilla, roja, cambio,
      lesión), compartidas con el panel en vivo del Área de Familias. Este visor
      le presta su AudioContext, que es el que lleva el keep-alive de iOS. -->
-<script src="js/shared/live-sound.js?v=v750"></script>
+<script src="js/shared/live-sound.js?v=v752"></script>
 <!-- 🔴🔴🔴 v721 · El caché en disco de Firestore es de UNA sola cuenta (ver
      js/shared/fs-cache-mode.js). El visor lo comparte con la app, así que
      tiene que decidir con la MISMA regla y antes de crear su instancia. -->
-<script src="js/shared/fs-cache-mode.js?v=v750"></script>
+<script src="js/shared/fs-cache-mode.js?v=v752"></script>
 
 <!-- ══ FIREBASE ══════════════════════════════════════════════════ -->
 <script type="module">
@@ -7598,9 +7598,9 @@ setInterval(function() {
 }
 </style>
 <!-- v434 · Inmutabilidad: antes de retroactive-modal.js, que la consulta. -->
-<script src="js/match/immutability.js?v=v750"></script>
-<script src="js/match/replay/replay-player.js?v=v750"></script>
-<script src="js/match/events/retroactive-modal.js?v=v750"></script>
+<script src="js/match/immutability.js?v=v752"></script>
+<script src="js/match/replay/replay-player.js?v=v752"></script>
+<script src="js/match/events/retroactive-modal.js?v=v752"></script>
 
 <!-- ══════════════════════════════════════════════════════════════════
      🟩 v577 · FRANJA DE VERSIÓN TAMBIÉN EN EL VISOR
@@ -7613,7 +7613,7 @@ setInterval(function() {
      El sello lo escribe `scripts/cache-bust.js` a partir del CACHE_NAME de
      sw.js, nunca a mano: un número puesto a mano miente en cuanto alguien
      olvida cambiarlo (v527 lo encontró mintiendo 185 versiones seguidas). -->
-<div id="cronos-version-badge" data-version="v750" style="position:fixed;bottom:calc(4px + env(safe-area-inset-bottom, 0px));right:6px;z-index:2147483000;pointer-events:none;background:rgba(0,0,0,0.55);color:#2ea043;font-family:monospace;font-size:0.6rem;font-weight:700;letter-spacing:0.5px;padding:2px 6px;border-radius:4px;">CHRONOS v750</div>
+<div id="cronos-version-badge" data-version="v752" style="position:fixed;bottom:calc(4px + env(safe-area-inset-bottom, 0px));right:6px;z-index:2147483000;pointer-events:none;background:rgba(0,0,0,0.55);color:#2ea043;font-family:monospace;font-size:0.6rem;font-weight:700;letter-spacing:0.5px;padding:2px 6px;border-radius:4px;">CHRONOS v752</div>
 <script>
 /* 🧪 v577 · Y DE QUÉ ENTORNO ES ESA VERSIÓN.
    El problema real del autor no era no ver la versión: era no saber si la

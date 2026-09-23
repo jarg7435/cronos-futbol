@@ -583,11 +583,39 @@ exports.syncClubPublic = functions.firestore
 
     const data = change.after.data() || {};
 
-    // Solo se exponen 3 campos publicos.
+    /* ══════════════════════════════════════════════════════════════════
+       🔒 SEC-L05 (Fase 1b, 2026-09-22) · `hasAdmin`, Y SOLO EL BOOLEANO
+
+       El alta leia `clubs/{id}` directamente para saber si una entidad
+       individual YA tiene administrador: de eso depende si el que se
+       registra entra como ADMINISTRADOR o como SUB-USUARIO pendiente de
+       aprobacion. Y ese `getDoc` es el motivo de que `clubs.get` siguiera
+       abierto a cualquier autenticado — con `adminEmail` dentro, que es el
+       correo del administrador de la plataforma.
+
+       🔑 SE ESPEJA EL BOOLEANO, NUNCA EL CORREO. Al cliente le basta con
+       «hay admin o no»; quien lo es, no es asunto suyo. El correo se queda
+       en `clubs`, que pasa a ser privado.
+
+       🔑 SE DERIVA DE LOS TRES CAMPOS, no se copia `hasAdmin` a secas: el
+       propio cliente ya avisaba de que «el campo hasAdmin puede estar
+       desactualizado» y tenia un rodeo consultando `users` para
+       corroborarlo. Ese rodeo ademas FALLA justo en el caso que importa —un
+       registrante nuevo todavia no tiene documento, y desde SEC-A1 la
+       consulta a `users` se le deniega—. Derivandolo aqui, el espejo es mas
+       fiable que el campo original y el rodeo sobra.
+
+       ⚠️ ESTO SOLO SE ESCRIBE CUANDO `clubs/{id}` CAMBIA. Los clubes que ya
+       existen no tendran `hasAdmin` en el espejo hasta que se les toque:
+       hay que pasar `scripts/ops/backfill_clubs_public.js` UNA VEZ despues
+       de desplegar esto, y ANTES de cerrar `clubs.get`. Si se cierra antes,
+       el alta se queda sin saber si hay admin.
+       ══════════════════════════════════════════════════════════════════ */
     const publicData = {
       name: data.name || null,
       type: data.type || 'club',
-      status: data.status || 'active'
+      status: data.status || 'active',
+      hasAdmin: !!(data.hasAdmin || data.adminEmail || data.adminUid)
     };
 
     try {
@@ -605,22 +633,56 @@ exports.syncClubPublic = functions.firestore
 exports.deleteUserData = functions.auth.user().onDelete(async (user) => {
   const uid = user.uid;
 
+  /* ══════════════════════════════════════════════════════════════════
+     🛡️ Fase 4 · punto 1 (2026-09-22) · AHORA BORRA LO QUE LA POLITICA
+        DICE QUE BORRA
+
+     Esto borraba DOS cosas —`users/{uid}` y sus `platform_requests`— y
+     `privacy.html` §6 promete que «tras la baja los datos se eliminan en un
+     plazo maximo de 30 dias». Se quedaban vivos los informes, los mensajes,
+     los vinculos jugador-familia, los tokens de notificacion, las sesiones y
+     —sin que se viera— las DOS SUBCOLECCIONES de `users/{uid}`, que Firestore
+     NO borra al borrar el documento padre.
+
+     🔑 La cascada vive en `functions/purga_usuario.js`, aparte y con su plan
+     declarado como datos, para que se pueda PROBAR con una base falsa sin
+     tocar produccion. Alli esta escrito que se borra, que se seudonimiza y
+     que se conserva, con el porque de cada cosa.
+     ══════════════════════════════════════════════════════════════════ */
   try {
-    await admin.firestore().collection('users').doc(uid).delete();
+    const { ejecutarPurga } = require('./purga_usuario');
+    const r = await ejecutarPurga(admin.firestore(), uid);
 
-    const requests = await admin.firestore()
-      .collection('platform_requests')
-      .where('uid', '==', uid)
-      .get();
+    console.log('[deleteUserData] uid=' + uid +
+                ' borrados=' + r.borrados +
+                ' seudonimizados=' + r.seudonimizados +
+                ' listas=' + r.listasLimpiadas +
+                ' ' + JSON.stringify(r.porColeccion));
 
-    const batch = admin.firestore().batch();
-    requests.forEach(doc => { batch.delete(doc.ref); });
-
-    if (!requests.empty) await batch.commit();
-
-    console.log('[deleteUserData] Datos eliminados para uid:', uid);
+    // ⚠️ UNA PURGA A MEDIAS TIENE QUE DEJAR RASTRO. Si algo fallo, la cuenta
+    //    de Auth ya no existe y NADIE se va a enterar por su cuenta: queda
+    //    dato personal vivo sin dueno que lo reclame. `auth_deletion_failures`
+    //    ya existia justo para esto.
+    if (r.fallos.length || r.topeAlcanzado.length) {
+      console.error('[deleteUserData] PURGA INCOMPLETA uid=' + uid,
+                    r.fallos, r.topeAlcanzado);
+      await admin.firestore()
+        .collection('auth_deletion_failures')
+        .doc(uid + '_' + Date.now())
+        .set({ uid: uid, cuando: new Date().toISOString(),
+               fallos: r.fallos, topeAlcanzado: r.topeAlcanzado,
+               resumen: r.porColeccion })
+        .catch((e) => console.error('[deleteUserData] ni el registro de fallo pudo escribirse:', e.message));
+    }
   } catch (error) {
     console.error('[deleteUserData] Error:', error);
+    // Mismo motivo: que no se pierda en el registro y ya.
+    try {
+      await admin.firestore()
+        .collection('auth_deletion_failures')
+        .doc(uid + '_' + Date.now())
+        .set({ uid: uid, cuando: new Date().toISOString(), error: String(error && error.message) });
+    } catch (_) { /* ya se ha dicho por consola */ }
   }
 
   return null;
@@ -1686,25 +1748,46 @@ exports.sendInviteEmail = functions
      un sitio ajeno DENTRO de un correo con el logo y la firma de la
      plataforma. Eso es phishing con marca propia.
 
-     ⚠️ Se admite que no venga token: los enlaces clasicos siguen
-     funcionando y la Secretaria cae a ellos si no puede acuñar. Se
-     valida la FORMA del token (solo hex/guiones) para que no pueda
-     inyectarse nada en el atributo href del HTML.
+     🔒 SEC-INV2 (Fase 0, 2026-09-22) · EL TOKEN PASA A SER OBLIGATORIO.
+
+     Hasta hoy esta funcion admitia que NO viniera token, y entonces
+     componia ella misma el enlace clasico con `email`, `role` y
+     `clubName` en la URL. La nota que lo justificaba decia que "la
+     Secretaria cae a ellos si no puede acuñar" — esa caida ya no
+     existe (SEC-INV2 en secretary.js), asi que la excepcion se quedo
+     sin premisa. Pero el agujero no era solo ese: TRES ALTAS DIRIGIDAS
+     (create-direct.js x2, individual-entity.js) llamaban aqui SIN
+     token, y sus correos salian con el destinatario dentro de la
+     direccion. Ninguna de las tres aparecia en la nota de v633.
+
+     🔑 ES EL SERVIDOR QUIEN TIENE QUE NEGARSE, y no basta con arreglar
+     a los cuatro llamadores. Esto es una PWA: un navegador con el
+     Service Worker viejo en cache sigue ejecutando el cliente de ayer
+     durante dias. Mientras esta rama existiera, ese cliente antiguo
+     seguiria pidiendo —y consiguiendo— un correo con el dato en claro.
+     Cerrandola aqui, el peor caso es un envio que falla con un motivo
+     legible, no una fuga silenciosa.
+
+     ⚠️ SE RECHAZA, NO SE ENVIA SIN ENLACE. Un correo de invitacion sin
+     enlace es basura que ademas avisa al invitado de que algo va mal.
+     `invalid-argument` le llega al cliente, que ya sabe decirlo
+     (secExplicarErrorEnvio: "Faltan datos obligatorios para el envio").
+
+     Se sigue validando la FORMA del token (solo hex/guiones) para que no
+     pueda inyectarse nada en el atributo href del HTML.
      ══════════════════════════════════════════════════════════════════ */
   const APP_URL = 'https://cronos-futbol-app.web.app';
   const tokenLimpio = String((data && data.inviteToken) || '').trim();
-  let inviteUrl;
-  if (/^[A-Za-z0-9_-]{8,64}$/.test(tokenLimpio)) {
-    inviteUrl = APP_URL + '/?invite=' + encodeURIComponent(tokenLimpio);
-  } else {
-    if (tokenLimpio) console.warn('[sendInviteEmail] token con forma invalida; se usa el enlace clasico');
-    const inviteParams = new URLSearchParams();
-    inviteParams.set('register', 'true');
-    inviteParams.set('email', to);
-    if (role) inviteParams.set('role', role);
-    if (clubName) inviteParams.set('clubName', clubName);
-    inviteUrl = APP_URL + '/?' + inviteParams.toString();
+  if (!/^[A-Za-z0-9_-]{8,64}$/.test(tokenLimpio)) {
+    console.warn('[sendInviteEmail] RECHAZADA: ' +
+                 (tokenLimpio ? 'token con forma invalida' : 'sin inviteToken') +
+                 '. uid=' + ((context && context.auth && context.auth.uid) || '-'));
+    throw new functions.https.HttpsError(
+      'invalid-argument',
+      'La invitacion necesita un enlace seguro. Vuelve a abrir la Secretaria y reintentalo.'
+    );
   }
+  const inviteUrl = APP_URL + '/?invite=' + encodeURIComponent(tokenLimpio);
 
   /* ---- Nombre del invitante ---- */
   /* v594: el remitente por defecto ya no es "SuperAdmin" para todo el     */
