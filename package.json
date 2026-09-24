@@ -14,6 +14,7 @@
     "test": "node scripts/run-tests.js",
     "backup:auth": "node scripts/ops/exporta_auth.js",
     "backup:estado": "node scripts/ops/copias_estado.js",
+    "testeo:semilla": "node scripts/semilla_testeo.js",
     "deploy:staging": "npm run build && firebase deploy --only hosting:live,firestore --project staging",
     "deploy:prod": "npm run build && firebase deploy --only hosting:live --project production",
     "deploy:prod:rules": "firebase deploy --only firestore:rules --project production",
