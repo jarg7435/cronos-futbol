@@ -49,18 +49,66 @@ console.log('\n══ 🛟 Fase 5 · la política de copias no se pudre ══')
 // ════════════════════════════════════════════════════════════════════
 console.log('\n1) 🔴 Los hashes de contraseña de las familias, fuera de git');
 {
-    // Se le pregunta a GIT, no a .gitignore: es lo que de verdad decide.
-    const r = cp.spawnSync('git', ['check-ignore', '-q', path.join('backups', 'auth_users_x.json')],
-                           { cwd: ROOT, encoding: 'utf8' });
-    ok('1a · 🔑🔑 `backups/` está ignorado por git (medido con check-ignore)',
-       r.status === 0,
-       'si esto cae, la siguiente exportación de Auth se puede subir a un commit');
+    // ⚠️ DOS FORMAS DE LLEGAR AQUÍ (reauditoría 23-09): desde un checkout, o
+    //    desde un ZIP/`git archive`, que NO trae `.git`. En el ZIP, check-ignore
+    //    fallaba por «no es un repositorio» y el guard daba un rojo que no
+    //    decía nada de .gitignore. Se distinguen los dos casos, pero en NINGUNO
+    //    se deja de preguntar a GIT: sin metadatos, se le pregunta a un repo
+    //    desechable con el MISMO .gitignore. Leerlo a ojo sigue prohibido.
+    //
+    //    Se anula el excludesFile global: un `backups/` en el ignore personal
+    //    de quien corre el test daría verde aquí y rojo en cualquier otro clon.
+    const SIN_GLOBAL = ['-c', 'core.excludesFile=' + path.join(require('os').tmpdir(), 'cronos_no_existe_' + process.pid)];
+    const git = (args, cwd) => cp.spawnSync('git', SIN_GLOBAL.concat(args), { cwd, encoding: 'utf8' });
+    const RUTA = 'backups/auth_users_x.json';
 
-    // Y que nunca se haya colado una.
-    const seguidos = cp.spawnSync('git', ['ls-files', 'backups/'], { cwd: ROOT, encoding: 'utf8' });
-    ok('1b · y no hay NI UN fichero de backups/ ya seguido por git',
-       (seguidos.stdout || '').trim() === '',
-       (seguidos.stdout || '').slice(0, 300));
+    const version = git(['--version'], ROOT);
+    const top = git(['rev-parse', '--show-toplevel'], ROOT);
+    const mismoDir = (a, b) => { try { return fs.realpathSync(a).toLowerCase() === fs.realpathSync(b).toLowerCase(); } catch (_) { return false; } };
+    // Un ZIP descomprimido DENTRO de otro repo tampoco es un checkout propio:
+    // ahí check-ignore contestaría con las reglas del repo de fuera.
+    const esCheckout = top.status === 0 && mismoDir((top.stdout || '').trim(), ROOT);
+
+    if (version.status !== 0) {
+        ok('1a · 🔑🔑 `backups/` está ignorado por git', false,
+           'no hay `git` instalado: sin él no se puede medir, y un guard que no puede medir no aprueba');
+    } else if (esCheckout) {
+        const r = git(['check-ignore', '-q', RUTA], ROOT);
+        ok('1a · 🔑🔑 `backups/` está ignorado por git (check-ignore sobre el checkout)',
+           r.status === 0,
+           'si esto cae, la siguiente exportación de Auth se puede subir a un commit');
+
+        // Y que nunca se haya colado una.
+        const seguidos = git(['ls-files', 'backups/'], ROOT);
+        ok('1b · y no hay NI UN fichero de backups/ ya seguido por git',
+           seguidos.status === 0 && (seguidos.stdout || '').trim() === '',
+           seguidos.status !== 0 ? (seguidos.stderr || '') : (seguidos.stdout || '').slice(0, 300));
+    } else {
+        console.log('  ℹ️  artefacto SIN metadatos de git (ZIP / git archive): se mide con un repo desechable');
+        const tmp = fs.mkdtempSync(path.join(require('os').tmpdir(), 'cronos_gi_'));
+        let r;
+        try {
+            fs.copyFileSync(path.join(ROOT, '.gitignore'), path.join(tmp, '.gitignore'));
+            git(['init', '-q'], tmp);
+            r = git(['check-ignore', '-q', RUTA], tmp);
+        } finally {
+            fs.rmSync(tmp, { recursive: true, force: true });
+        }
+        // status 1 = git ha mirado y NO está ignorado → rojo, igual que en un
+        // checkout. Sólo el 0 aprueba; cualquier otra cosa es no haber medido.
+        ok('1a · 🔑🔑 `backups/` está ignorado por el .gitignore entregado (check-ignore en repo desechable)',
+           r && r.status === 0,
+           r && r.status === 1 ? 'git dice que backups/ NO está ignorado' : 'no se pudo medir: ' + (r && r.stderr));
+
+        // En el artefacto no hay índice que consultar, así que lo que se
+        // comprueba es lo que de verdad importa en un ZIP: que no VIAJE dentro.
+        // (Antes esta aserción pasaba en verde falso: `ls-files` fallaba y su
+        // salida vacía se leía como «nada seguido».)
+        const dir = path.join(ROOT, 'backups');
+        const dentro = fs.existsSync(dir) ? fs.readdirSync(dir) : [];
+        ok('1b · y el artefacto no lleva NI UN fichero de backups/ dentro',
+           dentro.length === 0, dentro.slice(0, 10).join(', '));
+    }
 
     ok('1c · 🔑 el exportador ABORTA si backups/ dejara de estar ignorado',
        /check-ignore/.test(EXP) && /ABORTADO/.test(EXP) && /process\.exit\(1\)/.test(EXP),

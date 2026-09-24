@@ -2763,10 +2763,11 @@ async function openClubAdminPanel(preClubId = null) {
             //    desde `allRoles` (cronosPlazasOcupadas). Se conserva la lectura
             //    del rol porque la usan los avisos de más abajo.
             void role;
-            if (isBlocked) {
-                var blkSlot = {}; blkSlot[key] = Math.max(0, (si.used || 1) - 1);
-                await updateDoc(doc(db,'clubs',cid), blkSlot);
-            }
+            // ⚠️ v758 · Aquí quedaba el resto de aquella escritura: restaba una
+            //    plaza con `key` y `si`, dos variables que v553 retiró. Al
+            //    BLOQUEAR, el bloqueo se guardaba y después saltaba
+            //    `ReferenceError: key is not defined` → «❌ Error» y sin
+            //    refresco. Lo encontró el lint (no-undef), no un test.
 
             // ── PROBLEMA 2: propagar custom claim clubId al activar ──────────
             // El entrenador (rol 'user') y demás miembros tienen clubId en su

@@ -479,6 +479,22 @@
                 if (typeof showToast === 'function') showToast('⏱️ Indica un minuto válido.', 3500);
                 return;
             }
+            // 🛡️ v758 · VALIDACIÓN DE DATOS DE SALUD (reauditoría 23-09). El aviso
+            // fijo bajo el campo se lee una vez y se deja de ver; esto salta en
+            // el momento de guardar y dice QUÉ palabra lo ha activado. Avisa, no
+            // bloquea: ver `cronosPosiblesDatosSalud` en utils.js. Va ANTES de
+            // cualquier escritura: cancelar no deja nada a medias.
+            const _salud = (typeof window.cronosPosiblesDatosSalud === 'function')
+                ? window.cronosPosiblesDatosSalud(nota) : [];
+            if (_salud.length && !confirm(
+                    '⚠️ Este comentario parece contener datos de salud: «' + _salud.slice(0, 5).join('», «') + '».\n\n' +
+                    'Es un informe deportivo sobre MENORES. La salud es un dato especialmente protegido ' +
+                    '(art. 9 RGPD) y la política de privacidad no permite anotarla aquí: ' +
+                    'ni lesiones concretas, ni diagnósticos, ni medicación.\n\n' +
+                    'Pulsa CANCELAR para corregirlo, o ACEPTAR si de verdad no es un dato de salud.')) {
+                if (ta) { try { ta.focus(); } catch (_) {} }
+                return;
+            }
             if (typeof _registerMatchEvent === 'function') {
                 _registerMatchEvent('comment', 'COMENTARIO · ' + nota, '💬', matchTime,
                                     { comment: nota, half: half, minute: minute, staffOnly: true },

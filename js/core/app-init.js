@@ -1164,6 +1164,12 @@ async function showFinishedMatches() {
 
         // ── ENRIQUECIMIENTO RETROACTIVO DE CATEGORÍAS ─────────────────────
         try {
+            // ⚠️ v758 · `query` y `where` se importan AQUÍ. SEC-A1 (v632) acotó
+            //    la consulta de `users` con ellos, pero sólo existían dentro del
+            //    `try` de live_matches de arriba: aquí eran ReferenceError, el
+            //    `catch` lo dejaba en un console.warn y el enriquecimiento no
+            //    se hacía nunca. Lo cazó el lint (no-undef).
+            const { query, where } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
             const coachCatMap = new Map();
             if (me) {
                 const meCat = me.category || me._activeRoleData?.category || me.categoryLabel || '';

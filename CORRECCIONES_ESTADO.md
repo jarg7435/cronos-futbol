@@ -1034,3 +1034,113 @@ alguien los reconecta — porque eso devolvería las DOS fórmulas para el mismo
 
 **Resultado**: `node scripts/run-tests.js` → **218/218 activos OK, `XFAIL` vacía,
 sin XPASS**.
+
+---
+
+## COMPLETADO (v758 — 2026-09-24): los cuatro bloqueantes de la reauditoría del 23-09
+
+Reauditoría (8/10) sobre un ZIP del proyecto. Señalaba cuatro bloqueantes
+operativos y formales para el 10/10. Se cierran los cuatro y, por el camino, el
+lint recién resucitado destapó **seis `ReferenceError` vivos en producción**.
+
+### 1. `test_copias_seguridad.js` rojo en un artefacto sin `.git` (21/22)
+
+La aserción 1a preguntaba a `git check-ignore`; sin `.git`, git contesta «no es
+un repositorio» y el guard daba un rojo que no decía nada de `.gitignore`.
+Ahora distingue los dos casos **sin dejar nunca de preguntar a git**:
+
+- **checkout propio** → `check-ignore` sobre el repo, como antes;
+- **ZIP / `git archive`** (o un ZIP descomprimido dentro de OTRO repo) → se
+  copia el `.gitignore` entregado a un repo desechable y se le pregunta a git
+  ahí. «git dice que NO está ignorado» sigue siendo ROJO; no haber podido medir
+  (sin `git` instalado) también.
+
+Se anula el `core.excludesFile` global: un `backups/` en el ignore personal de
+quien corre el test daba verde aquí y rojo en cualquier otro clon.
+
+🚨 **Había un verde falso**: la 1b (`git ls-files backups/`) aprobaba sin `.git`
+porque el comando fallaba y su salida vacía se leía como «nada seguido». En modo
+artefacto ahora comprueba lo que importa en un ZIP: que `backups/` no viaje
+dentro. Probado en los dos modos con los dos casos negativos.
+
+### 2. `npm run lint` no arrancaba
+
+ESLint 9 no lee `.eslintrc.json` y el script usaba `--ext`, retirado en la 9.
+Nuevo `eslint.config.js` (flat config): **error** lo que puede romper en
+ejecución, **aviso** lo estético. `js/` son scripts clásicos que comparten el
+ámbito global, así que las globales del proyecto se CALCULAN leyendo el código
+(declaraciones de primer nivel y `window.X = …`) en vez de apagar `no-undef`.
+`globals` y `espree` pasan a devDependencies directas. `eslint.config.js` va al
+`ignore` de hosting (`"public": "."` lo habría publicado). CI: el lint deja de
+ser «best-effort» y se añade el build; `npm run verify` = build + lint + test.
+Lo de los permisos 0644 era del ZIP (llevaba `node_modules`): `npm ci` crea los
+binarios bien.
+
+**Lo que encontró `no-undef` en su primera pasada** (todos en producción):
+
+| Dónde | Desde | Efecto |
+|---|---|---|
+| `auth.js` · auto-activación | v564 | `_rolRevocado` quedó dentro de un `try` y la auto-activación lo usaba FUERA: `ReferenceError` en cada inicio de sesión con una solicitud aprobada cuya plaza existía, tragado por un `catch` mudo. Las solicitudes posteriores no verificaban su rol y el filtro lo **ocultaba toda la sesión** (no se borraba de Firestore). |
+| `club/panel.js` · bloquear usuario | v553 | `blkSlot[key]` con `key`/`si` retirados: el bloqueo se guardaba y después «❌ Error: key is not defined», sin refresco. |
+| `superadmin/extras.js` · solicitudes | v609 | `_saCajaError` no existe: si fallaba la carga, la caja se quedaba en «Cargando…». |
+| `movement-log.js` · correo al director | v671 | `waMsg`/`waNumbers` retirados con WhatsApp: el `mailto` no se abría nunca. |
+| `app-init.js` · partidos finalizados | v632 | `query`/`where` fuera de su bloque: el enriquecimiento de categorías no se hacía nunca. |
+| `team-persistence.js` · modal fin de partido | — | `typeof scoreHome` de una global inexistente: pintaba «— – —» en vez del resultado. |
+
+Más una clave `matchType` duplicada en `manual-report.js` (ganaba la última; la
+primera nunca llegó al documento). Los dos `no-undef` de `requests-tab.js` se
+dejan anotados: son BUG-1/BUG-2 de ramas muertas, fijados a propósito por
+`test_sa_requests_module.js`.
+
+🚨 **`test_baja_no_resucita_al_entrar.js` §5 daba verde con la defensa muerta**:
+medía que el TEXTO `_rolRevocado(updatedAllRoles[existingIdx])` estuviera, y
+estaba. Nueva §5b que mide el ALCANCE con el parser (visto rojo con las tres
+líneas exactas antes de corregir). Los tres guards que cortaban `auth.js`
+«desde la declaración hasta el `if`» ahora toman ambas piezas por separado.
+
+### 3. Dos moderadas (`uuid` vía `gaxios`) en producción
+
+`firebase-admin@14 → @google-cloud/storage@8.2.0 (última) → gaxios ^6 →
+gaxios@6.7.1 (última 6.x) → uuid ^9`. **No hay actualización limpia desde
+arriba**: `overrides` acotado a gaxios (`uuid ^11.1.1`, que conserva CommonJS).
+Verificado ejecutando el ÚNICO camino de gaxios que usa uuid (el `boundary` de
+multipart). `npm audit --omit=dev` → **0** en la raíz y en `functions/`.
+
+Árbol de DESARROLLO: `npm audit fix` sin `--force` subió firebase-tools
+15.30.2 → 15.31.0 y cerró `csv-parse` y `stream-json`. Queda
+`@opentelemetry/core` (DoS por memoria al parsear la cabecera W3C Baggage)
+dentro de `firebase-tools → @google-cloud/pubsub`: la única «solución» de npm es
+`--force`, que **baja firebase-tools a la 14** — la misma trampa de la Fase 3.
+Aceptado y documentado: es la CLI de despliegue, no viaja con la app ni recibe
+tráfico de terceros.
+
+### 4. Texto libre de los informes y datos de salud
+
+Inventario: el comentario del partido (`retroactive-modal.js`) sigue siendo el
+ÚNICO texto libre que acaba en un informe (los `prompt()` del directo piden un
+número de lista; el informe manual no tiene campo libre). Ya tenía aviso fijo
+(Fase 4). Se añade la «validación razonable» que pedía el auditor:
+`cronosPosiblesDatosSalud` (utils.js) detecta términos médicos y, al guardar,
+**pide confirmación diciendo qué palabra ha saltado**, antes de cualquier
+escritura. Avisa, no bloquea. Sin falsos positivos con el lenguaje de banquillo
+(«lesión» a secas, «fisio», «se ha roto la defensa», «medición»…). Política
+§10.1 actualizada para describir exactamente eso. Guard nuevo:
+`test_datos_salud_comentario.js` (rojo contra HEAD, 11/26).
+
+### Y un quinto que salió al repetir la auditoría en limpio
+
+`test_admin_compat.js` leía dos scripts de `scripts/ops/`, que están en
+`.gitignore`: en un clon (y en la CI) **revienta con ENOENT**. El auditor no lo
+vio porque su ZIP era la carpeta de trabajo entera. Ahora exige los versionados
+y comprueba los locales sólo si existen.
+
+**Resultado**, desde un artefacto SIN `.git` e instalado con `npm ci`:
+`npm run build` OK · `npm run lint` código 0 (0 errores, 115 avisos) ·
+`npm test` **292/292** · `npm audit --omit=dev` 0.
+
+### Lo que NO se ha tocado (no es código)
+
+- **Papel RGPD club/plataforma** (P0 del auditor): decisión jurídica.
+- **Enlaces de invitación antiguos con PII** (P1): pendiente de decidir su
+  caducidad.
+- **Prueba end-to-end y simulacro de restauración** (P1).

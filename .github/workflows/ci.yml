@@ -2,10 +2,16 @@ name: CI
 
 # Integración continua de CHRONOS FÚTBOL.
 # Corre en cada push y pull_request a CUALQUIER rama.
-#   - install (npm ci si hay lock, si no npm install)
-#   - lint    (si el script existe)
+#   - install (npm ci: instalación limpia desde el lock)
+#   - build   (scripts/build.js: sintaxis, recursos, precache, versiones)
+#   - lint    (eslint.config.js: los ERRORES cortan, los avisos no)
 #   - test    (scripts/run-tests.js: falla si cualquier test falla)
 # No requiere emulador ni secretos: los tests son puros de Node.
+#
+# ⚠️ v758 (reauditoría 23-09): el lint era «best-effort, no bloquea» y llevaba
+# sin arrancar desde el paso a ESLint 9 (sólo existía .eslintrc.json). Nadie lo
+# notó porque no cortaba nada. Su primera pasada real encontró seis
+# ReferenceError vivos en producción. Ahora es un paso más de la puerta.
 
 on:
   push:
@@ -16,7 +22,7 @@ permissions:
 
 jobs:
   lint-and-test:
-    name: Lint + Test
+    name: Build + Lint + Test
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -29,21 +35,13 @@ jobs:
           cache: npm
 
       - name: Install dependencies
-        run: |
-          if [ -f package-lock.json ]; then
-            npm ci
-          else
-            npm install
-          fi
+        run: npm ci
 
-      - name: Lint (si existe el script; best-effort, no bloquea)
-        continue-on-error: true
-        run: |
-          if npm run 2>/dev/null | grep -qE '^\s*lint'; then
-            npm run lint
-          else
-            echo "No hay script lint; se omite."
-          fi
+      - name: Build (gate)
+        run: npm run build
+
+      - name: Lint (gate)
+        run: npm run lint
 
       - name: Test suite (gate)
         run: npm test

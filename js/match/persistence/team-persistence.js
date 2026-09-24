@@ -467,8 +467,12 @@ function saveCurrentTeam() {
 window._showPostMatchOptions = function _showPostMatchOptions() {
     const home   = (typeof TEAM_NAMES !== 'undefined' && TEAM_NAMES.home) || 'Local';
     const away   = (typeof TEAM_NAMES !== 'undefined' && TEAM_NAMES.away) || 'Visitante';
-    const scoreH = (typeof scoreHome  !== 'undefined') ? scoreHome  : '—';
-    const scoreA = (typeof scoreAway  !== 'undefined') ? scoreAway  : '—';
+    // ⚠️ v758 · Esto preguntaba por `typeof scoreHome`, una global que no
+    //    declara NINGÚN fichero: la guarda siempre era falsa y el modal pintaba
+    //    «— – —» en lugar del resultado. Se lee del marcador, como el resto de
+    //    módulos. Lo cazó el lint (no-undef).
+    const scoreH = document.getElementById('score-home')?.textContent || '—';
+    const scoreA = document.getElementById('score-away')?.textContent || '—';
 
     // Estadísticas rápidas del partido
     // ══════════════════════════════════════════════════════════════

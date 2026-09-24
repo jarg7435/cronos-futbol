@@ -3255,6 +3255,55 @@ window.cronosDocEsDeEquipo = cronosDocEsDeEquipo;
 window.cronosMyTeam       = cronosMyTeam;
 window.cronosMyTeamId     = cronosMyTeamId;
 
+// ═══════════════════════════════════════════════════════════════════════
+//  🛡️ v758 · ¿ESTE TEXTO PARECE LLEVAR DATOS DE SALUD? (reauditoría 23-09)
+//
+//  El comentario del partido (retroactive-modal.js) es el ÚNICO texto libre
+//  que acaba dentro de un informe, y el informe habla de un MENOR. La salud
+//  es categoría especial (art. 9 RGPD) y la política promete que la app no
+//  la recoge; el aviso fijo bajo el campo (Fase 4) no basta a ojos del
+//  auditor, que pide además una «validación razonable».
+//
+//  🔑 AVISA, NO BLOQUEA. Un filtro que impidiera escribir mutilaría el campo
+//  y se sortearía con una falta de ortografía; lo útil es pararse en el
+//  momento de guardar y decir QUÉ palabra ha saltado. Devuelve las palabras
+//  encontradas (sin tildes, en minúscula) o [] si no hay ninguna.
+//
+//  ⚠️ «lesión» a secas NO está: la marca de lesión durante el partido es un
+//  dato deportivo que la política admite (§10.1). Sí lo están los TIPOS de
+//  lesión, que ya son un diagnóstico. «fisio» tampoco: es un puesto del
+//  cuerpo técnico y saltaría en cada comentario de banquillo.
+// ═══════════════════════════════════════════════════════════════════════
+//  Fuera a propósito, por falsos positivos del lenguaje de banquillo:
+//  «medic» a secas (caza «medición»), «roto» («se ha roto la defensa»),
+//  «ansiedad» («jugaron con ansiedad») y «operad» («operador»).
+const CRONOS_RAICES_SALUD = [
+    'diagnos', 'medico', 'medica', 'medicac', 'medicament', 'medicin', 'pastilla', 'insulin',
+    'inhalador', 'ibuprofeno', 'paracetamol', 'antibiotic',
+    'fractur', 'rotura', 'esguince', 'tendinitis', 'contractura', 'distension', 'luxacion',
+    'ligamento', 'menisco', 'conmocion', 'traumatism', 'operado', 'operada', 'operacion', 'cirugia',
+    'quirofano', 'hospital', 'urgencias', 'ambulancia', 'escayola', 'muleta', 'sutura',
+    'alergi', 'asma', 'diabet', 'epileps', 'epileptic', 'convulsi', 'tdah', 'autis',
+    'depresi', 'anorexi', 'bulimi', 'enferm', 'fiebre', 'gripe', 'covid', 'vomit',
+    'mareo', 'desmay', 'cardiac', 'arritmia',
+];
+function cronosPosiblesDatosSalud(texto) {
+    const t = String(texto == null ? '' : texto).toLowerCase()
+        .normalize('NFD').replace(/[̀-ͯ]/g, '');
+    const vistas = [];
+    CRONOS_RAICES_SALUD.forEach(function (raiz) {
+        // Al PRINCIPIO de palabra: «medic» caza «médico» y «medicación», pero
+        // no «comedido» ni «remedio».
+        const re = new RegExp('(?:^|[^a-z0-9])(' + raiz + '[a-z]*)', 'g');
+        let m;
+        while ((m = re.exec(t)) !== null) {
+            if (vistas.indexOf(m[1]) === -1) vistas.push(m[1]);
+        }
+    });
+    return vistas;
+}
+window.cronosPosiblesDatosSalud = cronosPosiblesDatosSalud;
+
 // ── Exportación global ────────────────────────────────────────
 // Este archivo se carga como <script> clásico (NO type="module"),
 // por lo que NO se puede usar `export`. Las funciones ya quedan

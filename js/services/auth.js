@@ -1388,18 +1388,20 @@ export async function checkAuthorization(user) {
         //  todos los paneles a la vez. Un fallo de sincronización de roles no
         //  puede costar la sesión: como mucho, que esa sincronización no se haga.
         //
-        //  ⚠️ EL `try` VA AQUÍ, ANTES de la declaración de _rolRevocado, a
-        //  propósito. `test_baja_no_resucita_al_entrar.js` aísla el bloque
-        //  cortando desde esa declaración y contando llaves desde el `if`: si el
-        //  `try` quedara ENTRE los dos, el trozo saldría con una llave sin
-        //  cerrar y el guard reventaría sin estar probando nada.
+        //  🔴 v758 · LA DECLARACIÓN DE _rolRevocado VA FUERA DEL `try`.
+        //  v564 la metió DENTRO para que el guard pudiera cortar el bloque, y
+        //  así dejó de existir para la auto-activación de más abajo, que
+        //  también la usa: `ReferenceError` en cada arranque con una solicitud
+        //  aprobada, tragado por su `catch` mudo. El guard ya no depende de lo
+        //  que haya entre la declaración y el `if` (toma la sentencia de la
+        //  declaración y el `if` por separado) y mide el ALCANCE (sección 5b).
         //
-        //  ⚠️⚠️ Y POR ESO ESTE COMENTARIO NO ESCRIBE ESA MARCA LITERAL: el guard
-        //  la busca con `indexOf`, así que mencionarla aquí hacía que el corte
-        //  empezara DENTRO del comentario. Ya pasó al escribir esto.
+        //  ⚠️⚠️ ESTE COMENTARIO NO ESCRIBE LA MARCA LITERAL DE LA DECLARACIÓN:
+        //  el guard la busca con `indexOf`, así que mencionarla aquí hacía que
+        //  el corte empezara DENTRO del comentario. Ya pasó una vez.
         // ══════════════════════════════════════════════════════════════════
-        try {
         const _rolRevocado = (r) => !!r && r.status === 'removed';
+        try {
         if (data.isAuthorized && data.role) {
             let needsRoleSync = false;
 

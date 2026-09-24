@@ -596,12 +596,24 @@ async function exportData() {
     const emailRecipients = [emailConfig.directorEmail, emailConfig.directorEmail2]
         .filter(e => e && e.includes('@')).join(',');
     if (emailRecipients) {
+        // ⚠️ v758 · v671 retiró WhatsApp y con él `waMsg` y `waNumbers`, pero
+        //    este correo los seguía usando: ReferenceError en cuanto había un
+        //    correo de director configurado, y el correo no se abría nunca.
+        //    El resumen se compone aquí, en texto plano, como era antes.
+        const lineas = sortedPlayers.filter(p => p.team === 'home').map(p => {
+            const card    = p.cards === 'amarilla' ? ' 🟨' : p.cards === 'roja' ? ' 🟥' : '';
+            const goals   = p.goals > 0 ? ' ⚽×' + p.goals : '';
+            const injured = p.injured ? ' 🚑' : '';
+            return p.name + ' — ' + formatTime(p.time) + goals + card + injured;
+        });
+        const resumen = 'INFORME — Chronos Fútbol\n' +
+            date + '  |  ' + mode + '\n' +
+            homeName + ' ' + scoreHome + ' - ' + scoreAway + ' ' + awayName + '\n' +
+            'Tiempo global: ' + formatTime(totalElapsed) + '\n\n' +
+            lineas.join('\n');
         const subj = encodeURIComponent('📊 Informe ' + homeName + ' ' + scoreHome +
                      '-' + scoreAway + ' ' + awayName + ' · ' + date);
-        const body = encodeURIComponent(waMsg.replace(/[*_]/g, ''));
-        setTimeout(() => {
-            window.open('mailto:' + emailRecipients + '?subject=' + subj + '&body=' + body);
-        }, waNumbers.length > 0 ? 1500 : 0);
+        window.open('mailto:' + emailRecipients + '?subject=' + subj + '&body=' + encodeURIComponent(resumen));
     }
 
 }

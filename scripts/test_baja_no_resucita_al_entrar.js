@@ -48,7 +48,12 @@ function bloqueSync() {
         if (AUTH[i] === '{') prof++;
         else if (AUTH[i] === '}') { prof--; if (prof === 0) { i++; break; } }
     }
-    return AUTH.slice(ini, i);
+    // v758 · La declaración y el `if` se toman POR SEPARADO: lo que haya entre
+    // medias (hoy, la apertura de un `try`) ya no rompe el corte. Antes esa
+    // dependencia obligó a meter la declaración dentro del `try`, y fuera de él
+    // dejó de existir para la auto-activación (ver 5b).
+    const decl = AUTH.slice(ini, AUTH.indexOf(';', ini) + 1);
+    return decl + '\n' + AUTH.slice(marca, i);
 }
 const BLOQUE = bloqueSync();
 
@@ -138,6 +143,55 @@ console.log('\n=== 5. La platform_request antigua no puede reactivar una baja ==
         && /_quedaAlgunRolVivo[\s\S]{0,220}isAuthorized: true, status: 'active'/.test(auto));
     ok('sin roles vivos NO se escribe isAuthorized/status en la raíz',
         /:\s*\{ allRoles: updatedAllRoles \}/.test(auto));
+}
+
+// ── 5b. Y `_rolRevocado` EXISTE donde se usa ─────────────────────────
+// ════════════════════════════════════════════════════════════════════
+//  🔴 v758 · LA SECCIÓN 5 DABA VERDE CON LA DEFENSA MUERTA.
+//
+//  Mide que el TEXTO `_rolRevocado(updatedAllRoles[existingIdx])` esté en el
+//  bloque de auto-activación. Estaba. Pero desde v564 la declaración
+//  `const _rolRevocado` vive DENTRO del `try` que se añadió al bloque de
+//  sincronización, y la auto-activación va DESPUÉS de ese `try`: fuera de su
+//  alcance. En cada arranque con una solicitud aprobada cuya plaza ya existía,
+//  esa línea lanzaba `ReferenceError`, el `catch` mudo se la tragaba y las
+//  solicitudes que venían detrás no llegaban a verificar su rol → el filtro
+//  final lo ocultaba toda la sesión. Lo cazó el lint (no-undef), no este guard.
+//
+//  Aquí se mide el ALCANCE con el parser, no la forma de la línea: toda
+//  referencia a `_rolRevocado` tiene que caer dentro del bloque que contiene
+//  su declaración.
+// ════════════════════════════════════════════════════════════════════
+console.log('\n=== 5b. `_rolRevocado` está al alcance de TODOS sus usos ===');
+{
+    const espree = require('espree');
+    const ast = espree.parse(AUTH, { ecmaVersion: 2022, sourceType: 'module', range: true, loc: true });
+    const decls = [], usos = [];
+    (function visita(n, bloques) {
+        if (!n || typeof n.type !== 'string') return;
+        const dentro = /BlockStatement|Program|StaticBlock/.test(n.type) ? bloques.concat([n]) : bloques;
+        if (n.type === 'VariableDeclarator' && n.id.type === 'Identifier' && n.id.name === '_rolRevocado') {
+            decls.push({ bloque: bloques[bloques.length - 1], linea: n.loc.start.line });
+        }
+        for (const k in n) {
+            const v = n[k];
+            if (k === 'id' && n.type === 'VariableDeclarator') continue;
+            if (Array.isArray(v)) v.forEach(x => {
+                if (x && x.type === 'Identifier' && x.name === '_rolRevocado') usos.push(x);
+                visita(x, dentro);
+            });
+            else if (v && typeof v.type === 'string') {
+                if (v.type === 'Identifier' && v.name === '_rolRevocado' &&
+                    !(n.type === 'MemberExpression' && k === 'property' && !n.computed)) usos.push(v);
+                visita(v, dentro);
+            }
+        }
+    })(ast, []);
+    const fuera = usos.filter(u => !decls.some(d => d.bloque.range[0] <= u.range[0] && u.range[1] <= d.bloque.range[1]));
+    ok('hay UNA declaración de _rolRevocado', decls.length === 1, decls.map(d => d.linea));
+    ok('y la usan los dos bloques (sincronización y auto-activación)', usos.length >= 5, usos.length);
+    ok('🔑 ningún uso queda FUERA de su alcance (sería ReferenceError al entrar)',
+        fuera.length === 0, fuera.map(u => 'auth.js:' + u.loc.start.line));
 }
 
 // ── 6. La baja cierra la cuenta SÓLO si no queda ningún rol vivo ─────

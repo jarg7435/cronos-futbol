@@ -699,6 +699,7 @@ window.saApproveRequest = async function saApproveRequest(id, type, approve) {
                     try {
                         if (httpsCallable && fa.functions) {
                             await httpsCallable(fa.functions, 'setCustomClaims')({
+                                // eslint-disable-next-line no-undef -- BUG-1 conservado: rama muerta (ver cabecera), fijado por test 8a/8b
                                 uid: r.userUid, role: 'individual', clubId: _indEntityId3 || null,
                             });
                         }
@@ -844,10 +845,13 @@ window.saApproveRequest = async function saApproveRequest(id, type, approve) {
                         });
                     }
                     // Marcar esta y otras platform_requests del mismo usuario/rol como aprobadas
+                    // BUG-2 conservado a propósito: rama muerta (ver cabecera) fijada por test_sa_requests_module.js 8c/8d.
+                    /* eslint-disable no-undef */
                     const allPRsForUser = await getDocs(
                         query(collection(db,'platform_requests'),
                               where('userUid','==',r.userUid))
                     ).catch(()=>null);
+                    /* eslint-enable no-undef */
                     if (allPRsForUser) {
                         const batch = [];
                         allPRsForUser.forEach(prDoc => {

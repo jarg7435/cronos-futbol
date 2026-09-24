@@ -134,15 +134,27 @@ console.log('\n2) 🧹 Nadie pide `firebase-admin` a pelo (barrido estructural)'
                              '  → cámbialos a _admin_compat') : 'ok');
 
     // Y que los cinco conocidos sigan enganchados (si alguien revierte uno).
-    const esperados = [
+    // ⚠️ v758 · Los dos de scripts/ops/ están en .gitignore A PROPÓSITO
+    //    (investigación puntual contra producción): en un clon limpio o en la
+    //    CI NO EXISTEN, y leerlos a ciegas hacía REVENTAR este guard con
+    //    ENOENT. Lo destapó repetir la reauditoría desde un artefacto sin
+    //    `.git` e instalado con `npm ci`. Los versionados se exigen siempre;
+    //    los locales, sólo si están en disco.
+    const versionados = [
         'scripts/audit-subCategory.js',
         'scripts/backfill-link-category.js',
         'scripts/cleanup-contaminated-reports.js',
+    ];
+    const locales = [
         'scripts/ops/inspect_club_dia_users.js',
         'scripts/ops/investigate-ind.js',
-    ];
-    const sinEnganchar = esperados.filter((f) => !/_admin_compat/.test(leer(f)));
-    ok('2b · los cinco scripts de mantenimiento pasan por el adaptador',
+    ].filter((f) => fs.existsSync(path.join(ROOT, f)));
+    const faltan = versionados.filter((f) => !fs.existsSync(path.join(ROOT, f)));
+    ok('2b0 · los tres scripts versionados existen', faltan.length === 0, faltan.join(', '));
+    const sinEnganchar = versionados.concat(locales)
+        .filter((f) => fs.existsSync(path.join(ROOT, f)) && !/_admin_compat/.test(leer(f)));
+    ok('2b · los scripts de mantenimiento pasan por el adaptador (' +
+       (3 + locales.length) + ' presentes; los de ops/ sólo existen en local)',
        sinEnganchar.length === 0, sinEnganchar.join(', '));
 }
 

@@ -152,7 +152,10 @@ function bloqueSync() {
         if (AUTH[i] === '{') prof++;
         else if (AUTH[i] === '}') { prof--; if (prof === 0) { i++; break; } }
     }
-    return AUTH.slice(ini, i);
+    // v758 · Declaración e `if` por separado (entre ambos está la apertura
+    // del `try`); mismo corte que test_baja_no_resucita_al_entrar.js.
+    const decl = AUTH.slice(ini, AUTH.indexOf(';', ini) + 1);
+    return decl + '\n' + AUTH.slice(marca, i);
 }
 const BLOQUE = bloqueSync();
 function correrSync({ data, allRoles }) {

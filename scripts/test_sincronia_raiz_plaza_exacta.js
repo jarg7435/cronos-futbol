@@ -79,8 +79,12 @@ ok('0c · se usa el criterio canónico `cronosMismaPlaza`',
 // por delante el manejador de sesión entero: `_cronosCurrentUser` no se
 // asignaba y la app quedaba VACÍA en todos los paneles a la vez. Un fallo de
 // sincronización de roles no puede costar la sesión.
+// ⚠️ v758 · La declaración de `_rolRevocado` sale ANTES del `try`: dentro, no
+//    existía para la auto-activación de más abajo (ReferenceError en cada
+//    arranque; ver test_baja_no_resucita_al_entrar.js, 5b). Lo que este guard
+//    protege no cambia: la SINCRONIZACIÓN sigue dentro del `try`.
 ok('0f · 🛡️ la sincronización va dentro de un `try`: no puede tumbar el login',
-   /try \{\s*\n\s*const _rolRevocado = \(r\) => !!r && r\.status === 'removed';/.test(AUTH) &&
+   /const _rolRevocado = \(r\) => !!r && r\.status === 'removed';\s*\n\s*try \{\s*\n\s*if \(data\.isAuthorized && data\.role\) \{/.test(AUTH) &&
    /catch \(_syncErr\)/.test(AUTH),
    'sin esto, cualquier excepción aquí vacía la aplicación entera');
 
@@ -96,9 +100,12 @@ ok('0d · y la activación va por ÍNDICE, no por predicado',
 // ═══════════════════════════════════════════════════════════════════════
 console.log('\n── PARTE 1 · el bloque real de auth.js, ejecutado ──');
 
-const BLOQUE = trozo(AUTH,
-    "const _rolRevocado = (r) => !!r && r.status === 'removed';",
-    'if (needsRoleSync) {');
+// v758 · Declaración e `if` por separado: entre ambos está la apertura del
+// `try`, que dejaría el trozo con una llave sin cerrar.
+const _DECL = "const _rolRevocado = (r) => !!r && r.status === 'removed';";
+const BLOQUE = _DECL + '\n' + trozo(AUTH,
+    'if (data.isAuthorized && data.role) {',
+    'if (needsRoleSync) {', AUTH.indexOf(_DECL));
 // Se cierra el `if (data.isAuthorized && data.role) {` y se expone el resultado.
 const PROGRAMA = BLOQUE.slice(0, BLOQUE.lastIndexOf('if (needsRoleSync) {')) +
                  '\n_out = { allRoles: allRoles, needsRoleSync: needsRoleSync };\n}';

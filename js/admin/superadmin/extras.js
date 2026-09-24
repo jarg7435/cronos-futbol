@@ -315,7 +315,14 @@
                     pend = await window.saPendingItems();
                 } catch (e) {
                     console.error('[SA-DEBUG] Error leyendo las solicitudes pendientes:', e);
-                    if (body) body.innerHTML = await _saCajaError('las solicitudes pendientes', e);
+                    // ⚠️ v758 · Aquí se llamaba a `_saCajaError`, que no existe
+                    //    en ningún fichero (nació así en v609): el `catch` lanzaba
+                    //    un ReferenceError y la caja se quedaba en «Cargando…»
+                    //    justo cuando había que avisar. Lo cazó el lint.
+                    var _msgSol = String((e && e.message) || e).replace(/[&<>"]/g, function (c) {
+                        return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c];
+                    });
+                    if (body) body.innerHTML = '<p style="color:#ff5858;padding:1rem;">⚠️ No se pudieron leer las solicitudes pendientes: ' + _msgSol + '</p>';
                     return;
                 }
 

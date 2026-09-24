@@ -6,9 +6,9 @@
   "scripts": {
     "dev": "firebase serve --only hosting,functions",
     "build": "node scripts/build.js",
-    "verify": "npm run build && npm test",
-    "lint": "eslint js/ functions/ --ext .js",
-    "lint:fix": "eslint js/ functions/ --ext .js --fix",
+    "verify": "npm run build && npm run lint && npm test",
+    "lint": "eslint js/ functions/",
+    "lint:fix": "eslint js/ functions/ --fix",
     "format": "prettier --write \"js/**/*.js\" \"functions/**/*.js\" \"*.json\" \"*.html\"",
     "format:check": "prettier --check \"js/**/*.js\" \"functions/**/*.js\"",
     "test": "node scripts/run-tests.js",
@@ -27,10 +27,17 @@
   "devDependencies": {
     "@eslint/js": "^9.0.0",
     "eslint": "^9.0.0",
+    "espree": "^10.4.0",
     "firebase-tools": "^15.30.2",
+    "globals": "^14.0.0",
     "prettier": "^3.2.0"
   },
   "engines": {
     "node": ">=18.0.0"
+  },
+  "overrides": {
+    "gaxios": {
+      "uuid": "^11.1.1"
+    }
   }
 }
