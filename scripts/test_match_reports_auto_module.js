@@ -226,8 +226,10 @@ const inCol = (written, col) => written.filter(w => w.col === col);
         const used = [...names].filter(n => !MOVED.includes(n)
             && new RegExp('\\b' + n.replace(/[$]/g, '\\$') + '\\b').test(BLOCK)).sort();
         const esperados = ['_cGetStaff', '_cMatchSubcatFor', '_cMyTeamKey', '_cResolveClubId',
-                           '_cStaffThreadId', '_cronosResolveParentReportTargets', '_parseHistoryForFirestore'].sort();
-        ok('1c · fan-out a panel.js = los SIETE helpers de esta mitad (incluye _cGetStaff)',
+                           '_cStaffThreadId', '_cronosResolveParentReportTargets', '_parseHistoryForFirestore',
+                           // v764 · el aviso de familias sin equipo (opción A del autor).
+                           '_cronosAvisaFamiliasSinEquipo'].sort();
+        ok('1c · fan-out a panel.js = los OCHO helpers de esta mitad (incluye _cGetStaff)',
             JSON.stringify(used) === JSON.stringify(esperados), used);
     }
     ok('1d · NO usa _cFS(): hace su propio import() dinamico del SDK',

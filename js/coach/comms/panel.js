@@ -152,7 +152,7 @@ function _cronosExtractDorsal(inviteCode) {
     return m ? m[1] : null;
 }
 
-function _cronosResolveParentReportTargets(contacts, links, homePlayers, authorizedIds) {
+function _cronosResolveParentReportTargets(contacts, links, homePlayers, authorizedIds, equipoPartido) {
     // ⛔⛔ SIN ROL DE FAMILIAS NO HAY DESTINATARIOS, Y SE CORTA AQUÍ.
     //
     //  Éste es EL resolvedor de destinatarios-padre y lo llaman TRES sitios:
@@ -170,6 +170,42 @@ function _cronosResolveParentReportTargets(contacts, links, homePlayers, authori
     if (typeof window.cronosHayPadres === 'function' && !window.cronosHayPadres()) {
         return [];
     }
+    // ════════════════════════════════════════════════════════════════
+    //  🔒 v764 · UN INFORME SÓLO PARA LA FAMILIA DEL EQUIPO QUE JUGÓ
+    //
+    //  Medido en producción (2026-09-24): la familia vinculada al dorsal 10
+    //  del ALEVÍN C recibió 11 informes del dorsal 10 del REGIONAL B —otro
+    //  menor—. Los despachos cargan los vínculos de TODO el club y aquí se
+    //  emparejaba sólo por dorsal: cualquier dorsal 10 servía.
+    //
+    //  🔑 Ahora la familia tiene que ser del MISMO equipo que el partido. Su
+    //  equipo sale del VÍNCULO (`teamId`, o categoría + subcategoría completas)
+    //  o del `teamId` que el contacto copió de él; NUNCA de la categoría del
+    //  contacto, que contact-manager rellena con la del entrenador si falta.
+    //  🔑 OPCIÓN A DEL AUTOR: si no se sabe de qué equipo es la familia, NO se
+    //  envía, y se devuelve en `sinEquipo` para avisar al entrenador. Sin
+    //  `equipoPartido` tampoco se envía nada. Todo lo auxiliar va DENTRO de la
+    //  función: los tests la ejecutan suelta.
+    // ════════════════════════════════════════════════════════════════
+    const _slug = (v) => String(v == null ? '' : v).normalize('NFD').split('')
+        .filter((ch) => { const k = ch.charCodeAt(0); return k < 0x300 || k > 0x36f; }).join('')
+        .toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+    const _sinModo = (v) => String(v == null ? '' : v).replace(/^\s*f(?:7|8|11)[_\-\s]+/i, '');
+    const _normEq = (t) => {
+        const p = String(t == null ? '' : t).trim().split('__');
+        if (p.length < 3) return '';
+        return _slug(p[0]) + '__' + _slug(_sinModo(p[1])) + '__' + _slug(p[2]);
+    };
+    const _equipoFamilia = (link, c) => {
+        if (link && link.teamId) return _normEq(link.teamId);
+        if (link && link.clubId && link.category && link.subcategory) {
+            return _slug(link.clubId) + '__' + _slug(_sinModo(link.category)) + '__' + _slug(link.subcategory);
+        }
+        if (c && c.teamId) return _normEq(c.teamId);
+        return '';
+    };
+    const EQ_PARTIDO = _normEq(equipoPartido);
+    const sinEquipo = [];
     const out = [];
     const seenParentUid = new Set(); // 1 informe por padre
     const _normEmail = (e) => (typeof window._cronosNormEmail === 'function')
@@ -258,15 +294,50 @@ function _cronosResolveParentReportTargets(contacts, links, homePlayers, authori
         // parentUid REAL (registrado en la app). Sin parentUid → omitir.
         const parentUid = (link && link.parentUid) || (c.uid || null);
         if (!parentUid) { _skip(c, 'sin parentUid registrado', { dorsal, linkEncontrado: !!link }); continue; }
+
+        // 🔒 v764 · ¿Es de ESTE equipo? (ver la cabecera de la función)
+        const _eqFam = _equipoFamilia(link, c);
+        if (!EQ_PARTIDO || !_eqFam) {
+            sinEquipo.push({ contact: c, dorsal: String(dorsal), parentUid });
+            _skip(c, 'equipo de la familia o del partido DESCONOCIDO: no se envía (v764, opción A)',
+                  { dorsal, equipoFamilia: _eqFam, equipoPartido: EQ_PARTIDO });
+            continue;
+        }
+        if (_eqFam !== EQ_PARTIDO) {
+            _skip(c, 'familia de OTRO equipo (v764)', { dorsal, equipoFamilia: _eqFam, equipoPartido: EQ_PARTIDO });
+            continue;
+        }
+
         if (seenParentUid.has(parentUid)) { _skip(c, 'duplicado (ya tiene informe)', { parentUid }); continue; }
         seenParentUid.add(parentUid);
 
         out.push({ parentUid, dorsal: String(dorsal), player, contact: c });
     }
+    // v764 · Las familias que se han quedado sin informe por no saberse su
+    // equipo viajan pegadas al resultado: los despachos avisan al entrenador.
+    out.sinEquipo = sinEquipo;
     return out;
 }
+// 🔒 v764 · El aviso al entrenador de las familias que no han recibido su
+// informe individual porque no se sabe de qué equipo son (opción A). Uno solo
+// para los tres despachos: automático, envío manual e informe manual.
+function _cronosAvisaFamiliasSinEquipo(destinos) {
+    const faltan = (destinos && destinos.sinEquipo) || [];
+    if (!faltan.length) return 0;
+    const dorsales = faltan.map((f) => '#' + f.dorsal).join(', ');
+    console.warn('[Informes] Familias sin equipo en su vínculo (no se les envía el informe individual):', faltan);
+    if (typeof showToast === 'function') {
+        showToast('⚠️ ' + faltan.length + (faltan.length === 1 ? ' familia' : ' familias') +
+                  ' (' + dorsales + ') sin equipo en su vínculo: no ' +
+                  (faltan.length === 1 ? 'ha' : 'han') + ' recibido el informe individual. ' +
+                  'Pídele que vuelva a vincularse desde su panel.', 9000);
+    }
+    return faltan.length;
+}
+
 // Exponer en window para reutilización entre módulos y tests.
 if (typeof window !== 'undefined') {
+    window._cronosAvisaFamiliasSinEquipo = _cronosAvisaFamiliasSinEquipo;
     window._cronosResolveParentReportTargets = _cronosResolveParentReportTargets;
     window._cronosExtractDorsal = _cronosExtractDorsal;
 }

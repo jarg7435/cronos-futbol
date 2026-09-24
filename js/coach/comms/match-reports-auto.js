@@ -398,10 +398,13 @@ async function autoDispatchMatchReports() {
         if (!_hayFamilias) {
             console.info('[autoDispatch] Rol de familias desactivado: se omite la fase de padres.');
         }
+        // 🔒 v764 · el EQUIPO del partido: sólo sus familias reciben (panel.js).
+        const _eqPartido = (typeof window.cronosEquipoAbierto === 'function') ? window.cronosEquipoAbierto() : '';
         try {
             _parentTargets = _hayFamilias
-                ? (_cronosResolveParentReportTargets(contacts, links, homePlayers, preSelectionIds) || [])
+                ? (_cronosResolveParentReportTargets(contacts, links, homePlayers, preSelectionIds, _eqPartido) || [])
                 : [];
+            if (typeof window._cronosAvisaFamiliasSinEquipo === 'function') window._cronosAvisaFamiliasSinEquipo(_parentTargets);
         } catch (targetsErr) {
             console.error('[autoDispatch] No se pudieron resolver los padres destinatarios ' +
                 '(se continúa con la copia del entrenador):', targetsErr && targetsErr.message, targetsErr);

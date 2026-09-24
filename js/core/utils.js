@@ -2523,6 +2523,82 @@ function cronosTeamId(clubId, category, subcategory) {
     return c + '__' + cat + '__' + sub;
 }
 
+// ════════════════════════════════════════════════════════════════════
+//  🆔 v764 · EL CÓDIGO DEL JUGADOR SALE DEL EQUIPO, NO DEL ENTRENADOR
+//
+//  Encargo del autor (2026-09-24): Alevín C y Regional B del mismo entrenador
+//  daban a sus jugadores el MISMO código («ALC01»…). _cronosGeneratePlayerId
+//  tomaba la PRIMERA plaza de entrenador del usuario —el error de v540/v680
+//  otra vez— y los entes, cuyo rol es 'individual', caían al genérico «J».
+//
+//  cronosPrefijoJugador(teamId) → prefijo de categoría + subcategoría del
+//  EQUIPO ('club__regional__b' → 'RGB'). Sin equipo reconocible, 'J'.
+//  ⚠️ FEM delante de 'regional' (la trampa de v511): 'regional-fem' contiene
+//  'regional'.
+// ════════════════════════════════════════════════════════════════════
+function cronosPrefijoJugador(teamId) {
+    const partes = String(teamId == null ? '' : teamId).split('__');
+    const cat = String(partes[1] || '').toLowerCase();
+    const sub = String(partes[2] || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+    let p = 'J';
+    if (cat.indexOf('prebenjamin') !== -1)      p = 'PR';
+    else if (cat.indexOf('benjamin') !== -1)    p = 'BJ';
+    else if (cat.indexOf('alevin') !== -1)      p = 'AL';
+    else if (cat.indexOf('infantil') !== -1)    p = 'IF';
+    else if (cat.indexOf('cadete') !== -1)      p = 'CD';
+    else if (cat.indexOf('juvenil') !== -1)     p = 'JV';
+    else if (cat.indexOf('futurefem') !== -1)   p = 'FF';
+    else if (cat.indexOf('regional') !== -1 && cat.indexOf('fem') !== -1) p = 'RF';
+    else if (cat.indexOf('regional') !== -1)    p = 'RG';
+    else if (cat.indexOf('nacional') !== -1)    p = 'NC';
+    return p + sub;
+}
+window.cronosPrefijoJugador = cronosPrefijoJugador;
+
+// 🆔 v764 · El equipo del partido/plantilla ABIERTOS. Primero el equipo elegido
+// en la pantalla (una pestaña, un partido: v733); si no, se compone con la
+// categoría del partido en curso. '' = no se sabe, y quien llame decide (el
+// envío a familias, NO enviar: opción A del autor).
+function cronosEquipoAbierto() {
+    try {
+        if (window._cronosMatchSlots && typeof window._cronosMatchSlots.equipoActual === 'function') {
+            const eq = String(window._cronosMatchSlots.equipoActual() || '');
+            if (eq) return eq;
+        }
+    } catch (e) { /* se compone abajo */ }
+    try {
+        const me = window._cronosCurrentUser || {};
+        return cronosTeamId(me.clubId || me.individualEntityId || '',
+                            window._currentMatchCategory || '', window._currentMatchSubcategory || '');
+    } catch (e) { return ''; }
+}
+window.cronosEquipoAbierto = cronosEquipoAbierto;
+
+// 🔒 v764 · ¿De qué equipo es esta FAMILIA? Lo dice su plaza de familiar en
+// ese club (o ente). Se escribe en su vínculo al vincularse, para que el envío
+// de informes sepa a quién le toca (_cronosResolveParentReportTargets).
+// Con VARIAS plazas de familiar en el mismo club (hijos en equipos distintos)
+// manda la del dorsal que se vincula; si aun así no se puede decidir, '' — y
+// entonces no se le envía nada: opción A del autor.
+function cronosEquipoDeFamilia(yo, clubId, dorsal) {
+    const plazas = ((yo && yo.allRoles) || []).filter(r => r &&
+        (r.role === 'parent' || r.role === 'parent_individual') &&
+        (r.clubId === clubId || r.individualEntityId === clubId) &&
+        r.status !== 'removed');
+    const d = String(dorsal == null ? '' : dorsal).replace(/^J-?/i, '');
+    let p = null;
+    if (plazas.length === 1) p = plazas[0];
+    else if (d) {
+        const delDorsal = plazas.filter(r => String(r.playerNumber == null ? '' : r.playerNumber) === d ||
+            String(r.inviteCode || '').replace(/^J-?/i, '') === d);
+        if (delDorsal.length === 1) p = delDorsal[0];
+    }
+    if (!p || !p.category) return { teamId: '', category: '', subcategory: '' };
+    return { teamId: cronosTeamId(clubId, p.category, p.subcategory || ''),
+             category: p.category, subcategory: p.subcategory || '' };
+}
+window.cronosEquipoDeFamilia = cronosEquipoDeFamilia;
+
 // Normaliza una clave de equipo YA GUARDADA. Hace falta porque el histórico de
 // informes lleva escrito `teamId: 'club__f11-regional__b'` y hay que poder
 // compararlo con la clave canónica sin reescribir un solo documento de

@@ -1226,6 +1226,15 @@ async function openParentPanel(initialTab) {
                             || (me && me.category) || '';
                         const linkId = `${clubId}_${pNum}`;
                         const existingLink = await getDoc(doc(fa.db, 'cronos_player_links', linkId));
+                        // 🔒 v764 · EL EQUIPO DE LA FAMILIA VA EN EL VÍNCULO. Sin él,
+                        // el envío de informes no puede saber a quién le toca y
+                        // (opción A del autor) no le envía nada. Sale de su plaza
+                        // de familiar; va con el parentUid porque describe a ESTA
+                        // familia, que es la que queda en el vínculo.
+                        const _eqFam = (typeof window.cronosEquipoDeFamilia === 'function')
+                            ? window.cronosEquipoDeFamilia(myData, clubId, pNum) : { teamId: '' };
+                        const _camposEquipo = _eqFam.teamId
+                            ? { teamId: _eqFam.teamId, subcategory: _eqFam.subcategory } : {};
 
                         if (existingLink.exists()) {
                             const _exCat = existingLink.data().category;
@@ -1236,6 +1245,7 @@ async function openParentPanel(initialTab) {
                                 parentName:  myData.displayName || me.email || '',
                                 // Solo establecer categoría si el link no la tenía aún.
                                 ...(!_exCat && pCat ? { category: pCat } : {}),
+                                ..._camposEquipo,
                             });
                         } else {
                             await setDoc(doc(fa.db, 'cronos_player_links', linkId), {
@@ -1254,6 +1264,7 @@ async function openParentPanel(initialTab) {
                                 canReceiveMsg:     true,
                                 inviteCode:        `J${pNum}`,
                                 createdAt:         new Date().toISOString(),
+                                ..._camposEquipo,   // 🔒 v764
                             });
                         }
                         // Recargar tras la vinculación
@@ -1348,12 +1359,20 @@ async function openParentPanel(initialTab) {
                             }
                         }
 
+                        // 🔒 v764 · el equipo de la familia, también al vincular a mano.
+                        const _eqFamM = (typeof window.cronosEquipoDeFamilia === 'function')
+                            ? window.cronosEquipoDeFamilia(window._cronosCurrentUser || me, clubId, manualPNum)
+                            : { teamId: '' };
+                        const _camposEquipoM = _eqFamM.teamId
+                            ? { teamId: _eqFamM.teamId, category: _eqFamM.category, subcategory: _eqFamM.subcategory } : {};
+
                         if (linkRef) {
                             // Link encontrado: añadir parentUid
                             await updateDoc(linkRef, {
                                 parentUid:   me.uid,
                                 parentEmail: me.email || '',
                                 parentName:  me.displayName || me.email || '',
+                                ..._camposEquipoM,
                             });
                         } else {
                             // Link no existe: crear uno nuevo
@@ -1376,6 +1395,7 @@ async function openParentPanel(initialTab) {
                                 canReceiveTr:      true,
                                 canReceiveMsg:     true,
                                 createdAt:         new Date().toISOString(),
+                                ..._camposEquipoM,   // 🔒 v764
                             });
                         }
 

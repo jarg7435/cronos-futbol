@@ -203,6 +203,11 @@ async function openContactManager() {
                         type: 'parent',
                         category: l.category || coachCat,
                         subcategory: l.subcategory || coachSub,
+                        // 🔒 v764 · el equipo del VÍNCULO, tal cual y sin suponer:
+                        // category/subcategory de arriba se rellenan con las del
+                        // entrenador si faltan, así que el envío de informes no
+                        // se fía de ellas (lo decide el resolvedor de panel.js).
+                        teamId: l.teamId || '',
                         tags: ['rpt', 'msg', 'cv', 'tr', 'live']
                     });
                 }

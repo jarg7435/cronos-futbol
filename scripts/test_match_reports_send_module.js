@@ -262,8 +262,10 @@ const inCol = (written, col) => written.filter(w => w.col === col);
         // UNICAMENTE en la mitad automatica (6b). Al partir, cada mitad se
         // queda con los suyos.
         const esperados = ['_cFS', '_cMatchSubcatFor', '_cMyTeamKey', '_cResolveClubId',
-                           '_cStaffThreadId', '_cronosResolveParentReportTargets', '_parseHistoryForFirestore'].sort();
-        ok('1c · fan-out a panel.js = los SIETE helpers de esta mitad (_cGetStaff es de 6b)',
+                           '_cStaffThreadId', '_cronosResolveParentReportTargets', '_parseHistoryForFirestore',
+                           // v764 · el aviso de familias sin equipo (opción A del autor).
+                           '_cronosAvisaFamiliasSinEquipo'].sort();
+        ok('1c · fan-out a panel.js = los OCHO helpers de esta mitad (_cGetStaff es de 6b)',
             JSON.stringify(used) === JSON.stringify(esperados), used);
     }
     {

@@ -42,7 +42,16 @@ const sandbox = { window: {} };
 vm.createContext(sandbox);
 vm.runInContext(extractFn('_cronosExtractDorsal'), sandbox);
 vm.runInContext(extractFn('_cronosResolveParentReportTargets'), sandbox);
-const resolve = sandbox._cronosResolveParentReportTargets;
+// 🔒 v764 · El resolvedor exige el EQUIPO del partido y sólo envía a las
+// familias de ESE equipo (opción A: sin equipo, no se envía). Todos los casos
+// de este fichero son familias del MISMO equipo que el partido, así que el
+// envoltorio les pone ese equipo a vínculos y contactos y lo pasa como el del
+// partido: lo que se probaba aquí sigue significando lo mismo. Lo NUEVO (otro
+// equipo, equipo desconocido) se prueba en test_informes_familia_por_equipo.js.
+const _EQ = 'club1__alevin__c';
+const _conEq = (xs) => (xs || []).map(x => (x && typeof x === 'object') ? Object.assign({ teamId: _EQ }, x) : x);
+const _resolveCrudo = sandbox._cronosResolveParentReportTargets;
+const resolve = (c, l, h, a) => _resolveCrudo(_conEq(c), _conEq(l), h, a, _EQ);
 
 let passed = 0, failed = 0;
 function assert(name, cond) {

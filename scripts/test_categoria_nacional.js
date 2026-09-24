@@ -313,8 +313,10 @@ console.log('\n6) NACIONAL EN EL RESTO DE LA APP');
        'sin esto, el reparto de minutos de cada jugador se haría sobre un partido que no existe');
     ok('6i · el visor en vivo la rotula', /nacional:\s*'NACIONAL'/.test(LIVE));
     ok('6j · el cuadrante del club la ordena', /'prebenjamin','nacional'/.test(sinCom(CQ)));
+    // v764 · El prefijo se mudó a cronosPrefijoJugador (utils.js): el código
+    // del jugador sale ahora del EQUIPO abierto, no del entrenador.
     ok('6k · y los dorsales tienen prefijo propio',
-       /includes\('nacional'\)\) prefix = 'NC'/.test(leer('js/core/staff-and-comms.js')));
+       /indexOf\('nacional'\) !== -1\)\s*p = 'NC'/.test(UTILS));
 }
 
 console.log('\n' + (total - fallos) + '/' + total + ' aserciones OK');

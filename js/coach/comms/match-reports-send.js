@@ -728,7 +728,10 @@ window._executeReportsSend = async function(method) {
                     if (!_manualAuthIds && Array.isArray(recipients) && recipients.length > 0) {
                         _manualAuthIds = recipients.map(r => String(r.id)).filter(Boolean);
                     }
-                    _parentTargetsManual = _cronosResolveParentReportTargets(_mc, links, homePlayers, _manualAuthIds);
+                    // 🔒 v764 · con el EQUIPO del partido: sólo sus familias (panel.js).
+                    _parentTargetsManual = _cronosResolveParentReportTargets(_mc, links, homePlayers, _manualAuthIds,
+                        (typeof window.cronosEquipoAbierto === 'function') ? window.cronosEquipoAbierto() : '');
+                    if (typeof window._cronosAvisaFamiliasSinEquipo === 'function') window._cronosAvisaFamiliasSinEquipo(_parentTargetsManual);
                     _parentTargetsByUid = new Map(_parentTargetsManual.map(t => [t.parentUid, t]));
                 }
 

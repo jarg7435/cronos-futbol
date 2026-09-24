@@ -1929,7 +1929,12 @@
             var comoJugadores = convocados.map(function (j) {
                 return { number: j.dorsal, name: j.nombre, alias: j.alias };
             });
-            var destinos = _cronosResolveParentReportTargets(contacts, links, comoJugadores, null) || [];
+            // 🔒 v764 · con el EQUIPO del informe manual: sólo sus familias.
+            // Aquí el equipo es el del formulario, no el de la pantalla.
+            var _eqManual = (typeof window.cronosTeamId === 'function' && S && S.equipo)
+                ? window.cronosTeamId(clubId, S.equipo.category, S.equipo.subcategory) : '';
+            var destinos = _cronosResolveParentReportTargets(contacts, links, comoJugadores, null, _eqManual) || [];
+            if (typeof window._cronosAvisaFamiliasSinEquipo === 'function') window._cronosAvisaFamiliasSinEquipo(destinos);
             if (!destinos.length) return 0;
 
             var enviados = 0;

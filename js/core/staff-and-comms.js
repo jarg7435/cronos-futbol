@@ -201,61 +201,22 @@ window.cronosActiveMode = function () {
     return 'f7';
 };
 
-window._cronosGeneratePlayerId = function(index) {
-    var cat = '';
-    var sub = 'A';
-    var mode = 'f7'; // default
-    try {
-        var modeEl = document.getElementById('setup-mode');
-        if (modeEl) mode = modeEl.value || 'f7';
-    } catch(e) {}
-
-    try {
-        var me = window._cronosCurrentUser;
-        if (me && me.allRoles) {
-            // Buscar el rol de entrenador cuya categoría coinca con la modalidad actual
-            var coachRole = me.allRoles.find(function(r) {
-                if (!r || (r.role !== 'user' && r.role !== 'coach')) return false;
-                // v259: aceptar categoría con o sin prefijo de modalidad.
-                // El dropdown auth-category guarda 'alevin', 'cadete', etc. (sin f7_/f11_).
-                // Pero el dropdown match-category guarda 'f7_alevin', 'f11_cadete', etc.
-                // Aceptamos ambos formatos.
-                var rcat = (r.category || '').toLowerCase();
-                if (!rcat) return false;
-                // Quitar prefijo de modalidad si lo tiene
-                var rcatBase = rcat.replace(/^f7_/, '').replace(/^f11_/, '');
-                // Coincidir si la categoría base no está vacía
-                // (no filtramos por modalidad porque el dropdown auth-category
-                // no distingue F7/F11 — la categoría es la misma)
-                if (rcatBase) return true;
-                return false;
-            });
-            if (coachRole) {
-                cat = coachRole.category || '';
-                sub = coachRole.subcategory || 'A';
-            }
-        }
-    } catch(e) {}
-
-    // Fallback: usar la categoría del partido
-    if (!cat) cat = window._currentMatchCategory || '';
-    if (!sub || sub === 'A') sub = window._currentMatchSubcategory || 'A';
-
-    var prefix = 'J';
-    if (cat.includes('prebenjamin')) prefix = 'PR';
-    else if (cat.includes('benjamin')) prefix = 'BJ';
-    else if (cat.includes('alevin')) prefix = 'AL';
-    else if (cat.includes('infantil')) prefix = 'IF';
-    else if (cat.includes('cadete')) prefix = 'CD';
-    else if (cat.includes('juvenil')) prefix = 'JV';
-    // ⚠️ 'regional_fem' CONTIENE 'regional': va delante o comparte prefijo.
-    else if (cat.includes('futurefem')) prefix = 'FF';
-    else if (cat.includes('regional') && cat.includes('fem')) prefix = 'RF';
-    else if (cat.includes('regional')) prefix = 'RG';
-    else if (cat.includes('nacional')) prefix = 'NC';   // 🆕 v747
-
+// 🆔 v764 · EL CÓDIGO ES DEL EQUIPO ABIERTO (encargo del autor, 2026-09-24).
+// Aquí se buscaba la PRIMERA plaza de entrenador con categoría del usuario,
+// sin mirar qué equipo se editaba: con Alevín C delante, el Regional B de José
+// salía también «ALC01…» (medido en producción: su asistencia de septiembre,
+// 25 fichas ALC). Y los entes, cuyo rol es 'individual', no encontraban
+// ninguna y caían al genérico «JA01». Ahora el prefijo sale de la clave del
+// equipo abierto (cronosEquipoAbierto + cronosPrefijoJugador, utils.js):
+// Alevín C → ALC01, Regional B → RGB01, el Regional A de un ente → RGA01.
+// `teamId` explícito manda (lo usan el script de migración y los tests).
+window._cronosGeneratePlayerId = function(index, teamId) {
+    var eq = (teamId !== undefined && teamId !== null) ? String(teamId)
+           : (typeof window.cronosEquipoAbierto === 'function' ? window.cronosEquipoAbierto() : '');
+    var prefix = (typeof window.cronosPrefijoJugador === 'function')
+        ? window.cronosPrefijoJugador(eq) : 'J';
     var num = String(index + 1).padStart(2, '0');
-    return prefix + sub + num;
+    return prefix + num;
 };
 
 // ── PLAZAS DE APOYO (2026-08-12) ────────────────────────────────────
