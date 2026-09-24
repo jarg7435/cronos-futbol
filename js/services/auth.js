@@ -1707,20 +1707,28 @@ export async function checkAuthorization(user) {
                             _verifiedRoleKeys.delete(_roleKey(role, clubId, indivEntityId));
                         }
                     } else if (existingIdx === -1) {
-                        // Añadir el rol si no existe.
-                        // 🔑 v560 · CON SU CATEGORÍA Y SUBCATEGORÍA. Sin ellas
-                        // nacía un rol de entrenador SIN EQUIPO: la entrada
-                        // existe, pero `cronosEquiposDeEntrenador` la descarta
-                        // (`if (!cat) return`) y la persona se queda sin su
-                        // categoría — exactamente el "se desvincula sola" que
-                        // reportó el autor. Y como esto se PERSISTE dos bloques
-                        // más abajo, quedaba escrito así para siempre.
-                        updatedAllRoles.push({
-                            role, isAuthorized: true, status: 'active',
-                            clubId: clubId, clubName: clubName,
-                            category: reqCat, subcategory: reqSub,
-                        });
-                        needsUpdate = true;
+                        // 🔴🔴 v759 · UNA PLAZA QUE FALTA NO SE RECREA.
+                        //
+                        // Aquí se añadía la plaza de toda solicitud aprobada
+                        // que no estuviera en allRoles. Llevaba muerta desde
+                        // v564 sin que nadie lo supiera (un ReferenceError de
+                        // `_rolRevocado` abortaba este forEach en su primera
+                        // vuelta); v758 corrigió aquel error, la rama revivió
+                        // y RECREÓ EN PRODUCCIÓN dos plazas que el admin de un
+                        // club había quitado —al entrar el autor en testeo,
+                        // que escribe en la misma BD—. Reparado a mano el
+                        // 2026-09-24 contra el PITR del día anterior.
+                        //
+                        // 🔑 Sobra: el SuperAdmin escribe la plaza en el usuario
+                        // ANTES de marcar la solicitud como aprobada
+                        // (extras.js), así que «aprobada y sin plaza» sólo puede
+                        // ser una plaza QUITADA después. Las solicitudes quedan
+                        // en `sa_approved` para siempre, y `_rolRevocado` sólo
+                        // protege las plazas que siguen en la lista con status
+                        // 'removed', no las borradas enteras. Era también la
+                        // que fabricaba la plaza «individual» gemela, sin
+                        // categoría, de los entes (su solicitud no trae clubId).
+                        // Guard: scripts/test_solicitud_no_resucita_plaza.js.
                     } else if (!updatedAllRoles[existingIdx].isAuthorized) {
                         // Activar el rol si estaba pendiente.
                         // 🔧 v560 · Y REPARAR la categoría si le falta. Las

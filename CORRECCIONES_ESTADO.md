@@ -1144,3 +1144,41 @@ y comprueba los locales sólo si existen.
 - **Enlaces de invitación antiguos con PII** (P1): pendiente de decidir su
   caducidad.
 - **Prueba end-to-end y simulacro de restauración** (P1).
+
+---
+
+## 🔴 INCIDENTE (2026-09-24): v758 recreó dos plazas en PRODUCCIÓN — reparado; v759 lo corrige
+
+**Qué pasó.** Al corregir en v758 el `ReferenceError` de `_rolRevocado` (auth.js,
+desde v564) se desbloqueó el bloque «Auto-activar roles aprobados por el SA», que
+llevaba dos meses abortando en su primera vuelta. Su rama «añadir la plaza si no
+existe» recreaba la plaza de toda solicitud `sa_approved` ausente de `allRoles`.
+El administrador de CD DÍA entró en **testeo** (que escribe en la BD de
+producción) a las 01:35 y reaparecieron `user/juvenil/C` y `user/regional/A`,
+que se habían quitado semanas antes. Las solicitudes quedan aprobadas para
+siempre, y `_rolRevocado` sólo protege plazas que siguen en la lista con status
+`removed`, no las borradas enteras.
+
+**Alcance, medido en sólo lectura** (78 colecciones, 18.875 documentos): esa
+noche sólo se escribieron 3 documentos — ese usuario, el `lastLogin` del
+SuperAdmin y su token de avisos. Ningún otro club, ente (Míster CF Panadería
+Pulido San Mateo intacto desde el 10-09), solicitud ni invitación. La prueba de
+«cómo estaba antes» sale del PITR (`GET …?readTime=`).
+
+**Reparación** (autorizada por el autor): una sola escritura de `allRoles` con
+precondición de `updateTime`; resultado idéntico al PITR del 23-09. Copia previa
+en `backups/`. Testeo se devolvió a v757 mientras se corregía.
+
+**v759.** Se retira la rama: el SuperAdmin escribe la plaza ANTES de marcar la
+solicitud como aprobada, así que «aprobada y sin plaza» sólo puede ser una plaza
+quitada. Era también la que fabricaba la plaza «individual» gemela, sin
+categoría, de los entes. Guard nuevo que EJECUTA el bloque real:
+`test_solicitud_no_resucita_plaza.js` (rojo con el código de v758: recreaba
+exactamente las dos plazas). Antes de desplegar se ejecutó el bloque con los
+datos reales de los 7 usuarios: **0 escrituras, 0 cambios**. Suite 293/293.
+
+🔑 **Lecciones.** (1) Corregir un error que ABORTABA un camino es un cambio de
+comportamiento de datos: se mide contra los datos reales antes de desplegar.
+(2) Mientras testeo comparta BD, probar en testeo es escribir en producción.
+Orden del autor: prohibido usar producción para pruebas; queda pendiente montar
+un testeo aislado.

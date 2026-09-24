@@ -176,8 +176,11 @@ ok('5c · los deduplicadores del ARRANQUE DE SESIÓN siguen usando la plaza',
 //  `cronosEquiposDeEntrenador` descarta esas entradas (`if (!cat) return`), así
 //  que la persona aparece "desvinculada" aunque el rol exista. Eran TRES pushes
 //  en el arranque, los tres sin categoría, y los tres se persisten.
+// ⚠️ v759 · Eran tres; la de la auto-activación (`category: reqCat…`) ya NO
+//    crea plazas: recreaba las que el admin había quitado (incidente del
+//    24-09, ver test_solicitud_no_resucita_plaza.js). Se exige lo contrario.
 ok('5d · 🔑 el arranque, al añadir un rol de entrenador, le pone su categoría',
-   /category: reqCat, subcategory: reqSub,/.test(SRC5.auth) &&
+   !/updatedAllRoles\.push\(/.test(SRC5.auth) &&
    /category: _cat, subcategory: _sub,/.test(SRC5.auth) &&
    /_esCoach \? \(data\.category \|\| data\.categoryLabel \|\| null\) : null/.test(SRC5.auth),
    'sin categoría el rol nace sin equipo y el entrenador entra sin nada');
