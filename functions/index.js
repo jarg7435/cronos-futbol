@@ -5,6 +5,28 @@ const nodemailer = require('nodemailer');
 admin.initializeApp();
 
 /* ══════════════════════════════════════════════════════════════════════
+   🧪 v760 · ¿EN QUE PROYECTO CORRO? (testeo aislado, 2026-09-24)
+
+   Estas functions se despliegan en DOS proyectos: `cronos-futbol-app`
+   (produccion) y `cronos-futbol-test` (testeo, con su propia BD). El
+   proyecto lo pone Google en el entorno; no lo manda el cliente, asi que
+   nadie puede hacerse pasar por testeo para saltarse nada.
+
+   🔑 LO DESCONOCIDO ES PRODUCCION. Sólo el id exacto de testeo cambia el
+   comportamiento; cualquier otro valor (o ninguno) se queda como estaba.
+
+   En testeo:
+     · los enlaces apuntan a cronos-futbol-test.web.app, no a produccion;
+     · NO SE ENVIA NINGUN CORREO REAL (decision del autor): se registra y
+       se devuelve el enlace, como cuando faltan credenciales.
+   ══════════════════════════════════════════════════════════════════════ */
+const _PROYECTO = process.env.GCLOUD_PROJECT ||
+    (() => { try { return JSON.parse(process.env.FIREBASE_CONFIG || '{}').projectId || ''; } catch (_) { return ''; } })();
+const ES_TESTEO = _PROYECTO === 'cronos-futbol-test';
+const _APP_URL_DEL_PROYECTO = ES_TESTEO ? 'https://cronos-futbol-test.web.app'
+                                        : 'https://cronos-futbol-app.web.app';
+
+/* ══════════════════════════════════════════════════════════════════════
    🔴🔴 v633 · firebase-admin 14 BORRO LA API CON ESPACIO DE NOMBRES
 
    `admin.firestore()`, `admin.auth()` y `admin.firestore.FieldValue` YA NO
@@ -1781,7 +1803,8 @@ exports.sendInviteEmail = functions
      Se sigue validando la FORMA del token (solo hex/guiones) para que no
      pueda inyectarse nada en el atributo href del HTML.
      ══════════════════════════════════════════════════════════════════ */
-  const APP_URL = 'https://cronos-futbol-app.web.app';
+  // 🧪 v760 · la del proyecto en que corre (ver ES_TESTEO arriba).
+  const APP_URL = _APP_URL_DEL_PROYECTO;
   const tokenLimpio = String((data && data.inviteToken) || '').trim();
   if (!/^[A-Za-z0-9_-]{8,64}$/.test(tokenLimpio)) {
     console.warn('[sendInviteEmail] RECHAZADA: ' +
@@ -1879,6 +1902,22 @@ exports.sendInviteEmail = functions
 
     '</div>'
   );
+
+  /* ---- 🧪 v760 · EN TESTEO NO SALE NINGUN CORREO REAL ---- */
+  /* Decision del autor (2026-09-24). Va ANTES que las credenciales: aunque  */
+  /* alguien las configure en testeo, esta rama no llega a crear el          */
+  /* transporte. Misma respuesta que sin credenciales, mas `testeo: true`.   */
+  if (ES_TESTEO) {
+    console.log('[sendInviteEmail] 🧪 TESTEO: correo NO enviado. Destino:', to, '| URL:', inviteUrl);
+    return {
+      success: false,
+      noCredentials: true,
+      testeo: true,
+      inviteUrl: inviteUrl,
+      sentTo: to,
+      message: 'Entorno de testeo: no se envían correos reales. Enlace generado.',
+    };
+  }
 
   /* ---- Si no hay credenciales → devolver inviteUrl para fallback mailto ---- */
   if (!emailUser || !emailPass) {

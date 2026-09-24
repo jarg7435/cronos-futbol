@@ -173,11 +173,19 @@ export async function loadClubOptions() {
             // mantiene la Cloud Function syncClubPublic con solo name/type/status,
             // por lo que el formulario de registro funciona para usuarios no
             // autenticados sin exponer los campos sensibles de clubs.
+            //
+            // 🔒 v760 · SÓLO LO ACTIVO. Antes se enseñaba todo lo que no fuera
+            // 'blocked': cualquier otro estado raro, o un espejo sin nombre,
+            // entraba en la lista. Ahora pasa únicamente lo que está 'active'
+            // (o sin estado: los espejos antiguos no lo llevaban) y tiene
+            // nombre. Un club BORRADO no llega aquí: syncClubPublic borra su
+            // espejo al borrarse `clubs/{id}`.
+            const _esVigente = (c) => !!(c && c.name) && (!c.status || c.status === 'active');
             const clubsSnap = await m.getDocs(m.collection(fa.db, 'clubs_public'));
             if (!clubsSnap.empty) {
                 clubsSnap.forEach(doc => {
                     const club = doc.data();
-                    if (club.status !== 'blocked') {
+                    if (_esVigente(club)) {
                         if (club.type === 'individual') {
                             // Ente individual (clubs con type=individual)
                             const name = club.name || doc.id;
@@ -195,28 +203,13 @@ export async function loadClubOptions() {
             console.warn('[Chronos] Error cargando clubs_public:', e.message);
         }
 
-        // Cargar entidades individuales (colección 'individuals' — compatibilidad)
-        // FIX: Solo ejecutar si hay usuario autenticado (las rules requieren isAuth())
-        try { if (fa.auth && fa.auth.currentUser) {
-            const indivSnap = await m.getDocs(m.collection(fa.db, 'individuals'));
-            if (!indivSnap.empty) {
-                indivSnap.forEach(doc => {
-                    const ind = doc.data();
-                    if (ind.status !== 'blocked') {
-                        // Evitar duplicar si ya se cargó desde clubs
-                        if (!indivHtml.includes('value="individual:' + doc.id + '"')) {
-                            const name = ind.displayName || ind.email || doc.id;
-                            const label = (name !== ind.email) ? name + ' (' + ind.email + ')' : ind.email;
-                            const adminTag = ind.hasAdmin ? '' : ' ⏳';
-                            indivHtml += '<option value="individual:' + doc.id + '">👤 ' + label + adminTag + '</option>';
-                        }
-                    }
-                });
-                indivLoaded = true;
-            }
-        } } catch(e) {
-            console.warn('[Chronos] Error cargando entidades individuales:', e.message);
-        }
+        // 🔒 v760 · Aquí se añadían también los documentos de la colección
+        // antigua `individuals` (sólo con sesión iniciada). Esa colección ya
+        // no la escribe el alta de entes —viven en `clubs` con su espejo—, está
+        // VACÍA en producción (medido el 2026-09-24), y cualquier resto que
+        // quedara en ella se habría listado aunque el ente ya no existiera en
+        // `clubs_public`. Además enseñaba el CORREO del ente en la opción. La
+        // lista sale sólo del espejo público.
 
         // Construir HTML combinado
         if (!clubsLoaded && !indivLoaded) {
