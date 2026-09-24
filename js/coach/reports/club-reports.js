@@ -296,7 +296,8 @@ async function openStaffDashboard(initialTab) {
                            color:var(--text-muted);padding:0.35rem 0.7rem;border-radius:6px;
                            cursor:pointer;font-size:0.74rem;font-weight:600;" title="Recargar panel">
                     🔄 Recargar</button>
-                
+                <!-- v763 · cambio de contraseña para TODOS los roles (password.js) -->
+                ${typeof window.cronosBotonContrasena==='function'?window.cronosBotonContrasena():''}
                 <button onclick="if(typeof logoutUser==='function')logoutUser();else if(typeof cerrarSesion==='function')cerrarSesion();"
                     style="background:rgba(255,88,88,0.1);border:1px solid rgba(255,88,88,0.3);
                            color:#ff5858;padding:0.35rem 0.8rem;border-radius:6px;

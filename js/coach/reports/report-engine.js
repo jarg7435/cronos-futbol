@@ -1124,6 +1124,22 @@ const _RP = (() => {
     //  los comentarios, por si un agrupador lo sube al nivel del partido.
     // ════════════════════════════════════════════════════════════════
     const _prDelInforme = (mm) => {
+        // 🔴 v761 · COPIA PRIVADA de cronosPRPermitidoEnCategoria (utils.js):
+        // este motor es autocontenido y no puede nombrarla, y va DENTRO de la
+        // función porque test_txt_informes.js la ejecuta suelta. En las
+        // categorías base (Prebenjamín…Infantil, FUTureFEM) el informe no
+        // lleva P/R bajo ningún concepto; sin categoría, no se decide.
+        // test_pr_categorias_base.js exige que esta copia y la de utils.js
+        // digan lo mismo.
+        const _prCategoriaPermite = (cat) => {
+            const n = String(cat == null ? '' : cat).normalize('NFD')
+                .replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
+            if (!n) return true;
+            return ['cadete', 'juvenil', 'regional', 'nacional'].some(k => n.indexOf(k) !== -1);
+        };
+        const _cat = (mm && mm.category) ||
+            (((mm && mm.players) || []).find(x => x && x.category) || {}).category || '';
+        if (!_prCategoriaPermite(_cat)) return null;
         const cands = [];
         if (mm && mm.matchPR) cands.push(mm.matchPR);
         ((mm && mm.players) || []).forEach(d => { if (d && d.matchPR) cands.push(d.matchPR); });

@@ -1558,6 +1558,8 @@ async function openClubAdminPanel(preClubId = null) {
                tablero, donde cada uno lleva escrito PARA QUÉ sirve. Aquí arriba
                eran cuatro botones sin explicación, y "Ceder Administración"
                —que traspasa el club entero— estaba a un clic de "Salir". -->
+          <!-- v763 · cambio de contraseña para TODOS los roles (password.js) -->
+          ${typeof window.cronosBotonContrasena==='function'?window.cronosBotonContrasena('padding:0.45rem 0.9rem;border-radius:10px;font-size:0.75rem;'):''}
           <button onclick="if(typeof cerrarSesion==='function')cerrarSesion();else if(typeof logoutUser==='function')logoutUser();"
               style="padding:0.45rem 1rem;background:rgba(255,88,88,0.15);
                      border:1px solid rgba(255,88,88,0.4);border-radius:10px;

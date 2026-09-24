@@ -348,6 +348,10 @@ window.openSuperAdminPanel = async function openSuperAdminPanel() {
         <button onclick="if(typeof saTab==='function')saTab(window._saSeccionActual||'menu');"
             class="sap-btn" title="Recargar la sección actual"
             style="background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);color:#8b949e;font-weight:600;">🔄 Recargar</button>
+        <!-- v763 · El SuperAdmin también: es su herramienta de EMERGENCIA si
+             sospecha que su contraseña se conoce. El modal le avisa de ello y
+             de cuándo caen las sesiones de otros dispositivos (password.js). -->
+        ${typeof window.cronosBotonContrasena==='function'?window.cronosBotonContrasena():''}
         <button onclick="if(typeof cerrarSesion==='function')cerrarSesion();else if(typeof logoutUser==='function')logoutUser();"
             class="sap-btn"
             style="background:rgba(255,88,88,0.1);border:1px solid rgba(255,88,88,0.3);color:#ff5858;">⏻ Salir</button>

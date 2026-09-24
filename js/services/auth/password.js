@@ -220,6 +220,33 @@
     }
 
     // ══════════════════════════════════════════════════════════════
+    //  🔒 v763 · EL BOTÓN, UNO PARA TODOS LOS PANELES
+    // ══════════════════════════════════════════════════════════════
+    //  Encargo del autor (implementar.txt, 2026-09-24): el candado sólo
+    //  estaba en la pantalla del entrenador (setup-modal.js). Administrador
+    //  de club, administrador individual, director, coordinador, familia y
+    //  SuperAdmin no tenían forma de cambiar su contraseña con la sesión
+    //  abierta. Cada cabecera lo pinta llamando AQUÍ, no con su propia copia:
+    //  seis botones distintos acabarían abriendo cosas distintas.
+    //  test_cambio_contrasena_todos.js exige que los paneles lo usen.
+    window.cronosBotonContrasena = function cronosBotonContrasena(estiloExtra) {
+        return '<button type="button" data-cronos-pwd="1"' +
+            ' onclick="if(typeof openChangePasswordModal===\'function\')openChangePasswordModal();"' +
+            ' title="Cambiar mi contraseña"' +
+            ' style="background:rgba(88,166,255,0.08);border:1px solid rgba(88,166,255,0.3);' +
+            'color:#58a6ff;padding:0.35rem 0.8rem;border-radius:6px;cursor:pointer;' +
+            'font-size:0.74rem;font-weight:700;white-space:nowrap;' + (estiloExtra || '') + '">' +
+            '🔒 Contraseña</button>';
+    };
+
+    // ¿Quien cambia la contraseña es el SuperAdmin? Sólo cambia los TEXTOS
+    // (el aviso de emergencia); el flujo y sus comprobaciones son los mismos.
+    function _esSuperAdmin() {
+        const me = window._cronosCurrentUser || {};
+        return me.role === 'superadmin' || me._activeRole === 'superadmin';
+    }
+
+    // ══════════════════════════════════════════════════════════════
     //  2 · CAMBIAR LA CONTRASEÑA (sesión iniciada)
     // ══════════════════════════════════════════════════════════════
     window.openChangePasswordModal = function openChangePasswordModal() {
@@ -246,10 +273,20 @@
             return;
         }
 
+        // 🔒 v763 · Para el SuperAdmin, el porqué y el cuándo: es la cuenta que
+        // lo controla todo, y el cambio es su herramienta de emergencia.
+        const _avisoSA = _esSuperAdmin()
+            ? '<br><span style="display:block;margin-top:0.6rem;padding:0.55rem 0.7rem;border-radius:8px;' +
+              'background:rgba(248,81,73,0.08);border:1px solid rgba(248,81,73,0.28);color:#ff9b93;">' +
+              '🛡️ <strong>Cuenta de SuperAdmin.</strong> Cámbiala en cuanto sospeches que alguien la ' +
+              'conoce (una fuga, un aviso de seguridad, un equipo ajeno). Al cambiarla, las sesiones ' +
+              'abiertas en otros dispositivos se cierran solas en menos de una hora. Si no recuerdas ' +
+              'la actual, usa el enlace por correo de debajo.</span>'
+            : '';
         const ov = _abrir(
             '🔒 Cambiar contraseña',
             'Sesión de <strong>' + _esc(user.email || '') + '</strong>. Por seguridad te pedimos ' +
-            'la contraseña actual antes de cambiarla.',
+            'la contraseña actual antes de cambiarla.' + _avisoSA,
             '<label style="font-size:0.75rem;color:#7d8590;display:block;margin-bottom:5px;">Contraseña actual</label>' +
             _input('pwd-actual', 'password', '••••••••', 'current-password') +
             // v462 · LA SALIDA PARA QUIEN NO LA RECUERDA. Va pegada al campo
@@ -324,11 +361,31 @@
 
             await fa.updatePassword(user, nueva);
 
-            _msg('✅ Contraseña actualizada. La próxima vez entra con la nueva.', '#3fb950');
+            // 🔒 v763 · Lo que pasa con los OTROS dispositivos, medido en
+            // testeo el 2026-09-24: tras el cambio, Firebase rechaza renovar
+            // la sesión de los demás (TOKEN_EXPIRED) y la suya sigue viva.
+            // Las sesiones se renuevan cada hora como mucho, así que ése es
+            // el plazo. Se dice tal cual: prometer «al instante» sería falso.
+            _msg('✅ Contraseña actualizada. La próxima vez entra con la nueva.<br>' +
+                 '<span style="color:#7d8590;">Las sesiones abiertas en otros dispositivos ' +
+                 'se cerrarán solas en menos de una hora. Aquí sigues dentro.</span>', '#3fb950');
             if (typeof showToast === 'function') {
                 showToast('✅ Contraseña actualizada correctamente', 4000);
             }
-            setTimeout(_cerrar, 1800);
+            // Ya no hay nada que enviar: el pie pasa a un solo «ENTENDIDO», y
+            // la ventana espera a que se lea en vez de cerrarse sola.
+            const box = document.getElementById(_ID + '-box');
+            const pie = box && box.querySelector('div[style*="display:flex"]');
+            if (pie) {
+                pie.innerHTML =
+                    '<button type="button" onclick="window.closePasswordModal()" style="flex:1;' +
+                    'padding:0.8rem;background:#58a6ff;border:none;border-radius:8px;color:#0a0e14;' +
+                    'font-weight:700;font-size:0.88rem;cursor:pointer;">ENTENDIDO</button>';
+            }
+            ['pwd-actual', 'pwd-nueva', 'pwd-nueva2'].forEach((id) => {
+                const el = document.getElementById(id);
+                if (el) { el.value = ''; el.disabled = true; }
+            });
         } catch (err) {
             console.warn('[Cronos-Pwd] Error al cambiar la contraseña:', (err && err.code) || err);
             _msg('⚠️ ' + _errorLegible(err), '#ff5858');

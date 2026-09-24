@@ -412,7 +412,20 @@ async function _sdLoadReports() {
         const matches = {};
         snap.forEach(docSnap => {
             const r   = { _id: docSnap.id, ...docSnap.data() };
-            const key = `${r.matchDate || 'sin-fecha'}_${r.rival || 'sin-rival'}_${r.coachUid || ''}`;
+            // 🔴🔴 v761 · UN PARTIDO ES SU `matchId`, NO «FECHA + RIVAL + ENTRENADOR».
+            // Con esa clave, dos partidos del mismo entrenador el mismo día
+            // contra rivales con el MISMO nombre (el «Rival» por defecto) se
+            // FUNDÍAN en una sola tarjeta. Medido en producción (2026-09-24):
+            // el 23-09 José jugó Alevín C 2-0, Regional B 2-2 y Alevín C 3-2
+            // contra «Rival» → una tarjeta con el marcador de uno, jugadores
+            // de los tres (por dorsal) y las Pérdidas/Recuperaciones del
+            // Regional pintadas en un Alevín (capturas 10862-10864). Y el
+            // borrado del Director, que recorre `players`, habría borrado los
+            // TRES. «Mis Informes» (individual-reports.js) ya agrupaba por
+            // matchId; ahora los dos igual. Sin matchId (informes antiguos)
+            // se conserva la clave de siempre.
+            const key = r.matchId ? ('id:' + r.matchId)
+                                  : `${r.matchDate || 'sin-fecha'}_${r.rival || 'sin-rival'}_${r.coachUid || ''}`;
             if (!matches[key]) {
                 matches[key] = {
                     key,

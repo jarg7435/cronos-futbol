@@ -68,8 +68,29 @@
     const { getFunctions } =
         await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-functions.js');
 
-    // ── Configuración Firebase ────────────────────────────────────
-    const firebaseConfig = {
+    // ══════════════════════════════════════════════════════════════
+    //  🧪 v761 · TESTEO AISLADO: EL PROYECTO SE ELIGE POR EL DOMINIO
+    //
+    //  Hasta aquí la configuración de PRODUCCIÓN iba fija, y
+    //  cronos-futbol-test.web.app —que sólo es otro hosting— leía y
+    //  ESCRIBÍA en la BD real. Probar en testeo borró y creó datos de
+    //  producción (incidentes del 2026-09-24). Ahora testeo tiene su
+    //  proyecto entero: BD, Auth, functions y App Check propios.
+    //
+    //  🔑 LO DESCONOCIDO ES PRODUCCIÓN. Sólo los dominios de testeo y el
+    //  entorno local van a `cronos-futbol-test`; cualquier otro (el de
+    //  producción, un dominio propio futuro…) sigue en producción, que
+    //  nunca puede quedarse sin su configuración por un despiste.
+    //  🔑 Local va a TESTEO: `npm run dev` tampoco escribe en datos reales.
+    //
+    //  ⚠️ La misma lista vive en live.html (visor autónomo) y en utils.js
+    //  (CRONOS_APP_URL). test_testeo_aislado_cliente.js exige que coincidan.
+    // ══════════════════════════════════════════════════════════════
+    const _host  = (typeof location !== 'undefined' && location.hostname) || '';
+    const _local = _host === 'localhost' || _host === '127.0.0.1';
+    const _HOSTS_TESTEO = ['cronos-futbol-test.web.app', 'cronos-futbol-test.firebaseapp.com'];
+    const _esTesteo = _HOSTS_TESTEO.includes(_host) || _local;
+    const _CONFIG_PRODUCCION = {
         apiKey:            "AIzaSyAWPw-lE6ynYK1CkFpSbwCgRtitDzBpIb4",
         authDomain:        "cronos-futbol-app.firebaseapp.com",
         projectId:         "cronos-futbol-app",
@@ -78,6 +99,18 @@
         appId:             "1:393110572633:web:27a7effed60975e690ab48",
         measurementId:     "G-WP3921EM1Z"
     };
+    const _CONFIG_TESTEO = {
+        apiKey:            "AIzaSyD9XUnOOePDBQ_S3xXrqMqYr4WyIBN10Mc",
+        authDomain:        "cronos-futbol-test.firebaseapp.com",
+        projectId:         "cronos-futbol-test",
+        storageBucket:     "cronos-futbol-test.firebasestorage.app",
+        messagingSenderId: "899742404040",
+        appId:             "1:899742404040:web:1e76b2a8fa22a21dd0c4fd",
+        measurementId:     "G-ZVZRRFSSZG"
+    };
+    const firebaseConfig = _esTesteo ? _CONFIG_TESTEO : _CONFIG_PRODUCCION;
+    window.CRONOS_ENTORNO = _esTesteo ? 'testeo' : 'produccion';
+    console.log('[Chronos] Entorno: ' + window.CRONOS_ENTORNO + ' (' + firebaseConfig.projectId + ')');
 
     const app  = initializeApp(firebaseConfig);
 
@@ -109,11 +142,17 @@
     //  (Firestore, Identity Toolkit...). Es un paso APARTE, y puede dejar
     //  clientes fuera: consultar alli el estado antes de tocarlo.
     // ══════════════════════════════════════════════════════════════
-    const _RECAPTCHA_SITE_KEY = '6Ld5cEQtAAAAAA0OCimDVsOORapoEKfsVmJmGI23';
+    //  🧪 v761 · CADA PROYECTO CON SU CLAVE. La de producción (6Ld5c…) y la
+    //  de testeo (6LcRk…, 2026-09-24) sólo admiten su propio dominio; el
+    //  secreto de cada una está registrado en el App Check de SU proyecto.
+    //  `cronos-futbol-test.firebaseapp.com` NO está en la clave de testeo:
+    //  por eso no figura en la lista y ahí App Check ni se intenta.
+    //  En local, token de DEPURACIÓN, que se da de alta en el App Check del
+    //  proyecto de TESTEO (local ya va a testeo).
+    const _RECAPTCHA_SITE_KEY = _esTesteo ? '6LcRkMwtAAAAAGc7AM7Z8B3euLhbrG5J94gAMNcw'
+                                          : '6Ld5cEQtAAAAAA0OCimDVsOORapoEKfsVmJmGI23';
     const APPCHECK_HOSTS = ['cronos-futbol-app.web.app', 'cronos-futbol-app.firebaseapp.com',
                             'cronos-futbol-test.web.app'];
-    const _host  = (typeof location !== 'undefined' && location.hostname) || '';
-    const _local = _host === 'localhost' || _host === '127.0.0.1';
 
     if (APPCHECK_HOSTS.includes(_host) || _local) {
         try {

@@ -159,6 +159,7 @@ async function openParentPanel(initialTab) {
         </div>
         <div style="display:flex;gap:0.4rem;align-items:center;flex-wrap:wrap;">
             ${typeof _cronosDevRoleBtn==='function'?_cronosDevRoleBtn("typeof showRoleSelector==='function'?showRoleSelector():typeof showRoleSelection==='function'&&showRoleSelection()","padding:0.35rem 0.8rem;border-radius:6px;font-size:0.74rem;"):''}
+            ${typeof window.cronosBotonContrasena==='function'?window.cronosBotonContrasena():''}
             <button onclick="typeof logoutUser==='function'?logoutUser():typeof cerrarSesion==='function'&&cerrarSesion()"
                 style="background:rgba(255,88,88,0.1);border:1px solid rgba(255,88,88,0.3);
                        color:#ff5858;padding:0.35rem 0.8rem;border-radius:6px;cursor:pointer;
@@ -1604,6 +1605,10 @@ async function openParentPanel(initialTab) {
             //  cada partido puede enseñar «0» cuando el dato existe y callarse
             //  cuando no — en vez de pintar ceros en todo el histórico.
             const _prDeInforme = (r) => {
+                // v761 · En una categoria base no hay P/R para la familia,
+                // traiga lo que traiga el documento (cronosPRPermitidoEnCategoria).
+                if (r && r.category && typeof window.cronosPRPermitidoEnCategoria === 'function' &&
+                    !window.cronosPRPermitidoEnCategoria(r.category)) return { p: 0, r: 0, hay: false };
                 if (r && r.prPropio) return {
                     p: Number(r.prPropio.perdidas) || 0,
                     r: Number(r.prPropio.recuperaciones) || 0,

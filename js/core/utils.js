@@ -1493,7 +1493,15 @@ if (typeof window._cronosParseRoleValue !== 'function') {
 //  una vía de suplantación.
 // ════════════════════════════════════════════════════════════════════
 if (typeof window.CRONOS_APP_URL !== 'string') {
-    window.CRONOS_APP_URL = 'https://cronos-futbol-app.web.app';
+    // 🧪 v761 · TESTEO AISLADO: los enlaces que se generan en testeo (o en
+    // local) apuntan a testeo; un enlace de testeo que llevara a producción
+    // haría darse de alta en la BD real. Misma regla que firebase-init.js:
+    // lo desconocido es producción.
+    var _uHost = (typeof location !== 'undefined' && location.hostname) || '';
+    var _uTesteo = ['cronos-futbol-test.web.app', 'cronos-futbol-test.firebaseapp.com'].indexOf(_uHost) !== -1 ||
+                   _uHost === 'localhost' || _uHost === '127.0.0.1';
+    window.CRONOS_APP_URL = _uTesteo ? 'https://cronos-futbol-test.web.app'
+                                     : 'https://cronos-futbol-app.web.app';
 }
 
 // ════════════════════════════════════════════════════════════════════
@@ -1866,10 +1874,38 @@ if (typeof window.cronosCategoriaConRegistroPR !== 'function') {
             if (n.indexOf('cadete')   !== -1) return true;
             if (n.indexOf('juvenil')  !== -1) return true;
             if (n.indexOf('regional') !== -1) return true;   // incluye Regional FEM
+            // 🔴 v761 · NACIONAL faltaba aquí. v747 la añadió a la lista del
+            // resumen (CT_CATS_CON_PR, category-tree.js) pero no a ésta, así
+            // que en el directo de un Nacional no aparecía el registro de P/R
+            // mientras el resumen sí le reservaba columnas. Una regla, no dos.
+            if (n.indexOf('nacional') !== -1) return true;
         }
         return false;
     };
 }
+
+// ════════════════════════════════════════════════════════════════════
+//  🔴 v761 · P/R FUERA DE LOS INFORMES DE LAS CATEGORÍAS BASE
+//
+//  Encargo del autor (capturas 10862-10864): en Prebenjamín, Benjamín,
+//  Alevín e Infantil —y FUTureFEM, de formación— NO deben salir pérdidas
+//  ni recuperaciones «bajo ningún concepto», ni en el informe colectivo ni
+//  en el individual. El directo ya no las registra ahí (v693), pero los
+//  INFORMES no preguntaban: pintaban lo que trajera el documento.
+//
+//  🔑 Esta es la regla para los informes y la usan los que LEEN y los que
+//  ESCRIBEN (despachos). SIN CATEGORÍA devuelve `true`: quien no sabe de qué
+//  equipo es un informe no puede decidir, y esconder por no saber le quitaría
+//  datos reales a un Regional (misma política que ctCategoriaRegistraPR).
+//  ⚠️ report-engine.js tiene su COPIA privada (es autocontenido) y
+//  test_pr_categorias_base.js exige que las dos —y la del árbol— coincidan.
+// ════════════════════════════════════════════════════════════════════
+function cronosPRPermitidoEnCategoria(cat) {
+    const c = String(cat == null ? '' : cat).trim();
+    if (!c) return true;
+    return window.cronosCategoriaConRegistroPR(c);
+}
+window.cronosPRPermitidoEnCategoria = cronosPRPermitidoEnCategoria;
 
 // ════════════════════════════════════════════════════════════════════
 //  🪪 v561 · LA IDENTIDAD DEL PARTIDO — UN SOLO RESOLUTOR
@@ -2946,7 +2982,7 @@ if (typeof window !== 'undefined') {
 //  fichero y las ejecutan solas (lección de v747, que estrenó el fallo).
 function cronosTiemposCategoria(categoria, modalidad) {
     var c = String(categoria == null ? '' : categoria).trim().toLowerCase()
-        .normalize('NFD').replace(/[̀-ͯ]/g, '');
+        .normalize('NFD').replace(/[\u0300-\u036f]/g, '');
     var f11 = String(modalidad || '').toLowerCase() === 'f11';
     var mitad, anadido;
 
@@ -3011,7 +3047,7 @@ function cronosCupoConvocatoria(modalidad, tipoPartido, categoria) {
     var amistoso = String(tipoPartido || '').toLowerCase() === 'amistoso';
 
     var c = String(categoria == null ? '' : categoria).trim().toLowerCase()
-        .normalize('NFD').replace(/[̀-ͯ]/g, '');
+        .normalize('NFD').replace(/[\u0300-\u036f]/g, '');
     //  Sin categoría, el tope estricto. Con 'fem' dentro, también: Regional
     //  FEM se queda en 18 por decisión expresa del autor (2026-09-20), y
     //  'regional_fem' CONTIENE 'regional' —la trampa de v511—, así que el
@@ -3185,6 +3221,14 @@ window.cronosEnfrentamiento = cronosEnfrentamiento;
 // ════════════════════════════════════════════════════════════════════
 function cronosPRDelInforme(datos) {
     const d = datos || {};
+    // 🔴 v761 · En una categoría base no hay P/R que devolver, traiga lo que
+    // traiga el documento (ver cronosPRPermitidoEnCategoria). La categoría es
+    // la del partido; si el agregado no la tiene, la del primer documento.
+    const _cat = d.category ||
+        ((Array.isArray(d.players) ? d.players : []).find(x => x && x.category) || {}).category || '';
+    // (Se consulta sólo si existe: test_txt_informes.js ejecuta esta función
+    // SOLA en un sandbox. En la app está siempre: vive en este mismo fichero.)
+    if (typeof cronosPRPermitidoEnCategoria === 'function' && !cronosPRPermitidoEnCategoria(_cat)) return null;
     const cands = [];
     if (d.matchPR) cands.push(d.matchPR);
     (Array.isArray(d.players) ? d.players : []).forEach(doc => {
@@ -3289,7 +3333,7 @@ const CRONOS_RAICES_SALUD = [
 ];
 function cronosPosiblesDatosSalud(texto) {
     const t = String(texto == null ? '' : texto).toLowerCase()
-        .normalize('NFD').replace(/[̀-ͯ]/g, '');
+        .normalize('NFD').replace(/[\u0300-\u036f]/g, '');
     const vistas = [];
     CRONOS_RAICES_SALUD.forEach(function (raiz) {
         // Al PRINCIPIO de palabra: «medic» caza «médico» y «medicación», pero

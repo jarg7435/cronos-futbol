@@ -367,6 +367,15 @@
     window.cronosPRDelPartido = function (items) {
         var lista = Array.isArray(items) ? items
                   : ((window._cronosPR && Array.isArray(window._cronosPR.items)) ? window._cronosPR.items : []);
+        // 🔴 v761 · Sin lista explícita, esto es «lo del partido EN CURSO»: lo
+        // piden TODOS los despachos (colectivo, individuales, familias) para
+        // guardarlo en el informe. En una categoría base el informe no lleva
+        // P/R, y aunque aquí quedara algo en memoria de un partido anterior de
+        // otro equipo, no puede viajar al informe de éste.
+        if (!Array.isArray(items) && typeof window.cronosPRPermitidoEnCategoria === 'function' &&
+            !window.cronosPRPermitidoEnCategoria(_categoriaDelPartido())) {
+            lista = [];
+        }
         var res = {
             perdidas:       { total: 0, sinAsignar: 0, porDorsal: {} },
             recuperaciones: { total: 0, sinAsignar: 0, porDorsal: {} },

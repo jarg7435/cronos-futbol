@@ -534,19 +534,23 @@ function walk(dir, out) {
     console.log('\n── PARTE 8 · sdDeleteReport (soft delete por rol) ──');
     // El grupo acumula los propios DOCUMENTOS en .players (matches[key].players
     // .push(r)), asi que p._id es el id del doc y p.playerNumber su campo.
+    // v761 · Estos documentos llevan matchId 'M1', y desde v761 un partido se
+    // agrupa por su matchId (clave 'id:M1'), no por fecha+rival+entrenador.
+    // El caso 8f (sin matchId) sigue con la clave antigua K.
+    const KM = key64of('id:M1');
     const withPlayers = () => ({
         a: staffRep({ playerNumber: '5', matchId: 'M1' }),
     });
     {
         const { g, w, updated, deleted } = buildSandbox({ reports: withPlayers(), confirmReturns: false });
         await g._sdLoadReports();
-        await w.sdDeleteReport(K);
+        await w.sdDeleteReport(KM);
         ok('8a · si el usuario cancela, no escribe nada', updated.length === 0 && deleted.length === 0);
     }
     {
         const { g, w, updated, deleted, toasts, spinners } = buildSandbox({ reports: withPlayers() });
         await g._sdLoadReports();
-        await w.sdDeleteReport(K);
+        await w.sdDeleteReport(KM);
         ok('8b · marca dismissedBy con arrayUnion(uid_rol) y NUNCA borra',
             updated.length > 0 && deleted.length === 0
             && updated.every(u => u.col === 'cronos_player_reports')
@@ -559,7 +563,7 @@ function walk(dir, out) {
             spinners.some(s => s.on) && spinners.some(s => !s.on)
             && toasts.some(t => t.includes('Informe ocultado')), { spinners, toasts });
         ok('8e · quita el partido de la caché window._sdMatchData',
-            (g.window._sdMatchData || {})[K] === undefined, mdKeys(g));
+            (g.window._sdMatchData || {})[KM] === undefined, mdKeys(g));
     }
     {
         // Sin playerNumber no hay ids derivados: solo el id real del documento.
@@ -575,7 +579,7 @@ function walk(dir, out) {
             reports: withPlayers(), updateDocFailFor: 'M1_coach_p5',
         });
         await g._sdLoadReports();
-        await w.sdDeleteReport(K);
+        await w.sdDeleteReport(KM);
         ok('8g · el fallo de un id concreto no aborta los demás ni el flujo',
             updated.length === 3 && toasts.some(t => t.includes('Informe ocultado')),
             { updated: updated.map(u => u.id), toasts });
