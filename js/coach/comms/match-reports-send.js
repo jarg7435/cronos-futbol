@@ -683,6 +683,7 @@ window._executeReportsSend = async function(method) {
                                     stoppageTime:  (typeof window.stoppageTime !== 'undefined' ? window.stoppageTime : 0),
                                     createdAt:     new Date().toISOString(),
                                     ...(typeof window.cronosGuestFields === 'function' ? window.cronosGuestFields(p) : {}),
+                                    ...(typeof window.cronosCodigoFields === 'function' ? window.cronosCodigoFields(p) : {}),   // v767 · código
                                     playerNumber:  String(p.number || ''),
                                     playerAlias:   p.alias || p.name || '',
                                     position:      p.position || p.pos || '',
@@ -783,6 +784,7 @@ window._executeReportsSend = async function(method) {
                     reportId,
                     playerNumber:   String(dorsal),
                     playerAlias:    player.alias || player.name || 'Jugador',
+                    ...(typeof window.cronosCodigoFields === 'function' ? window.cronosCodigoFields(player) : {}),   // v767 · código
                     parentUid:      targetParentUid,
                     coachUid:       me.uid, coachEmail: me.email,
                     clubId:         me.clubId || null,
@@ -893,6 +895,7 @@ window._executeReportsSend = async function(method) {
                               : '',
                     createdAt: new Date().toISOString(),
                     ...(typeof window.cronosGuestFields === 'function' ? window.cronosGuestFields(p) : {}),
+                    ...(typeof window.cronosCodigoFields === 'function' ? window.cronosCodigoFields(p) : {}),   // v767 · código
                     playerNumber: String(p.number||''), playerAlias: p.alias || p.name || '',
                     position: p.position || p.pos || '',
                     wasStarter: typeof window.cronosFueTitular === 'function' ? window.cronosFueTitular(p) : false,

@@ -379,6 +379,20 @@
         };
     };
 
+    // ── 🔢 v767 · El CÓDIGO del jugador en el payload de un informe ────────
+    // Con dorsales por jornada, `playerNumber` sólo vale DENTRO de su partido;
+    // lo que une los informes de toda la temporada (acumulado) y a la familia
+    // es el código ('ALC07'). Mismo contrato que cronosGuestFields: sin datos,
+    // {} y el documento sale como antes; y NUNCA un undefined dentro.
+    window.cronosCodigoFields = function (p) {
+        if (!p) return {};
+        var out = {};
+        var code = String(p.code || '').trim();
+        if (code) out.playerCode = code;
+        if (p.rosterNumber != null && String(p.rosterNumber).trim() !== '') out.rosterNumber = String(p.rosterNumber).trim();
+        return out;
+    };
+
     // Se exporta para los guards y para el selector.
     window._cronosTeamRosterTrim = _recortar;
     window._cronosTeamRosterLabel = _etiqueta;

@@ -113,6 +113,84 @@ function saveMasterRoster(mode) {
     }, 300);
 }
 
+// ════════════════════════════════════════════════════════════════════
+//  🔢 v767 · DORSALES POR JORNADA EN LA CONVOCATORIA
+//
+//  En modo «flexible» el entrenador pone el dorsal de ESTE partido en cada
+//  ficha. El jugador que sale al campo lleva ese dorsal en `number`, su
+//  dorsal de plantilla en `rosterNumber` y su código en `id` → `code`: el
+//  código es lo que le une a su familia y a su acumulado, así que cambiar el
+//  dorsal no mueve ni un informe de sitio.
+//
+//  🔑 Un dorsal sólo puede estar UNA vez por partido: dentro del partido el
+//  dorsal SÍ sigue siendo la identidad (P/R, informe, cambios). Por eso no se
+//  deja ir al partido ni enviar la convocatoria con un dorsal repetido.
+// ════════════════════════════════════════════════════════════════════
+function _convModoFlexible() {
+    return typeof window.cronosDorsalModo === 'function' && window.cronosDorsalModo() === 'flexible';
+}
+function _convDorsalSugerido(p) {
+    if (!p) return '';
+    const ult = (typeof window.cronosDorsalUltimo === 'function') ? window.cronosDorsalUltimo(p.id) : null;
+    return ult != null ? ult : (p.number != null ? p.number : '');
+}
+// El jugador tal y como juega ESTE partido. En modo fijo, igual que siempre
+// (más `rosterNumber`, que es su mismo dorsal).
+function _convJugadorConDorsal(p, row) {
+    if (!p) return p;
+    const base = Object.assign({}, p, { rosterNumber: p.number });
+    if (!_convModoFlexible()) return base;
+    const inp = row && row.querySelector('.conv-dorsal');
+    const n = inp ? parseInt(inp.value, 10) : NaN;
+    return (n >= 1 && n <= 99) ? Object.assign(base, { number: n }) : base;
+}
+// '' si los dorsales de las fichas marcadas valen; si no, el motivo. Pinta en
+// rojo las casillas malas (vacías, fuera de 1-99 o repetidas).
+function _convMarcaDorsales() {
+    // En «fijo» no hay nada que validar (las casillas ni se ven).
+    if (!_convModoFlexible()) return '';
+    const filas = Array.from(document.querySelectorAll(
+        '#conv-grid-container .conv-row[data-state="convocado"], #conv-grid-container .conv-row[data-state="titular"]'));
+    document.querySelectorAll('#conv-grid-container .conv-dorsal').forEach(i => { i.style.borderColor = 'rgba(88,166,255,0.45)'; });
+    const vistos = {};
+    let motivo = '';
+    filas.forEach(r => {
+        const inp = r.querySelector('.conv-dorsal');
+        const n = inp ? parseInt(inp.value, 10) : NaN;
+        if (!(n >= 1 && n <= 99)) {
+            if (inp) inp.style.borderColor = '#f85149';
+            motivo = motivo || 'Falta el dorsal (1-99) de algún convocado.';
+            return;
+        }
+        (vistos[n] = vistos[n] || []).push(r);
+    });
+    Object.keys(vistos).forEach(n => {
+        if (vistos[n].length < 2) return;
+        vistos[n].forEach(r => { const i = r.querySelector('.conv-dorsal'); if (i) i.style.borderColor = '#f85149'; });
+        motivo = motivo || ('El dorsal ' + n + ' está repetido en la convocatoria.');
+    });
+    return motivo;
+}
+function _convDorsalesOk() {
+    const motivo = _convMarcaDorsales();
+    if (motivo) alert('🔢 ' + motivo + '\nCada convocado necesita un dorsal distinto para este partido.');
+    return !motivo;
+}
+window._convMarcaDorsales = _convMarcaDorsales;
+window._convDorsalesOk = _convDorsalesOk;
+window._convJugadorConDorsal = _convJugadorConDorsal;
+
+// Cambiar de modo con la convocatoria abierta: sólo se cambia qué se ve.
+if (typeof document !== 'undefined' && !window._convDorsalModoOyente) {
+    window._convDorsalModoOyente = true;
+    document.addEventListener('cronos:dorsal-modo', function () {
+        const flex = _convModoFlexible();
+        document.querySelectorAll('#conv-grid-container .conv-dorsal').forEach(i => { i.style.display = flex ? '' : 'none'; });
+        document.querySelectorAll('#conv-grid-container .conv-num-fijo').forEach(s => { s.style.display = flex ? 'none' : ''; });
+        _convMarcaDorsales();
+    });
+}
+
 function openConvocationModal() {
     // Pila de navegación (js/core/nav-stack.js).
     if (typeof navScreen === 'function') navScreen('openConvocationModal');
@@ -124,9 +202,14 @@ function openConvocationModal() {
     const roster = window.cronosPlantillaAmbas();
     const myPlayers = roster[currentMode] || [];
     const minForMatch = currentMode === 'f7' ? 5 : 7;
+    // 🔢 v767 · Con dorsales POR JORNADA cada ficha lleva su casilla de dorsal
+    // (se pintan las dos variantes y el selector sólo cambia cuál se ve: así
+    // cambiar de modo no borra la selección ya hecha).
+    const _convFlex = _convModoFlexible();
 
     const isMobile = window.innerWidth < 640;
-    const cols = isMobile ? 2 : (currentMode === 'f7' ? 3 : 5);
+    // 📐 v768 · Ya no hay un nº fijo de columnas (antes 2 / 3 / 5): la rejilla
+    // pone las que QUEPAN con un mínimo por ficha (ver el <style> del modal).
     const minTitulares = currentMode === 'f7' ? 5 : 7;
 
     // Restore saved convocation data
@@ -333,7 +416,28 @@ function openConvocationModal() {
     const modal = document.getElementById('setup-modal');
     modal.style.display = 'flex';
     modal.innerHTML = `
-        <div class="modal-content" style="width:min(96vw,860px); max-height:94vh; display:flex; flex-direction:column; overflow-y:auto; padding:${isMobile ? '1rem 0.8rem' : '1.5rem'};">
+        <!-- 📐 v768 · NADA SE SALE DEL PANEL (capturas 10911-10912).
+             1) \`.conv-input\` NO tenía estilo propio aquí: lo inyectan el panel
+                de envío y el de entrenamientos al abrirse. Sin pasar antes por
+                ellos, los campos tomaban su ancho por defecto y «Lugar»/«Rival»
+                se salían de su columna. Se declara aquí, con el mismo aspecto.
+             2) Las fichas: con \`repeat(5, 1fr)\` una columna no baja de lo que
+                mide su contenido (nombre + asistencia + TITULAR, sin partir) y
+                la quinta quedaba fuera. Ahora las columnas son las que QUEPAN
+                (\`auto-fill\` con un mínimo) y el nombre se recorta con «…». -->
+        <style>
+            #setup-modal .conv-input {
+                width:100%; min-width:0; box-sizing:border-box; padding:0.42rem 0.6rem;
+                background:rgba(255,255,255,0.06); border:1px solid var(--glass-border);
+                border-radius:7px; color:var(--text); font-size:0.85rem;
+            }
+            #setup-modal .conv-input:focus { outline:none; border-color:rgba(88,166,255,0.5); }
+            /* Si en la ficha no cabe todo (móvil, dorsal por jornada), las
+               etiquetas bajan a una segunda línea antes que recortar el nombre. */
+            #conv-grid-container .conv-row { min-width:0; box-sizing:border-box; flex-wrap:wrap; row-gap:3px; }
+            #conv-grid-container .conv-nombre { flex:1 1 72px; min-width:0; }
+        </style>
+        <div class="modal-content" style="width:min(96vw,860px); max-width:100%; box-sizing:border-box; max-height:94vh; display:flex; flex-direction:column; overflow-y:auto; padding:${isMobile ? '1rem 0.8rem' : '1.5rem'};">
 
             <div style="flex-shrink:0;">
                 <h2 style="margin:0 0 0.1rem; font-size:${isMobile ? '1.1rem' : '1.4rem'};">\u{1F4CB} Convocatoria \u2014 ${_convMiNombre()}</h2>
@@ -434,6 +538,9 @@ function openConvocationModal() {
                 </div>
             </div>
 
+            <!-- \ud83d\udd22 v767 \u00b7 Dorsales fijos o por jornada (utils.js) -->
+            ${typeof window.cronosDorsalModoSelectorHTML === 'function' ? window.cronosDorsalModoSelectorHTML() : ''}
+
             <!-- \u2500\u2500 CONTADORES EN TIEMPO REAL \u2500\u2500 -->
             <div style="display:grid; grid-template-columns:1fr 1fr; gap:0.6rem; margin-bottom:0.8rem;">
                 <div id="conv-counter-conv" style="background:rgba(88,166,255,0.1); border:2px solid rgba(88,166,255,0.35);
@@ -451,7 +558,7 @@ function openConvocationModal() {
             </div>
 
             <!-- \u2500\u2500 LISTADO DE JUGADORES \u2500\u2500 -->
-            <div style="display:grid; grid-template-columns:repeat(${cols}, 1fr); gap:6px; margin-bottom:0.8rem;" id="conv-grid-container">
+            <div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(min(100%, ${isMobile ? 150 : 210}px), 1fr)); gap:6px; margin-bottom:0.8rem;" id="conv-grid-container">
                 ${myPlayers.length > 0 ? myPlayers.map((p, i) => {
                     // \u26a0\ufe0f UNA PLAZA DE APOYO SIN JUGADOR NO SE PINTA. Si no, la
                     // rejilla mostraria hasta 7 fichas fantasma tipo "J26" que
@@ -471,8 +578,15 @@ function openConvocationModal() {
                               background:rgba(255,255,255,0.1); border:2px solid rgba(255,255,255,0.25);
                               display:flex;align-items:center;justify-content:center;
                               font-size:0.55rem;flex-shrink:0;color:transparent;">\u2713</span>
-                        <span style="font-size:0.75rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
-                            <span style="color:var(--primary);font-weight:bold;">${p.number}</span>
+                        <input class="conv-dorsal" type="number" inputmode="numeric" min="1" max="99"
+                            value="${_convDorsalSugerido(p)}" title="Dorsal en ESTE partido (el código ${typeof escapeAttr==='function'?escapeAttr(p.id||''):(p.id||'')} no cambia)"
+                            onclick="event.stopPropagation()" onkeydown="event.stopPropagation()"
+                            oninput="window._convMarcaDorsales && window._convMarcaDorsales()"
+                            style="${_convFlex ? '' : 'display:none;'}width:2.7rem; flex-shrink:0; padding:2px 3px; text-align:center;
+                                   font-weight:800; font-size:0.8rem; color:var(--primary); background:rgba(88,166,255,0.08);
+                                   border:1px solid rgba(88,166,255,0.45); border-radius:5px;">
+                        <span class="conv-nombre" style="font-size:0.75rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
+                            <span class="conv-num-fijo" style="color:var(--primary);font-weight:bold;${_convFlex ? 'display:none;' : ''}">${p.number}</span>
                             ${typeof escapeHtml==='function'? escapeHtml(p.alias||p.name||'J'+(i+1)): (p.alias||p.name||'J'+(i+1))}
                         </span>
                         ${_esInv ? `<span title="Jugador de apoyo\u2014sube de ${typeof escapeAttr==='function'?escapeAttr(_org):_org}"
@@ -501,7 +615,7 @@ function openConvocationModal() {
                 </div>
 
                 <div style="display:flex; gap:0.4rem;">
-                    <button class="btn" onclick="saveConvData(); saveConvPlayers(); _cronosOpenRoleSelector('convocatoria')"
+                    <button class="btn" onclick="if (!_convDorsalesOk()) return; saveConvData(); saveConvPlayers(); _cronosOpenRoleSelector('convocatoria')"
                         style="flex:1; background:rgba(88,166,255,0.15); border:1px solid rgba(88,166,255,0.4);
                                color:var(--primary); font-weight:700; font-size:0.78rem; padding:0.5rem;">
                         \u{1F4E4} ENVIAR CONVOCATORIA
@@ -948,7 +1062,8 @@ function saveConvPlayers() {
     const myPlayers = roster[currentMode] || [];
     const convRows = document.querySelectorAll('#conv-grid-container .conv-row[data-state="convocado"], #conv-grid-container .conv-row[data-state="titular"]');
     window._savedConvokedPlayers = Array.from(convRows).map(r => {
-        const p = myPlayers[parseInt(r.dataset.index)];
+        // v767 · con el dorsal de ESTE partido (el que ven las familias)
+        const p = _convJugadorConDorsal(myPlayers[parseInt(r.dataset.index)], r);
         return p ? { ...p, initialStatus: r.dataset.state === 'titular' ? 'field' : 'bench' } : null;
     }).filter(Boolean);
     // FIX (Error #15c): log para depurar
@@ -972,7 +1087,7 @@ function cronosImprimirConvocatoriaActual() {
     const myPlayers = roster[currentMode] || [];
     const rows = document.querySelectorAll('#conv-grid-container .conv-row[data-state="convocado"], #conv-grid-container .conv-row[data-state="titular"]');
     const jugadores = Array.from(rows).map(r => {
-        const p = myPlayers[parseInt(r.dataset.index)];
+        const p = _convJugadorConDorsal(myPlayers[parseInt(r.dataset.index)], r);   // v767
         if (!p) return null;
         const org = p.isGuest
             ? ((typeof window._cronosTeamRosterLabel === 'function')
@@ -1043,7 +1158,8 @@ function goToTitularSelection() {
     // Obtener todos los jugadores seleccionados (convocado o titular)
     const allRows = document.querySelectorAll('#conv-grid-container .conv-row[data-state="convocado"], #conv-grid-container .conv-row[data-state="titular"]');
     const matchPlayers = Array.from(allRows).map(r => {
-        const p = myPlayers[parseInt(r.dataset.index)];
+        // 🔢 v767 · el dorsal de ESTE partido; `id` (el código) no se toca
+        const p = _convJugadorConDorsal(myPlayers[parseInt(r.dataset.index)], r);
         const isTitular = r.dataset.state === 'titular';
         return p ? { 
             ...p, 
@@ -1087,6 +1203,8 @@ function goToTitularSelection() {
     // v506 · Los limites se comprueban ANTES de tocar nada, y cada aborto
     //   devuelve false para que ningun envoltorio siga adelante. Se mira
     //   primero el MAXIMO de convocados: es el que rompia el partido.
+    // 🔢 v767 · con dorsales por jornada, uno por convocado y sin repetir.
+    if (!_convDorsalesOk()) return false;
     if (matchPlayers.length > maxConvocados) {
         alert('Máximo ' + maxConvocados + ' convocados para Fútbol ' + (currentMode === 'f7' ? '7' : '11') + '.\nActualmente tienes ' + matchPlayers.length + ' convocados.\nElimina jugadores de la convocatoria antes de iniciar.');
         return false;
@@ -1102,6 +1220,10 @@ function goToTitularSelection() {
 
     window.activeConvocation = matchPlayers;
     window._convokedPlayers = matchPlayers;
+    // 🔢 v767 · la próxima convocatoria propone los dorsales de ésta.
+    if (_convModoFlexible() && typeof window.cronosDorsalesRecordar === 'function') {
+        try { const _pr = window.cronosDorsalesRecordar(matchPlayers); if (_pr && _pr.catch) _pr.catch(() => {}); } catch (e) {}
+    }
 
     // 🏷️ v667 · El rival elegido en la convocatoria pasa a ser el nombre del
     //    equipo contrario del partido. Va AQUI —despues de las validaciones y
@@ -1253,8 +1375,8 @@ function startMatchWithConvocation() {
     
     // Guardar selección con el estatus (titular/suplente)
     const selectedPlayers = Array.from(rows).map(r => {
-        const p = myPlayers[r.dataset.index];
-        return { 
+        const p = _convJugadorConDorsal(myPlayers[r.dataset.index], r);   // v767
+        return {
             ...p, 
             initialStatus: r.dataset.status || 'bench' 
         };

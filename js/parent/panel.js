@@ -1539,6 +1539,24 @@ async function openParentPanel(initialTab) {
                 if (data.staffReport === true || data._forCoach === true) return;
                 // EXCLUIR docs que este padre ya descartó (soft delete)
                 if (Array.isArray(data.dismissedBy) && data.dismissedBy.includes(me.uid)) return;
+                // 🔒 v767 · ESTA CONSULTA ES POR «DORSAL + CLUB», y las reglas
+                // dejan leer a cualquier miembro del club: traía también el
+                // informe que el entrenador dirigió a OTRA familia con el mismo
+                // dorsal, de éste o de OTRO equipo, y encima lo reclamaba
+                // escribiéndole este parentUid. Sólo vale para los informes SIN
+                // destinatario (los de antes de vincularse), y sólo si son del
+                // mismo jugador: mismo código, mismo dorsal de plantilla y mismo
+                // equipo cuando el informe lo dice. Con dorsales por jornada el
+                // dorsal del informe es el de ESE partido y no identifica.
+                if (data.parentUid && data.parentUid !== me.uid) return;
+                const _ambosCodigo = !!(data.playerCode && link.playerCode);
+                if (_ambosCodigo && String(data.playerCode) !== String(link.playerCode)) return;
+                if (!_ambosCodigo && data.rosterNumber != null && String(data.rosterNumber) !== '' &&
+                    String(data.rosterNumber) !== String(link.playerNumber)) return;
+                if (data.teamId && link.teamId) {
+                    const _nt = (t) => (typeof window.cronosTeamIdNorm === 'function') ? window.cronosTeamIdNorm(t) : String(t);
+                    if (_nt(data.teamId) !== _nt(link.teamId)) return;
+                }
                 if (seenDocIds.has(d.id)) return;
                 seenDocIds.add(d.id);
                 const dedupKey = _rptDedupKey(data);

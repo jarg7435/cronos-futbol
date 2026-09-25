@@ -2751,6 +2751,127 @@ function cronosPlantillaAmbas() {
     return { f7: cronosPlantillaLeer('f7'), f11: cronosPlantillaLeer('f11') };
 }
 
+// ════════════════════════════════════════════════════════════════════
+//  🔢 v767 · MODELO DE DORSALES DEL EQUIPO: «fijo» o «flexible»
+//
+//  Encargo del autor: que el entrenador elija entre dorsales FIJOS (el de la
+//  plantilla, toda la temporada: lo de siempre) y dorsales POR JORNADA (los
+//  pone en cada convocatoria), sin tocar el CÓDIGO del jugador ('ALC07',
+//  v764), que es el enlace invariable con su familia (v765).
+//
+//  🔑 SE GUARDA EN LA MISMA RAÍZ QUE LA PLANTILLA, por equipo, porque es el
+//  único documento del entrenador que ya viaja a la nube y que TODOS los
+//  guardados reescriben enteros desde la raíz (cronosPlantillaGuardar lee la
+//  raíz y la vuelve a escribir: una clave nueva no se pierde por el camino).
+//      raiz.dorsalModo      = { "<teamId>": "flexible" }
+//      raiz.dorsalesUltimos = { "<teamId>": { "ALC07": 9, … } }  ← sugerencia
+//
+//  ⚠️ «fijo» es el valor por defecto y el de cualquier dato raro: un equipo
+//  que nunca ha tocado la opción se comporta EXACTAMENTE como antes.
+//
+//  🚨 Con dorsales por jornada el DORSAL deja de identificar al jugador fuera
+//  de SU partido. Por eso cada jugador del partido lleva también `code` y
+//  `rosterNumber` (el de la plantilla), los informes los guardan
+//  (cronosCodigoFields) y el acumulado de temporada agrupa por código.
+// ════════════════════════════════════════════════════════════════════
+function _cronosDorsalClave() { return cronosPlantillaEquipo() || '_sinEquipo'; }
+
+function _cronosRaizEscribir(raiz) {
+    var texto = JSON.stringify(raiz);
+    try { localStorage.setItem(_ROSTER_KEY, texto); } catch (e) { /* cuota/privado */ }
+    if (typeof window.cloudSet === 'function') return window.cloudSet(_ROSTER_KEY, texto);
+    return Promise.resolve(true);
+}
+
+function cronosDorsalModo() {
+    var raiz = cronosPlantillaRaiz();
+    var m = (raiz.dorsalModo && typeof raiz.dorsalModo === 'object') ? raiz.dorsalModo[_cronosDorsalClave()] : '';
+    return m === 'flexible' ? 'flexible' : 'fijo';
+}
+
+function cronosDorsalModoGuardar(modo) {
+    var raiz = cronosPlantillaRaiz();
+    if (!raiz.dorsalModo || typeof raiz.dorsalModo !== 'object') raiz.dorsalModo = {};
+    raiz.dorsalModo[_cronosDorsalClave()] = (modo === 'flexible') ? 'flexible' : 'fijo';
+    return _cronosRaizEscribir(raiz);
+}
+
+// El último dorsal que llevó ESTE jugador (por su código) en este equipo, o
+// null. Sólo es una sugerencia para rellenar la convocatoria siguiente.
+function cronosDorsalUltimo(codigo) {
+    if (!codigo) return null;
+    var raiz = cronosPlantillaRaiz();
+    var t = raiz.dorsalesUltimos && raiz.dorsalesUltimos[_cronosDorsalClave()];
+    var n = t ? parseInt(t[String(codigo)], 10) : NaN;
+    return (n >= 1 && n <= 99) ? n : null;
+}
+
+// Recuerda los dorsales de un partido (lista de {id|code, number}).
+function cronosDorsalesRecordar(jugadores) {
+    var raiz = cronosPlantillaRaiz();
+    if (!raiz.dorsalesUltimos || typeof raiz.dorsalesUltimos !== 'object') raiz.dorsalesUltimos = {};
+    var k = _cronosDorsalClave();
+    var t = raiz.dorsalesUltimos[k] = (raiz.dorsalesUltimos[k] && typeof raiz.dorsalesUltimos[k] === 'object')
+        ? raiz.dorsalesUltimos[k] : {};
+    (jugadores || []).forEach(function (p) {
+        var c = p && String(p.code || p.id || '');
+        var n = p ? parseInt(p.number, 10) : NaN;
+        if (c && n >= 1 && n <= 99) t[c] = n;
+    });
+    return _cronosRaizEscribir(raiz);
+}
+
+// El selector, igual en la convocatoria y en Gestionar Plantilla.
+function cronosDorsalModoSelectorHTML() {
+    var m = cronosDorsalModo();
+    var boton = function (val, icono, titulo, sub) {
+        var on = (m === val);
+        return '<button type="button" onclick="window.cronosDorsalModoElegir(\'' + val + '\')" ' +
+            'aria-pressed="' + (on ? 'true' : 'false') + '" data-dorsal-modo="' + val + '" ' +
+            'style="flex:1;min-width:0;text-align:left;cursor:pointer;padding:0.45rem 0.6rem;border-radius:8px;' +
+            'background:' + (on ? 'rgba(88,166,255,0.18)' : 'rgba(255,255,255,0.03)') + ';' +
+            'border:2px solid ' + (on ? 'var(--primary,#58a6ff)' : 'rgba(255,255,255,0.12)') + ';color:inherit;">' +
+            '<div style="font-size:0.8rem;font-weight:800;color:' + (on ? 'var(--primary,#58a6ff)' : 'inherit') + ';">' +
+            icono + ' ' + titulo + (on ? ' ✓' : '') + '</div>' +
+            '<div style="font-size:0.62rem;color:var(--text-muted,#8b949e);margin-top:1px;">' + sub + '</div></button>';
+    };
+    return '<div class="cronos-dorsal-modo" style="margin-bottom:0.7rem;">' +
+        '<div style="font-size:0.66rem;color:var(--text-muted,#8b949e);text-transform:uppercase;letter-spacing:1px;margin-bottom:0.25rem;">🔢 Dorsales de este equipo</div>' +
+        '<div style="display:flex;gap:6px;">' +
+        boton('fijo', '🔒', 'Fijos', 'El de la plantilla, toda la temporada') +
+        boton('flexible', '🔄', 'Por jornada', 'Los eliges en cada convocatoria') +
+        '</div>' +
+        (m === 'flexible'
+            ? '<div style="font-size:0.62rem;color:var(--text-muted,#8b949e);margin-top:0.3rem;">🔗 El código del jugador no cambia nunca: sus informes siguen llegando a su familia.</div>'
+            : '') +
+        '</div>';
+}
+
+function cronosDorsalModoElegir(modo) {
+    var antes = cronosDorsalModo();
+    var p = cronosDorsalModoGuardar(modo);
+    if (p && typeof p.catch === 'function') p.catch(function (e) { console.warn('[dorsales] no se pudo subir la opción:', e && e.message); });
+    var ahora = cronosDorsalModo();
+    try {
+        document.querySelectorAll('.cronos-dorsal-modo').forEach(function (el) { el.outerHTML = cronosDorsalModoSelectorHTML(); });
+        document.dispatchEvent(new CustomEvent('cronos:dorsal-modo', { detail: { modo: ahora } }));
+    } catch (e) { /* sin DOM (tests) */ }
+    if (antes !== ahora && typeof window.showToast === 'function') {
+        window.showToast(ahora === 'flexible'
+            ? '🔄 Dorsales por jornada: los eliges en cada convocatoria'
+            : '🔒 Dorsales fijos: se usa el de la plantilla', 3000);
+    }
+}
+
+if (typeof window !== 'undefined') {
+    window.cronosDorsalModo             = cronosDorsalModo;
+    window.cronosDorsalModoGuardar      = cronosDorsalModoGuardar;
+    window.cronosDorsalUltimo           = cronosDorsalUltimo;
+    window.cronosDorsalesRecordar       = cronosDorsalesRecordar;
+    window.cronosDorsalModoSelectorHTML = cronosDorsalModoSelectorHTML;
+    window.cronosDorsalModoElegir       = cronosDorsalModoElegir;
+}
+
 if (typeof window !== 'undefined') {
     window.cronosPlantillaEquipo  = cronosPlantillaEquipo;
     window.cronosPlantillaRaiz    = cronosPlantillaRaiz;

@@ -52,7 +52,11 @@ function extraeFn(src, nombre) {
 
 console.log('── convocatoria: tipo de partido y calendario oficial (v666) ──\n');
 
-const SRC_MODAL = extraeFn(IMPORT_JS, 'openConvocationModal');
+// v767 · la pantalla usa los ayudantes de dorsales por jornada, que viven
+// justo encima: se cargan con ella (sin cronosDorsalModo en el arnés, «fijo»).
+const _i767 = IMPORT_JS.indexOf('function _convModoFlexible()');
+const SRC_MODAL = IMPORT_JS.slice(_i767, IMPORT_JS.indexOf('window._convJugadorConDorsal = _convJugadorConDorsal;', _i767)) +
+                  '\n' + extraeFn(IMPORT_JS, 'openConvocationModal');
 const SRC_SAVE  = extraeFn(IMPORT_JS, 'saveConvData');
 const SRC_CUPO  = extraeFn(UTILS_JS,  'cronosCupoConvocatoria');
 ok('0a · se pueden extraer las piezas del producto',

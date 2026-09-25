@@ -471,6 +471,7 @@ window._sendCollectiveReportNow = async function() {
                 // Datos del jugador con historial COMPLETO para el Gantt
                 // Plazas de apoyo: si es invitado viaja su ficha de origen.
                 ...(typeof window.cronosGuestFields === 'function' ? window.cronosGuestFields(p) : {}),
+                ...(typeof window.cronosCodigoFields === 'function' ? window.cronosCodigoFields(p) : {}),   // v767 · código
                 playerNumber:   String(p.number || ''),
                 playerAlias:    p.alias || p.name || '',
                 position:       p.position || p.pos || '',

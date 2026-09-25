@@ -317,8 +317,15 @@ function _cronosResolveParentReportTargets(contacts, links, homePlayers, authori
                 if (!dorsal) { _skip(c, 'sin inviteCode/dorsal valido', { linkEncontrado: !!link, inviteCode }); continue; }
             }
             // Emparejar por dorsal contra la convocatoria (familias sin código).
-            player = (homePlayers || []).find(p => p && String(p.number) === String(dorsal));
+            // 🔢 v767 · El dorsal del VÍNCULO es el de PLANTILLA. Con dorsales
+            // por jornada el `number` del partido puede ser otro, y compararlo
+            // daría el informe del compañero que lleva hoy ese número: se
+            // compara con `rosterNumber`, que en dorsal fijo es el mismo.
+            const _dorsalPlantilla = (p) => (p && p.rosterNumber != null && String(p.rosterNumber) !== '')
+                ? String(p.rosterNumber) : String(p && p.number);
+            player = (homePlayers || []).find(p => p && _dorsalPlantilla(p) === String(dorsal));
             if (!player) { _skip(c, 'hijo NO convocado', { dorsal }); continue; }
+            dorsal = String(player.number);   // el de ESTE partido, que es el del informe
         }
 
         // parentUid REAL (registrado en la app). Sin parentUid → omitir.

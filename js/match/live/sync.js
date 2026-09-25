@@ -227,7 +227,15 @@ function _mapPlayerForSnapshot(p) {
         y:       p.y       || 0,
         color:       p.color       || (p.team === 'home' ? COLORS.home.primary : COLORS.away.primary),
         shortsColor: p.shortsColor || (p.team === 'home' ? COLORS.home.shorts  : COLORS.away.shorts),
-        textColor:   p.textColor   || (p.team === 'home' ? COLORS.home.text    : COLORS.away.text)
+        textColor:   p.textColor   || (p.team === 'home' ? COLORS.home.text    : COLORS.away.text),
+        // 🔢 v767 · el código y el dorsal de plantilla sobreviven a una
+        // recuperación desde la nube (setup-modal.js los restaura). Sin ellos
+        // el informe del partido recuperado no sabría a qué jugador van sus
+        // minutos si los dorsales eran por jornada. Nunca `undefined`: esto
+        // viaja a Firestore y un undefined LANZA (v431).
+        code:         p.code || '',
+        rosterNumber: (p.rosterNumber != null && p.rosterNumber !== '') ? p.rosterNumber
+                    : (p.number != null ? p.number : '')
     };
 }
 

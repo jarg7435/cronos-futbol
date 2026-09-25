@@ -261,6 +261,7 @@ async function autoDispatchMatchReports() {
                                  : '',
                 createdAt:     new Date().toISOString(),
                 ...(typeof window.cronosGuestFields === 'function' ? window.cronosGuestFields(p) : {}),
+                ...(typeof window.cronosCodigoFields === 'function' ? window.cronosCodigoFields(p) : {}),   // v767 · código
                 playerNumber:  String(p.number || ''),
                 playerAlias:   p.alias || p.name || '',
                 position:      p.position || p.pos || '',
@@ -449,6 +450,7 @@ async function autoDispatchMatchReports() {
                 createdAt:     new Date().toISOString(),
                 playerNumber:  String(dorsal),
                 playerAlias:   player.alias || player.name || '',
+                ...(typeof window.cronosCodigoFields === 'function' ? window.cronosCodigoFields(player) : {}),   // v767 · código
                 goals:         player.goals  || 0,
                 cards:         player.cards  || 'ninguna',
                 injured:       player.injured || false,
@@ -573,6 +575,7 @@ async function autoDispatchMatchReports() {
                                      : '',
                     createdAt:     new Date().toISOString(),
                     ...(typeof window.cronosGuestFields === 'function' ? window.cronosGuestFields(p) : {}),
+                    ...(typeof window.cronosCodigoFields === 'function' ? window.cronosCodigoFields(p) : {}),   // v767 · código
                     playerNumber:  String(p.number||''),
                     playerAlias:   p.alias || p.name || '',
                     position:      p.position || p.pos || '',

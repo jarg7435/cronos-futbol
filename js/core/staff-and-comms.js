@@ -394,6 +394,10 @@ function openRosterManager() {
             <p style="font-size: 0.8rem; color: var(--text-muted); margin-bottom:0.8rem;">
                 Completa los datos de tus ${limit} jugadores · El Alias es el nombre que aparecerá en la ficha
             </p>
+            <!-- 🔢 v767 · Dorsales fijos o por jornada (utils.js). Con «Por
+                 jornada», el dorsal de esta tabla es el de referencia y el de
+                 cada partido se pone en la convocatoria. -->
+            ${typeof window.cronosDorsalModoSelectorHTML === 'function' ? window.cronosDorsalModoSelectorHTML() : ''}
             <div style="overflow-x: auto;">
                 <table class="roster-table">
                     <thead>

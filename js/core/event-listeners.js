@@ -462,7 +462,11 @@ function spawnInitialPlayers() {
                 // código que elige el entrenador, y el envío de informes busca
                 // AQUÍ ese código (_cronosResolveParentReportTargets). El `id`
                 // de arriba es interno de la sesión (1..N) y no sirve para eso.
-                code:              String(pData.id || '')
+                code:              String(pData.id || ''),
+                // 🔢 v767 · su dorsal de PLANTILLA. Con dorsales por jornada
+                // `number` es el de este partido; las familias enlazadas sólo
+                // por dorsal (sin código aún) se emparejan con ÉSTE.
+                rosterNumber:      (pData.rosterNumber != null && pData.rosterNumber !== '') ? pData.rosterNumber : pData.number
             };
             if (loadedMine) {
                 const saved = loadedMine.find(lp => lp.number == pData.number);

@@ -87,8 +87,13 @@ function extraeFn(src, nombre) {
 
 console.log('── convocatoria: el limite de convocados bloquea (v506) ──\n');
 
-const SRC_MODAL   = extraeFn(IMPORT_JS, 'openConvocationModal');
-const SRC_GOTO    = extraeFn(IMPORT_JS, 'goToTitularSelection');
+// v767 · la pantalla y «Ir al partido» usan los ayudantes de dorsales por
+// jornada, que viven justo encima: se cargan con ellas (sin cronosDorsalModo
+// en el arnés, el modo es «fijo» y todo se comporta como antes).
+const _i767 = IMPORT_JS.indexOf('function _convModoFlexible()');
+const SRC_DORSALES = IMPORT_JS.slice(_i767, IMPORT_JS.indexOf('window._convJugadorConDorsal = _convJugadorConDorsal;', _i767));
+const SRC_MODAL   = SRC_DORSALES + '\n' + extraeFn(IMPORT_JS, 'openConvocationModal');
+const SRC_GOTO    = SRC_DORSALES + '\n' + extraeFn(IMPORT_JS, 'goToTitularSelection');
 const SRC_WRAPPER = extraeFn(PATCHES_JS, 'patchGoToTitularSelection');
 ok('0 · se pueden extraer las tres piezas',
    !!SRC_MODAL && !!SRC_GOTO && !!SRC_WRAPPER,

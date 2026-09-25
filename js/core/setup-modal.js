@@ -2596,6 +2596,9 @@ async function _doResumeMatch(matchId) {
                 shortsColor: p.shortsColor || (p.team === 'home' ? COLORS.home.shorts : COLORS.away.shorts),
                 textColor: p.textColor || (p.team === 'home' ? COLORS.home.text : COLORS.away.text),
                 benchOrder: p.benchOrder || 0,
+                // 🔢 v767 · ver _mapPlayerForSnapshot (sync.js)
+                code:         p.code || '',
+                rosterNumber: (p.rosterNumber != null && p.rosterNumber !== '') ? p.rosterNumber : p.number,
             }));
         }
 

@@ -1259,6 +1259,38 @@
     window.ctAccumulatePlayerStats = function (matches) {
         const porJugador = new Map();
 
+        // ════════════════════════════════════════════════════════════
+        //  🔢 v767 · LA IDENTIDAD DE TEMPORADA ES EL CÓDIGO, NO EL DORSAL
+        //
+        //  Con dorsales POR JORNADA, el #7 de hoy puede ser otro jugador que
+        //  el #7 de la semana pasada: agrupando por dorsal, el acumulado
+        //  sumaría a los dos en una fila y partiría a cada uno en varias.
+        //  Los informes nuevos llevan `playerCode` ('ALC07') y
+        //  `rosterNumber` (su dorsal de plantilla): se agrupa por el código.
+        //
+        //  🔑 LOS INFORMES VIEJOS (sin código) eran todos de dorsal FIJO, así
+        //  que su dorsal ERA el de plantilla. Se traducen a código con los
+        //  pares rosterNumber→código de los informes nuevos, SÓLO si el par es
+        //  inequívoco (un dorsal de plantilla, un código). Si no lo es —la
+        //  plantilla se renumeró—, se quedan en su fila por dorsal: una fila
+        //  de más es corregible a la vista; sumarle a alguien lo de otro, no.
+        // ════════════════════════════════════════════════════════════
+        const _codigosDeDorsal = new Map();
+        (matches || []).forEach(function (m) {
+            ((m && Array.isArray(m.players)) ? m.players : []).forEach(function (p) {
+                if (!p || p.isGuest === true) return;
+                const c  = String(p.playerCode || '').trim();
+                const rn = String(p.rosterNumber == null ? '' : p.rosterNumber).trim();
+                if (!c || !rn) return;
+                if (!_codigosDeDorsal.has(rn)) _codigosDeDorsal.set(rn, new Set());
+                _codigosDeDorsal.get(rn).add(c);
+            });
+        });
+        const _codigoDeViejo = function (num) {
+            const s = num ? _codigosDeDorsal.get(num) : null;
+            return (s && s.size === 1) ? Array.from(s)[0] : '';
+        };
+
         (matches || []).forEach(function (m) {
             const players = (m && Array.isArray(m.players)) ? m.players : [];
             // 🔑 UNA VEZ POR PARTIDO Y DORSAL. El desglose `porDorsal` es del
@@ -1282,18 +1314,26 @@
                 // atribuía a uno los minutos del otro. La ficha ('CDA07') es
                 // única en el club, que es justo para lo que el autor pidió
                 // conservarla.
+                // 🔢 v767 · el código (propio o traducido desde el dorsal viejo).
+                const _cod = (p.isGuest === true) ? ''
+                    : (String(p.playerCode || '').trim() || _codigoDeViejo(num));
+                const _rn  = String(p.rosterNumber == null ? '' : p.rosterNumber).trim();
                 const key = (p.isGuest === true && p.originPlayerId)
                     ? ('f:' + String(p.originPlayerId))
-                    : (num ? ('n:' + num) : ('a:' + alias.toLowerCase()));
+                    : (_cod ? ('c:' + _cod)
+                    : (num ? ('n:' + num) : ('a:' + alias.toLowerCase())));
                 if (key === 'a:') return;   // ni dorsal ni alias: no es un jugador
 
                 let f = porJugador.get(key);
                 if (!f) {
-                    f = { number: num, alias: alias, ficha: '', called: 0, pj: 0, pt: 0, seconds: 0,
+                    // En la tabla, el dorsal de PLANTILLA: el de la jornada
+                    // cambia de un partido a otro y no identifica la fila.
+                    f = { number: _rn || num, alias: alias, ficha: _cod, called: 0, pj: 0, pt: 0, seconds: 0,
                           minutes: 0, goals: 0, yellow: 0, red: 0, injuries: 0,
                           prPerdidas: 0, prRecuperaciones: 0 };
                     porJugador.set(key, f);
                 }
+                if (_rn) f.number = _rn;   // el de plantilla gana al de un informe viejo
                 // El alias puede llegar vacío en un partido y relleno en otro.
                 if (alias) f.alias = alias;
 
