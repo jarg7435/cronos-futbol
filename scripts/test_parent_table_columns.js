@@ -106,7 +106,9 @@ console.log('\n── PARTE 3 · el orden real de los controles ──');
     // Se extrae la clase de control de cada celda, en orden de aparicion.
     const clasesEn = (frag, prefijo) => {
         const out = [];
-        const re = new RegExp('class="(' + prefijo + '[a-z-]*)"', 'g');
+        // v765 · el selector de jugador sale del componente _cmSelectorJugador('clase', …):
+        // cuenta como control de su celda igual que un class="…" escrito a mano.
+        const re = new RegExp('(?:class="|_cmSelectorJugador\\(\')(' + prefijo + '[a-z-]*)(?:"|\')', 'g');
         let m;
         while ((m = re.exec(frag)) !== null) out.push(m[1]);
         return out;
@@ -121,7 +123,7 @@ console.log('\n── PARTE 3 · el orden real de los controles ──');
     //    enumerar por `.contact-parent-email`.
     ok('3a · vinculado · el orden de controles es el pedido',
        JSON.stringify(vinc) === JSON.stringify([
-           'contact-parent-name', 'contact-parent-email',
+           'contact-parent-name', 'contact-player', 'contact-parent-email',   // v765 · + el jugador elegido
            'contact-cv', 'contact-tr', 'contact-msg', 'contact-cansend',
            'contact-rpt', 'contact-live']),
        JSON.stringify(vinc));
@@ -167,12 +169,13 @@ console.log('\n── PARTE 4 · cada familiar, con su jugador ──');
     ok('4d · la columna del codigo enseña el codigo de invitacion',
        /link\.inviteCode/.test(filaVinc), 'sin codigo no se sabe a que jugador va');
     ok('4e · y ademas el dorsal y el alias, para ver el vinculo de un vistazo',
-       /link\.playerNumber/.test(filaVinc) &&
-       /link\.playerAlias\s*\|\|\s*link\.playerName/.test(filaVinc),
+       // v765 · ahora los da el DESPLEGABLE: cada opción es «código · #dorsal · nombre»
+       // de la plantilla, y la fila le pasa el dorsal del vínculo para marcar a su jugador.
+       /link\.playerNumber/.test(filaVinc) && /' · #' \+/.test(SRC) && /p\.alias/.test(SRC),
        'el codigo solo no dice quien es el jugador');
 
     ok('4f · el padre manual elige su jugador con el selector de plantilla',
-       /class="p-player"/.test(filaMan) && /_cronos_squad_cache/.test(filaMan),
+       /_cmSelectorJugador\('p-player'/.test(filaMan) && /_cronos_squad_cache/.test(SRC),
        'un padre manual sin selector queda sin vincular');
 
     ok('4g · la fila vinculada conserva su data-linkid (es la clave del guardado)',

@@ -162,12 +162,57 @@ async function openContactManager() {
                 return isRealUid || isRealEmail;
             });
 
+            // ══════════════════════════════════════════════════════════
+            //  🏷️ v766 · UN CARGO, UN RÓTULO — Y UNA PERSONA, UNA FILA
+            //
+            //  Aquí se rotulaba «Director Deportivo» al director Y TAMBIÉN al
+            //  Administrador de Club (`club_admin`/`admin`): en la tabla salían
+            //  dos «Director Deportivo» que eran dos personas con dos cargos
+            //  distintos (captura 10905). Ahora cada rol lleva el suyo.
+            //
+            //  El rótulo guardado sólo se corrige si es uno de los POR DEFECTO:
+            //  un nombre escrito a mano por el entrenador no se toca. Y como
+            //  `_cGetStaff` devuelve una entrada por PLAZA (v637), una cuenta
+            //  con dos plazas (director + coordinador) se rotula por su cargo
+            //  más alto y sigue siendo una sola fila.
+            // ══════════════════════════════════════════════════════════
+            const _ROTULO_STAFF = { director: 'Director Deportivo', club_admin: 'Administrador de Club',
+                                    admin: 'Administrador de Club', coordinator: 'Coordinador' };
+            const _RANGO_STAFF  = { director: 4, club_admin: 3, admin: 2, coordinator: 1 };
+            const _ROTULOS_DEF  = new Set(Object.values(_ROTULO_STAFF));
+            const _rolDe = new Map();   // uid|email → su rol más alto
+            realStaff.forEach(s => {
+                [s.uid || s.id, (s.email || '').toLowerCase()].filter(Boolean).forEach(k => {
+                    const prev = _rolDe.get(k);
+                    if (!prev || (_RANGO_STAFF[s.role] || 0) > (_RANGO_STAFF[prev] || 0)) _rolDe.set(k, s.role);
+                });
+            });
+            const _rolDeContacto = (c) => _rolDe.get(c.uid) || _rolDe.get((c.email || '').toLowerCase()) || '';
+
+            // Una persona, una fila: fuera los duplicados de staff ya guardados
+            // (mismo uid o mismo correo). El propio entrenador y las familias,
+            // intactos.
+            const _vistos = new Set();
+            emailConfig.contacts = emailConfig.contacts.filter(c => {
+                if (c.type === 'parent' || c.type === 'coach' || c.uid === me.uid) return true;
+                const claves = [c.uid, (c.email || '').toLowerCase()].filter(Boolean);
+                if (claves.some(k => _vistos.has(k))) return false;
+                claves.forEach(k => _vistos.add(k));
+                return true;
+            });
+            emailConfig.contacts.forEach(c => {
+                if (c.type === 'parent' || c.type === 'coach' || c.uid === me.uid) return;
+                const r = _rolDeContacto(c);
+                if (r && _ROTULO_STAFF[r] && (!c.name || _ROTULOS_DEF.has(c.name))) c.name = _ROTULO_STAFF[r];
+            });
+
             realStaff.forEach(s => {
                 const uid = s.uid || s.id;
                 const email = s.email || '';
-                const exists = (emailConfig.contacts || []).find(c => (uid && c.uid === uid) || (email && c.email === email));
+                const exists = (emailConfig.contacts || []).find(c => (uid && c.uid === uid) ||
+                    (email && (c.email || '').toLowerCase() === email.toLowerCase()));
                 if (!exists) {
-                    const roleLabel = (s.role === 'director' || s.role === 'club_admin' || s.role === 'admin') ? 'Director Deportivo' : 'Coordinador';
+                    const roleLabel = _ROTULO_STAFF[_rolDe.get(uid) || s.role] || 'Coordinador';
                     emailConfig.contacts.push({
                         id: 's_' + (uid || Math.random().toString(36).substr(2,6)),
                         name: s.displayName || s.name || roleLabel,
@@ -447,7 +492,7 @@ async function openContactManager() {
                                 </tr>
                             </thead>
                             <tbody id="tbody-parent-contacts">
-                                ${links.sort((a,b) => (a.playerNumber||0)-(b.playerNumber||0)).map(link => `
+                                ${_cmVinculosDelEquipo(links).sort((a,b) => (a.playerNumber||0)-(b.playerNumber||0)).map(link => `
                                 <tr class="parent-contact-row firestore-linked" data-linkid="${typeof escapeAttr==='function'?escapeAttr(link._id):link._id}"
                                     style="border-bottom:1px solid rgba(255,255,255,0.05);">
                                     <!-- 1 · FAMILIAR. Antes esta celda mostraba el nombre del
@@ -470,15 +515,21 @@ async function openContactManager() {
                                          para que de un vistazo se vea A QUÉ JUGADOR pertenece
                                          este familiar. Antes iban en dos celdas y esa era la
                                          causa del descuadre de la tabla. -->
-                                    <td style="padding:0.45rem;white-space:nowrap;">
-                                        <span style="background:rgba(240,136,62,0.12);color:#f0883e;font-size:0.7rem;font-weight:700;padding:1px 6px;border-radius:4px;cursor:help;" title="Código que el familiar o el jugador introduce al registrarse">
+                                    <td style="padding:0.45rem;min-width:190px;">
+                                        <!-- v765 · EL JUGADOR DE ESTA FAMILIA, elegido de la plantilla
+                                             del equipo abierto por su codigo unico. Es el enlace
+                                             definitivo para los informes individuales. El codigo de
+                                             invitacion (J10) se queda debajo: es el que la familia
+                                             teclea al registrarse. SIN BACKTICKS aqui dentro. -->
+                                        ${_cmSelectorJugador('contact-player',
+                                            'data-linkid="' + (typeof escapeAttr==='function'?escapeAttr(link._id):link._id) + '"',
+                                            link.playerCode || '',
+                                            _cmEsDeEsteEquipo(link) ? link.playerNumber : null)}
+                                        <div style="font-size:0.6rem;color:var(--text-muted);margin-top:2px;"
+                                             title="Codigo que el familiar o el jugador introduce al registrarse">
                                             🔑 ${typeof escapeHtml==='function'?escapeHtml(link.inviteCode || ('J'+link.playerNumber)):link.inviteCode || ('J'+link.playerNumber)}
-                                        </span>
-                                        <span style="font-size:0.66rem;color:var(--text-muted);margin-left:4px;"
-                                            title="Jugador vinculado">
-                                            #${typeof escapeHtml==='function'?escapeHtml(String(link.playerNumber||'')):String(link.playerNumber||'')}
-                                            ${typeof escapeHtml==='function'?escapeHtml(link.playerAlias || link.playerName || 'Jugador'):link.playerAlias || link.playerName || 'Jugador'}
-                                        </span>
+                                            ${link.teamId ? '' : ' · <span style="color:#f0883e;">sin equipo: al elegir jugador pasa a este</span>'}
+                                        </div>
                                     </td>
                                     <td style="padding:0.45rem;">
                                         <input type="email" class="contact-parent-email" data-linkid="${typeof escapeAttr==='function'?escapeAttr(link._id):link._id}"
@@ -682,6 +733,22 @@ async function saveContactManagerData() {
             if (nameEl)  updateData.parentName  = nameEl.value.trim();
             if (emailEl) updateData.parentEmail = emailEl.value.trim();
 
+            // 🔗 v765 · EL JUGADOR ELEGIDO ES EL ENLACE DEFINITIVO. Con él viajan
+            // el equipo abierto (sin equipo, el envío no manda nada: opción A)
+            // y el dorsal/alias de ESE jugador, para los partidos sin códigos.
+            // Sin elegir, no se toca lo que hubiera: vaciar el desplegable no
+            // borra un enlace ya hecho.
+            const jugEl = document.querySelector(`.contact-player[data-linkid="${linkId}"]`);
+            const jugOpt = jugEl && jugEl.value ? jugEl.options[jugEl.selectedIndex] : null;
+            const eqAbierto = (typeof window.cronosEquipoAbierto === 'function') ? window.cronosEquipoAbierto() : '';
+            if (jugOpt && eqAbierto) {
+                updateData.playerCode   = jugEl.value;
+                const _jDs = jugOpt.dataset || {};
+                updateData.playerNumber = String(_jDs.number || '');
+                updateData.playerAlias  = _jDs.alias || '';
+                updateData.teamId       = eqAbierto;
+            }
+
             // Solo añadir inviteCode si no existía ya (para no sobreescribir)
             if (inviteCode) updateData.inviteCode = inviteCode;
 
@@ -727,14 +794,23 @@ async function saveContactManagerData() {
 
             const pPlayerEl = row.querySelector('.p-player');
             const playerId = pPlayerEl.value;
-            const playerName = playerId ? pPlayerEl.options[pPlayerEl.selectedIndex].text.split('] ')[1] : '';
+            const pOpt = playerId ? pPlayerEl.options[pPlayerEl.selectedIndex] : null;
+            // v765 · el nombre sale del dato; si la opción no lo trae (fila
+            // antigua), del último trozo del texto «código · #dorsal · nombre».
+            const _pDs = (pOpt && pOpt.dataset) || {};
+            const playerName = pOpt
+                ? (_pDs.alias || String(pOpt.text || '').split(/ · |\] /).pop().trim())
+                : '';
 
             updatedContacts.push({
                 id:     row.dataset.id || ('p_' + Math.random().toString(36).substr(2,6)),
                 type:   'parent',
                 name:   row.querySelector('.p-name').value.trim(),
                 player: playerName,   // Para visualización legacy
-                playerId: playerId,   // El vínculo inequivoco
+                playerId: playerId,   // 🔗 El vínculo inequívoco: el CÓDIGO del jugador (v764)
+                // 🔗 v765 · su equipo y su dorsal, para el envío de informes.
+                playerNumber: String(_pDs.number || ''),
+                teamId: (playerId && typeof window.cronosEquipoAbierto === 'function') ? window.cronosEquipoAbierto() : '',
                 phone:  '',   // v671 · ver la nota del `.c-phone` de arriba
                 email:  row.querySelector('.p-email').value.trim(),
                 tags
@@ -884,6 +960,71 @@ function renderContactRowMarkup(c = {}) {
 }
 
 // Fila de PADRE/TUTOR manual (tabla naranja)
+// ════════════════════════════════════════════════════════════════════
+//  🔗 v765 · EL DESPLEGABLE «¿DE QUÉ JUGADOR ES ESTA FAMILIA?»
+//
+//  Encargo del autor: en cada contacto de familia, un desplegable con la
+//  plantilla del equipo ABIERTO —nombre + código único de v764, «RGB07 ·
+//  #7 · JUAN»—. Lo elegido es el ENLACE DEFINITIVO: se guarda en el vínculo
+//  (`playerCode`) o en el contacto manual (`playerId`), y el envío de
+//  informes individuales busca ese código exacto entre los convocados
+//  (el resolvedor de destinatarios de panel.js). Uno solo para las dos filas.
+//  `preSel` = código ya elegido; si no hay, `dorsalSugerido` marca la fila
+//  de ese dorsal (sólo se pasa cuando el vínculo ya es de ESTE equipo).
+// ════════════════════════════════════════════════════════════════════
+function _cmSelectorJugador(clase, dataAttr, preSel, dorsalSugerido) {
+    const esc  = (s) => (typeof escapeHtml === 'function') ? escapeHtml(s) : String(s == null ? '' : s);
+    const escA = (s) => (typeof escapeAttr === 'function') ? escapeAttr(s) : String(s == null ? '' : s);
+    const plantilla = (window._cronos_squad_cache || []).filter(p => p && p.id &&
+        (p.name || p.alias || String(p.id) === String(preSel || '')));
+    let elegido = String(preSel || '');
+    if (!elegido && dorsalSugerido != null && dorsalSugerido !== '') {
+        const s = plantilla.find(p => String(p.number) === String(dorsalSugerido));
+        if (s) elegido = String(s.id);
+    }
+    const opciones = plantilla.map(p => {
+        const nombre = [p.name, p.surname].filter(Boolean).join(' ') || p.alias || 'Sin nombre';
+        return '<option value="' + escA(p.id) + '" data-number="' + escA(p.number == null ? '' : p.number) +
+               '" data-alias="' + escA(p.alias || p.name || '') + '"' + (String(p.id) === elegido ? ' selected' : '') + '>' +
+               esc(p.id) + ' · #' + esc(p.number == null ? '?' : p.number) + ' · ' + esc(nombre) + '</option>';
+    }).join('');
+    const estado = elegido
+        ? '<div class="cm-jug-estado" style="font-size:0.62rem;color:#3fb950;margin-top:2px;">✅ Recibe los informes de ' + esc(elegido) + '</div>'
+        : '<div class="cm-jug-estado" style="font-size:0.62rem;color:#f0883e;margin-top:2px;">⚠️ Sin jugador: no recibe informes individuales</div>';
+    return '<select class="' + clase + '" ' + dataAttr +
+        ' onchange="window._cmJugadorCambia && window._cmJugadorCambia(this)"' +
+        ' style="width:100%;padding:0.32rem;background:rgba(255,255,255,0.05);border:1px solid ' +
+        (elegido ? 'rgba(63,185,80,0.45)' : 'rgba(240,136,62,0.55)') + ';border-radius:6px;color:white;font-size:0.72rem;">' +
+        '<option value="">— Elegir jugador —</option>' + opciones + '</select>' + estado;
+}
+window._cmSelectorJugador = _cmSelectorJugador;
+
+// v765 · ¿Este vínculo es del equipo ABIERTO? (misma clave canónica que el
+// envío de informes). Y la tabla de familias enseña sólo los de este equipo y
+// los que aún no tienen ninguno —para poder asignarlos—, no los de todo el
+// club: antes salían las familias de TODOS los equipos del entrenador.
+function _cmEsDeEsteEquipo(link) {
+    const eq = (typeof window.cronosEquipoAbierto === 'function') ? window.cronosEquipoAbierto() : '';
+    const norm = (t) => (typeof window.cronosTeamIdNorm === 'function') ? window.cronosTeamIdNorm(t) : String(t || '');
+    return !!(eq && link && link.teamId && norm(link.teamId) === norm(eq));
+}
+function _cmVinculosDelEquipo(links) {
+    return (links || []).filter(l => l && (!l.teamId || _cmEsDeEsteEquipo(l)));
+}
+window._cmVinculosDelEquipo = _cmVinculosDelEquipo;
+
+// Al cambiar el desplegable, el aviso de debajo se actualiza al momento: el
+// entrenador ve qué va a pasar ANTES de guardar.
+window._cmJugadorCambia = function (sel) {
+    const v = sel && sel.value;
+    const est = sel && sel.parentNode ? sel.parentNode.querySelector('.cm-jug-estado') : null;
+    if (sel) sel.style.borderColor = v ? 'rgba(63,185,80,0.45)' : 'rgba(240,136,62,0.55)';
+    if (est) {
+        est.style.color = v ? '#3fb950' : '#f0883e';
+        est.textContent = v ? ('✅ Recibe los informes de ' + v) : '⚠️ Sin jugador: no recibe informes individuales';
+    }
+};
+
 function renderParentRowMarkup(c = {}) {
     const isCv = (c.tags || []).includes('cv');
     const isTr = (c.tags || []).includes('tr');
@@ -900,14 +1041,7 @@ function renderParentRowMarkup(c = {}) {
                 style="width:100%;padding:0.32rem;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:6px;color:white;font-size:0.73rem;">
         </td>
         <td style="padding:0.4rem;">
-            <select class="p-player" style="width:100%;padding:0.32rem;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:6px;color:white;font-size:0.73rem;">
-                <option value="">-- Seleccionar Jugador --</option>
-                ${(window._cronos_squad_cache || []).map(p => `
-                    <option value="${typeof escapeAttr==='function'?escapeAttr(p.id):p.id}" ${c.playerId === p.id ? 'selected' : ''}>
-                        [${typeof escapeHtml==='function'?escapeHtml(p.id):p.id}] ${typeof escapeHtml==='function'?escapeHtml(p.alias||p.name||'Sin nombre'):p.alias||p.name||'Sin nombre'}
-                    </option>
-                `).join('')}
-            </select>
+            ${_cmSelectorJugador('p-player', '', c.playerId || '', null)}
         </td>
         <td style="padding:0.4rem;">
             <input type="email" class="p-email" value="${typeof escapeAttr==='function'?escapeAttr(c.email||''):c.email||''}" placeholder="familiar@email.com"

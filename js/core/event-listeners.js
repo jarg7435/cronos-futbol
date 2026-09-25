@@ -456,7 +456,13 @@ function spawnInitialPlayers() {
                 originTeamId:      pData.originTeamId || '',
                 originCategory:    pData.originCategory || '',
                 originSubcategory: pData.originSubcategory || '',
-                originPlayerId:    pData.originPlayerId || ''
+                originPlayerId:    pData.originPlayerId || '',
+                // 🔗 v765 · EL CÓDIGO DE LA PLANTILLA ('RGB07'), el enlace
+                // definitivo con su familia: Contactos guarda en el vínculo el
+                // código que elige el entrenador, y el envío de informes busca
+                // AQUÍ ese código (_cronosResolveParentReportTargets). El `id`
+                // de arriba es interno de la sesión (1..N) y no sirve para eso.
+                code:              String(pData.id || '')
             };
             if (loadedMine) {
                 const saved = loadedMine.find(lp => lp.number == pData.number);

@@ -281,15 +281,45 @@ function _cronosResolveParentReportTargets(contacts, links, homePlayers, authori
             return false;
         }) || null;
 
-        // inviteCode: del link, o del playerId del contacto si tiene formato J<num>.
-        const inviteCode = (link && link.inviteCode)
-            || (c.playerId && /^J-?\d+$/i.test(c.playerId) ? c.playerId : null);
-        const dorsal = _cronosExtractDorsal(inviteCode);
-        if (!dorsal) { _skip(c, 'sin inviteCode/dorsal valido', { linkEncontrado: !!link, inviteCode }); continue; }
-
-        // Emparejar SOLO por dorsal contra la convocatoria.
-        const player = (homePlayers || []).find(p => p && String(p.number) === String(dorsal));
-        if (!player) { _skip(c, 'hijo NO convocado', { dorsal }); continue; }
+        // ════════════════════════════════════════════════════════════
+        //  🔗 v765 · EL CÓDIGO DEL JUGADOR ES EL ENLACE DEFINITIVO
+        //
+        //  Encargo del autor: en Contactos el entrenador elige, para cada
+        //  familia, a SU jugador de la plantilla por su código único
+        //  (v764: 'RGB07'). Ese código se guarda en el vínculo (`playerCode`)
+        //  —o en el contacto manual (`playerId`)— y aquí se busca EXACTO entre
+        //  los convocados, que desde v765 llevan su `code`. El dorsal sólo
+        //  queda para las familias que aún no tienen jugador elegido y para
+        //  los partidos sin códigos (informe manual, anteriores a v765): ahí
+        //  vale el dorsal que se guardó JUNTO al código al elegirlo.
+        // ════════════════════════════════════════════════════════════
+        const _pid = String(c.playerId || '');
+        const _codigo = String((link && link.playerCode) || c.playerCode ||
+            ((/^[A-Z]{2,4}\d{2}$/.test(_pid) && !/^J-?\d+$/i.test(_pid)) ? _pid : '') || '');
+        let player = null, dorsal = null;
+        if (_codigo) {
+            const _conCodigo = (homePlayers || []).filter(p => p && p.code);
+            if (_conCodigo.length) {
+                player = _conCodigo.find(p => p.code === _codigo) || null;
+                if (!player) { _skip(c, 'su jugador (' + _codigo + ') NO está convocado'); continue; }
+                dorsal = String(player.number);
+            } else {
+                const _d = (link && link.playerNumber) || c.playerNumber;
+                if (_d != null && String(_d) !== '') dorsal = String(_d);
+            }
+        }
+        if (!player) {
+            if (!dorsal) {
+                // inviteCode: del link, o del playerId del contacto si tiene formato J<num>.
+                const inviteCode = (link && link.inviteCode)
+                    || (c.playerId && /^J-?\d+$/i.test(c.playerId) ? c.playerId : null);
+                dorsal = _cronosExtractDorsal(inviteCode);
+                if (!dorsal) { _skip(c, 'sin inviteCode/dorsal valido', { linkEncontrado: !!link, inviteCode }); continue; }
+            }
+            // Emparejar por dorsal contra la convocatoria (familias sin código).
+            player = (homePlayers || []).find(p => p && String(p.number) === String(dorsal));
+            if (!player) { _skip(c, 'hijo NO convocado', { dorsal }); continue; }
+        }
 
         // parentUid REAL (registrado en la app). Sin parentUid → omitir.
         const parentUid = (link && link.parentUid) || (c.uid || null);

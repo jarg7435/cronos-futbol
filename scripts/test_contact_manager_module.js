@@ -460,10 +460,44 @@ const manualRow = (id, name, phone, email, playerId, optText, tags = []) => {
         ok('2k · anade el staff real de Firestore con type staff y las cinco etiquetas',
             c.find(x => x.uid === 'd1').type === 'staff'
             && c.find(x => x.uid === 'd1').tags.join() === 'rpt,msg,cv,tr,live');
-        ok('2l · club_admin se etiqueta como Director Deportivo y coordinator como Coordinador',
-            c.find(x => x.uid === 'a1').name === 'Director Deportivo'
+        // v766 · ASERCIÓN INVERTIDA. Decía «club_admin se etiqueta como
+        //   Director Deportivo» y estaba VERDE: defendía el defecto de la
+        //   captura 10905 (dos «Director Deportivo» que eran dos personas).
+        ok('2l · 🏷️ club_admin se rotula «Administrador de Club» (no «Director Deportivo»)',
+            c.find(x => x.uid === 'a1').name === 'Administrador de Club'
             && c.find(x => x.uid === 'c1').name === 'Coord',
             c.map(x => [x.uid, x.name]));
+    }
+    {
+        // v766 · lo YA GUARDADO con el rótulo equivocado se corrige; lo escrito a mano, no.
+        const t = buildSandbox({
+            contacts: [
+                { id: 's_a1', uid: 'a1', email: 'a@y.com', type: 'staff', name: 'Director Deportivo', tags: ['rpt'] },
+                { id: 's_c1', uid: 'c1', email: 'c@y.com', type: 'staff', name: 'Pepe (coordi F7)', tags: ['rpt'] },
+                { id: 's_a1b', uid: 'a1', email: 'a@y.com', type: 'staff', name: 'Director Deportivo', tags: ['cv'] },
+                { id: 's_d2', uid: '', email: 'D@X.com', type: 'staff', name: 'Director Deportivo', tags: [] },
+                { id: 'p1', uid: 'fam', email: 'f@x.com', type: 'parent', name: 'Madre', tags: [] },
+            ],
+            staff: [
+                { uid: 'a1', email: 'a@y.com', role: 'club_admin' },
+                { uid: 'c1', email: 'c@y.com', role: 'coordinator' },
+                { uid: 'd2', email: 'd@x.com', role: 'coordinator' },
+                { uid: 'd2', email: 'd@x.com', role: 'director' },
+            ],
+        });
+        await t.g.openContactManager();
+        const c = t.cfg().contacts;
+        const de = (u) => c.filter(x => x.uid === u);
+        ok('2l2 · 🏷️ el rótulo por defecto guardado se corrige al cargo real',
+            de('a1').length && de('a1')[0].name === 'Administrador de Club', c.map(x => [x.uid, x.name]));
+        ok('2l3 · el nombre escrito a mano por el entrenador NO se toca',
+            de('c1')[0].name === 'Pepe (coordi F7)');
+        ok('2l4 · 🔑 una persona, una fila: el duplicado guardado (mismo uid) se quita y se queda la PRIMERA',
+            de('a1').length === 1 && de('a1')[0].tags.join() === 'rpt', de('a1'));
+        const d2 = c.filter(x => (x.email || '').toLowerCase() === 'd@x.com');
+        ok('2l5 · dos plazas (coordinador + director) = una fila con el cargo MÁS ALTO, también casando por correo sin distinguir mayúsculas',
+            d2.length === 1 && d2[0].name === 'Director Deportivo', d2);
+        ok('2l6 · las familias no se deduplican ni se renombran', c.some(x => x.type === 'parent' && x.name === 'Madre'));
     }
     {
         const t = buildSandbox({ contacts: [], staffThrows: 'sin permisos' });
@@ -784,15 +818,18 @@ const manualRow = (id, name, phone, email, playerId, optText, tags = []) => {
     }
     {
         const t = buildSandbox({});
-        t.w._cronos_squad_cache = [{ id: 'J7', alias: 'Ana' }, { id: 'J9', name: 'Leo' }];
+        t.w._cronos_squad_cache = [{ id: 'J7', alias: 'Ana', number: 7 }, { id: 'J9', name: 'Leo', number: 9 }];
         const h = t.g.renderParentRowMarkup({ id: 'p1', name: 'Madre', playerId: 'J9', tags: ['rpt'] });
         ok('5e · la fila de padre manual lleva las dos clases que usa el guardado',
             h.includes('parent-contact-row') && h.includes('manual-parent'));
         ok('5f · el desplegable se construye desde window._cronos_squad_cache',
-            h.includes('[J7]') && h.includes('Ana') && h.includes('[J9]') && h.includes('Leo'));
-        ok('5g · preselecciona el jugador vinculado', /value="J9"\s+selected/.test(h), h.match(/<option[^>]*J9[^>]*>/));
-        ok('5h · el texto del option es "[id] alias", que es lo que el guardado vuelve a parsear',
-            /\[J7\]\s*Ana/.test(h));
+            h.includes('value="J7"') && h.includes('Ana') && h.includes('value="J9"') && h.includes('Leo'));
+        // v765 · el `selected` va tras los data-* (dorsal y alias del jugador).
+        ok('5g · preselecciona el jugador vinculado', /<option value="J9"[^>]*\sselected>/.test(h), h.match(/<option[^>]*J9[^>]*>/));
+        // v765 · ANTES "[id] alias". Ahora «código · #dorsal · nombre», y el
+        // guardado ya NO parte el texto: lee `data-alias`/`data-number`.
+        ok('5h · el texto del option es «código · #dorsal · nombre» y el dato viaja en data-*',
+            /J7 · #7 · Ana/.test(h) && /data-number="7" data-alias="Ana"/.test(h));
     }
     {
         const t = buildSandbox({});
