@@ -71,7 +71,28 @@ function renderTrainingWeek() {
     // y en la tira de "📆 HOY" del Director (club-reports.js).
     const typeOpts = ['','entrenamiento','partido liga','partido amistoso','descanso'];
 
+    // 📱 v769 · La casilla de HORA se montaba sobre DURACIÓN en el iPhone. Es
+    // la misma causa que la convocatoria en v768: `.conv-input` NO TENÍA ESTILO
+    // en este modal (lo inyectan el panel de envío y el de avisos al abrirse),
+    // así que cada casilla iba con `width:100%` + relleno + borde en
+    // content-box y se salía de su celda. La de hora, además, es un control
+    // nativo de iOS, que trae su propio alto y un ancho mínimo intrínseco:
+    // sin `appearance:none` no respeta el ancho de la celda.
     modal.innerHTML = `
+        <style>
+            #setup-modal .conv-input { box-sizing:border-box; max-width:100%; }
+            #setup-modal td .conv-input { height:1.85rem; }
+            #setup-modal input[type="time"].conv-input {
+                -webkit-appearance:none; appearance:none; display:block;
+                min-height:0; line-height:1.25;
+                background:rgba(255,255,255,0.06); color:var(--text);
+                border:1px solid var(--glass-border); border-radius:7px;
+            }
+            #setup-modal input[type="time"].conv-input::-webkit-date-and-time-value { text-align:left; margin:0; }
+            #setup-modal input[type="time"].conv-input::-webkit-datetime-edit,
+            #setup-modal input[type="time"].conv-input::-webkit-datetime-edit-fields-wrapper { padding:0; }
+            #setup-modal input[type="time"].conv-input::-webkit-calendar-picker-indicator { padding:0; margin:0 0 0 2px; }
+        </style>
         <div class="modal-content" style="width:min(98vw,1150px); max-height:94vh; display:flex; flex-direction:column; overflow-y:auto; padding:${isMobile ? '0.6rem' : '1.5rem'};">
             <div style="flex-shrink:0; display:flex; justify-content:space-between; align-items:center; margin-bottom:0.8rem; flex-wrap:wrap; gap:0.5rem;">
                 <div>
@@ -105,8 +126,15 @@ function renderTrainingWeek() {
                  query: en una pantalla estrecha la ventana del club cae debajo
                  sola, que es la lección de v422 (con estilos en línea, una
                  media query no gana). Lo rellena cronosPintarDirectrizClub
-                 (cuadrante-club.js) DESPUÉS de pintar esto. -->
-            <div style="flex:1; display:flex; gap:0.7rem; align-items:stretch; flex-wrap:wrap; min-height:0;">
+                 (cuadrante-club.js) DESPUÉS de pintar esto.
+                 📱 v769 · «flex:0 0 auto», NO «flex:1; min-height:0». Quien hace
+                 scroll es .modal-content; con flex:1 + min-height:0 esta caja se
+                 ENCOGÍA al alto que quedaba libre (en un móvil apaisado, hasta
+                 el miércoles), la tabla se desbordaba por fuera sin scroll propio
+                 y la botonera, que va justo después de la caja encogida, se
+                 pintaba ENCIMA del miércoles y el jueves. Con su alto natural la
+                 botonera queda debajo del domingo y el modal hace scroll entero. -->
+            <div style="flex:0 0 auto; display:flex; gap:0.7rem; align-items:stretch; flex-wrap:wrap;">
 
             <div style="flex:1 1 480px; min-width:0; overflow-x:auto; border:1px solid rgba(63,185,80,0.15); border-radius:12px;">
                 <table style="width:100%; border-collapse:collapse; font-size:${isMobile ? '0.7rem' : '0.8rem'};">
@@ -148,7 +176,7 @@ function renderTrainingWeek() {
                 <div id="cq-directriz" style="display:none; flex:0 1 300px; min-width:240px;"></div>
             </div>
 
-            <div style="margin-top:0.8rem; display:flex; gap:0.5rem; justify-content:flex-end; flex-wrap:wrap;">
+            <div style="flex-shrink:0; margin-top:0.8rem; display:flex; gap:0.5rem; justify-content:flex-end; flex-wrap:wrap;">
                 <button class="btn" onclick="(function(){if(typeof saveTrainingWeek==='function'){try{saveTrainingWeek();}catch(e){}} if(typeof _cronosOpenRoleSelector==='function'){_cronosOpenRoleSelector('entrenamiento');}else if(typeof openTrainingNotification==='function'){openTrainingNotification();}})()" style="padding:0.45rem 1.1rem; font-size:0.76rem; background:rgba(88,166,255,0.15); border:1px solid rgba(88,166,255,0.4); color:var(--primary); font-weight:700;">📲 ENVIAR</button>
                 <button class="btn" onclick="printTrainingWeek()" title="Imprimir o guardar como PDF" style="padding:0.45rem 0.9rem; font-size:0.76rem; background:rgba(37,99,235,0.18); border:1px solid rgba(37,99,235,0.55); color:#79c0ff; font-weight:700;">🖨️ PDF</button>
                 <button class="btn" onclick="copyTrainingWeek()" style="padding:0.45rem 0.9rem; font-size:0.76rem; background:rgba(240,136,62,0.1); border:1px solid rgba(240,136,62,0.3); color:#f0883e;">📋 COPIAR</button>

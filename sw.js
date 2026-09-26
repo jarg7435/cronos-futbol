@@ -2703,8 +2703,13 @@
 //        delega en `_ccNombreDe` (criterio de v741). Los envíos sellan ya
 //        `coachName`; los antiguos se resuelven por `coachUid` contra el censo
 //        del club, y sólo sin nada cae al correo SIN dominio.
-const VERSION = 'v768';
-const CACHE_NAME = 'cronos-cache-v768';
+// v769 · PLANIFICACIÓN SEMANAL EN EL MÓVIL. La botonera (Enviar · PDF ·
+//        Copiar · Limpiar · Guardar) pisaba el miércoles y el jueves en un
+//        iPhone apaisado: la caja de la tabla se encogía (flex:1 +
+//        min-height:0). Y la casilla de HORA invadía Duración: el modal no
+//        daba estilo a `.conv-input` y iOS le ponía su alto y ancho propios.
+const VERSION = 'v769';
+const CACHE_NAME = 'cronos-cache-v769';
 
 const ASSETS = [
     './',
