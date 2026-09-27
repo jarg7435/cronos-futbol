@@ -4204,6 +4204,15 @@ window.logoutUser = async () => {
                          (window._cronos_auth && window._cronos_auth.auth &&
                           window._cronos_auth.auth.currentUser &&
                           window._cronos_auth.auth.currentUser.uid) || '';
+    // 🔒 v772 · SOLTAR LA PLAZA ANTES DE NADA. Este «Cerrar Sesión» (el del
+    // selector de roles, entre otros) NO la soltaba —sólo lo hacía el
+    // `cerrarSesion` de security-and-state.js— y además vacía
+    // `sessionStorage`, que es donde vive la identidad de la pestaña: la marca
+    // se quedaba en la base de datos a nombre de este aparato hasta caducar.
+    // Tiene que ir ANTES del `signOut` (después ya no hay permiso para tocarla).
+    try {
+        if (typeof window.cronosSesionLibera === 'function') await window.cronosSesionLibera();
+    } catch (e) { /* caducará sola */ }
     sessionStorage.clear();
     // [Cronos-Privacy] Logout: purga de la PII del usuario que sale.
     if (typeof window._cronosPurgeAllLocalPII === 'function') window._cronosPurgeAllLocalPII(_uidSaliente);

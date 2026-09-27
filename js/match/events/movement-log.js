@@ -147,6 +147,16 @@ function goBackToSetup() {
     
     // Finalizar transmisión en vivo al volver al inicio
     stopLiveSync();
+    // 🔒 v771 · SALIR DEL PARTIDO SUELTA LA PLAZA (implementar.txt 27-09,
+    // IMG_0618). Antes sólo la soltaban «volver a los roles», cerrar sesión y
+    // cambiar de equipo: desde aquí el aparato seguía LATIENDO con la
+    // convocatoria o la plantilla abiertas, y el otro aparato se topaba con
+    // «ya está abierto» o echaba a éste. Desde aquí ya no se escribe el
+    // directo (`stopLiveSync` de arriba), así que no hay nada que proteger; al
+    // volver, `confirmSetup()` / `openLiveMatchRecovery()` la piden otra vez.
+    if (typeof window.cronosSesionLibera === 'function') {
+        try { window.cronosSesionLibera(); } catch (e) {}
+    }
     // Ocultar card de staff al volver al setup
     const staffCard = document.getElementById('staff-bench-card');
     if (staffCard) { staffCard.style.display = 'none'; staffCard.innerHTML = ''; }

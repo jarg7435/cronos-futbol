@@ -128,6 +128,11 @@ console.log('\n── PARTE 1 · [A] el oyente de la plaza, EJECUTADO ──');
                 // fuera del trozo que este arnés extrae, así que se le pasa —
                 // aquí sólo interesa que el desalojo de otro siga llegando.
                 _esMia: (d) => !!d && d.deviceId === 'yo',
+                // v773 · El oyente sólo desaloja ante una marca ajena VIVA (una
+                // liberada o caducada es una plaza libre). Mismo criterio que
+                // el `_vive` real: ni liberada ni más vieja que el TTL (30 s).
+                _vive: (d) => !!d && d.liberada !== true && !!d.lastSeen &&
+                              (Date.now() - Number(d.lastSeen)) < 30000,
                 _enganches: 0, _pendientes: [],
                 _paraLatido: () => {},
                 _deviceId: () => 'yo',
@@ -161,7 +166,7 @@ console.log('\n── PARTE 1 · [A] el oyente de la plaza, EJECUTADO ──');
             ok('1c · se engancha una vez', c._enganches === 1 && typeof c._alFallar === 'function');
 
             // El desalojo normal sigue funcionando.
-            c._alRecibir({ exists: () => true, data: () => ({ deviceId: 'otro' }) });
+            c._alRecibir({ exists: () => true, data: () => ({ deviceId: 'otro', lastSeen: Date.now() }) });
             ok('1d · ⚠️ v699 SIGUE EN PIE: si otro aparato toma la plaza, se desaloja',
                c._desalojado === true);
 

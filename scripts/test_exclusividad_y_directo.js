@@ -136,14 +136,20 @@ console.log('\n── PARTE 1 · [A] el equipo ocupado se BLOQUEA, EJECUTADO ─
            html.slice(0, 200));
         ok('1c · 🔑 y nombra el equipo y el aparato que lo tiene',
            /Alevín C/.test(html) && /Windows · Chrome/.test(html));
-        ok('1d · 🔑🔑 [A] la acción PRINCIPAL es no entrar',
+        // v772 · El autor pidió «un botón directo para forzar la liberación»:
+        // «Retirar la prioridad» pasa a ser «🔓 Liberar la sesión retenida y
+        // entrar aquí», con aspecto de botón de verdad. «No entrar» sigue
+        // PRIMERO, que es lo que fija esta aserción desde v718.
+        ok('1d · 🔑🔑 [A] la acción PRIMERA sigue siendo no entrar',
            /Entendido, no entrar/.test(html) &&
-           html.indexOf('Entendido, no entrar') < html.indexOf('Retirar la prioridad'),
-           'si tomar el control sigue siendo el botón grande, esto no bloquea nada');
-        ok('1e · 🔑 se dicen las TRES vías: cerrar allí, retirar la prioridad, o esperar',
-           /cierra la sesión/.test(html) && /retírale la prioridad/i.test(html) &&
+           html.indexOf('Entendido, no entrar') < html.indexOf('Liberar la sesión retenida'),
+           'si liberar fuera lo primero, se pulsaría sin leer el aviso');
+        ok('1e · 🔑 se dicen las TRES vías: cerrar allí, liberar la sesión desde aquí, o esperar',
+           /cierra la sesión/.test(html) && /libera la sesión/i.test(html) &&
            /se libera solo/.test(html),
            'un bloqueo sin salida deja al entrenador fuera de su propio partido');
+        ok('1e bis · v772 · hay un BOTÓN DIRECTO para liberar la sesión retenida',
+           /id="cs-tomar"[^>]*>🔓 Liberar la sesión retenida y entrar aquí</.test(html));
         ok('1f · ⚠️ y ya no se ofrece «Tomar el control» como si fuera lo normal',
            !/Tomar el control/.test(html));
 

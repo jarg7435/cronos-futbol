@@ -2711,8 +2711,26 @@
 // v770 · BOTONES P/R FUERA DEL CÉSPED. iPad: los tres juntos en la franja
 //        negra bajo el campo (la R pisaba el banquillo y el cuerpo técnico).
 //        Móvil: en columna R·📊·P en el margen derecho, encima de «VISIT.».
-const VERSION = 'v770';
-const CACHE_NAME = 'cronos-cache-v770';
+// v771 · LA PLAZA SE SUELTA AL MOMENTO. «← INICIO» suelta la plaza (antes el
+//        aparato la retenía con la convocatoria abierta, IMG_0618); cerrar la
+//        ventana la marca LIBERADA con un fetch keepalive; ocultarla deja 5 s
+//        de gracia; latido 10 s y caducidad 30 s (eran 25 s y 75 s).
+// v772 · LA PLAZA RETENIDA SE SUELTA AL 100 %. El latido ya no escribe a
+//        ciegas (un aparato con el oyente muerto recuperaba la plaza que otro
+//        acababa de liberar); el id de pestaña queda fijo por página (sin
+//        sessionStorage cambiaba en cada llamada y la pestaña no reconocía su
+//        propia marca); «Cerrar Sesión» (logoutUser) suelta la plaza; y el
+//        aviso lleva un botón directo «🔓 Liberar la sesión retenida».
+// v773 · SALIR LIMPIO YA NO ECHA AL SIGUIENTE. Salir BORRABA la marca, y con
+//        las reglas de la colección leer una marca inexistente da
+//        permission-denied: el siguiente aparato entraba SIN escribir la suya
+//        y su oyente, con la CACHÉ LOCAL (la marca vieja del otro), le echaba
+//        con «Sesión cerrada en este dispositivo». Ahora salir la marca
+//        LIBERADA (no la borra), permission-denied = «no hay marca» y se
+//        escribe la propia, y el oyente sólo desaloja con datos del SERVIDOR
+//        y ante una marca ajena VIVA.
+const VERSION = 'v773';
+const CACHE_NAME = 'cronos-cache-v773';
 
 const ASSETS = [
     './',

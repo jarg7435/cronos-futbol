@@ -163,12 +163,19 @@
             // ⚠️ Va detras del `if`: NUNCA se activa en produccion.
             if (_local) self.FIREBASE_APPCHECK_DEBUG_TOKEN = true;
 
-            const { initializeAppCheck, ReCaptchaV3Provider } =
+            const { initializeAppCheck, ReCaptchaV3Provider, getToken } =
                 await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-app-check.js');
-            initializeAppCheck(app, {
+            const _appCheckInst = initializeAppCheck(app, {
                 provider: new ReCaptchaV3Provider(_RECAPTCHA_SITE_KEY),
                 isTokenAutoRefreshEnabled: true
             });
+            // v771 · Lo usa session-lock.js para soltar la plaza al CERRAR la
+            // ventana con un `fetch keepalive` a la API REST: con App Check
+            // obligatorio, una petición sin este token la rechaza Firestore.
+            window._cronosAppCheckToken = async function () {
+                const r = await getToken(_appCheckInst, false);
+                return (r && r.token) || '';
+            };
             window._cronosAppCheck = 'on';
             console.log('[Chronos] App Check activo (reCAPTCHA v3) en ' + _host);
         } catch (e) {

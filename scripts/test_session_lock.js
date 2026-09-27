@@ -62,17 +62,30 @@ const fuente = leer('js/services/auth/session-lock.js');
 // ═══════════════════════════════════════════════════════════════════════════
 //  UN MUNDO CON DOS APARATOS Y UN FIRESTORE COMPARTIDO
 // ═══════════════════════════════════════════════════════════════════════════
-function crearNube() {
+//  v773 · `reglasReales`: como las reglas DE VERDAD de la colección
+//  (`resource.data.get('uid','') == uid`), leer una marca que NO EXISTE da
+//  permission-denied. El doble de antes contestaba «no existe» tan tranquilo,
+//  y por eso ningún caso veía el fallo de v771/v772.
+//  `cacheVieja[id]`: lo que la CACHÉ LOCAL de ese aparato guarda de la marca;
+//  el SDK real lo entrega como PRIMERA foto del `onSnapshot` (fromCache).
+function crearNube(op) {
+    const o = op || {};
     const docs = {};            // la "base de datos" compartida
     const escuchas = [];        // onSnapshot registrados
+    const cacheVieja = {};
     const avisa = (id) => escuchas.filter(e => e.id === id)
-                                  .forEach(e => e.fn({ exists: () => !!docs[id], data: () => docs[id] }));
+                                  .forEach(e => e.fn({ exists: () => !!docs[id], data: () => docs[id],
+                                                       metadata: { fromCache: false } }));
+    const denegado = () => { const e = new Error('Missing or insufficient permissions.'); e.code = 'permission-denied'; return e; };
     return {
-        docs, escuchas, avisa,
+        docs, escuchas, avisa, cacheVieja,
         api: {
             m: {
                 doc: (db, col, id) => ({ _id: id }),
-                getDoc: async (ref) => ({ exists: () => !!docs[ref._id], data: () => docs[ref._id] }),
+                getDoc: async (ref) => {
+                    if (o.reglasReales && !docs[ref._id]) throw denegado();
+                    return { exists: () => !!docs[ref._id], data: () => docs[ref._id] };
+                },
                 setDoc: async (ref, data, op) => {
                     docs[ref._id] = (op && op.merge) ? Object.assign({}, docs[ref._id] || {}, data) : data;
                     avisa(ref._id);
@@ -81,6 +94,11 @@ function crearNube() {
                 onSnapshot: (ref, fn) => {
                     const e = { id: ref._id, fn };
                     escuchas.push(e);
+                    // Primera foto desde la caché local, como el SDK real.
+                    if (cacheVieja[ref._id]) {
+                        const vieja = cacheVieja[ref._id];
+                        fn({ exists: () => true, data: () => vieja, metadata: { fromCache: true } });
+                    }
                     return () => { const i = escuchas.indexOf(e); if (i >= 0) escuchas.splice(i, 1); };
                 }
             },
@@ -100,6 +118,7 @@ function aparato(nube, op) {
     const sesion  = o.sesionDe  ? o.sesionDe._sesion  : {};
     const avisos = { conflicto: null, desalojo: null, respuestaConflicto: false };
     const temporizadores = [];
+    const oyentesVentana = {}, oyentesDoc = {};
 
     const ctx = {
         console: { log(){}, warn(){}, error(){} },
@@ -131,8 +150,15 @@ function aparato(nube, op) {
                                     get innerHTML() { return this._html; },
                                     querySelector: () => ({ addEventListener: () => {} }),
                                     remove: () => {}, addEventListener: () => {} }),
-            body: { appendChild: () => {} }
+            body: { appendChild: () => {} },
+            // v771 · La pestaña se oculta y vuelve: el guard dispara el evento
+            // real que el módulo escucha, no llama a la función por su nombre.
+            visibilityState: 'visible',
+            addEventListener: (t, fn) => { oyentesDoc[t] = fn; }
         },
+        // v771 · `fetch` sólo existe si el caso lo pide: así los casos de
+        // siempre prueban el camino del SDK y el de la API REST va aparte.
+        fetch: o.fetch,
         _temporizadores: temporizadores,
         _avisos: avisos
     };
@@ -143,7 +169,7 @@ function aparato(nube, op) {
         _cronosExtraEnabled: (k) => (o.extras ? o.extras[k] !== false : true),
         cronosMyTeamId: () => o.equipo,
         cronosMyTeam: () => ({ teamId: o.equipo, categoryLabel: 'Alevín', subcategory: 'C' }),
-        addEventListener: () => {},
+        addEventListener: (t, fn) => { oyentesVentana[t] = fn; },
         escapeHtml: s => String(s),
         // Firestore doble (o ninguno, para el caso "sin cobertura").
         cronosSesionFS: o.sinNube ? undefined : (async () => nube.api)
@@ -162,8 +188,13 @@ function aparato(nube, op) {
 
     // `_almacen` y `_sesion` se devuelven para poder montar otra pestaña del
     // mismo navegador (v733), no para leerlos desde las aserciones.
-    return { ctx, w: ctx.window, avisos, temporizadores, _almacen: almacen, _sesion: sesion };
+    return { ctx, w: ctx.window, avisos, temporizadores, oyentesVentana, oyentesDoc,
+             _almacen: almacen, _sesion: sesion };
 }
+
+// v771 · Las escrituras «sin esperar» van por promesas encadenadas: se dejan
+// correr unas vueltas del bucle antes de mirar la nube.
+const vueltas = async (n) => { for (let i = 0; i < (n || 5); i++) await new Promise(r => setImmediate(r)); };
 
 (async function () {
     // ═══ 1. CONTROL: un solo aparato entra sin problema ════════════════════
@@ -291,8 +322,12 @@ function aparato(nube, op) {
         const a = aparato(nube, { nombre: 'iPad' });
         await a.w.cronosSesionAlAbrirPartido();
         await a.w.cronosSesionLibera();
-        ok('al salir, la marca se borra y la plaza queda libre',
-           Object.keys(nube.docs).length === 0);
+        // v773 · Se MARCA liberada, ya no se borra: un documento borrado no
+        // lo puede leer nadie con estas reglas y el siguiente aparato entraba
+        // sin marca y se desalojaba a sí mismo (ver la PARTE 17).
+        const _m6 = nube.docs[Object.keys(nube.docs)[0]] || {};
+        ok('al salir, la marca queda LIBERADA (no se borra) y la plaza libre',
+           Object.keys(nube.docs).length === 1 && _m6.liberada === true && _m6.lastSeen === 0);
 
         const b = aparato(nube, { nombre: 'Windows' });
         const entro = await b.w.cronosSesionAlAbrirPartido();
@@ -320,9 +355,13 @@ function aparato(nube, op) {
         a.w._cronosCurrentUser = { uid: 'u1', _activeRole: 'user', clubId: 'clubA' };
         a.w.cronosMyTeamId = () => 'eq_regional_a';
         await a.w.cronosSesionAlAbrirPartido();
+        // v773 · La anterior queda LIBERADA (ya no se borra) y la nueva, viva.
+        const _ids = Object.keys(nube.docs);
+        const _vieja = _ids.find(k => /eq_alevin_c/.test(k));
+        const _nueva = _ids.find(k => /eq_regional_a/.test(k));
         ok('cambiar de equipo en el mismo aparato suelta la plaza anterior',
-           Object.keys(nube.docs).length === 1 &&
-           /eq_regional_a/.test(Object.keys(nube.docs)[0]));
+           !!_vieja && nube.docs[_vieja].liberada === true &&
+           !!_nueva && nube.docs[_nueva].liberada !== true);
     }
 
     // ═══ 7. EL LATIDO MANTIENE VIVA LA PLAZA ═══════════════════════════════
@@ -634,6 +673,367 @@ function aparato(nube, op) {
     ok('14g · el aviso distingue «otra ventana» de «otro dispositivo»',
        /_mismoAparato/.test(fuente) && /en otra ventana de este dispositivo/.test(fuente),
        'decir «otro dispositivo» mandaría a buscar un aparato que no existe');
+
+    // ═══ 15. v771 · SOLTAR LA PLAZA AL MOMENTO ══════════════════════════════
+    //  Encargo del autor (implementar.txt 2026-09-27, IMG_0618/IMG_0620): al
+    //  cerrar la ventana, salir del partido o cambiar de equipo, el otro
+    //  aparato tardaba demasiado en poder entrar (latido 25 s, TTL 75 s, y un
+    //  `pagehide` que leía-y-borraba y nunca llegaba a salir).
+    //  🚨 Y SIN BLOQUEAR DE MÁS NI DE MENOS: una plaza activa sigue
+    //  protegida, y quien perdió la plaza no se la roba al volver.
+    {
+        const T = (aparato(crearNube()).w.CRONOS_SESION_TIEMPOS) || {};
+        ok('15a · latido 10 s, caducidad 30 s y gracia de pestaña oculta 5 s',
+           T.latido === 10000 && T.ttl === 30000 && T.oculta === 5000);
+    }
+    {
+        // Caducidad nueva: a los 35 s sin señal, libre; a los 20 s, protegida.
+        const nube = crearNube();
+        const ipad = aparato(nube, { nombre: 'iPad' });
+        await ipad.w.cronosSesionAlAbrirPartido();
+        const clave = Object.keys(nube.docs)[0];
+        nube.docs[clave].lastSeen = Date.now() - 20000;
+        const pc1 = aparato(nube, { nombre: 'Windows' });
+        const entro1 = await pc1.w.cronosSesionAlAbrirPartido();
+        ok('15b · 🚨 CONTROL · con 20 s sin señal la plaza SIGUE protegida (pregunta)',
+           entro1 === false && !!pc1.avisos.conflicto);
+        nube.docs[clave].lastSeen = Date.now() - 35000;
+        const pc2 = aparato(nube, { nombre: 'Windows' });
+        const entro2 = await pc2.w.cronosSesionAlAbrirPartido();
+        ok('15c · con 35 s sin señal ya está libre (antes hacían falta 75 s)',
+           entro2 === true && pc2.avisos.conflicto === null);
+    }
+    {
+        // CERRAR LA VENTANA, por el evento real `pagehide`.
+        const nube = crearNube();
+        const pc = aparato(nube, { nombre: 'Windows' });
+        await pc.w.cronosSesionAlAbrirPartido();
+        const clave = Object.keys(nube.docs)[0];
+        const tabPc = nube.docs[clave].tabId;
+        ok('15d · el módulo escucha `pagehide`', typeof pc.oyentesVentana.pagehide === 'function');
+        pc.oyentesVentana.pagehide({ persisted: false });
+        await vueltas();
+        ok('15e · 🔑 al cerrar la ventana la marca queda LIBERADA al momento',
+           nube.docs[clave].liberada === true && nube.docs[clave].lastSeen === 0);
+        ok('15f · …sin tocar de quién es (no se reescribe tabId) y con el uid que exige la regla',
+           nube.docs[clave].tabId === tabPc && nube.docs[clave].uid === 'u1');
+        const ipad = aparato(nube, { nombre: 'iPad' });
+        const entro = await ipad.w.cronosSesionAlAbrirPartido();
+        ok('15g · 🔑 y el iPad entra SIN esperar y sin preguntar',
+           entro === true && ipad.avisos.conflicto === null);
+        ok('15h · …y el PC, que ya se fue, no recibe ningún desalojo',
+           pc.avisos.desalojo === null);
+    }
+    {
+        // bfcache: `pagehide` con `persisted` puede VOLVER; no es un cierre.
+        const nube = crearNube();
+        const pc = aparato(nube, { nombre: 'Windows' });
+        await pc.w.cronosSesionAlAbrirPartido();
+        const clave = Object.keys(nube.docs)[0];
+        pc.oyentesVentana.pagehide({ persisted: true });
+        await vueltas();
+        ok('15i · `pagehide` hacia la caché de atrás/adelante marca OCULTA, no liberada',
+           nube.docs[clave].oculta === true && nube.docs[clave].liberada !== true);
+    }
+    {
+        // OCULTAR (iPad bloqueado / cerrar la app desde la multitarea).
+        const nube = crearNube();
+        const ipad = aparato(nube, { nombre: 'iPad' });
+        await ipad.w.cronosSesionAlAbrirPartido();
+        const clave = Object.keys(nube.docs)[0];
+        ipad.ctx.document.visibilityState = 'hidden';
+        ok('15j · el módulo escucha `visibilitychange`', typeof ipad.oyentesDoc.visibilitychange === 'function');
+        ipad.oyentesDoc.visibilitychange();
+        await vueltas();
+        ok('15k · al ocultarse, la marca dice OCULTA', nube.docs[clave].oculta === true);
+
+        const pc1 = aparato(nube, { nombre: 'Windows' });
+        const entro1 = await pc1.w.cronosSesionAlAbrirPartido();
+        ok('15l · 🚨 CONTROL · recién oculta (un parpadeo) todavía pregunta',
+           entro1 === false && !!pc1.avisos.conflicto);
+
+        nube.docs[clave].lastSeen = Date.now() - 6000;
+        // Con la pantalla bloqueada el iPad no recibe nada: su oyente está
+        // dormido. Se quita para que sea `AlVolver`, y no el oyente, quien
+        // tenga que darse cuenta al despertar.
+        nube.escuchas.length = 0;
+        const pc2 = aparato(nube, { nombre: 'Windows' });
+        pc2.avisos.respuestaConflicto = false;
+        const entro2 = await pc2.w.cronosSesionAlAbrirPartido();
+        const tabPc2 = nube.docs[clave].tabId;
+        ok('15m · 🔑 oculta más de 5 s → el PC entra sin esperar los 30 s',
+           entro2 === true && pc2.avisos.conflicto === null);
+
+        // El iPad vuelve: la plaza ya es del PC → se retira, NO la roba.
+        ipad.ctx.document.visibilityState = 'visible';
+        ipad.oyentesDoc.visibilitychange();
+        await vueltas(10);
+        ok('15n · 🔑 al volver, el iPad ve que la plaza es de otro y se retira',
+           !!ipad.avisos.desalojo);
+        ok('15o · 🚨 …y NO se la roba con un latido a ciegas',
+           /Windows/.test(nube.docs[clave].deviceName || '') &&
+           nube.docs[clave].tabId === tabPc2 && nube.docs[clave].oculta !== true);
+    }
+    {
+        // Volver cuando nadie la tomó: sigue siendo suya y deja de estar oculta.
+        const nube = crearNube();
+        const ipad = aparato(nube, { nombre: 'iPad' });
+        await ipad.w.cronosSesionAlAbrirPartido();
+        const clave = Object.keys(nube.docs)[0];
+        ipad.ctx.document.visibilityState = 'hidden';
+        ipad.oyentesDoc.visibilitychange();
+        await vueltas();
+        ipad.ctx.document.visibilityState = 'visible';
+        const r = await ipad.w.cronosSesionAlVolver();
+        ok('15p · al volver sin que nadie la tomara, sigue y deja de estar oculta',
+           r === 'sigue' && nube.docs[clave].oculta === false && ipad.avisos.desalojo === null);
+    }
+    {
+        // Quien PERDIÓ la plaza no puede «liberar» la del nuevo dueño al cerrar.
+        const nube = crearNube();
+        const ipad = aparato(nube, { nombre: 'iPad' });
+        await ipad.w.cronosSesionAlAbrirPartido();
+        const pc = aparato(nube, { nombre: 'Windows' });
+        pc.avisos.respuestaConflicto = true;                 // retira la prioridad
+        await pc.w.cronosSesionAlAbrirPartido();
+        const clave = Object.keys(nube.docs)[0];
+        const enviado = ipad.w.cronosSesionAlCerrar();
+        await vueltas();
+        ok('15q · 🚨 el aparato desalojado NO marca liberada la plaza del nuevo dueño',
+           enviado === false && nube.docs[clave].liberada !== true &&
+           /Windows/.test(nube.docs[clave].deviceName || ''));
+    }
+    {
+        // El camino que sobrevive al cierre: `fetch` keepalive a la API REST.
+        const peticiones = [];
+        const nube = crearNube();
+        nube.api.db = { app: { options: { projectId: 'cronos-futbol-test' } } };
+        nube.api.auth = { currentUser: { uid: 'u1', getIdToken: async () => 'TOKEN_ID' } };
+        const pc = aparato(nube, { nombre: 'Windows',
+                                   fetch: (url, op) => { peticiones.push({ url, op }); return Promise.resolve({}); } });
+        pc.w._cronosAppCheckToken = async () => 'TOKEN_AC';
+        await pc.w.cronosSesionAlAbrirPartido();
+        await vueltas();                                     // tokens guardados de antemano
+        pc.oyentesVentana.pagehide({ persisted: false });
+        const p = peticiones[0] || { url: '', op: {} };
+        const cab = p.op.headers || {};
+        ok('15r · 🔑 al cerrar sale un `fetch` con keepalive (sobrevive a la página)',
+           peticiones.length === 1 && p.op.keepalive === true && p.op.method === 'PATCH');
+        ok('15s · …contra la marca de ESTA plaza en el proyecto del entorno',
+           /projects\/cronos-futbol-test\/databases\/\(default\)\/documents\/cronos_role_sessions\//.test(p.url));
+        ok('15t · …tocando sólo lastSeen y liberada, y sin crear la marca si ya no existe',
+           /updateMask\.fieldPaths=lastSeen/.test(p.url) && /updateMask\.fieldPaths=liberada/.test(p.url) &&
+           !/fieldPaths=tabId/.test(p.url) && /currentDocument\.exists=true/.test(p.url));
+        ok('15u · …con el token del usuario y el de App Check (obligatorio en el proyecto)',
+           cab.Authorization === 'Bearer TOKEN_ID' && cab['X-Firebase-AppCheck'] === 'TOKEN_AC');
+        const cuerpo = JSON.parse(p.op.body || '{}');
+        ok('15v · …y el cuerpo dice liberada=true y lastSeen=0',
+           cuerpo.fields && cuerpo.fields.liberada && cuerpo.fields.liberada.booleanValue === true &&
+           cuerpo.fields.lastSeen && cuerpo.fields.lastSeen.integerValue === '0');
+    }
+    {
+        // SALIR DEL PARTIDO con «← INICIO»: se ejecuta goBackToSetup de verdad.
+        const ml = leer('js/match/events/movement-log.js');
+        const i = ml.indexOf('function goBackToSetup()');
+        let j = ml.indexOf('{', i), prof = 0;
+        for (; j < ml.length; j++) {
+            if (ml[j] === '{') prof++;
+            else if (ml[j] === '}') { prof--; if (prof === 0) { j++; break; } }
+        }
+        const llamadas = [];
+        const sb = {
+            matchPhase: '2nd_half', _saveMatchStateToStorage: () => llamadas.push('guarda'),
+            stopLiveSync: () => llamadas.push('stopLive'), openSetupModal: () => llamadas.push('setup'),
+            document: { getElementById: () => null },
+            window: { cronosSesionLibera: () => { llamadas.push('libera'); return Promise.resolve(); } }
+        };
+        vm.createContext(sb);
+        vm.runInContext(ml.slice(i, j) + '\ngoBackToSetup();', sb);
+        ok('15w · 🔑 «← INICIO» (salir del partido) SUELTA la plaza',
+           llamadas.indexOf('libera') >= 0);
+        ok('15x · …después de cortar el directo y antes de abrir la configuración',
+           llamadas.indexOf('stopLive') < llamadas.indexOf('libera') &&
+           llamadas.indexOf('libera') < llamadas.indexOf('setup'));
+    }
+
+    // ═══ 16. v772 · UNA PLAZA RETENIDA SE PUEDE SOLTAR AL 100 % ═════════════
+    //  Reporte del autor tras probar v771: «sin ningún otro dispositivo
+    //  abierto, sigue saliendo que está abierto en iPhone · Safari».
+    {
+        // El FANTASMA: un aparato cuyo oyente murió (v717 se rinde tras 3
+        // reintentos) o está dormido sigue latiendo. Antes su latido escribía
+        // su tabId a ciegas y le ROBABA la plaza de vuelta a quien la liberó.
+        const nube = crearNube();
+        const iphone = aparato(nube, { nombre: 'iPhone' });
+        await iphone.w.cronosSesionAlAbrirPartido();
+        const clave = Object.keys(nube.docs)[0];
+        nube.escuchas.length = 0;                        // su oyente, muerto
+        const pc = aparato(nube, { nombre: 'Windows' });
+        pc.avisos.respuestaConflicto = true;             // 🔓 Liberar y entrar
+        const entro = await pc.w.cronosSesionAlAbrirPartido();
+        const tabPc = nube.docs[clave].tabId;
+        for (const t of iphone.temporizadores) await t(); // el fantasma late
+        ok('16a · 🔑🔑 tras «Liberar la sesión», el latido del fantasma NO recupera la plaza',
+           entro === true && nube.docs[clave].tabId === tabPc &&
+           /Windows/.test(nube.docs[clave].deviceName || ''));
+        ok('16b · …y el fantasma se da cuenta y se retira con el aviso',
+           !!iphone.avisos.desalojo);
+    }
+    {
+        // Si el latido no puede leer, NO escribe (no sabe de quién es).
+        const nube = crearNube();
+        const a = aparato(nube);
+        await a.w.cronosSesionAlAbrirPartido();
+        const clave = Object.keys(nube.docs)[0];
+        nube.docs[clave].lastSeen = 12345;
+        const getDocReal = nube.api.m.getDoc;
+        nube.api.m.getDoc = async () => { throw new Error('sin red'); };
+        for (const t of a.temporizadores) await t();
+        nube.api.m.getDoc = getDocReal;
+        ok('16c · si el latido no puede leer la marca, no escribe a ciegas',
+           nube.docs[clave].lastSeen === 12345);
+    }
+    {
+        // 🔴 Almacenamiento bloqueado (Safari «Bloquear todas las cookies»):
+        // el tabId de match-slots cambiaba en CADA llamada y la pestaña no
+        // reconocía su propia marca.
+        const nube = crearNube();
+        const iphone = aparato(nube, { nombre: 'iPhone' });
+        let n = 0;
+        iphone.w._cronosMatchSlots = { tabId: () => 'tab:cambia' + (n++) };
+        await iphone.w.cronosSesionAlAbrirPartido();
+        const clave = Object.keys(nube.docs)[0];
+        for (const t of iphone.temporizadores) await t();
+        ok('16d · 🔑 con el id de pestaña inestable, la pestaña NO se desaloja a sí misma',
+           iphone.avisos.desalojo === null);
+        await iphone.w.cronosSesionLibera();
+        ok('16e · …y al salir reconoce su marca como suya y la LIBERA',
+           !!nube.docs[clave] && nube.docs[clave].liberada === true);
+    }
+    {
+        // match-slots: sin sessionStorage, el id se recuerda en memoria.
+        const ctxMs = { window: {}, console: { log(){}, warn(){}, error(){} },
+                        localStorage: { getItem: () => null, setItem() {}, removeItem() {} },
+                        sessionStorage: { getItem() { throw new Error('bloqueado'); },
+                                          setItem() { throw new Error('bloqueado'); },
+                                          removeItem() { throw new Error('bloqueado'); } } };
+        ctxMs.window.window = ctxMs.window;
+        vm.createContext(ctxMs);
+        let ms = null;
+        try {
+            vm.runInContext(leer('js/core/match-slots.js'), ctxMs);
+            ms = ctxMs.window._cronosMatchSlots;
+        } catch (e) { ms = null; }
+        const a1 = ms && ms.tabId(), a2 = ms && ms.tabId();
+        ok('16f · 🔑 match-slots: con sessionStorage bloqueado, el id de pestaña es ESTABLE',
+           !!a1 && a1 === a2);
+    }
+    ok('16g · 🔑 «Cerrar Sesión» (logoutUser) suelta la plaza ANTES de vaciar sessionStorage',
+       /window\.logoutUser = async[\s\S]{0,1600}cronosSesionLibera\(\)[\s\S]{0,300}sessionStorage\.clear\(\)/
+           .test(leer('js/services/auth.js')));
+    // El aviso enseña la ÚLTIMA SEÑAL en segundos: distingue un aparato vivo
+    // de una marca colgada.
+    ok('16h · el aviso de conflicto muestra la «última señal hace N s»',
+       /última señal hace/.test(fuente));
+
+    // ═══ 17. v773 · SALIR LIMPIO NO PUEDE ECHAR AL SIGUIENTE ════════════════
+    //  Reporte del autor tras v772: «al cerrar el partido en el PC e intentar
+    //  abrirlo en el iPad (o viceversa), sigue saltando "Sesión cerrada en
+    //  este dispositivo"». Es el aviso de DESALOJO, no el de «ya está abierto».
+    //  La cadena: salir BORRABA la marca → con las reglas reales, leer una
+    //  marca inexistente da permission-denied → el iPad entraba SIN escribir
+    //  la suya → su oyente arrancaba con la CACHÉ LOCAL, donde seguía la del
+    //  PC → «Sesión cerrada». Estos casos usan el doble con las reglas reales.
+    {
+        // 17a-c · EL REPORTE, TAL CUAL: PC sale limpio, el iPad entra.
+        const nube = crearNube({ reglasReales: true });
+        const pc = aparato(nube, { nombre: 'Windows' });
+        await pc.w.cronosSesionAlAbrirPartido();
+        const clave = Object.keys(nube.docs)[0];
+        // Lo que el iPad tenía en su caché de la vez anterior: la marca del PC.
+        nube.cacheVieja[clave] = Object.assign({}, nube.docs[clave], { lastSeen: Date.now() - 3000 });
+        await pc.w.cronosSesionLibera();                 // «← INICIO» en el PC
+        ok('17a · 🔑 al salir, la marca SIGUE existiendo (liberada): así el siguiente la puede leer',
+           !!nube.docs[clave] && nube.docs[clave].liberada === true);
+
+        const ipad = aparato(nube, { nombre: 'iPad' });
+        const entro = await ipad.w.cronosSesionAlAbrirPartido();
+        await vueltas();                                 // que el oyente llegue a arrancar
+        ok('17b · 🔑🔑 EL REPORTE: el iPad entra y NO recibe «Sesión cerrada en este dispositivo»',
+           entro === true && ipad.avisos.desalojo === null && ipad.avisos.conflicto === null);
+        ok('17c · …y la plaza pasa a ser del iPad, viva',
+           /iPad/.test((nube.docs[clave] || {}).deviceName || '') && (nube.docs[clave] || {}).liberada === false);
+    }
+    {
+        // 17d-e · La marca ya NO EXISTE (la borró una versión anterior): antes
+        // se entraba sin escribirla; ahora permission-denied = «no hay marca».
+        const nube = crearNube({ reglasReales: true });
+        const ipad = aparato(nube, { nombre: 'iPad' });
+        const clave = ipad.w.cronosClaveDePlaza(ipad.w._cronosCurrentUser);
+        nube.cacheVieja[clave] = { uid: 'u1', tabId: 'tab:pc-viejo', deviceId: 'dev_pc',
+                                   deviceName: 'Windows · Chrome', lastSeen: Date.now() - 2000 };
+        const entro = await ipad.w.cronosSesionAlAbrirPartido();
+        await vueltas();
+        ok('17d · 🔑 con la marca inexistente (permission-denied) SE ESCRIBE la propia',
+           entro === true && !!nube.docs[clave] && /iPad/.test(nube.docs[clave].deviceName || ''));
+        ok('17e · 🔑 …y la foto VIEJA de la caché no desaloja a nadie',
+           ipad.avisos.desalojo === null);
+    }
+    {
+        // 17f · El oyente, con datos DEL SERVIDOR de una marca ajena MUERTA
+        // (liberada): no es nadie tomando la plaza.
+        const nube = crearNube();
+        const ipad = aparato(nube, { nombre: 'iPad' });
+        await ipad.w.cronosSesionAlAbrirPartido();
+        const clave = Object.keys(nube.docs)[0];
+        nube.docs[clave] = { uid: 'u1', tabId: 'tab:otro', deviceId: 'dev_x', deviceName: 'Windows · Chrome',
+                             lastSeen: 0, liberada: true };
+        await vueltas();                                 // el oyente ya está puesto
+        ok('17f₀ · CONTROL · el oyente del iPad está escuchando', nube.escuchas.length > 0);
+        nube.avisa(clave);
+        ok('17f · una marca ajena LIBERADA que llega por el oyente no desaloja',
+           ipad.avisos.desalojo === null);
+        // 17g · …y el latido siguiente la ocupa con la nuestra.
+        for (const t of ipad.temporizadores) await t();
+        ok('17g · …y el latido la vuelve a ocupar con la nuestra',
+           nube.docs[clave].tabId !== 'tab:otro' && nube.docs[clave].liberada === false &&
+           /iPad/.test(nube.docs[clave].deviceName || ''));
+    }
+    {
+        // 17h · CONTROL: una marca ajena VIVA por el oyente SÍ desaloja (si esto
+        // fallara, los verdes de arriba no probarían nada).
+        const nube = crearNube();
+        const ipad = aparato(nube, { nombre: 'iPad' });
+        await ipad.w.cronosSesionAlAbrirPartido();
+        const clave = Object.keys(nube.docs)[0];
+        nube.docs[clave] = { uid: 'u1', tabId: 'tab:otro', deviceId: 'dev_x', deviceName: 'Windows · Chrome',
+                             lastSeen: Date.now(), liberada: false };
+        await vueltas();
+        nube.avisa(clave);
+        ok('17h · 🚨 CONTROL · una marca ajena VIVA del servidor SÍ desaloja',
+           !!ipad.avisos.desalojo);
+    }
+    {
+        // 17i · Ida y vuelta: PC → iPad → PC, saliendo limpio cada vez.
+        const nube = crearNube({ reglasReales: true });
+        const pc = aparato(nube, { nombre: 'Windows' });
+        const ipad = aparato(nube, { nombre: 'iPad' });
+        let limpio = true;
+        for (let i = 0; i < 3; i++) {
+            const clave = pc.w.cronosClaveDePlaza(pc.w._cronosCurrentUser);
+            if (nube.docs[clave]) nube.cacheVieja[clave] = Object.assign({}, nube.docs[clave]);
+            limpio = limpio && (await pc.w.cronosSesionAlAbrirPartido()) === true;
+            await vueltas();
+            await pc.w.cronosSesionLibera();
+            if (nube.docs[clave]) nube.cacheVieja[clave] = Object.assign({}, nube.docs[clave], { liberada: false, lastSeen: Date.now() });
+            limpio = limpio && (await ipad.w.cronosSesionAlAbrirPartido()) === true;
+            await vueltas();
+            await ipad.w.cronosSesionLibera();
+        }
+        ok('17i · 🔑 PC → iPad → PC tres veces seguidas: nadie es bloqueado ni desalojado',
+           limpio && pc.avisos.desalojo === null && ipad.avisos.desalojo === null &&
+           pc.avisos.conflicto === null && ipad.avisos.conflicto === null);
+    }
 
     // ═══ 8. INTEGRACIÓN ════════════════════════════════════════════════════
     const roleLaunch = leer('js/services/auth/role-launch.js');

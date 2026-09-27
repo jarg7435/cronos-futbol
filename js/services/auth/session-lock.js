@@ -37,8 +37,23 @@
     'use strict';
 
     var COLECCION   = 'cronos_role_sessions';
-    var LATIDO_MS   = 25000;   // cada cuánto se refresca la marca
-    var TTL_MS      = 75000;   // sin refresco pasado esto, la plaza está libre
+    // ════════════════════════════════════════════════════════════════
+    //  ⏱️ v771 · LA PLAZA SE SUELTA EN SEGUNDOS, NO EN MINUTO Y MEDIO
+    // ════════════════════════════════════════════════════════════════
+    //  Encargo del autor (implementar.txt 2026-09-27, IMG_0618/IMG_0620): al
+    //  pasar del PC al iPad la plaza seguía ocupada demasiado tiempo. Eran 25 s
+    //  de latido y 75 s de caducidad. Ahora:
+    //    · latido 10 s y caducidad 30 s (tres latidos perdidos: un corte de
+    //      red de unos segundos en el campo no la suelta);
+    //    · una marca de pestaña OCULTA (iPad bloqueado, app cerrada desde la
+    //      multitarea, pestaña en segundo plano) sólo vale GRACIA_OCULTA_MS;
+    //    · una marca LIBERADA (ventana cerrada) no vale nada.
+    //  Los tres casos de «ya no está» son ahora explícitos; el TTL queda como
+    //  red de seguridad para cuando ni siquiera eso llega a enviarse.
+    var LATIDO_MS   = 10000;   // cada cuánto se refresca la marca
+    var TTL_MS      = 30000;   // sin refresco pasado esto, la plaza está libre
+    var GRACIA_OCULTA_MS = 5000;   // marca de una pestaña oculta
+    window.CRONOS_SESION_TIEMPOS = { latido: LATIDO_MS, ttl: TTL_MS, oculta: GRACIA_OCULTA_MS };
     var _latido     = null;
     var _paraEscucha = null;
     var _claveActual = null;
@@ -93,7 +108,17 @@
     //  Se reutiliza el identificador de pestaña que YA tiene el proyecto
     //  (`_cronosMatchSlots.tabId()`, js/core/match-slots.js, v465/v638): una
     //  segunda definición acabaría divergiendo de la primera.
+    //  🔴 v772 · LA IDENTIDAD DE LA PESTAÑA SE FIJA UNA VEZ POR PÁGINA. Si
+    //  cambiara a mitad (almacenamiento bloqueado, o `sessionStorage.clear()`
+    //  al cerrar sesión), la pestaña dejaría de reconocer su propia marca:
+    //  se desalojaría a sí misma y su marca parecería de «otra ventana». La
+    //  primera respuesta manda hasta que la página se recargue.
+    var _tabIdFijo = null;
     function _tabId() {
+        if (!_tabIdFijo) _tabIdFijo = _tabIdCalcula();
+        return _tabIdFijo;
+    }
+    function _tabIdCalcula() {
         try {
             if (window._cronosMatchSlots && typeof window._cronosMatchSlots.tabId === 'function') {
                 var t = window._cronosMatchSlots.tabId();
@@ -261,11 +286,16 @@
 
     function _vive(doc) {
         if (!doc || !doc.lastSeen) return false;
+        // v771 · La ventana se cerró: la plaza está libre desde ya.
+        if (doc.liberada === true) return false;
         var t = Number(doc.lastSeen) || 0;
         var edad = Date.now() - t;
         if (edad < 0) return (-edad) <= FUTURO_MAX_MS;   // marca "del futuro"
+        // v771 · Pestaña oculta: nadie está dirigiendo el partido desde ahí.
+        if (doc.oculta === true) return edad < GRACIA_OCULTA_MS;
         return edad < TTL_MS;
     }
+    window.cronosSesionVive = _vive;
 
     // ════════════════════════════════════════════════════════════════
     //  RECLAMAR LA PLAZA
@@ -287,7 +317,24 @@
             var snap = await f.m.getDoc(ref);
             previo = snap.exists() ? (snap.data() || null) : null;
         } catch (e) {
-            return { ok: true, sinComprobar: true };
+            // ════════════════════════════════════════════════════════════
+            //  🔴🔴🔴 v773 · «NO EXISTE» LLEGA COMO permission-denied
+            // ════════════════════════════════════════════════════════════
+            //  La regla de lectura es `resource.data.get('uid','') == uid`, y
+            //  un documento que NO EXISTE no tiene `data`: la evaluación falla
+            //  y Firestore contesta permission-denied (medido en v717, ver
+            //  firestore.rules). Hasta aquí eso se trataba como «sin red» y se
+            //  salía SIN ESCRIBIR LA MARCA. Resultado, cada vez que el otro
+            //  aparato había salido limpiamente (y por tanto BORRADO su marca):
+            //  este entraba sin marca propia, su oyente arrancaba sobre la
+            //  CACHÉ LOCAL —donde seguía la marca vieja del otro— y se echaba a
+            //  sí mismo con «Sesión cerrada en este dispositivo». Es el reporte
+            //  del autor en v771 y v772: salir bien era justo lo que lo rompía.
+            //  Ahora permission-denied significa «no hay marca»: se escribe la
+            //  nuestra (la regla de ALTA sólo exige nuestro uid). Cualquier
+            //  otro error sigue siendo fail-open sin escribir, como siempre.
+            if (!(e && e.code === 'permission-denied')) return { ok: true, sinComprobar: true };
+            previo = null;
         }
 
         // 🪟 v733 · Ocupada = la tiene OTRA PESTAÑA viva, sea de este aparato o
@@ -339,8 +386,11 @@
                 subcategory: (_eq && _eq.subcategory) ? String(_eq.subcategory) : '',
                 etiqueta:   _etiquetaPlaza(window._cronosCurrentUser),
                 startedAt:  Date.now(),
-                lastSeen:   Date.now()
+                lastSeen:   Date.now(),
+                oculta:     _oculta(),
+                liberada:   false
             });
+            _guardaCredenciales(f);
         } catch (e) {
             // Escribir la marca puede fallar (reglas aún sin desplegar, sin
             // red). No se impide trabajar por eso.
@@ -353,30 +403,228 @@
     function _arrancaLatido(clave) {
         _paraLatido();
         _claveActual = clave;
-        _latido = setInterval(async function () {
-            try {
-                var f = await _fs();
-                if (!f || !_claveActual) return;
-                // ⚠️ El `uid` viaja también en el latido: si la marca se
-                // hubiera borrado, este `merge` sería un ALTA, y la regla de
-                // creación exige el uid. Sin él, el latido moriría en silencio
-                // y la plaza caducaría con el entrenador dentro.
-                // 🪟 v733 · El `tabId` viaja en el latido por lo mismo que el
-                // uid: si la marca se hubiera borrado, este `merge` es un ALTA,
-                // y una marca sin pestaña volvería a decidirse por aparato —o
-                // sea, volvería a dejar entrar a la segunda ventana.
-                await f.m.setDoc(f.m.doc(f.db, COLECCION, _claveActual),
-                                 { lastSeen: Date.now(), deviceId: _deviceId(),
-                                   tabId: _tabId(),
-                                   uid: (window._cronosCurrentUser || {}).uid || '' },
-                                 { merge: true });
-            } catch (e) { /* sin red: la plaza caducará sola, y está bien */ }
-        }, LATIDO_MS);
+        _latido = setInterval(_late, LATIDO_MS);
+    }
+
+    // ════════════════════════════════════════════════════════════════
+    //  🔴🔴 v772 · EL LATIDO YA NO ESCRIBE A CIEGAS
+    // ════════════════════════════════════════════════════════════════
+    //  Reporte del autor tras probar v771: «sin ningún otro dispositivo
+    //  abierto, sigue saliendo que está abierto en iPhone · Safari».
+    //
+    //  🔑 EL AGUJERO: el latido hacía `setDoc(merge)` con NUESTRO `tabId` sin
+    //  mirar antes de quién era la marca. Quien avisaba a este aparato de que
+    //  otro se la había quedado era SÓLO el oyente, y el oyente puede estar
+    //  MUERTO (v717: tras 3 reintentos se rinde y «se sigue trabajando») o
+    //  DORMIDO (iPhone con la pantalla apagada que se despierta). En ese caso
+    //  el latido siguiente le devolvía la plaza al aparato viejo: el otro
+    //  pulsaba «retirar la prioridad», entraba, y a los pocos segundos la
+    //  marca volvía a decir «iPhone · Safari». Una plaza imposible de soltar.
+    //
+    //  Ahora cada latido LEE primero. Si la marca es de otra pestaña, este
+    //  aparato se RETIRA (deja de latir y avisa) en vez de pisarla. Si la
+    //  lectura falla, NO se escribe: la plaza caducará sola si de verdad no
+    //  hay red, y eso es mejor que escribir sin saber de quién es.
+    //  Cuesta una lectura cada 10 s por aparato dentro de un partido.
+    // v773 · Leer la marca distinguiendo «no existe» de «no hay red». Con las
+    // reglas de la colección, «no existe» llega como permission-denied (ver
+    // `cronosSesionReclama`). Devuelve { ok, d }: ok=false = no se sabe nada.
+    async function _leeMarca(f, clave) {
+        try {
+            var snap = await f.m.getDoc(f.m.doc(f.db, COLECCION, clave));
+            return { ok: true, d: snap.exists() ? (snap.data() || {}) : null };
+        } catch (e) {
+            if (e && e.code === 'permission-denied') return { ok: true, d: null };
+            return { ok: false, d: null };
+        }
+    }
+
+    // ¿Otra pestaña está USANDO esta plaza ahora mismo? (ajena Y viva)
+    function _otraLaUsa(d) {
+        return !!(d && (d.tabId || d.deviceId) && !_esMia(d) && _vive(d));
+    }
+
+    async function _late() {
+        try {
+            var f = await _fs();
+            if (!f || !_claveActual) return;
+            var clave = _claveActual;
+            var r = await _leeMarca(f, clave);
+            if (!r.ok) return;                           // sin red: no se escribe a ciegas
+            if (clave !== _claveActual) return;          // se soltó mientras se leía
+            var d = r.d;
+            // v773 · Sólo se retira si otra pestaña la USA (viva). Una marca
+            // ajena liberada o caducada es una plaza LIBRE: se ocupa con la
+            // nuestra. Así se cura también una entrada que no llegó a escribir.
+            if (_otraLaUsa(d)) {
+                _ultimaMarcaAjena = true;
+                _paraLatido();
+                _paraEscuchaFn();
+                window.cronosSesionDesalojado(d);
+                return;
+            }
+            _guardaCredenciales(f);
+            // ⚠️ El `uid` viaja también en el latido: si la marca se
+            // hubiera borrado, este `merge` sería un ALTA, y la regla de
+            // creación exige el uid. Sin él, el latido moriría en silencio
+            // y la plaza caducaría con el entrenador dentro.
+            // 🪟 v733 · El `tabId` viaja en el latido por lo mismo que el
+            // uid: si la marca se hubiera borrado, este `merge` es un ALTA,
+            // y una marca sin pestaña volvería a decidirse por aparato —o
+            // sea, volvería a dejar entrar a la segunda ventana.
+            // v771 · `oculta` refleja el estado REAL de la pestaña: una pestaña
+            // en segundo plano sigue latiendo (el navegador la frena, no la
+            // para) y no puede volver a hacerse pasar por activa.
+            // v773 · `deviceName` y `etiqueta` también: si este latido es el
+            // que CREA la marca, el aviso del otro aparato tiene que poder
+            // decir quién la tiene.
+            await f.m.setDoc(f.m.doc(f.db, COLECCION, _claveActual),
+                             { lastSeen: Date.now(), deviceId: _deviceId(),
+                               tabId: _tabId(),
+                               uid: (window._cronosCurrentUser || {}).uid || '',
+                               deviceName: _nombreAparato(),
+                               etiqueta: _etiquetaPlaza(window._cronosCurrentUser),
+                               oculta: _oculta(), liberada: false },
+                             { merge: true });
+        } catch (e) { /* sin red: la plaza caducará sola, y está bien */ }
     }
 
     function _paraLatido() {
         if (_latido) { clearInterval(_latido); _latido = null; }
     }
+
+    // ════════════════════════════════════════════════════════════════
+    //  🚪 v771 · AVISAR DE QUE ME VOY, SIN ESPERAR RESPUESTA
+    // ════════════════════════════════════════════════════════════════
+    //  🔑 POR QUÉ NO BASTABA EL `pagehide` DE ANTES: llamaba a
+    //  `cronosSesionLibera`, que LEE la marca, espera, y luego la BORRA. Al
+    //  cerrar una pestaña el navegador no espera a nadie: la lectura se corta
+    //  a medias y el borrado ni sale. En el iPad es peor todavía: cerrar la
+    //  app desde la multitarea no dispara `pagehide`; lo último que llega es
+    //  `visibilitychange` a oculta. Resultado: la plaza caducaba sola, a los
+    //  75 s, que es la espera que describe el autor.
+    //
+    //  Lo que se hace ahora, sin ningún `await`:
+    //    1. `fetch` con `keepalive` a la API REST de Firestore: es la única
+    //       petición que el navegador se compromete a terminar aunque la
+    //       página ya no exista. Lleva el token del usuario y el de App Check
+    //       (obligatorio en este proyecto), guardados de antemano en cada
+    //       latido porque en este punto ya no hay tiempo de pedirlos.
+    //    2. La misma escritura por el SDK, por si el `fetch` no está (o no
+    //       hay tokens aún): en una pestaña que sólo se OCULTA, llega.
+    //
+    //  🔑 SE MARCA, NO SE BORRA. Borrar exige comprobar antes que la marca
+    //  sigue siendo mía (si otro tomó la plaza, borrarla se la regalaría a un
+    //  tercero) y esa comprobación necesita una lectura que aquí no cabe. Así
+    //  que se tocan SÓLO `lastSeen` y `liberada`/`oculta`, nunca `tabId`: si
+    //  otro ya la tenía, su próximo latido la repone en 10 s y su oyente no
+    //  ve nada raro (la marca sigue diciendo que es suya).
+    //  Y sólo se envía si el oyente —que va en tiempo real— no ha visto a
+    //  otra pestaña quedarse con la plaza (`_ultimaMarcaAjena`).
+    var _cred = { id: '', ac: '', pid: '' };
+    var _ultimaMarcaAjena = false;
+
+    function _oculta() {
+        try { return !!(document && document.visibilityState === 'hidden'); }
+        catch (e) { return false; }
+    }
+
+    function _guardaCredenciales(f) {
+        try {
+            if (f && f.db && f.db.app && f.db.app.options) _cred.pid = String(f.db.app.options.projectId || '');
+            var u = f && f.auth && f.auth.currentUser;
+            if (u && typeof u.getIdToken === 'function') {
+                Promise.resolve(u.getIdToken()).then(function (t) { _cred.id = t || ''; }, function () {});
+            }
+            if (typeof window._cronosAppCheckToken === 'function') {
+                Promise.resolve(window._cronosAppCheckToken()).then(function (t) { _cred.ac = t || ''; }, function () {});
+            }
+        } catch (e) { /* sin credenciales: queda el SDK y, al final, el TTL */ }
+    }
+
+    function _enviaSinEsperar(clave, campos) {
+        // 1 · REST con keepalive.
+        try {
+            if (_cred.id && _cred.pid && typeof fetch === 'function') {
+                var mask = Object.keys(campos).map(function (k) {
+                    return 'updateMask.fieldPaths=' + encodeURIComponent(k);
+                }).join('&');
+                var fields = {};
+                Object.keys(campos).forEach(function (k) {
+                    var v = campos[k];
+                    fields[k] = (typeof v === 'boolean') ? { booleanValue: v }
+                                                         : { integerValue: String(Math.round(Number(v) || 0)) };
+                });
+                var cab = { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + _cred.id };
+                if (_cred.ac) cab['X-Firebase-AppCheck'] = _cred.ac;
+                // `currentDocument.exists=true`: si la marca ya no existe, esto
+                // NO la crea (una marca huérfana sin tabId no sirve a nadie).
+                fetch('https://firestore.googleapis.com/v1/projects/' + encodeURIComponent(_cred.pid) +
+                      '/databases/(default)/documents/' + COLECCION + '/' + encodeURIComponent(clave) +
+                      '?' + mask + '&currentDocument.exists=true',
+                      { method: 'PATCH', keepalive: true, headers: cab, body: JSON.stringify({ fields: fields }) })
+                    .catch(function () {});
+            }
+        } catch (e) { /* queda el SDK */ }
+        // 2 · SDK, sin esperar. `uid` va dentro por la regla de `update`.
+        try {
+            var datos = Object.assign({ uid: (window._cronosCurrentUser || {}).uid || '' }, campos);
+            Promise.resolve(_fs()).then(function (f) {
+                if (!f || !datos.uid) return;
+                return f.m.setDoc(f.m.doc(f.db, COLECCION, clave), datos, { merge: true });
+            }).catch(function () {});
+        } catch (e) { /* caducará sola */ }
+    }
+
+    //  Se cierra la ventana (o se descarga la página): plaza LIBRE ya.
+    window.cronosSesionAlCerrar = function () {
+        var clave = _claveActual;
+        if (!clave || _ultimaMarcaAjena) return false;
+        _paraLatido();
+        _paraEscuchaFn();
+        _claveActual = null;
+        _enviaSinEsperar(clave, { lastSeen: 0, liberada: true });
+        return true;
+    };
+
+    //  La pestaña se oculta (iPad bloqueado, cambio de app, otra pestaña). NO
+    //  se suelta la plaza —puede volver en un segundo y seguir dirigiendo—,
+    //  pero se marca como oculta para que sólo aguante GRACIA_OCULTA_MS.
+    window.cronosSesionAlOcultar = function () {
+        var clave = _claveActual;
+        if (!clave || _ultimaMarcaAjena) return false;
+        _enviaSinEsperar(clave, { lastSeen: Date.now(), oculta: true });
+        return true;
+    };
+
+    //  La pestaña vuelve a verse. 🚨 ANTES DE LATIR SE MIRA DE QUIÉN ES LA
+    //  PLAZA: mientras estaba oculta otro aparato pudo quedársela (para eso
+    //  existe la gracia corta), y un latido a ciegas —que escribe `tabId`—
+    //  se la ROBARÍA de vuelta. Si es de otro, este aparato se retira.
+    window.cronosSesionAlVolver = async function () {
+        var clave = _claveActual;
+        if (!clave) return 'sin-plaza';
+        // El oyente ya vio que es de otro y ya avisó: no se repite el aviso.
+        if (_ultimaMarcaAjena) return 'desalojado';
+        try {
+            var f = await _fs();
+            if (!f) return 'sin-red';
+            var r = await _leeMarca(f, clave);
+            if (!r.ok) return 'sin-red';
+            if (clave !== _claveActual) return 'cambio';
+            var d = r.d;
+            // v773 · Sólo si otra pestaña la está USANDO (ajena y viva).
+            if (_otraLaUsa(d)) {
+                _paraLatido();
+                _paraEscuchaFn();
+                _claveActual = null;
+                window.cronosSesionDesalojado(d);
+                return 'desalojado';
+            }
+            await _late();
+            return 'sigue';
+        } catch (e) { return 'sin-red'; }
+    };
 
     // ── Escucha: si otro aparato toma el control, este se retira ─────
     //  🔑 El aviso al PRIMER aparato es la otra mitad del encargo: sin esto,
@@ -445,9 +693,22 @@
             var baja = f.m.onSnapshot(f.m.doc(f.db, COLECCION, clave), function (snap) {
                 if (mia !== _generacion) return;      // esta escucha ya no manda
                 _reintentos = 0;            // la escucha va: se olvida el historial de fallos
+                // 🔴🔴 v773 · SÓLO SE ECHA A NADIE CON DATOS DEL SERVIDOR. La
+                // primera foto de un `onSnapshot` sale de la CACHÉ LOCAL, y ahí
+                // puede quedar la marca del otro aparato de la sesión anterior.
+                // Era la otra mitad del «Sesión cerrada» de v771/v772. Con la
+                // foto de la caché no se decide nada: la del servidor llega
+                // detrás. (Sin red nunca se desaloja: fail-open, como todo el
+                // módulo.)
+                if (snap.metadata && snap.metadata.fromCache) return;
                 var d = snap.exists() ? (snap.data() || {}) : null;
                 if (!d || (!d.tabId && !d.deviceId)) return;
-                if (_esMia(d)) return;
+                if (_esMia(d)) { _ultimaMarcaAjena = false; return; }
+                // v773 · Y una marca ajena MUERTA (liberada, caducada u oculta
+                // pasada la gracia) no es nadie tomando la plaza: es una plaza
+                // libre. El latido la ocupará con la nuestra.
+                if (!_vive(d)) return;
+                _ultimaMarcaAjena = true;     // v771 · ya no hay nada mío que soltar
                 // 🪟 v733 · Otra PESTAÑA ha tomado esta plaza (de este aparato
                 // o de otro): en los dos casos aquí se deja de escribir.
                 _paraLatido();
@@ -507,8 +768,19 @@
             // 🪟 v733 · «Mía» = de ESTA PESTAÑA. Con el criterio por aparato,
             // cerrar una ventana soltaba la plaza que estaba usando la OTRA
             // ventana del mismo navegador.
+            // 🔴🔴 v773 · SE MARCA LIBERADA, YA NO SE BORRA. Un documento
+            // borrado no lo puede leer NADIE con estas reglas (ver la nota de
+            // `cronosSesionReclama`): el siguiente aparato recibía
+            // permission-denied, entraba sin marca y se desalojaba a sí mismo
+            // con la caché vieja. Una marca `liberada` sí se lee, `_vive` la da
+            // por muerta y el siguiente la sobrescribe con la suya. Sólo se
+            // tocan `lastSeen` y `liberada` (el `uid` va por la regla).
             if (snap.exists() && _esMia(snap.data() || {})) {
-                await f.m.deleteDoc(f.m.doc(f.db, COLECCION, clave));
+                await f.m.setDoc(f.m.doc(f.db, COLECCION, clave),
+                                 { uid: (window._cronosCurrentUser || {}).uid ||
+                                        (snap.data() || {}).uid || '',
+                                   lastSeen: 0, liberada: true, oculta: false },
+                                 { merge: true });
             }
         } catch (e) { /* la marca caducará sola */ }
     };
@@ -570,7 +842,7 @@
                 //  bloqueo sin escape dejaría al entrenador fuera de su propio
                 //  encuentro. Por eso se dicen las TRES vías: cerrar allí,
                 //  retirar la prioridad desde aquí, o esperar — la marca
-                //  caduca sola en ~1 minuto (TTL 75 s, latido 25 s).
+                //  caduca sola en ~30 s (v771: TTL 30 s, latido 10 s).
                 '<div style="font-size:1rem;font-weight:800;color:#f85149;margin-bottom:10px;">' +
                 '🔒 Este equipo ya está abierto ' + _donde + '</div>' +
                 '<div style="font-size:0.84rem;color:#c9d1d9;line-height:1.45;margin-bottom:6px;">' +
@@ -579,6 +851,10 @@
                 esc(info.deviceName || 'Otro dispositivo') +
                 (_mismoAparato ? ' · otra ventana' : '') +
                 ' · activo ' + esc(_desde(info.startedAt || info.lastSeen)) +
+                // v772 · La ÚLTIMA SEÑAL, en segundos: es lo que dice si allí
+                // hay algo vivo de verdad o una marca que se quedó colgada.
+                (info.lastSeen ? ' · última señal hace ' +
+                    Math.max(0, Math.round((Date.now() - Number(info.lastSeen)) / 1000)) + ' s' : '') +
                 '</div>' +
                 '<div style="font-size:0.78rem;color:#f0f6fc;background:rgba(248,81,73,0.10);' +
                 'border:1px solid rgba(248,81,73,0.35);border-radius:10px;padding:10px;' +
@@ -588,16 +864,27 @@
                 'partido.</div>' +
                 '<div style="font-size:0.76rem;color:#8b949e;margin-bottom:16px;line-height:1.5;">' +
                 'Para poder usarlo: <strong>' + _cierra + '</strong>, ' +
-                '<strong>retírale la prioridad</strong> desde aquí (allí se cerrará al momento), ' +
-                'o espera: si se quedó sin batería o sin cobertura, el equipo se libera solo en ' +
-                'aproximadamente un minuto.</div>' +
+                '<strong>libera la sesión</strong> desde aquí con el botón de abajo (allí se ' +
+                'cerrará al momento), o espera: si se quedó sin batería o sin cobertura, el equipo ' +
+                'se libera solo en unos 30 segundos.</div>' +
                 '<div style="display:flex;flex-direction:column;gap:8px;">' +
                 '<button id="cs-cancelar" style="width:100%;min-height:46px;border-radius:10px;cursor:pointer;' +
                 'background:rgba(88,166,255,0.9);border:none;color:#fff;' +
                 'font-weight:800;font-size:0.85rem;">Entendido, no entrar</button>' +
-                '<button id="cs-tomar" style="width:100%;min-height:42px;border-radius:10px;cursor:pointer;' +
-                'background:rgba(255,255,255,0.04);border:1px solid rgba(218,54,51,0.55);color:#ff7b72;' +
-                'font-weight:700;font-size:0.78rem;">Retirar la prioridad a ' + _alli + '</button>' +
+                // ══════════════════════════════════════════════════════════
+                //  🔓 v772 · EL BOTÓN DIRECTO PARA SOLTAR UNA SESIÓN RETENIDA
+                // ══════════════════════════════════════════════════════════
+                //  Encargo del autor (27-09, tras probar v771): «implementa un
+                //  botón directo para forzar la liberación de la sesión si se
+                //  queda retenida». La vía ya existía («Retirar la prioridad»)
+                //  pero iba en gris y con un nombre que no decía lo que hace.
+                //  Sigue DEBAJO de «no entrar» (orden de v718), pero ahora es
+                //  un botón de verdad. Y desde v772 funciona al 100 %: el
+                //  aparato que la retenía ya no puede recuperarla con un
+                //  latido a ciegas (ver `_late`).
+                '<button id="cs-tomar" style="width:100%;min-height:46px;border-radius:10px;cursor:pointer;' +
+                'background:rgba(240,136,62,0.92);border:none;color:#fff;' +
+                'font-weight:800;font-size:0.85rem;">🔓 Liberar la sesión retenida y entrar aquí</button>' +
                 '</div></div>';
             document.body.appendChild(ov);
             var cierra = function (v) { try { ov.remove(); } catch (e) {} resolve(v); };
@@ -745,6 +1032,7 @@
             if (!tomar) return false;
             await window.cronosSesionReclama(clave, { forzar: true });
         }
+        _ultimaMarcaAjena = false;
         _arrancaLatido(clave);
         _escucha(clave);
         return true;
@@ -790,9 +1078,33 @@
         } catch (e) { /* cambiar de equipo nunca puede fallar por esto */ }
     };
 
-    // Al cerrar la pestaña se suelta la plaza cuanto antes; si no llega a
-    // enviarse, caduca sola.
-    window.addEventListener('pagehide', function () {
-        try { window.cronosSesionLibera(); } catch (e) {}
-    });
+    // ════════════════════════════════════════════════════════════════
+    //  🪟 v771 · LOS EVENTOS DE LA VENTANA
+    // ════════════════════════════════════════════════════════════════
+    //  · `pagehide` sin `persisted` → la página se va de verdad: LIBERADA.
+    //  · `pagehide` con `persisted` → entra en la caché de atrás/adelante y
+    //    puede volver intacta: se trata como OCULTA, no como cerrada.
+    //  · `visibilitychange` a oculta → OCULTA (en el iPad, cerrar la app
+    //    desde la multitarea no dispara nada más).
+    //  · vuelve a verse / `pageshow` desde la caché → comprobar y latir.
+    //  Si ni esto llega a salir, la marca caduca sola a los 30 s.
+    if (typeof window.addEventListener === 'function') {
+        window.addEventListener('pagehide', function (ev) {
+            try {
+                if (ev && ev.persisted) window.cronosSesionAlOcultar();
+                else window.cronosSesionAlCerrar();
+            } catch (e) {}
+        });
+        window.addEventListener('pageshow', function (ev) {
+            try { if (ev && ev.persisted) window.cronosSesionAlVolver(); } catch (e) {}
+        });
+    }
+    if (typeof document !== 'undefined' && document && typeof document.addEventListener === 'function') {
+        document.addEventListener('visibilitychange', function () {
+            try {
+                if (document.visibilityState === 'hidden') window.cronosSesionAlOcultar();
+                else window.cronosSesionAlVolver();
+            } catch (e) {}
+        });
+    }
 })();

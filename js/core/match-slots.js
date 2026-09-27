@@ -173,12 +173,23 @@
     var PREFIJO_PROV = 'tab:';
     function esProvisional(id) { return String(id || '').indexOf(PREFIJO_PROV) === 0; }
 
+    // 🔴 v772 · SIN `sessionStorage` LA PESTAÑA CAMBIABA DE IDENTIDAD EN CADA
+    // LLAMADA. Con el almacenamiento bloqueado (Safari con «Bloquear todas las
+    // cookies», algunos modos privados) `ssGet` da null y `ssSet` no guarda
+    // nada, así que cada llamada fabricaba un id NUEVO. El candado de sesión
+    // (session-lock.js) usa este id para saber si una marca es «mía»: la
+    // pestaña veía su PROPIA marca como de otra ventana — se desalojaba a sí
+    // misma y bloqueaba su propia reentrada con «ya está abierto en iPhone ·
+    // Safari». Ahora el id se recuerda en memoria durante toda la vida de la
+    // página (que es lo mismo que dura sin sessionStorage).
+    var _tabIdMem = null;
     function tabId() {
-        var v = ssGet(TAB_ID);
+        var v = ssGet(TAB_ID) || _tabIdMem;
         if (!v) {
             v = PREFIJO_PROV + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
             ssSet(TAB_ID, v);
         }
+        _tabIdMem = v;
         return v;
     }
 
