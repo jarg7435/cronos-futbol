@@ -471,14 +471,55 @@ if (base) {
        asignador.classList.contains('desde-izq') && !asignador.classList.contains('desde-der'));
 }
 
-// ── Colocación: las esquinas se declaran en el CSS del propio módulo ────────
-ok('en móvil/iPad la barra se reparte a las esquinas (≤1366px)',
-   /@media \(max-width: 1366px\)/.test(tracker) &&
-   /justify-content:space-between/.test(tracker));
+// ── v770 · Colocación FUERA DEL CÉSPED, ejecutando el cálculo real ─────────
+//  Encargo (implementar.txt): en iPad, los tres juntos en la franja negra de
+//  debajo del campo, sin pisar banquillo ni cuerpo técnico; en móvil, en
+//  columna en el margen DERECHO, encima de «VISIT.». Las medidas salen de
+//  las capturas (px CSS = px de captura × 0,59 en iPad).
+{
+    const sitio = base && base.window.cronosPRSitioBarra;
+    ok('el módulo expone el cálculo de la posición', typeof sitio === 'function');
+    if (typeof sitio === 'function') {
+        const BARRA = { w: 190, h: 44 };
+        // IMG_0617 · sólo mi equipo: banquillo+cuerpo técnico a la izquierda.
+        const c1 = { left: 267, top: 127, right: 1162, bottom: 723 };
+        const s1 = sitio({ ancho: 1180, alto: 788, seguro: 20, campo: c1, visit: null, barra: BARRA });
+        ok('iPad (IMG_0617): la barra cae DEBAJO del campo',
+           s1 && s1.modo === 'tablet' && s1.top >= c1.bottom && s1.top + BARRA.h <= 788);
+        ok('…centrada bajo el campo y lejos del banquillo (x ≥ 250)',
+           s1 && s1.left >= 250 && Math.abs((s1.left + BARRA.w / 2) - (c1.left + c1.right) / 2) <= 1);
+        // IMG_0564 · los dos banquillos a los lados.
+        const c2 = { left: 238, top: 212, right: 942, bottom: 681 };
+        const s2 = sitio({ ancho: 1180, alto: 794, seguro: 20, campo: c2, visit: null, barra: BARRA });
+        ok('iPad (IMG_0564): debajo del campo y entre los dos banquillos',
+           s2 && s2.top >= c2.bottom && s2.left >= 229 && s2.left + BARRA.w <= 950);
+        ok('…con el desplegable de dorsales centrado ENCIMA de la barra',
+           s2 && s2.asignar.centrado === true && s2.asignar.bottom === 794 - s2.top + 8);
 
-// El ORDEN del DOM es el que decide qué botón cae en cada esquina: R primero
-// (izquierda) y P al final (derecha), como las anotaciones de las capturas.
-ok('el orden del marcado deja R a la izquierda y P a la derecha',
+        // IMG_4888 · móvil apaisado 844×390, VISIT. en right:10 / bottom:20.
+        const COL = { w: 54, h: 144 };
+        const c3 = { left: 66, top: 74, right: 778, bottom: 369 };
+        const v3 = { left: 764, right: 834, top: 325, bottom: 370 };
+        const s3 = sitio({ ancho: 844, alto: 390, seguro: 0, campo: c3, visit: v3, barra: COL });
+        ok('móvil (IMG_4888): la columna va a la DERECHA, fuera del campo',
+           s3 && s3.modo === 'movil' && s3.left >= c3.right && s3.left + COL.w <= 844);
+        ok('…justo ENCIMA del botón VISIT., sin pisarlo',
+           s3 && s3.top + COL.h <= v3.top && v3.top - (s3.top + COL.h) <= 12);
+        ok('…y el desplegable crece hacia la IZQUIERDA desde la columna',
+           s3 && s3.asignar.left === null && s3.asignar.right === 844 - s3.left + 8);
+        // Sin el botón VISIT. a la vista, esquina inferior derecha.
+        const s4 = sitio({ ancho: 844, alto: 390, seguro: 0, campo: c3, visit: null, barra: COL });
+        ok('móvil sin VISIT. visible: sigue abajo a la derecha',
+           s4 && s4.left + COL.w <= 844 && s4.top + COL.h <= 390 - 20 && s4.left >= c3.right);
+
+        ok('en PC (>1366px) no se toca: queda el CSS de siempre',
+           sitio({ ancho: 1920, alto: 1080, campo: c1, barra: BARRA }) === null);
+    }
+}
+
+// El ORDEN del DOM decide la colocación: R primero y P al final. En fila, R a
+// la izquierda y P a la derecha; en la columna del móvil, R arriba y P abajo.
+ok('el orden del marcado es R, 📊, P',
    tracker.indexOf("id=\"cronos-pr-rec\"") < tracker.indexOf("id=\"cronos-pr-sum\"") &&
    tracker.indexOf("id=\"cronos-pr-sum\"") < tracker.indexOf("id=\"cronos-pr-loss\""));
 
@@ -614,12 +655,18 @@ ok('el desplegable tiene anclaje a los dos lados en el CSS',
     ok('la ventana de dorsales sigue siendo interactiva (tiene fondo visible)',
        resolver(REGLAS_PR, 'pointer-events', asign, MOVIL) !== 'none');
 
-    // 🚨 Y la barra a todo el ancho sigue ahí (es lo que coloca los botones en
-    // las esquinas): el arreglo NO puede haber sido encogerla, porque eso
-    // habría devuelto los botones al centro.
-    ok('la barra sigue ocupando el ancho en móvil (los botones, en las esquinas)',
-       resolver(REGLAS_PR, 'left', barra, MOVIL) === '0' &&
-       resolver(REGLAS_PR, 'right', barra, MOVIL) === '0');
+    // v770 · En móvil los tres van en COLUMNA; en iPad y PC, en fila.
+    const IPAD = { ancho: 1180, alto: 820 };
+    ok('en móvil la barra es una COLUMNA (R, 📊, P de arriba abajo)',
+       resolver(REGLAS_PR, 'flex-direction', barra, MOVIL) === 'column');
+    ok('…y en iPad y PC sigue en fila',
+       resolver(REGLAS_PR, 'flex-direction', barra, IPAD) !== 'column' &&
+       resolver(REGLAS_PR, 'flex-direction', barra, PC) !== 'column');
+    // 🚨 La barra de v694 ocupaba todo el ancho (left:0;right:0) y es lo que
+    // dejaba los botones en las esquinas, encima del banquillo.
+    ok('la barra YA NO ocupa todo el ancho en iPad/móvil',
+       resolver(REGLAS_PR, 'right', barra, MOVIL) !== '0' &&
+       resolver(REGLAS_PR, 'right', barra, IPAD) !== '0');
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

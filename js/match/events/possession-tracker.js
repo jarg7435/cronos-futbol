@@ -476,35 +476,35 @@
             'min-height:40px;flex-shrink:0;}',
 
             // ══════════════════════════════════════════════════════════════
-            //  v694 · MÓVIL E iPAD: A LAS ESQUINAS, SOBRE LOS BANQUILLOS
+            //  v770 · FUERA DEL CÉSPED (iPad y móvil)
             //
-            //  Encargo del autor (capturas IMG_4713 con la R y la P dibujadas
-            //  a mano en las esquinas): abajo al centro, los botones caían
-            //  sobre la línea de fondo del campo y estorbaban justo donde se
-            //  colocan las fichas. Se van a las esquinas, encima de los
-            //  cajones LOCAL/VISITANTE (`.mobile-toggle`, que vive en
-            //  bottom:20px), y en PC se quedan como estaban.
+            //  Encargo del autor (implementar.txt, IMG_0617/IMG_0564/IMG_4888):
+            //  en las esquinas de v694 la R pisaba el banquillo y el cuerpo
+            //  técnico, la P el córner y el 📊 el propio campo.
+            //    · iPad  → los tres JUNTOS en la franja negra de debajo del
+            //              campo, centrados bajo él.
+            //    · móvil → en COLUMNA (R, 📊, P) en el margen DERECHO, fuera
+            //              del campo y justo encima del botón «VISIT.».
             //
-            //  🔑 No hacen falta dos posicionamientos distintos: la misma
-            //  barra pasa a ocupar todo el ancho con `space-between`, y son
-            //  sus dos extremos los que aterrizan en las esquinas. El botón
-            //  de resumen queda en medio.
+            //  🔑 El sitio depende de dónde acabe el CAMPO, que es fluido
+            //  (aspect-ratio + max-height), y eso el CSS no lo sabe: la
+            //  posición la calcula `_colocaBarra()` midiendo `.pitch` y el
+            //  botón VISIT. Aquí sólo va la FORMA (fila o columna).
             //
-            //  1366px = iPad Pro 12,9" apaisado, el mismo corte que usan el
-            //  recorte de fichas de v691 y el del visor de v692.
+            //  Cortes: 1366px = iPad Pro 12,9" apaisado (el de v691/v692);
+            //  950px = el del sistema de cajones del móvil (style.css).
             // ══════════════════════════════════════════════════════════════
             '@media (max-width: 1366px){',
-            '  #cronos-pr-bar.on{left:0;right:0;transform:none;justify-content:space-between;',
-            '   padding:0 10px;box-sizing:border-box;',
-            '   bottom:calc(72px + env(safe-area-inset-bottom,0px));}',
-            // El desplegable se ancla al lado del botón que lo abre y crece
-            // HACIA DENTRO del campo: pegado a un borde se salía de la
-            // pantalla o quedaba cortado, que es lo que reportó el autor.
-            '  #cronos-pr-assign{max-width:calc(100vw - 20px);',
-            '   bottom:calc(124px + env(safe-area-inset-bottom,0px));}',
+            '  #cronos-pr-bar.on{transform:none;bottom:auto;right:auto;}',
+            '  #cronos-pr-assign{max-width:calc(100vw - 20px);transform:none;}',
             '  #cronos-pr-assign.desde-izq{left:10px;right:auto;transform:none;}',
             '  #cronos-pr-assign.desde-der{right:10px;left:auto;transform:none;}',
-            '  .cronos-pr-chips{max-width:calc(100vw - 40px);}',
+            '  .cronos-pr-chips{max-width:100%;}',
+            '}',
+            '@media (max-width: 950px){',
+            '  #cronos-pr-bar.on{flex-direction:column;gap:6px;}',
+            '  #cronos-pr-bar .cronos-pr-btn{width:54px;min-width:0;',
+            '   padding:0 3px;gap:3px;font-size:0.74rem;box-sizing:border-box;}',
             '}',
 
             // ── Panel de resumen por jugador (modal) ──
@@ -536,11 +536,9 @@
 
         var barra = document.createElement('div');
         barra.id = 'cronos-pr-bar';
-        // ⚠️ EL ORDEN DEL DOM ES EL DE LAS ESQUINAS. En móvil/iPad la barra se
-        // reparte con `space-between`, así que el PRIMERO cae a la izquierda y
-        // el ÚLTIMO a la derecha: R a la izquierda y P a la derecha, como las
-        // anotaciones a mano de las capturas IMG_4713. El resumen queda en
-        // medio. En PC son simplemente los tres seguidos.
+        // ⚠️ EL ORDEN DEL DOM ES EL DE LA PANTALLA: en fila (PC e iPad) queda
+        // R a la izquierda, 📊 en medio y P a la derecha; en la columna del
+        // móvil (v770), R arriba, 📊 en medio y P abajo, como pidió el autor.
         barra.innerHTML =
             '<button type="button" class="cronos-pr-btn rec" id="cronos-pr-rec" ' +
             'title="Recuperación de balón">🔺 R <span class="cronos-pr-num" id="cronos-pr-nrec">0</span></button>' +
@@ -574,6 +572,119 @@
             e.preventDefault(); e.stopPropagation();
             window.cronosPRAbrePanel();
         });
+
+        // El campo cambia de tamaño al girar el dispositivo o redimensionar.
+        if (typeof window.addEventListener === 'function') {
+            window.addEventListener('resize', _colocaBarra);
+            window.addEventListener('orientationchange', function () { setTimeout(_colocaBarra, 250); });
+        }
+    }
+
+    // ════════════════════════════════════════════════════════════════
+    //  v770 · DÓNDE VA LA BARRA (iPad y móvil)
+    // ════════════════════════════════════════════════════════════════
+    //  Cálculo PURO, sin tocar el DOM, para que el guard lo ejecute con
+    //  medidas reales de las capturas. Recibe (en px de pantalla):
+    //    ancho, alto   → la ventana
+    //    seguro        → safe-area inferior (la barra de inicio del iPad)
+    //    campo         → rect de `.pitch` o null
+    //    visit         → rect del botón «VISIT.» o null si no se ve
+    //    barra         → { w, h } de la propia barra
+    //  Devuelve null en PC (>1366px): allí se queda como estaba.
+    window.cronosPRSitioBarra = function (m) {
+        if (!m || !(m.ancho > 0) || !(m.alto > 0) || m.ancho > 1366) return null;
+        var w = m.barra ? m.barra.w : 0, h = m.barra ? m.barra.h : 0;
+        var seguro = m.seguro || 0;
+        var left, top;
+
+        if (m.ancho <= 950) {
+            // 📱 COLUMNA en el margen DERECHO, justo encima de «VISIT.».
+            var v = m.visit;
+            var suelo = v ? v.top - 8 : m.alto - seguro - 20;
+            top = Math.max(4, suelo - h);
+            var derecha = v ? v.right : m.ancho - 10;
+            left = derecha - w;
+            // Fuera del césped: si el margen lo permite, a la derecha del campo.
+            if (m.campo) left = Math.max(left, m.campo.right + 4);
+            left = Math.min(Math.max(4, left), m.ancho - w - 4);
+            return { modo: 'movil', left: Math.round(left), top: Math.round(top),
+                     w: w, h: h,
+                     // El desplegable crece HACIA LA IZQUIERDA desde la columna.
+                     asignar: { right: Math.round(m.ancho - left + 8), left: null,
+                                bottom: Math.round(m.alto - (top + h)),
+                                maxW: Math.max(120, Math.round(left - 18)) } };
+        }
+
+        // 📟 iPAD: los tres juntos, centrados en la franja bajo el campo.
+        var c = m.campo;
+        var cx  = c ? (c.left + c.right) / 2 : m.ancho / 2;
+        var pie = c ? c.bottom : m.alto - seguro - h - 14;
+        var hueco = (m.alto - seguro) - pie;
+        top = pie + Math.max(4, (hueco - h) / 2);
+        var limite = m.alto - seguro - h - 4;
+        if (limite < pie + 2) limite = m.alto - h - 2;   // antes la zona segura que el césped
+        top = Math.round(Math.min(top, limite));
+        left = Math.min(Math.max(4, cx - w / 2), m.ancho - w - 4);
+        return { modo: 'tablet', left: Math.round(left), top: Math.round(top),
+                 w: w, h: h,
+                 // El desplegable, centrado justo encima de la barra.
+                 asignar: { left: Math.round(cx), right: null, centrado: true,
+                            bottom: Math.round(m.alto - top + 8),
+                            maxW: Math.round(Math.min(440, m.ancho - 20)) } };
+    };
+
+    function _rectVisible(el) {
+        if (!el || typeof el.getBoundingClientRect !== 'function') return null;
+        var r = el.getBoundingClientRect();
+        return (r && r.width > 0 && r.height > 0) ? r : null;
+    }
+
+    var _sondaSeguro = null;
+    function _seguroInferior() {
+        try {
+            if (!_sondaSeguro) {
+                _sondaSeguro = document.createElement('div');
+                _sondaSeguro.style.cssText = 'position:fixed;left:0;bottom:0;width:0;height:0;' +
+                    'visibility:hidden;pointer-events:none;padding-bottom:env(safe-area-inset-bottom,0px);';
+                document.body.appendChild(_sondaSeguro);
+            }
+            return parseFloat(getComputedStyle(_sondaSeguro).paddingBottom) || 0;
+        } catch (e) { return 0; }
+    }
+
+    function _colocaBarra() {
+        var barra = document.getElementById('cronos-pr-bar');
+        var asig  = document.getElementById('cronos-pr-assign');
+        if (!barra || !barra.style) return;
+        var ancho = window.innerWidth, alto = window.innerHeight;
+        var rb = (barra.classList.contains('on')) ? _rectVisible(barra) : null;
+        var sitio = (rb && typeof document.querySelector === 'function')
+            ? window.cronosPRSitioBarra({
+                ancho: ancho, alto: alto, seguro: _seguroInferior(),
+                campo: _rectVisible(document.querySelector('.pitch')),
+                visit: _rectVisible(document.getElementById('toggle-bench-away')),
+                barra: { w: rb.width, h: rb.height }
+              })
+            : null;
+
+        if (!sitio) {                       // PC: vuelve el CSS de siempre
+            barra.style.left = barra.style.top = '';
+            if (asig && asig.style) {
+                asig.style.left = asig.style.right = asig.style.bottom =
+                    asig.style.maxWidth = asig.style.transform = '';
+            }
+            return;
+        }
+        barra.style.left = sitio.left + 'px';
+        barra.style.top  = sitio.top + 'px';
+        if (asig && asig.style) {
+            var a = sitio.asignar;
+            asig.style.left   = (a.left  == null) ? 'auto' : a.left + 'px';
+            asig.style.right  = (a.right == null) ? 'auto' : a.right + 'px';
+            asig.style.bottom = a.bottom + 'px';
+            asig.style.maxWidth = a.maxW + 'px';
+            asig.style.transform = a.centrado ? 'translateX(-50%)' : 'none';
+        }
     }
 
     function _pintaBotones() {
@@ -616,6 +727,9 @@
         _vigilaEstado._t = setInterval(function () {
             var barra = document.getElementById('cronos-pr-bar');
             if (!barra || !barra.classList.contains('on')) return;
+            // v770 · El campo se reacomoda sin avisar (cabecera que crece,
+            // cajones, teclado): medir dos rects por segundo es barato.
+            _colocaBarra();
             var e = _enJuego();
             if (e === _ultimoEnJuego) return;
             _ultimoEnJuego = e;
@@ -652,6 +766,7 @@
         cont.classList.add(item.kind === 'loss' ? 'desde-der' : 'desde-izq');
 
         cont.classList.add('on');
+        _colocaBarra();
 
         cont.querySelectorAll('.cronos-pr-chip').forEach(function (b) {
             b.addEventListener('click', function (e) {
@@ -797,6 +912,7 @@
             _restaura();
             barra.classList.add('on');
             _pintaBotones();
+            _colocaBarra();
             _vigilaEstado();
         } else {
             barra.classList.remove('on');

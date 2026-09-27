@@ -2708,8 +2708,11 @@
 //        iPhone apaisado: la caja de la tabla se encogía (flex:1 +
 //        min-height:0). Y la casilla de HORA invadía Duración: el modal no
 //        daba estilo a `.conv-input` y iOS le ponía su alto y ancho propios.
-const VERSION = 'v769';
-const CACHE_NAME = 'cronos-cache-v769';
+// v770 · BOTONES P/R FUERA DEL CÉSPED. iPad: los tres juntos en la franja
+//        negra bajo el campo (la R pisaba el banquillo y el cuerpo técnico).
+//        Móvil: en columna R·📊·P en el margen derecho, encima de «VISIT.».
+const VERSION = 'v770';
+const CACHE_NAME = 'cronos-cache-v770';
 
 const ASSETS = [
     './',
