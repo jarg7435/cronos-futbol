@@ -266,6 +266,12 @@ function renderPlayers() {
     if (typeof window.cronosPRActualiza === 'function') {
         try { window.cronosPRActualiza(); } catch(e) { /* nunca debe tumbar el repintado */ }
     }
+    // v774 · Estadísticas avanzadas (córners, faltas, centros, ocasiones):
+    // mismo punto único de paso, y DESPUÉS de R/P porque su barra se coloca
+    // al lado de la de R/P midiéndola.
+    if (typeof window.cronosSAvActualiza === 'function') {
+        try { window.cronosSAvActualiza(); } catch(e) { /* nunca debe tumbar el repintado */ }
+    }
 
     // v697 · El marcador, alineado con la línea de medio campo (móvil).
     if (typeof window.cronosAlineaMarcador === 'function') {

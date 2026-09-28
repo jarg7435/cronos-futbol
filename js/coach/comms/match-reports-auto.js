@@ -235,6 +235,9 @@ async function autoDispatchMatchReports() {
                 // 🔵🔴 v693 · Pérdidas/Recuperaciones (mismo criterio: cuerpo técnico).
                 matchPR:       (typeof window.cronosPRDelPartido === 'function')
                                  ? window.cronosPRDelPartido() : null,
+                // 📈 v774 · Estadísticas avanzadas (mismo criterio: cuerpo técnico).
+                matchStats:    (typeof window.cronosSAvDelPartido === 'function')
+                                 ? window.cronosSAvDelPartido() : null,
                 clubId:        me.clubId || null,
                 coachUid:      me.uid,
                 coachEmail:    me.email,
@@ -552,6 +555,9 @@ async function autoDispatchMatchReports() {
                     // 🔵🔴 v693 · Pérdidas/Recuperaciones (mismo criterio).
                     matchPR:       (typeof window.cronosPRDelPartido === 'function')
                                      ? window.cronosPRDelPartido() : null,
+                    // 📈 v774 · Estadísticas avanzadas (mismo criterio).
+                    matchStats:    (typeof window.cronosSAvDelPartido === 'function')
+                                     ? window.cronosSAvDelPartido() : null,
                     clubId:        me.clubId || null,
                     coachUid:      me.uid,
                     coachEmail:    me.email,

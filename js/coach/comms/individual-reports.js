@@ -492,7 +492,12 @@ window.openMisInformes = async function openMisInformes() {
 
             _miResumenHtml = barra + window.ctRenderStatsTable(
                 _miFilas, { matchCount: _miParaResumen.length, categoria: _miCatEquipo() }
-            );
+            ) +
+            // 📈 v774 · El mismo bloque de estadísticas avanzadas que ve el
+            // Director (reports-tab.js): los dos paneles no pueden discrepar.
+            ((typeof window.cronosSAvRenderTemporada === 'function')
+                ? window.cronosSAvRenderTemporada(_miParaResumen, _miFilas, { categoria: _miCatEquipo() })
+                : '');
         }
 
         // ══════════════════════════════════════════════════════════════
@@ -1085,6 +1090,19 @@ window.openMisInformes = async function openMisInformes() {
                     L.push(`Registros a nivel colectivo (sin jugador asignado):`
                          + ` ${_prTxtP(sinP)} · ${_prTxtR(sinR)}`);
                 }
+            }
+
+            // ── 📈 v774 · ESTADÍSTICAS AVANZADAS, como en la pantalla
+            //    (report-engine.js): totales del equipo y una línea por dorsal.
+            const _sav = (typeof window.cronosSAvDelInforme === 'function') ? window.cronosSAvDelInforme(m) : null;
+            if (_sav && typeof window.cronosSAvLineasTxt === 'function') {
+                L.push('');
+                L.push('ESTADÍSTICAS AVANZADAS');
+                L.push('-'.repeat(46));
+                window.cronosSAvLineasTxt(_sav, (d) => {
+                    const p = jug.filter(x => String(x.playerNumber || '').trim() === String(d))[0];
+                    return `#${String(d).padStart(2)}${p ? ' ' + (p.playerAlias || 'Jugador') : ''}`;
+                }).forEach(t => L.push(t));
             }
 
             L.push('');

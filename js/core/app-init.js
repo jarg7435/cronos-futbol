@@ -2018,6 +2018,10 @@ function _cronosNuevoPartidoDeEquipo() {
         if (typeof window.cronosPRNuevoPartido === 'function') {
             try { window.cronosPRNuevoPartido(); } catch (e) { /* nunca tumba el arranque */ }
         }
+        // v774 · Y las estadísticas avanzadas, por la misma razón.
+        if (typeof window.cronosSAvNuevoPartido === 'function') {
+            try { window.cronosSAvNuevoPartido(); } catch (e) { /* nunca tumba el arranque */ }
+        }
 
         // ── 3 · el dueño del partido que nace ────────────────────────────
         // Es lo que hace que su autoguardado caiga en la ranura de ESE equipo

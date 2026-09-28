@@ -2374,6 +2374,89 @@ service cloud.firestore {
     }
 
     // ============================================================
+    // COLECCION: live_stats  (v775)
+    // ============================================================
+    // Estadisticas tacticas del directo: Perdidas/Recuperaciones y las
+    // avanzadas (corners, faltas, centros, ocasiones). Un documento por
+    // partido, con el MISMO id que live_matches.
+    //
+    // Encargo del autor (implementar.txt 2026-09-28): que no se pierdan al
+    // cambiar de dispositivo y que el panel en vivo sea SOLO del cuerpo
+    // tecnico, "completamente oculto e inaccesible" para familias.
+    //
+    // POR QUE VA APARTE Y NO DENTRO DE live_matches:
+    //   - las reglas de live_matches dejan leer a CUALQUIER miembro autorizado
+    //     del club (userDocClubId no mira el rol): dentro, un familiar lo
+    //     leeria pidiendo el documento, aunque la pantalla lo escondiera;
+    //   - y escribir en el documento gordo en cada toque obliga a cada
+    //     espectador a bajarselo entero (v576).
+    //
+    // EL ROL SE LEE DE users/{uid}.role Y NUNCA DE allRoles, que es
+    // autoescribible (misma regla que el canal del club, v739). 'user' ES EL
+    // ENTRENADOR en este proyecto; los roles del ente individual entran.
+    // Un perfil multi-plaza cuya raiz sea de familia NO lee aqui aunque tenga
+    // otra plaza tecnica: es el precio de no fiarse de allRoles. El entrenador
+    // del partido entra siempre por createdBy.
+    //
+    // Todas las lecturas con .get(campo, default) (v438: una clave ausente
+    // LANZA). `resource == null` en la lectura: pedir un documento que aun no
+    // existe no revela nada, y sin esa rama la PRIMERA escucha del partido
+    // moria con permission-denied (la trampa de v717/v773).
+    match /live_stats/{matchId} {
+      function lsEsTecnicoDe(clubId) {
+        return isAuth() && clubId != null
+               && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+               && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('clubId', '') == clubId
+               && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('isAuthorized', false) == true
+               && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('role', '') in
+                    ['director', 'coordinator', 'coach', 'user', 'club_admin', 'admin',
+                     'individual', 'individual_admin', 'admin_individual', 'entrenador_individual'];
+      }
+      function lsEsAutor(d) {
+        return d.get('createdBy', null) != null && d.get('createdBy', null) == request.auth.uid;
+      }
+      function lsPuedeEscribir(d) {
+        return isSuperAdmin() || sameClub(d.get('clubId', null)) || lsEsTecnicoDe(d.get('clubId', null));
+      }
+      function lsPuedeLeer(d) {
+        return lsPuedeEscribir(d) || isClubAdminOf(d.get('clubId', null)) || lsEsAutor(d);
+      }
+      // Forma cerrada: sin campos libres y con techo de tamano (un partido
+      // real no pasa de unos cientos de apuntes; el limite de un documento
+      // es 1 MiB).
+      function lsForma(d) {
+        return d.keys().hasOnly(['matchId', 'clubId', 'createdBy', 'coachEmail', 'category',
+                                 'pr', 'sav', 'updatedAt', 'expireAt', 'v'])
+               && d.get('pr', {}) is map && d.get('sav', {}) is map
+               && d.get('pr', {}).get('items', []) is list
+               && d.get('sav', {}).get('items', []) is list
+               && d.get('pr', {}).get('items', []).size() <= 800
+               && d.get('sav', {}).get('items', []).size() <= 800;
+      }
+
+      allow read: if isRegisteredUser() && (resource == null || lsPuedeLeer(resource.data));
+
+      // CREATE: lo crea quien lleva el partido (createdBy = el que escribe).
+      // Con club, ademas tiene que ser tecnico de ESE club: un familiar del
+      // club no puede sembrar estadisticas falsas.
+      allow create: if isAuth() && lsForma(request.resource.data) && (
+                       isSuperAdmin() ||
+                       (request.resource.data.get('createdBy', null) == request.auth.uid &&
+                        (request.resource.data.get('clubId', null) == null ||
+                         lsPuedeEscribir(request.resource.data)))
+                    );
+      // UPDATE: contra el club y el autor YA GUARDADOS, que no se pueden
+      // cambiar (nadie "reclama" el documento de otro club).
+      allow update: if isAuth() && lsForma(request.resource.data)
+                    && request.resource.data.get('clubId', null) == resource.data.get('clubId', null)
+                    && request.resource.data.get('createdBy', null) == resource.data.get('createdBy', null)
+                    && (lsEsAutor(resource.data) || lsPuedeEscribir(resource.data));
+      // DELETE: el autor o el SuperAdmin. El barrido a las 10 h lo hace
+      // cleanupLiveMatches (Admin SDK, no pasa por aqui).
+      allow delete: if isAuth() && (isSuperAdmin() || lsEsAutor(resource.data));
+    }
+
+    // ============================================================
     // COLECCIÓN: users/{uid}/cronos_data
     // ============================================================
     match /users/{userId}/cronos_data/{docId} {

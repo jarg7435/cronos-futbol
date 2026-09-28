@@ -433,6 +433,9 @@ window._sendCollectiveReportNow = async function() {
                 // campos a los once serializadores del jugador.
                 matchPR:        (typeof window.cronosPRDelPartido === 'function')
                                   ? window.cronosPRDelPartido() : null,
+                // 📈 v774 · Estadísticas avanzadas (mismo criterio: cuerpo técnico).
+                matchStats:     (typeof window.cronosSAvDelPartido === 'function')
+                                  ? window.cronosSAvDelPartido() : null,
                 clubId:         me.clubId || null,
                 coachUid:       me.uid,
                 coachEmail:     me.email,

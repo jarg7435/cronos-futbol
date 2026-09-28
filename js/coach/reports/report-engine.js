@@ -1209,6 +1209,100 @@ const _RP = (() => {
                `</div>`;
     };
 
+    // ════════════════════════════════════════════════════════════════
+    //  📈 v774 · ESTADÍSTICAS AVANZADAS (córners, faltas, centros, ocasiones)
+    //
+    //  Llegan como P/R: `matchStats`, repetido en cada documento del cuerpo
+    //  técnico; se coge el ejemplar más completo. COPIA PRIVADA de la regla
+    //  de js/shared/advanced-stats-report.js (este motor es autocontenido):
+    //  sólo Juvenil, Regional y Nacional; sin categoría, no se decide.
+    //  El panel es el informe COLECTIVO del partido (totales) y, debajo, la
+    //  ficha de cada jugador con lo que se le asignó.
+    // ════════════════════════════════════════════════════════════════
+    const _savDelInforme = (mm) => {
+        const _savCategoriaPermite = (cat) => {
+            const n = String(cat == null ? '' : cat).normalize('NFD')
+                .replace(/\p{M}/gu, '').toLowerCase().trim();
+            if (!n) return true;
+            return ['juvenil', 'regional', 'nacional', 'senior', 'aficionado'].some(k => n.indexOf(k) !== -1);
+        };
+        const _cat = (mm && mm.category) ||
+            (((mm && mm.players) || []).find(x => x && x.category) || {}).category || '';
+        if (!_savCategoriaPermite(_cat)) return null;
+        const _tot = (s) => {
+            if (!s) return -1;
+            const b = (k) => s[k] || {};
+            return (b('corners').favor || 0) + (b('corners').contra || 0) +
+                   (b('faltas').favor || 0) + (b('faltas').contra || 0) +
+                   (b('centros').total || 0) +
+                   (b('ocasiones').favor || 0) + (b('ocasiones').contra || 0);
+        };
+        const cands = [];
+        if (mm && mm.matchStats) cands.push(mm.matchStats);
+        ((mm && mm.players) || []).forEach(d => { if (d && d.matchStats) cands.push(d.matchStats); });
+        let mejor = null;
+        cands.forEach(c => { if (_tot(c) > _tot(mejor)) mejor = c; });
+        return (mejor && _tot(mejor) > 0) ? mejor : null;
+    };
+
+    const buildSAvPanel = (s, players) => {
+        if (!s) return '';
+        const n = (x) => Number(x) || 0;
+        const b = (k) => s[k] || {};
+        const kpi = (nombre, fav, con, lblF, lblC) =>
+            `<div style="flex:1;min-width:92px;"><div style="font-size:0.6rem;color:var(--text-muted);text-transform:uppercase;">${nombre}</div>` +
+            (con === null
+                ? `<div style="font-size:1.1rem;font-weight:700;color:#79c0ff;">${fav}</div>`
+                : `<div style="font-size:1.1rem;font-weight:700;"><span style="color:#3fb950;" title="${lblF}">${fav}</span>` +
+                  ` <span style="color:var(--text-muted);font-size:0.8rem;">/</span> ` +
+                  `<span style="color:#f85149;" title="${lblC}">${con}</span></div>` +
+                  `<div style="font-size:0.56rem;color:var(--text-muted);">${lblF.toLowerCase()} / ${lblC.toLowerCase()}</div>`) +
+            `</div>`;
+
+        const nombreDe = (dorsal) => {
+            const p = (players || []).filter(x => String(x.playerNumber || '').trim() === String(dorsal))[0];
+            return p ? (p.playerAlias || ('#' + dorsal)) : ('#' + dorsal);
+        };
+        const cel = (v) => `<span style="min-width:30px;text-align:center;${v ? 'font-weight:700;' : 'opacity:0.35;'}">${v}</span>`;
+        const porDorsal = s.porDorsal || {};
+        const filas = Object.keys(porDorsal)
+            .sort((a, c) => (parseInt(a, 10) || 99) - (parseInt(c, 10) || 99))
+            .map(d => {
+                const x = porDorsal[d] || {};
+                return `<div style="display:flex;align-items:center;gap:4px;padding:3px 0;font-size:0.72rem;">` +
+                       `<span style="min-width:24px;font-weight:800;color:var(--text-muted);">${esc(d)}</span>` +
+                       `<span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(nombreDe(d))}</span>` +
+                       cel(n(x.cf)) + cel(n(x.cc)) + cel(n(x.ff)) + cel(n(x.fc)) + cel(n(x.ce)) + cel(n(x.of)) + cel(n(x.oc)) +
+                       `</div>`;
+            }).join('');
+        const cab = `<div style="display:flex;align-items:center;gap:4px;font-size:0.56rem;color:#f0883e;text-transform:uppercase;font-weight:700;border-bottom:1px solid rgba(255,255,255,0.08);padding-bottom:3px;">` +
+                    `<span style="min-width:24px;"></span><span style="flex:1;">Jugador</span>` +
+                    ['Cór F', 'Cór C', 'Falt R', 'Falt C', 'Cen', 'Oca F', 'Oca C']
+                        .map(t => `<span style="min-width:30px;text-align:center;">${t}</span>`).join('') +
+                    `</div>`;
+        const sa = s.sinAsignar || {};
+        const sinTot = n(sa.cf) + n(sa.cc) + n(sa.ff) + n(sa.fc) + n(sa.ce) + n(sa.of) + n(sa.oc);
+
+        return `<div style="font-size:0.67rem;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;margin:10px 0 7px;">` +
+               `Estadísticas avanzadas</div>` +
+               `<div data-sav-informe="1" style="border:1px solid rgba(240,136,62,0.25);border-radius:10px;padding:8px 10px;margin-bottom:4px;">` +
+               `<div style="display:flex;flex-wrap:wrap;gap:10px;margin-bottom:8px;">` +
+               kpi('Córners', n(b('corners').favor), n(b('corners').contra), 'A favor', 'En contra') +
+               kpi('Faltas', n(b('faltas').favor), n(b('faltas').contra), 'Recibidas', 'Cometidas') +
+               kpi('Centros', n(b('centros').total), null) +
+               kpi('Ocasiones', n(b('ocasiones').favor), n(b('ocasiones').contra), 'Generadas', 'Concedidas') +
+               `</div>` +
+               (filas
+                   ? `<div style="overflow-x:auto;"><div style="min-width:340px;">${cab}${filas}</div></div>`
+                   : `<div style="font-size:0.7rem;color:var(--text-muted);">Sin desglose por jugador.</div>`) +
+               (sinTot
+                   ? `<div style="font-size:0.66rem;color:var(--text-muted);margin-top:6px;">` +
+                     `Sin jugador asignado (equipo / rival): córners ${n(sa.cf)}/${n(sa.cc)} · faltas ${n(sa.ff)}/${n(sa.fc)} · ` +
+                     `centros ${n(sa.ce)} · ocasiones ${n(sa.of)}/${n(sa.oc)}</div>`
+                   : '') +
+               `</div>`;
+    };
+
     // 🟠 v715 · Y EL COMENTARIO RETROACTIVO TAMBIÉN. El autor los nombra
     // primeros en su lista («comentarios, goles, tarjetas, lesiones,
     // cambios»), y son justo los que más se apuntan tarde: son la nota de lo
@@ -1502,6 +1596,7 @@ const _RP = (() => {
             buildTimeSummary(players) +
             buildRotPanel(subs) +
             buildPRPanel(_prDelInforme(m), players) +
+            buildSAvPanel(_savDelInforme(m), players) +
             buildEventsList(players, _comentariosDelInforme(m)) +
             `</div>`
         );

@@ -51,14 +51,37 @@
 
     function _clave() { return 'cronos_pr::' + (_idPartido() || 'sin_id'); }
 
-    function _guarda() {
+    //  ☁️ v775 · `t` = instante del último cambio LOCAL. Con él decide
+    //  js/match/live/stats-cloud.js si lo que llega de otro aparato es más
+    //  nuevo. `desdeNube` = el guardado lo provoca una hidratación: ni se
+    //  re-sella ni se vuelve a subir (sería un bucle de ecos).
+    function _guarda(desdeNube) {
+        if (!desdeNube) window._cronosPR.t = Date.now();
         try {
             localStorage.setItem(_clave(), JSON.stringify({
                 matchId: window._cronosPR.matchId,
-                items:   window._cronosPR.items
+                items:   window._cronosPR.items,
+                t:       Number(window._cronosPR.t) || 0
             }));
         } catch (e) { /* cuota o modo privado: el registro sigue vivo en memoria */ }
+        if (!desdeNube && typeof window.cronosStatsNubeCambio === 'function') {
+            try { window.cronosStatsNubeCambio(); } catch (e) { /* la nube nunca tumba el registro */ }
+        }
     }
+
+    // ☁️ v775 · Lo que llega de la nube (otro aparato, o este mismo al
+    // recargar) sustituye al registro local de ESTE partido.
+    window.cronosPRHidrata = function (items, t) {
+        var id = _idPartido();
+        if (!id) return false;
+        window._cronosPR.matchId = id;
+        window._cronosPR.items = Array.isArray(items) ? items.slice() : [];
+        window._cronosPR.t = Number(t) || 0;
+        _guarda(true);
+        _pintaBotones();
+        _pintaResumen();
+        return true;
+    };
 
     // ════════════════════════════════════════════════════════════════
     //  🔵🔴 v707 · UN PARTIDO NUEVO EMPIEZA A CERO, Y LA RECARGA NO PIERDE NADA
@@ -96,18 +119,20 @@
         var enMemoria = Array.isArray(window._cronosPR.items) ? window._cronosPR.items : [];
         window._cronosPR.matchId = id;
         window._cronosPR.items = [];
+        window._cronosPR.t = 0;
 
-        var guardados = null;
+        var guardados = null, tGuardado = 0;
         try {
             var crudo = localStorage.getItem(_clave());
             if (crudo) {
                 var d = JSON.parse(crudo);
-                if (d && Array.isArray(d.items)) guardados = d.items;
+                if (d && Array.isArray(d.items)) { guardados = d.items; tGuardado = Number(d.t) || 0; }
             }
         } catch (e) { /* json corrupto: se empieza de cero, no se rompe el partido */ }
 
         if (guardados && guardados.length) {
             window._cronosPR.items = guardados;
+            window._cronosPR.t = tGuardado;
             return;
         }
         // Migración `sin_id` → id real del MISMO partido: el cajón nuevo está
@@ -465,15 +490,22 @@
             '#cronos-pr-assign.on{display:block;}',
             '.cronos-pr-title{font-size:0.62rem;color:#8b949e;font-weight:700;',
             'text-transform:uppercase;letter-spacing:0.5px;margin-bottom:5px;}',
-            '.cronos-pr-chips{display:flex;gap:5px;overflow-x:auto;max-width:92vw;padding-bottom:2px;}',
-            '.cronos-pr-chip{min-width:40px;min-height:40px;border-radius:50%;border:2px solid rgba(255,255,255,0.5);',
-            'background:rgba(255,255,255,0.10);color:#fff;font-weight:900;font-size:0.85rem;',
-            'display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0;',
+            // 🏷️ v775 · Mismo diseño que la lista de advanced-stats.js
+            // (`.sav-chip`): píldora con el dorsal en un círculo y el nombre.
+            // Varias filas en vez de una tira con desplazamiento lateral: con
+            // nombres, once botones no caben en una sola línea del móvil.
+            '.cronos-pr-chips{display:flex;gap:5px;flex-wrap:wrap;max-width:92vw;max-height:46vh;',
+            'overflow-y:auto;padding-bottom:2px;}',
+            '.cronos-pr-chip{min-height:38px;border-radius:19px;border:1px solid rgba(255,255,255,0.45);',
+            'background:rgba(255,255,255,0.08);color:#fff;font-size:0.74rem;cursor:pointer;',
+            'display:flex;align-items:center;gap:5px;padding:0 10px 0 4px;flex-shrink:0;',
             'touch-action:manipulation;}',
-            '.cronos-pr-chip:active{transform:scale(0.92);}',
-            '.cronos-pr-undo{margin-left:6px;background:none;border:1px solid rgba(255,255,255,0.25);',
-            'color:#8b949e;border-radius:8px;font-size:0.66rem;padding:6px 9px;cursor:pointer;',
-            'min-height:40px;flex-shrink:0;}',
+            '.cronos-pr-chip b{display:inline-flex;align-items:center;justify-content:center;min-width:28px;',
+            'height:28px;border-radius:50%;background:rgba(255,255,255,0.16);font-weight:900;}',
+            '.cronos-pr-chip:active{transform:scale(0.95);}',
+            '.cronos-pr-undo{background:none;border:1px solid rgba(210,168,255,0.5);',
+            'color:#d2a8ff;border-radius:19px;font-size:0.74rem;padding:0 10px;cursor:pointer;',
+            'min-height:38px;flex-shrink:0;}',
 
             // ══════════════════════════════════════════════════════════════
             //  v770 · FUERA DEL CÉSPED (iPad y móvil)
@@ -740,13 +772,21 @@
     function _abreBarra(item) {
         var cont = document.getElementById('cronos-pr-assign');
         if (!cont) return;
-        var jug = _misJugadoresEnCampo();
+        var jug = _misJugadoresEnCampo().slice().sort(function (a, b) {
+            return (parseInt(a.number, 10) || 99) - (parseInt(b.number, 10) || 99);
+        });
         if (!jug.length) return;   // nadie a quien asignar: se queda colectivo
 
+        // 🏷️ v775 · DORSAL + NOMBRE, el mismo botón que Córners/Faltas
+        // (encargo del autor, implementar.txt punto 1): con sólo el dorsal
+        // había que acordarse de quién llevaba cada número. El nombre va
+        // recortado a la primera palabra, como en advanced-stats.js.
+        var esc = (typeof escapeHtml === 'function') ? escapeHtml : function (s) { return String(s); };
         var chips = jug.map(function (p) {
-            return '<button type="button" class="cronos-pr-chip" data-pid="' + String(p.id) + '" ' +
-                   'title="' + (typeof escapeHtml === 'function' ? escapeHtml(String(p.name || '')) : '') + '">' +
-                   (typeof escapeHtml === 'function' ? escapeHtml(String(p.number)) : String(p.number)) +
+            var nom = String(p.alias || p.name || '').split(' ')[0].slice(0, 10);
+            return '<button type="button" class="cronos-pr-chip" data-pid="' + esc(String(p.id)) + '" ' +
+                   'title="' + esc(String(p.name || '')) + '">' +
+                   '<b>' + esc(String(p.number)) + '</b>' + esc(nom) +
                    '</button>';
         }).join('');
 
@@ -914,6 +954,11 @@
             _pintaBotones();
             _colocaBarra();
             _vigilaEstado();
+            // ☁️ v775 · Escucha del documento del partido: hidrata al abrir
+            // en otro aparato y mantiene los contadores al día.
+            if (typeof window.cronosStatsNubeEscucha === 'function') {
+                try { window.cronosStatsNubeEscucha(); } catch (e) {}
+            }
         } else {
             barra.classList.remove('on');
             _cierraBarraYa();

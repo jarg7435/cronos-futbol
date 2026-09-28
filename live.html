@@ -1822,15 +1822,15 @@
      así los envoltorios lo resuelven en cada llamada y no al cargar, para que
      un cambio de orden no los deje mirando a `undefined` para siempre.
      ══════════════════════════════════════════════════════════════════ -->
-<script src="js/shared/live-feed.js?v=v773"></script>
+<script src="js/shared/live-feed.js?v=v775"></script>
 <!-- 🔊 v709 · Las melodías de cada suceso (gol, amarilla, roja, cambio,
      lesión), compartidas con el panel en vivo del Área de Familias. Este visor
      le presta su AudioContext, que es el que lleva el keep-alive de iOS. -->
-<script src="js/shared/live-sound.js?v=v773"></script>
+<script src="js/shared/live-sound.js?v=v775"></script>
 <!-- 🔴🔴🔴 v721 · El caché en disco de Firestore es de UNA sola cuenta (ver
      js/shared/fs-cache-mode.js). El visor lo comparte con la app, así que
      tiene que decidir con la MISMA regla y antes de crear su instancia. -->
-<script src="js/shared/fs-cache-mode.js?v=v773"></script>
+<script src="js/shared/fs-cache-mode.js?v=v775"></script>
 
 <!-- ══ FIREBASE ══════════════════════════════════════════════════ -->
 <script type="module">
@@ -5473,9 +5473,201 @@ function _liveNombreEquipo(d, lado) {
     return n || (lado === 'home' ? 'LOCAL' : 'VISITANTE');
 }
 
+// ════════════════════════════════════════════════════════════════════
+//  📈 v774 · ESTADÍSTICAS AVANZADAS EN VIVO — SÓLO ROLES TÉCNICOS
+// ════════════════════════════════════════════════════════════════════
+//  Encargo del autor (implementar.txt 2026-09-28, punto 5): entrenador,
+//  coordinador, director deportivo y administrador del club ven el desglose
+//  en tiempo real; familias y público, NO (sólo marcador, crono, tarjetas y
+//  goles, como siempre).
+//
+//  ☁️ v775 · El dato llega de `live_stats/{matchId}` (ver `_liveStatsEscucha`
+//  más abajo), no del latido de `live_matches`.
+//
+//  🔑 SE JUZGA POR LAS PLAZAS VIVAS DE LA CUENTA, no sólo por el rol raíz (la
+//  misma regla que la puerta de acceso de este visor, v706): «la unidad es
+//  la PLAZA». Quien tenga una plaza técnica viva lo ve.
+//
+//  🔒 v775 · Y YA NO ES SÓLO LA PANTALLA: las reglas de `live_stats` sólo
+//  dejan leer al cuerpo técnico (rol de users/{uid}, nunca `allRoles`). Aquí
+//  se juzga por PLAZAS para decidir si se pinta; la base de datos, por el rol
+//  raíz. Si discrepan, gana la base de datos y el panel no aparece.
+// 🔴 v775 · 'user' ES EL ENTRENADOR en este proyecto (así lo guarda el alta;
+// ver el canal del club en firestore.rules). v774 no lo tenía y un entrenador
+// real NO veía el panel. La misma lista que las reglas de `live_stats`.
+const _LIVE_SAV_ROLES_TECNICOS = [
+    'superadmin', 'admin', 'club_admin', 'director', 'coordinator', 'coach', 'user',
+    'individual', 'individual_admin', 'admin_individual', 'entrenador_individual'
+];
+function _liveSAvEsTecnico() {
+    if (typeof userData === 'undefined' || !userData) return false;
+    const roles = userData.role ? [String(userData.role)] : [];
+    (Array.isArray(userData.allRoles) ? userData.allRoles : []).forEach(r => {
+        if (!r || !r.role) return;
+        if (r.isAuthorized === false) return;
+        if (r.status && r.status !== 'active') return;
+        roles.push(String(r.role));
+    });
+    return roles.some(r => _LIVE_SAV_ROLES_TECNICOS.includes(r));
+}
+
+// ☁️ v775 · EL DATO SALE DE `live_stats/{matchId}`, NO DEL LATIDO.
+// Documento aparte con reglas SÓLO para el cuerpo técnico (firestore.rules):
+// una familia no puede leerlo ni pidiéndolo a mano, y además esta pantalla
+// ni siquiera se suscribe si la cuenta no es técnica. Trae R/P (encargo del
+// autor, punto 3) y las avanzadas, como listas de apuntes; aquí se cuentan.
+let _liveStatsUnsub = null;
+let _liveStatsId    = '';
+let _liveStatsDatos = null;
+let _liveStatsPlayers = [];
+
+function _liveStatsEscucha(matchId) {
+    if (_liveStatsId === matchId && _liveStatsUnsub) return;
+    if (_liveStatsUnsub) { try { _liveStatsUnsub(); } catch (e) {} _liveStatsUnsub = null; }
+    _liveStatsId = matchId || '';
+    _liveStatsDatos = null;
+    if (!matchId || typeof db === 'undefined' || !db) return;
+    try {
+        _liveStatsUnsub = onSnapshot(doc(db, 'live_stats', matchId), (snap) => {
+            if (_liveStatsId !== matchId) return;
+            _liveStatsDatos = snap.exists() ? snap.data() : null;
+            _liveSAvPintaPanel();
+        }, (err) => {
+            // Sin permiso (p. ej. perfil multi-plaza con raíz de familia) o sin
+            // red: el panel simplemente no aparece. Nunca toca el partido.
+            console.warn('[LIVE] estadísticas del cuerpo técnico:', err && err.message);
+            _liveStatsUnsub = null;
+            _liveStatsDatos = null;
+            _liveSAvPintaPanel();
+        });
+    } catch (e) { console.warn('[LIVE] no se pudo escuchar live_stats:', e); }
+}
+
+function _liveSAvCuenta(d) {
+    const pr = (d && d.pr && Array.isArray(d.pr.items)) ? d.pr.items : [];
+    const sav = (d && d.sav && Array.isArray(d.sav.items)) ? d.sav.items : [];
+    const K = ['r', 'p', 'cf', 'cc', 'ff', 'fc', 'ce', 'of', 'oc'];
+    const cero = () => { const o = {}; K.forEach(k => { o[k] = 0; }); return o; };
+    const tot = cero(), por = {};
+    const suma = (it, k) => {
+        tot[k]++;
+        const dor = String(it.number == null ? '' : it.number).trim();
+        if (!it.playerId || !dor) return;
+        if (!por[dor]) por[dor] = Object.assign(cero(), { d: dor, n: String(it.name || '') });
+        por[dor][k]++;
+    };
+    pr.forEach(it => {
+        if (!it) return;
+        if (it.kind === 'recovery') suma(it, 'r');
+        else if (it.kind === 'loss') suma(it, 'p');
+    });
+    const CLAVE = { corners: ['cf', 'cc'], faltas: ['ff', 'fc'], ocasiones: ['of', 'oc'] };
+    sav.forEach(it => {
+        if (!it) return;
+        if (it.metrica === 'centros') suma(it, 'ce');
+        else if (CLAVE[it.metrica] && (it.tipo === 'favor' || it.tipo === 'contra')) {
+            suma(it, CLAVE[it.metrica][it.tipo === 'favor' ? 0 : 1]);
+        }
+    });
+    return { tot, jugadores: Object.values(por), hay: (pr.length + sav.length) > 0 };
+}
+
+function _liveSAvPinta(data) {
+    _liveStatsPlayers = (data && Array.isArray(data.players)) ? data.players : [];
+    // 🔒 Sin rol técnico NI SE ESCUCHA: una familia no llega a pedir el dato.
+    if (!_liveSAvEsTecnico()) {
+        _liveStatsEscucha('');
+        _liveSAvPintaPanel();
+        return;
+    }
+    _liveStatsEscucha(typeof currentMatchId !== 'undefined' ? currentMatchId : '');
+    _liveSAvPintaPanel();
+}
+
+function _liveSAvPintaPanel() {
+    const cont = document.getElementById('live-main');
+    let btn = document.getElementById('live-sav-btn');
+    const c = _liveStatsDatos ? _liveSAvCuenta(_liveStatsDatos) : null;
+    // Sin dato, sin nada apuntado o sin rol técnico: ni botón ni panel. Para
+    // una familia, el visor queda EXACTAMENTE como estaba.
+    if (!cont || !c || !c.hay || !_liveSAvEsTecnico()) {
+        if (btn) btn.remove();
+        const p0 = document.getElementById('live-sav-panel');
+        if (p0) p0.remove();
+        return;
+    }
+    const esc = (typeof escapeHtml === 'function') ? escapeHtml : (x) => String(x);
+    if (!btn) {
+        btn = document.createElement('button');
+        btn.id = 'live-sav-btn';
+        btn.type = 'button';
+        btn.title = 'Estadísticas avanzadas (sólo cuerpo técnico)';
+        btn.style.cssText = 'position:fixed;left:12px;bottom:calc(14px + env(safe-area-inset-bottom,0px));z-index:900;' +
+            'background:rgba(240,136,62,0.85);color:#fff;border:1px solid rgba(255,255,255,0.3);border-radius:12px;' +
+            'padding:8px 12px;font-weight:800;font-size:0.8rem;cursor:pointer;box-shadow:0 4px 14px rgba(0,0,0,0.45);';
+        btn.addEventListener('click', () => {
+            const p = document.getElementById('live-sav-panel');
+            if (p) p.style.display = (p.style.display === 'none' ? 'block' : 'none');
+        });
+        btn.textContent = '📈 Estadísticas';
+        cont.appendChild(btn);
+    }
+    let panel = document.getElementById('live-sav-panel');
+    if (!panel) {
+        panel = document.createElement('div');
+        panel.id = 'live-sav-panel';
+        panel.style.cssText = 'display:none;position:fixed;left:12px;bottom:calc(60px + env(safe-area-inset-bottom,0px));' +
+            'z-index:901;width:min(500px,calc(100vw - 24px));max-height:60vh;overflow-y:auto;' +
+            'background:rgba(13,17,23,0.97);border:1px solid rgba(240,136,62,0.35);border-radius:12px;' +
+            'padding:10px 12px;color:#c9d1d9;box-shadow:0 12px 36px rgba(0,0,0,0.6);font-size:0.76rem;';
+        cont.appendChild(panel);
+    }
+    const t = c.tot;
+    const kpi = (tit, f, cc, lf, lc) => '<div style="flex:1;min-width:88px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.07);border-radius:8px;padding:5px 7px;">' +
+        '<div style="font-size:0.58rem;color:#8b949e;text-transform:uppercase;">' + tit + '</div>' +
+        (cc === null ? '<div style="font-size:1rem;font-weight:800;color:#79c0ff;">' + f + '</div>'
+                     : '<div style="font-size:1rem;font-weight:800;"><span style="color:#3fb950;" title="' + lf + '">' + f +
+                       '</span> / <span style="color:#f85149;" title="' + lc + '">' + cc + '</span></div>') +
+        '</div>';
+    // El nombre: el del apunte y, si falta, el de la ficha del documento.
+    const nombreDe = (x) => {
+        if (x.n) return x.n;
+        const p = _liveStatsPlayers.filter(pp => pp && String(pp.number) === String(x.d))[0];
+        return p ? (p.name || '') : '';
+    };
+    const cel = (v) => '<td style="text-align:center;padding:3px;' + (v ? 'font-weight:700;' : 'color:#4d5566;') + '">' + v + '</td>';
+    const filas = c.jugadores.slice().sort((a, b) => (parseInt(a.d, 10) || 99) - (parseInt(b.d, 10) || 99))
+        .map(x => '<tr><td style="padding:3px;white-space:nowrap;"><b style="color:#8b949e;">' + esc(String(x.d)) + '</b> ' +
+            esc(nombreDe(x)) + '</td>' + cel(x.r) + cel(x.p) + cel(x.cf) + cel(x.cc) + cel(x.ff) + cel(x.fc) +
+            cel(x.ce) + cel(x.of) + cel(x.oc) + '</tr>').join('');
+    panel.innerHTML =
+        '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">' +
+        '<strong style="color:#f0883e;">📈 Estadísticas avanzadas</strong>' +
+        '<span style="font-size:0.6rem;color:#8b949e;">sólo cuerpo técnico · ▲ a favor / ▼ en contra</span></div>' +
+        '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px;">' +
+        kpi('Recuperaciones', t.r, null) +
+        kpi('Pérdidas', t.p, null) +
+        kpi('Córners', t.cf, t.cc, 'A favor', 'En contra') +
+        kpi('Faltas rec. / com.', t.ff, t.fc, 'Recibidas', 'Cometidas') +
+        kpi('Centros', t.ce, null) +
+        kpi('Ocasiones', t.of, t.oc, 'Generadas', 'Concedidas') +
+        '</div>' +
+        (filas
+            ? '<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:0.7rem;">' +
+              '<thead><tr style="color:#f0883e;font-size:0.56rem;text-transform:uppercase;">' +
+              '<th style="text-align:left;padding:3px;">Jugador</th><th>R</th><th>P</th><th>Cór▲</th><th>Cór▼</th>' +
+              '<th>Falt R</th><th>Falt C</th><th>Cen</th><th>Oca▲</th><th>Oca▼</th></tr></thead><tbody>' + filas + '</tbody></table></div>'
+            : '<div style="color:#8b949e;font-size:0.68rem;">Todavía sin acciones asignadas a jugadores.</div>');
+}
+
 function renderMatch(data) {
     // Show match UI
     document.getElementById('loading-screen').style.display  = 'none';
+    // 📈 v774 · Estadísticas avanzadas: SÓLO roles técnicos (ver arriba).
+    // Con guarda `typeof` y `try`: un fallo aquí no puede tumbar el partido.
+    if (typeof _liveSAvPinta === 'function') {
+        try { _liveSAvPinta(data); } catch (e) { console.warn('[LIVE] stats avanzadas:', e); }
+    }
     document.getElementById('scoreboard').style.display      = 'flex';
     document.getElementById('live-main').style.display       = 'flex';
     document.getElementById('history-view').style.display    = 'none';
@@ -7614,9 +7806,9 @@ setInterval(function() {
 }
 </style>
 <!-- v434 · Inmutabilidad: antes de retroactive-modal.js, que la consulta. -->
-<script src="js/match/immutability.js?v=v773"></script>
-<script src="js/match/replay/replay-player.js?v=v773"></script>
-<script src="js/match/events/retroactive-modal.js?v=v773"></script>
+<script src="js/match/immutability.js?v=v775"></script>
+<script src="js/match/replay/replay-player.js?v=v775"></script>
+<script src="js/match/events/retroactive-modal.js?v=v775"></script>
 
 <!-- ══════════════════════════════════════════════════════════════════
      🟩 v577 · FRANJA DE VERSIÓN TAMBIÉN EN EL VISOR
@@ -7629,7 +7821,7 @@ setInterval(function() {
      El sello lo escribe `scripts/cache-bust.js` a partir del CACHE_NAME de
      sw.js, nunca a mano: un número puesto a mano miente en cuanto alguien
      olvida cambiarlo (v527 lo encontró mintiendo 185 versiones seguidas). -->
-<div id="cronos-version-badge" data-version="v773" style="position:fixed;bottom:calc(4px + env(safe-area-inset-bottom, 0px));right:6px;z-index:2147483000;pointer-events:none;background:rgba(0,0,0,0.55);color:#2ea043;font-family:monospace;font-size:0.6rem;font-weight:700;letter-spacing:0.5px;padding:2px 6px;border-radius:4px;">CHRONOS v773</div>
+<div id="cronos-version-badge" data-version="v775" style="position:fixed;bottom:calc(4px + env(safe-area-inset-bottom, 0px));right:6px;z-index:2147483000;pointer-events:none;background:rgba(0,0,0,0.55);color:#2ea043;font-family:monospace;font-size:0.6rem;font-weight:700;letter-spacing:0.5px;padding:2px 6px;border-radius:4px;">CHRONOS v775</div>
 <script>
 /* 🧪 v577 · Y DE QUÉ ENTORNO ES ESA VERSIÓN.
    El problema real del autor no era no ver la versión: era no saber si la

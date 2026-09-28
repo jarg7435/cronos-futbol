@@ -37,6 +37,12 @@ window._CRONOS_EXTRAS_DEF = [
     // (`cronosCategoriaConRegistroPR`, js/core/utils.js). Un club con el extra
     // activo NO verá los botones en un Alevín, y eso es lo pedido.
     { key: 'registro_pr',    icon: '🔄', label: 'Pérdidas y Recuperaciones', desc: 'Registro táctico rápido de pérdidas y recuperaciones durante el partido, para el equipo propio. Sólo en Cadete, Juvenil y Regional (incl. femeninas)' },
+    // v774 · Estadísticas avanzadas (córners, faltas, centros, ocasiones).
+    // ⚠️ `porDefecto: false`: AL REVÉS QUE EL RESTO, AUSENTE = APAGADO. Es una
+    // fase de testeo que se enciende club a club; con la regla de siempre
+    // (`!== false`) se habría estrenado sola en todos los clubes reales.
+    // La lectura está en js/shared/advanced-stats-report.js (`=== true`).
+    { key: 'modulo_stats_avanzadas', icon: '📈', label: 'Estadísticas Avanzadas', desc: 'Córners, faltas, centros y ocasiones de gol en el directo, en los informes y en el acumulado de la temporada. Sólo Juvenil, Regional y Nacional; sólo lo ven los roles técnicos', porDefecto: false },
     // v429: 'mensajeria' es INDEPENDIENTE de 'comunicaciones'. Antes la
     // descripción de comunicaciones prometía "Mensajes", pero esa clave no la
     // leía nadie (censo de v429: era el único extra del panel sin un solo
@@ -115,7 +121,11 @@ window.saExtras = async function saExtras() {
             const entityType = isClub ? '🏟️ Club' : '👤 Individual';
             
             const extrasHTML = window._CRONOS_EXTRAS_DEF.map(ext => {
-                const enabled = extras[ext.key] !== false; // Por defecto activado
+                // Por defecto activado, salvo los extras marcados `porDefecto:
+                // false` (v774), que sólo están encendidos si se guardaron así.
+                const enabled = (ext.porDefecto === false)
+                    ? extras[ext.key] === true
+                    : extras[ext.key] !== false;
                 return '<div style="display:flex;align-items:center;justify-content:space-between;padding:0.5rem 0.7rem;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:8px;margin-bottom:0.4rem;">' +
                     '<div style="display:flex;align-items:center;gap:0.5rem;">' +
                     '<span style="font-size:1.1rem;">' + ext.icon + '</span>' +

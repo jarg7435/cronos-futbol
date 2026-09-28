@@ -1389,6 +1389,12 @@ async function _emiteLatido(status = 'active') {
             snapshot.expireAt = new Date(Date.now() + 10 * 60 * 60 * 1000);
         }
 
+        // ☁️ v775 · Las estadísticas tácticas (R/P y avanzadas) YA NO VIAJAN
+        // en este latido: v774 metía aquí un `advStats` que las reglas de
+        // `live_matches` dejan leer también a las familias. Ahora viven en
+        // `live_stats/{matchId}` (js/match/live/stats-cloud.js), con reglas
+        // sólo para el cuerpo técnico. No volver a añadirlas aquí.
+
         // v469 · 🔒 MISMA PUERTA ESTANCA QUE EN LOS SUCESOS. El latido reescribe
         // marcador, alineación y tiempos: mandarlo al documento equivocado no
         // "cruza un gol", sobrescribe el partido entero de otro. Si esta pestaña

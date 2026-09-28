@@ -944,7 +944,13 @@ async function _sdLoadReports() {
                     // normalizada aquí mismo: no hay que deducirla de nada.
                     // La regla vive en `ctCategoriaRegistraPR` (category-tree.js).
                     return _sdStatsBar(arr, catId, subId) + window.ctRenderStatsTable(
-                        _filas, { matchCount: arr.length, guestRows: _inv, categoria: catId });
+                        _filas, { matchCount: arr.length, guestRows: _inv, categoria: catId }) +
+                        // 📈 v774 · Estadísticas avanzadas de la temporada, en
+                        // bloque APARTE debajo de la tabla ('' si el extra está
+                        // apagado, la categoría es de base o no hay datos).
+                        ((typeof window.cronosSAvRenderTemporada === 'function')
+                            ? window.cronosSAvRenderTemporada(arr.map(x => x.m), _filas, { categoria: catId })
+                            : '');
                 },
                 renderLeaf: (x) => _sdReportCard(x.m),
                 // v593 · El árbol del coordinador es el de SU modalidad.

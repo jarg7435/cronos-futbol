@@ -2729,8 +2729,8 @@
 //        LIBERADA (no la borra), permission-denied = «no hay marca» y se
 //        escribe la propia, y el oyente sólo desaloja con datos del SERVIDOR
 //        y ante una marca ajena VIVA.
-const VERSION = 'v773';
-const CACHE_NAME = 'cronos-cache-v773';
+const VERSION = 'v775';
+const CACHE_NAME = 'cronos-cache-v775';
 
 const ASSETS = [
     './',
@@ -2788,6 +2788,13 @@ const ASSETS = [
     './js/match/live/outbox.js',
     './js/match/live/sync.js',
     './js/match/live/finished-index.js',
+    // 📈 v774 · Estadísticas avanzadas: se usan EN EL CAMPO, donde la
+    // cobertura falla. Los dos ficheros existen (un 404 tumbaría la precarga
+    // entera, v452).
+    './js/shared/advanced-stats-report.js',
+    './js/match/events/advanced-stats.js',
+    // ☁️ v775 · su sincronía con la nube (el fichero existe).
+    './js/match/live/stats-cloud.js',
     './js/roster/formations.js',
     './js/roster/legacy-formations.js',
     './js/roster/team-rosters.js',

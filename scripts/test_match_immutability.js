@@ -200,7 +200,11 @@ console.log('\n── PARTE 2 · puertas en el navegador (interfaz) ──');
 // ═══════════ PARTE 3 · la Cloud Function ═══════════
 console.log('\n── PARTE 3 · el borrado en servidor ──');
 {
-    const pasoB = FUNCS.slice(FUNCS.indexOf('PASO B'), FUNCS.indexOf('cleanupLiveMatches] cerrados'));
+    // v775 · Desde la CABECERA del paso B, no desde la primera mención de
+    // «PASO B»: esa cae antes del paso A y el `limit(...)` que se leía era el
+    // del paso A. Mientras los dos valían 225 no se notaba; al bajar el B a 150
+    // (tres borrados por partido) el guard medía 225 x 3 y daba rojo en falso.
+    const pasoB = FUNCS.slice(FUNCS.indexOf('/* ---- PASO B'), FUNCS.indexOf('cleanupLiveMatches] cerrados'));
 
     ok('3a · [APLAZAMIENTO] el paso B ya NO filtra por updatedAt',
        !/where\('updatedAt', '<', corte10h\)/.test(pasoB),

@@ -2489,7 +2489,11 @@ exports.cleanupLiveMatches = functions.pubsub
       const terminados = await db.collection('live_matches')
         .where('status', 'in', ['finished', 'cancelled'])
         .orderBy('updatedAt', 'asc')
-        .limit(225)   // mismo motivo que en el paso A: 225 x 2 ops = 450 < 500
+        // v775 · 150 y no 225: ahora son TRES borrados por partido (partido,
+        // indice y live_stats) y 225 x 3 = 675 pasaria del tope de 500 de un
+        // batch, que hace fallar el commit ENTERO. 150 x 3 = 450 < 500. Lo
+        // cazaron los guards 2g/3f. La funcion corre cada hora: 150 sobran.
+        .limit(150)
         .get();
 
       const loteB = db.batch();
@@ -2514,6 +2518,11 @@ exports.cleanupLiveMatches = functions.pubsub
           // indices se acumularian para siempre: son ~1 KB cada uno y nadie
           // los recogeria jamas, porque el unico barredor mira `live_matches`.
           loteB.delete(db.collection('live_index').doc(d.id));
+          // v775 · Y las estadísticas tácticas del directo (R/P y avanzadas),
+          // que viven aparte por privacidad y llevan nombres de jugadores:
+          // se van con el partido, igual que su índice. Lo que ha de quedar
+          // ya está en los informes (`matchPR` / `matchStats`).
+          loteB.delete(db.collection('live_stats').doc(d.id));
           borrados++;
         }
       });

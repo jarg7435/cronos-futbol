@@ -1299,6 +1299,15 @@
             // sus pérdidas. Este registro lo impide.
             const pr = _ctMatchPR(m);
             const prYaSumado = {};
+            // 📈 v774 · Las estadísticas avanzadas de ESTE partido. La lectura
+            // (regla de categoría y «ejemplar más completo») es la de
+            // js/shared/advanced-stats-report.js; sin ese módulo, nada. Va
+            // DENTRO de la función, no en un helper aparte: varios guards
+            // ejecutan ctAccumulatePlayerStats extraída sola.
+            const sav = (typeof window.cronosSAvDelInforme === 'function')
+                ? window.cronosSAvDelInforme(m) : null;
+            const savYaSumado = {};
+            const _SAV_K = ['cf', 'cc', 'ff', 'fc', 'ce', 'of', 'oc'];
             players.forEach(function (p) {
                 if (!p) return;
                 const num   = String(p.playerNumber == null ? '' : p.playerNumber).trim();
@@ -1375,6 +1384,16 @@
                     prYaSumado[num] = true;
                     f.prPerdidas       += Number(((pr.perdidas       || {}).porDorsal || {})[num]) || 0;
                     f.prRecuperaciones += Number(((pr.recuperaciones || {}).porDorsal || {})[num]) || 0;
+                }
+                // 📈 v774 · Estadísticas avanzadas: misma regla que P/R (del
+                // PARTIDO, por DORSAL, una vez por partido y dorsal). El campo
+                // sólo nace si algún partido trae el dato, para no cambiar la
+                // forma de las filas de los equipos que no usan el módulo.
+                if (sav && num && !savYaSumado[num]) {
+                    savYaSumado[num] = true;
+                    const x = (sav.porDorsal || {})[num] || {};
+                    if (!f.sav) { f.sav = {}; _SAV_K.forEach(function (k) { f.sav[k] = 0; }); }
+                    _SAV_K.forEach(function (k) { f.sav[k] += Number(x[k]) || 0; });
                 }
             });
         });
