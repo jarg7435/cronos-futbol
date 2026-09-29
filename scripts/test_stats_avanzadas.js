@@ -784,6 +784,61 @@ parte('10b · v776 · el SuperAdmin sin club propio ve las avanzadas', () => {
        conUsuario({ role: 'user', clubId: 'club_x', extras: { modulo_stats_avanzadas: true } }) === true);
 });
 
+// ═══ 11 · v778 · EL VISOR ENSEÑA EL PANEL CON LOS MÓDULOS ACTIVOS, A CERO ═══
+// Capturas 10961/10962/10963 (29-09): el entrenador con su barra y el visor
+// live.html sin nada. El visor sólo pintaba con apuntes y no leía los extras.
+parte('11 · v778 · el visor decide por los extras del club, no sólo por los apuntes', () => {
+    const live = leer('live.html');
+    const ini = live.indexOf('function _liveCatConPR(cat)');
+    const fin = live.indexOf('function _liveSAvPintaPanel()');
+    ok('live.html define `_liveCatConPR` y `_liveSAvModulos`', ini !== -1 && fin > ini);
+    const ctx = { console, window: {} };
+    ctx.window.window = ctx.window;
+    vm.createContext(ctx);
+    vm.runInContext(REPORT, ctx, { filename: 'advanced-stats-report.js' });
+    vm.runInContext('let _liveSAvPartido = null;' + live.slice(ini, fin) +
+        ';this.__mod = _liveSAvModulos; this.__pr = _liveCatConPR; this.__set = p => { _liveSAvPartido = p; };', ctx);
+    const partido = (cat) => ({ clubId: 'club_dia', matchCategory: cat });
+    const mods = (cat, extras, idLeido) => {
+        ctx.window._liveClubExtras = extras;
+        ctx.window._liveClubExtrasId = (idLeido === undefined) ? 'club_dia' : idLeido;
+        ctx.__set(partido(cat));
+        return ctx.__mod();
+    };
+    let m = mods('regional', { registro_pr: true, modulo_stats_avanzadas: true });
+    ok('🔴 Regional B (F11) con los dos extras en verde → R/P y avanzadas, SIN apuntes', m.pr === true && m.sav === true);
+    m = mods('regional', {});
+    ok('extras ausentes → R/P sí (ausente = activo), avanzadas no (ausente = apagado)', m.pr === true && m.sav === false);
+    m = mods('regional', { registro_pr: false, modulo_stats_avanzadas: false });
+    ok('los dos apagados en el SA → nada', m.pr === false && m.sav === false);
+    m = mods('cadete', { registro_pr: true, modulo_stats_avanzadas: true });
+    ok('Cadete → R/P sí, avanzadas no (misma puerta que el entrenador)', m.pr === true && m.sav === false);
+    m = mods('alevin', { registro_pr: true, modulo_stats_avanzadas: true });
+    ok('Alevín → nada', m.pr === false && m.sav === false);
+    m = mods('regional', null);
+    ok('extras sin leer (fallo) → nada: vuelve a «sólo con apuntes»', m.pr === false && m.sav === false);
+    m = mods('regional', { registro_pr: true, modulo_stats_avanzadas: true }, 'club_otro');
+    ok('extras de OTRO club (partido anterior) → no se aplican', m.pr === false && m.sav === false);
+
+    // La lista de R/P del visor es la del entrenador (utils.js): una, no dos.
+    const utils = leer('js/core/utils.js');
+    const bloquePR = utils.slice(utils.indexOf('window.cronosCategoriaConRegistroPR = function'),
+                                 utils.indexOf('return false;', utils.indexOf('window.cronosCategoriaConRegistroPR = function')));
+    const enUtils = (bloquePR.match(/indexOf\('([a-z]+)'\)/g) || []).map(s => s.slice(9, -2)).sort().join(',');
+    const enLive = ((live.slice(ini, fin).match(/\[('[a-z]+'(?:,\s*'[a-z]+')*)\]/) || [])[1] || '')
+        .replace(/'/g, '').split(/,\s*/).sort().join(',');
+    ok('la lista de categorías con R/P del visor == la de utils.js (' + enLive + ')', !!enLive && enLive === enUtils);
+
+    ok('el visor carga advanced-stats-report.js (reglas de categoría compartidas)',
+       /<script src="js\/shared\/advanced-stats-report\.js\?v=/.test(live));
+    ok('la ficha del club guarda sus extras y repinta el panel',
+       /window\._liveClubExtras\s+= data\.extras \|\| \{\};[\s\S]{0,120}_liveSAvPintaPanel\(\)/.test(live));
+    ok('con un módulo activo el panel se pinta aunque vaya a cero',
+       /if \(\(!c \|\| !c\.hay\) && \(mods\.pr \|\| mods\.sav\)\)/.test(live));
+    ok('CONTROL · sin rol técnico sigue sin panel (familias como siempre)',
+       /if \(!cont \|\| !c \|\| !c\.hay \|\| !_liveSAvEsTecnico\(\)\)/.test(live));
+});
+
 (async () => {
     await parte9();
     console.log(`\n${total - fallos}/${total} aserciones OK`);

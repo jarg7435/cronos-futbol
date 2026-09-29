@@ -1822,15 +1822,18 @@
      así los envoltorios lo resuelven en cada llamada y no al cargar, para que
      un cambio de orden no los deje mirando a `undefined` para siempre.
      ══════════════════════════════════════════════════════════════════ -->
-<script src="js/shared/live-feed.js?v=v777"></script>
+<script src="js/shared/live-feed.js?v=v778"></script>
 <!-- 🔊 v709 · Las melodías de cada suceso (gol, amarilla, roja, cambio,
      lesión), compartidas con el panel en vivo del Área de Familias. Este visor
      le presta su AudioContext, que es el que lleva el keep-alive de iOS. -->
-<script src="js/shared/live-sound.js?v=v777"></script>
+<script src="js/shared/live-sound.js?v=v778"></script>
 <!-- 🔴🔴🔴 v721 · El caché en disco de Firestore es de UNA sola cuenta (ver
      js/shared/fs-cache-mode.js). El visor lo comparte con la app, así que
      tiene que decidir con la MISMA regla y antes de crear su instancia. -->
-<script src="js/shared/fs-cache-mode.js?v=v777"></script>
+<script src="js/shared/fs-cache-mode.js?v=v778"></script>
+<!-- 📈 v778 · Las reglas de categoría de las estadísticas avanzadas, las
+     MISMAS que usa el panel del entrenador (una lista, no dos). -->
+<script src="js/shared/advanced-stats-report.js?v=v778"></script>
 
 <!-- ══ FIREBASE ══════════════════════════════════════════════════ -->
 <script type="module">
@@ -5572,7 +5575,9 @@ function _liveSAvCuenta(d) {
     return { tot, jugadores: Object.values(por), hay: (pr.length + sav.length) > 0 };
 }
 
+let _liveSAvPartido = null;   // v778 · el partido que se está pintando
 function _liveSAvPinta(data) {
+    _liveSAvPartido = data || null;
     _liveStatsPlayers = (data && Array.isArray(data.players)) ? data.players : [];
     // 🔒 Sin rol técnico NI SE ESCUCHA: una familia no llega a pedir el dato.
     if (!_liveSAvEsTecnico()) {
@@ -5584,11 +5589,55 @@ function _liveSAvPinta(data) {
     _liveSAvPintaPanel();
 }
 
+// ════════════════════════════════════════════════════════════════════
+//  🔴 v778 · EL PANEL SALE SI EL CLUB TIENE LOS MÓDULOS, NO SÓLO SI YA HAY
+//  ALGO APUNTADO (capturas 10961/10962/10963, 29-09)
+// ════════════════════════════════════════════════════════════════════
+//  El autor: extras en verde en el SA, el entrenador con su barra R/P y
+//  avanzadas en un Regional B de F11… y este visor sin rastro de ellas.
+//  🔑 No era un fallo de lectura: el visor sólo pintaba el botón con apuntes
+//  (`c.hay`), y el documento `live_stats` ni existe hasta el primer toque.
+//  Con el partido a cero, el visor NO CONSULTABA los extras en ningún sitio.
+//  Ahora los lee de la ficha del club (misma lectura que los umbrales) y, con
+//  el módulo activo y la categoría dentro, el panel aparece desde el minuto 0.
+//  ⚠️ Mismas puertas que el panel del entrenador:
+//    · R/P: extra `registro_pr` (ausente = ACTIVO) y Cadete/Juvenil/Regional/
+//      Nacional (la lista de `cronosCategoriaConRegistroPR`, utils.js; el
+//      guard compara las dos);
+//    · avanzadas: `modulo_stats_avanzadas === true` y la categoría de
+//      `cronosSAvCategoriaCaptura` (advanced-stats-report.js, cargado arriba).
+//  Sin extras leídos (sin permiso, sin red) → como antes: sólo con apuntes.
+function _liveCatConPR(cat) {
+    const n = String(cat == null ? '' : cat).normalize('NFD')
+        .split('').filter(ch => { const c = ch.charCodeAt(0); return c < 0x300 || c > 0x36f; })
+        .join('').toLowerCase();
+    if (!n) return false;
+    return ['cadete', 'juvenil', 'regional', 'nacional'].some(k => n.indexOf(k) !== -1);
+}
+function _liveSAvModulos() {
+    const d = (typeof _liveSAvPartido !== 'undefined' && _liveSAvPartido) || window._liveLastData || {};
+    const ex = (d.clubId && window._liveClubExtrasId === d.clubId) ? window._liveClubExtras : null;
+    if (!ex) return { pr: false, sav: false };
+    const cat = d.matchCategory || d.category || '';
+    return {
+        pr:  ex.registro_pr !== false && _liveCatConPR(cat),
+        sav: ex.modulo_stats_avanzadas === true &&
+             typeof window.cronosSAvCategoriaCaptura === 'function' &&
+             window.cronosSAvCategoriaCaptura(cat)
+    };
+}
+
 function _liveSAvPintaPanel() {
     const cont = document.getElementById('live-main');
     let btn = document.getElementById('live-sav-btn');
-    const c = _liveStatsDatos ? _liveSAvCuenta(_liveStatsDatos) : null;
-    // Sin dato, sin nada apuntado o sin rol técnico: ni botón ni panel. Para
+    const mods = _liveSAvModulos();
+    let c = _liveStatsDatos ? _liveSAvCuenta(_liveStatsDatos) : null;
+    // v778 · Con algún módulo activo, el panel existe aunque vaya a cero.
+    if ((!c || !c.hay) && (mods.pr || mods.sav)) {
+        c = _liveSAvCuenta({ pr: { items: [] }, sav: { items: [] } });
+        c.hay = true;
+    }
+    // Sin dato ni módulo activo, o sin rol técnico: ni botón ni panel. Para
     // una familia, el visor queda EXACTAMENTE como estaba.
     if (!cont || !c || !c.hay || !_liveSAvEsTecnico()) {
         if (btn) btn.remove();
@@ -5645,12 +5694,14 @@ function _liveSAvPintaPanel() {
         '<strong style="color:#f0883e;">📈 Estadísticas avanzadas</strong>' +
         '<span style="font-size:0.6rem;color:#8b949e;">sólo cuerpo técnico · ▲ a favor / ▼ en contra</span></div>' +
         '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px;">' +
-        kpi('Recuperaciones', t.r, null) +
-        kpi('Pérdidas', t.p, null) +
-        kpi('Córners', t.cf, t.cc, 'A favor', 'En contra') +
-        kpi('Faltas rec. / com.', t.ff, t.fc, 'Recibidas', 'Cometidas') +
-        kpi('Centros', t.ce, null) +
-        kpi('Ocasiones', t.of, t.oc, 'Generadas', 'Concedidas') +
+        // v778 · Cada bloque sale si su módulo está activo o si ya trae datos.
+        ((mods.pr || (t.r + t.p) > 0)
+            ? kpi('Recuperaciones', t.r, null) + kpi('Pérdidas', t.p, null) : '') +
+        ((mods.sav || (t.cf + t.cc + t.ff + t.fc + t.ce + t.of + t.oc) > 0)
+            ? kpi('Córners', t.cf, t.cc, 'A favor', 'En contra') +
+              kpi('Faltas rec. / com.', t.ff, t.fc, 'Recibidas', 'Cometidas') +
+              kpi('Centros', t.ce, null) +
+              kpi('Ocasiones', t.of, t.oc, 'Generadas', 'Concedidas') : '') +
         '</div>' +
         (filas
             ? '<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:0.7rem;">' +
@@ -6127,7 +6178,9 @@ async function _fetchClubThresholdsForLive(clubId) {
     const now = Date.now();
     const cacheFresh = (now - _liveThresholdsLastFetch) < _LIVE_THRESHOLDS_TTL_MS;
     if (_liveThresholdsFetchInFlight) return;
-    if (window._liveCategoryConfigs && cacheFresh) return;
+    // v778 · La caché vale para EL MISMO club: otro partido de otro club
+    // tiene que leer SUS umbrales y SUS extras.
+    if (window._liveCategoryConfigs && cacheFresh && window._liveClubExtrasId === clubId) return;
 
     _liveThresholdsFetchInFlight = true;
     try {
@@ -6144,15 +6197,33 @@ async function _fetchClubThresholdsForLive(clubId) {
                 yellow: (typeof t.yellow === 'number' && !isNaN(t.yellow)) ? t.yellow : 50
             };
             window._liveCategoryConfigs = data.categoryConfigs || {};
+            // 📈 v778 · Los extras del club, de la MISMA lectura: con ellos
+            // decide el visor si enseña el panel de R/P y avanzadas aunque aún
+            // no haya nada apuntado (ver `_liveSAvModulos`). Se refresca con el
+            // mismo plazo de 60 s, así que un cambio en el SA llega solo.
+            window._liveClubExtras   = data.extras || {};
+            window._liveClubExtrasId = clubId;
+            try { _liveSAvPintaPanel(); } catch (e) { /* nunca tumba el visor */ }
             _liveThresholdsLastFetch = now;
 
             if (window._liveLastData) {
                 renderField(window._liveLastData);
                 renderBench(window._liveLastData);
             }
+        } else {
+            // v778 · Sin ficha: extras desconocidos, y no se reintenta en cada latido.
+            window._liveClubExtras   = null;
+            window._liveClubExtrasId = clubId;
+            _liveThresholdsLastFetch = now;
         }
     } catch(e) {
         console.warn('[live] Error leyendo thresholds de club:', e);
+        // v778 · Fallo anotado para ESTE club con el mismo plazo: sin esto, la
+        // condición de caché de arriba reintentaría en cada latido. Extras
+        // desconocidos = null (el panel vuelve a «sólo con apuntes»).
+        window._liveClubExtras   = null;
+        window._liveClubExtrasId = clubId;
+        _liveThresholdsLastFetch = now;
     } finally {
         _liveThresholdsFetchInFlight = false;
     }
@@ -7806,9 +7877,9 @@ setInterval(function() {
 }
 </style>
 <!-- v434 · Inmutabilidad: antes de retroactive-modal.js, que la consulta. -->
-<script src="js/match/immutability.js?v=v777"></script>
-<script src="js/match/replay/replay-player.js?v=v777"></script>
-<script src="js/match/events/retroactive-modal.js?v=v777"></script>
+<script src="js/match/immutability.js?v=v778"></script>
+<script src="js/match/replay/replay-player.js?v=v778"></script>
+<script src="js/match/events/retroactive-modal.js?v=v778"></script>
 
 <!-- ══════════════════════════════════════════════════════════════════
      🟩 v577 · FRANJA DE VERSIÓN TAMBIÉN EN EL VISOR
@@ -7821,7 +7892,7 @@ setInterval(function() {
      El sello lo escribe `scripts/cache-bust.js` a partir del CACHE_NAME de
      sw.js, nunca a mano: un número puesto a mano miente en cuanto alguien
      olvida cambiarlo (v527 lo encontró mintiendo 185 versiones seguidas). -->
-<div id="cronos-version-badge" data-version="v777" style="position:fixed;bottom:calc(4px + env(safe-area-inset-bottom, 0px));right:6px;z-index:2147483000;pointer-events:none;background:rgba(0,0,0,0.55);color:#2ea043;font-family:monospace;font-size:0.6rem;font-weight:700;letter-spacing:0.5px;padding:2px 6px;border-radius:4px;">CHRONOS v777</div>
+<div id="cronos-version-badge" data-version="v778" style="position:fixed;bottom:calc(4px + env(safe-area-inset-bottom, 0px));right:6px;z-index:2147483000;pointer-events:none;background:rgba(0,0,0,0.55);color:#2ea043;font-family:monospace;font-size:0.6rem;font-weight:700;letter-spacing:0.5px;padding:2px 6px;border-radius:4px;">CHRONOS v778</div>
 <script>
 /* 🧪 v577 · Y DE QUÉ ENTORNO ES ESA VERSIÓN.
    El problema real del autor no era no ver la versión: era no saber si la
