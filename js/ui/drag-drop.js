@@ -38,11 +38,60 @@ function resolveOverlaps(ox, oy, excludeId) {
     });
 }
 
+// ══════════════════════════════════════════════════════════════════
+//  📱 v777 · EL CAJÓN DEL BANQUILLO EMPIEZA DEBAJO DE LA REGLETA
+// ══════════════════════════════════════════════════════════════════
+//  Reporte del autor (implementar.txt, IMG_4900/IMG_4901, móvil apaisado):
+//  al hacer scroll en el banquillo, los jugadores de arriba quedaban ocultos
+//  tras la regleta superior y no se podían seleccionar.
+//
+//  🔑 No era falta de recorrido: el cajón es `position:fixed; top:0` con
+//  z-index 2000 y la cabecera va EN FLUJO con z-index 2100, así que la franja
+//  alta del cajón quedaba SIEMPRE debajo de ella, hicieras el scroll que
+//  hicieras. Más relleno sólo habría movido el problema.
+//
+//  🔑 La altura de la regleta no es fija (envuelve en dos filas según el
+//  ancho, crece con el marcador): se MIDE y se publica en
+//  `--cronos-cajon-top`, que usa el CSS de los cajones (style.css, ≤950px).
+//  Sin cabecera visible (setup-mode) vale 0.
+function cronosAjustaCajones() {
+    try {
+        const h = document.getElementById('main-header');
+        let top = 0;
+        if (h && h.offsetParent !== null && getComputedStyle(h).display !== 'none') {
+            top = Math.max(0, Math.round(h.getBoundingClientRect().bottom));
+        }
+        const actual = document.documentElement.style.getPropertyValue('--cronos-cajon-top');
+        if (actual !== top + 'px') document.documentElement.style.setProperty('--cronos-cajon-top', top + 'px');
+    } catch (e) { /* nunca tumba la interfaz */ }
+}
+window.cronosAjustaCajones = cronosAjustaCajones;
+
+(function _vigilaRegleta() {
+    if (typeof window.addEventListener !== 'function') return;
+    window.addEventListener('resize', cronosAjustaCajones);
+    window.addEventListener('orientationchange', () => setTimeout(cronosAjustaCajones, 250));
+    const engancha = () => {
+        const h = document.getElementById('main-header');
+        if (h && typeof ResizeObserver === 'function') {
+            try { new ResizeObserver(cronosAjustaCajones).observe(h); } catch (e) { /* sin observador */ }
+        }
+        cronosAjustaCajones();
+    };
+    try {
+        if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', engancha);
+        else engancha();
+    } catch (e) { /* entorno sin DOM completo */ }
+})();
+
 function toggleBench(team) {
     const selector = team === 'home' ? '.sidebar' : '.sidebar-right';
     const otherSelector = team === 'home' ? '.sidebar-right' : '.sidebar';
     const drawer = document.querySelector(selector);
     const otherDrawer = document.querySelector(otherSelector);
+    // v777 · Medida al abrir: la regleta pudo cambiar de altura sin avisar
+    // (p. ej. al pasar de oculta a visible al empezar el partido).
+    cronosAjustaCajones();
     if (otherDrawer) otherDrawer.classList.remove('open');
     if (drawer) drawer.classList.toggle('open');
 }

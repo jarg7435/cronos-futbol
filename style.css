@@ -148,7 +148,11 @@ body.setup-mode header {
     .sidebar,
     .sidebar-right {
         position: fixed;
-        top: 0;
+        /* v777 · El cajón empieza DEBAJO de la regleta (IMG_4900/IMG_4901):
+           con `top:0`, la cabecera (z-index 2100) tapaba la parte alta del
+           cajón (2000) y los jugadores de arriba no se veían ni se podían
+           tocar. La altura real la mide drag-drop.js (`--cronos-cajon-top`). */
+        top: var(--cronos-cajon-top, 0px);
         bottom: 0;
         width: 170px;
         z-index: 2000;
