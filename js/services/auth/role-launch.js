@@ -118,6 +118,139 @@ async function _precargarExtrasDeRoles() {
 }
 window._cronosPrecargarExtrasDeRoles = _precargarExtrasDeRoles;
 
+// ════════════════════════════════════════════════════════════════════
+//  🔴 v776 · LOS EXTRAS SE VUELVEN A PREGUNTAR (encargo 29-09)
+// ════════════════════════════════════════════════════════════════════
+//  Reporte del autor (capturas 10948/10949): con «Pérdidas y
+//  Recuperaciones» y «Estadísticas Avanzadas» EN VERDE en el panel del
+//  SuperAdmin, el directo de un Regional B no enseñaba ni un botón.
+//
+//  🔑 La caché por entidad de arriba se llenaba UNA vez por sesión y no se
+//  volvía a mirar nunca: encender un extra en otra pestaña (o en otro
+//  aparato) no llegaba al directo ya abierto, ni aunque se volviera a él.
+//  Y la decisión de pintar los botones sólo se tomaba en `renderPlayers()`.
+//
+//  🔑🔑 Y SE ESCRIBÍAN EN UNA COPIA QUE PODÍA QUEDAR HUÉRFANA: el arranque
+//  guardaba los extras en el `me` capturado ANTES de la lectura, pero
+//  `window._cronosCurrentUser` se REASIGNA entero (cambio de equipo,
+//  `_cronosAplicarEquipoActivo`; SEC-002 obliga a reasignar). Si eso pasaba
+//  mientras se esperaba al servidor, los extras acababan en un objeto que ya
+//  no leía nadie.
+//
+//  Ahora:
+//    · se ESCUCHA en vivo el documento de la entidad del usuario (club o
+//      ente): lo que el SuperAdmin encienda llega al directo abierto en
+//      segundos, en cualquier aparato, sin recargar;
+//    · se escribe SIEMPRE en el usuario VIGENTE, nunca en una copia;
+//    · al volver a la pestaña se relee por si la escucha se cayó.
+//  ⚠️ Mismo criterio de fallo que `_cargarExtrasEntidad`: si la lectura
+//  falla se CONSERVA lo que había (no se vacía ni se apaga nada).
+const _EXTRAS_RELECTURA_MIN_MS = 5000;
+let _extrasUltimaRelectura = 0;
+
+// La entidad (club o ente) del usuario TAL COMO ESTÁ AHORA: cambia al
+// cambiar de equipo, así que no se guarda, se pregunta.
+function _entidadActual() {
+    const me = window._cronosCurrentUser;
+    if (!me) return '';
+    const plaza = me._activeRoleData || {};
+    return String(me.clubId || me.individualEntityId || plaza.clubId || plaza.individualEntityId || '');
+}
+
+// Aplica unos extras recién leídos al usuario VIGENTE si siguen siendo los
+// de su entidad. Devuelve true si cambiaron (y entonces re-decide el directo).
+function _aplicaExtras(id, ex) {
+    const me = window._cronosCurrentUser;
+    if (!me || !ex || typeof ex !== 'object' || _entidadActual() !== String(id)) return false;
+    const cache = window._cronosExtrasEntidad || (window._cronosExtrasEntidad = {});
+    cache[id] = ex;
+    const cambio = JSON.stringify(me.extras || {}) !== JSON.stringify(ex);
+    me.extras = ex;
+    if (cambio) {
+        console.log('[extras] extras de', id, 'aplicados, se re-deciden los botones:', ex);
+        _cronosReevaluaBarrasDirecto();
+    }
+    return cambio;
+}
+window._cronosAplicaExtras = _aplicaExtras;
+
+// ── Escucha en vivo del documento de la entidad ──────────────────────
+//  Una sola a la vez; si la entidad cambia (equipo de otro club), se cambia
+//  de documento. Un error (sin permiso, sin red) la suelta en silencio y el
+//  siguiente foco lo reintenta: falla hacia lo que ya había.
+let _escExtras = { id: '', off: null };
+async function _escuchaExtras() {
+    const id = _entidadActual();
+    if (!id || id === _escExtras.id) return;
+    if (_escExtras.off) { try { _escExtras.off(); } catch (e) { /* ya cerrada */ } }
+    const mia = { id, off: null };
+    _escExtras = mia;
+    try {
+        const { doc, onSnapshot } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
+        const _db = window._cronos_auth?.db;
+        if (!_db || _escExtras !== mia) { if (_escExtras === mia) mia.id = ''; return; }
+        const escucha = (col) => onSnapshot(doc(_db, col, id), snap => {
+            if (_escExtras !== mia) return;
+            if (!snap.exists()) {
+                // Los entes antiguos viven en `individuals`; sólo se cambia con
+                // la respuesta del SERVIDOR (la caché vacía no prueba nada).
+                if (col === 'clubs' && !(snap.metadata && snap.metadata.fromCache)) {
+                    try { mia.off && mia.off(); } catch (e) { /* nada */ }
+                    mia.off = escucha('individuals');
+                }
+                return;
+            }
+            _aplicaExtras(id, (snap.data() || {}).extras || {});
+        }, err => {
+            console.warn('[extras] escucha de', id, 'cerrada:', err && err.message);
+            if (_escExtras === mia) { mia.id = ''; mia.off = null; }
+        });
+        mia.off = escucha('clubs');
+    } catch (e) {
+        console.warn('[extras] no se pudo escuchar', id, e && e.message);
+        if (_escExtras === mia) mia.id = '';
+    }
+}
+window.cronosEscuchaExtras = _escuchaExtras;
+
+function _cronosReevaluaBarrasDirecto() {
+    if (typeof window.cronosPRActualiza === 'function') {
+        try { window.cronosPRActualiza(); } catch (e) { /* nunca tumba nada */ }
+    }
+    if (typeof window.cronosSAvActualiza === 'function') {
+        try { window.cronosSAvActualiza(); } catch (e) { /* nunca tumba nada */ }
+    }
+}
+window._cronosReevaluaBarrasDirecto = _cronosReevaluaBarrasDirecto;
+
+window.cronosRefrescaExtras = async function (forzar) {
+    const id = _entidadActual();
+    if (!id) return false;
+    _escuchaExtras().catch(() => {});            // (re)abre la escucha si hace falta
+    const ahora = Date.now();
+    if (!forzar && ahora - _extrasUltimaRelectura < _EXTRAS_RELECTURA_MIN_MS) return false;
+    _extrasUltimaRelectura = ahora;
+    const cache = window._cronosExtrasEntidad || (window._cronosExtrasEntidad = {});
+    const previo = cache[id];
+    delete cache[id];
+    const ex = await _cargarExtrasEntidad(id);
+    if (!ex) {                                   // falló: se deja lo de antes
+        if (previo !== undefined) cache[id] = previo;
+        return false;
+    }
+    return _aplicaExtras(id, ex);
+};
+
+(function _vigilaExtras() {
+    if (typeof document === 'undefined' || typeof window.addEventListener !== 'function') return;
+    const alVolver = () => {
+        if (document.visibilityState && document.visibilityState !== 'visible') return;
+        window.cronosRefrescaExtras().catch(() => {});
+    };
+    document.addEventListener('visibilitychange', alVolver);
+    window.addEventListener('focus', alVolver);
+})();
+
 // ¿Está bloqueada ESTA plaza por su extra de rol? Devuelve el MOTIVO (cadena
 // no vacía) o '' si puede entrar. Cadena vacía = adelante, en todos los
 // caminos de fallo.
@@ -857,12 +990,25 @@ function _launchWithRole(role) {
                 // ⚠️ null = la lectura FALLÓ. Se deja `me.extras` como estaba en
                 // vez de vaciarlo: con `{}` todo sigue activo (`!== false`), pero
                 // pisaría unos extras buenos que ya estuvieran cargados.
-                if (_ex) me.extras = _ex;
-                console.log('[auth] extras del club cargados:', me.extras);
+                // 🔴 v776 · En el usuario VIGENTE, no en el `me` capturado antes
+                // del `await`: si entretanto se reasignó (cambio de equipo), el
+                // `me` de aquí ya no lo lee nadie.
+                const _vig = window._cronosCurrentUser;
+                if (_ex && _vig) _vig.extras = _ex;
+                console.log('[auth] extras del club cargados:', _vig && _vig.extras);
+                // 🔴 v776 · Y desde aquí, escucha EN VIVO: lo que el SuperAdmin
+                // encienda llega al partido abierto sin recargar.
+                _escuchaExtras().catch(() => {});
                 // FIX: re-renderizar el modal si esta abierto
                 if (typeof window._cronosRefreshExtras === 'function') {
                     setTimeout(window._cronosRefreshExtras, 100);
                 }
+                // 🔴 v776 · Y EL DIRECTO TAMBIÉN. Los botones de R/P y de
+                // estadísticas avanzadas sólo se decidían en `renderPlayers()`;
+                // al reanudar un partido en curso ese repintado llega ANTES que
+                // estos extras, y las avanzadas (ausente = APAGADO) se quedaban
+                // fuera hasta el siguiente cambio de jugador.
+                _cronosReevaluaBarrasDirecto();
             })();
 
             // ── Campo exclusivo del rol 'coordinator' (tipo F7/F11/F7&11) ──

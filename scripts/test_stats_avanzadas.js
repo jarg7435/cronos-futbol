@@ -682,6 +682,108 @@ async function parte9() {
     }
 }
 
+// ═══ 10 · v776 · LOS EXTRAS QUE LLEGAN (O CAMBIAN) CON EL PARTIDO ABIERTO ═══
+// Reporte del autor 29-09 (capturas 10948/10949): extras en verde en el SA y
+// el directo sin botones. La barra sólo se decidía en renderPlayers(); si los
+// extras llegaban después, nadie volvía a decidir.
+parte('10 · v776 · la barra se re-decide sola cuando cambian los extras', () => {
+    const ctx = montaEntornoPR({ players: PLANTILLA, extras: {} });
+    let prActivo = false;
+    ctx.window._cronosExtraEnabled = () => prActivo;
+    const vigias = [];
+    ctx.setInterval = fn => { vigias.push(fn); return vigias.length; };
+    const pasa = () => vigias.slice().forEach(f => f());
+    const on = id => ctx.document.getElementById(id).classList.contains('on');
+
+    // El repintado llega ANTES que los extras: las dos barras, apagadas.
+    ctx.window.cronosPRActualiza();
+    ctx.window.cronosSAvActualiza();
+    ok('CONTROL · sin extras cargados, R/P y avanzadas apagadas',
+       !on('cronos-pr-bar') && !on('cronos-sav-bar'));
+
+    // Llegan los extras, sin ningún repintado de fichas.
+    prActivo = true;
+    ctx.window._cronosCurrentUser.extras = { modulo_stats_avanzadas: true, registro_pr: true };
+    pasa();
+    ok('🔴 llegan los extras → la barra de R/P se enciende SIN repintar', on('cronos-pr-bar'));
+    ok('🔴 llegan los extras → la barra de avanzadas se enciende SIN repintar', on('cronos-sav-bar'));
+
+    // Y al revés: el SA lo apaga con el partido abierto.
+    prActivo = false;
+    ctx.window._cronosCurrentUser.extras = { modulo_stats_avanzadas: false, registro_pr: false };
+    pasa();
+    ok('el SA los apaga → las dos barras se retiran',
+       !on('cronos-pr-bar') && !on('cronos-sav-bar'));
+
+    // La relectura de la nube (role-launch.js) existe y re-decide las barras.
+    const rl = leer('js/services/auth/role-launch.js');
+    ok('role-launch: `cronosRefrescaExtras` relee la entidad (sin caché) y re-decide',
+       /window\.cronosRefrescaExtras\s*=/.test(rl) && /delete cache\[id\]/.test(rl) &&
+       /_cronosReevaluaBarrasDirecto\(\)/.test(rl));
+    ok('role-launch: relectura al volver a la pestaña (visibilidad y foco)',
+       /addEventListener\('visibilitychange', alVolver\)/.test(rl) && /addEventListener\('focus', alVolver\)/.test(rl));
+    ok('role-launch: al cargar los extras del arranque se re-deciden las barras',
+       /if \(_ex && _vig\) _vig\.extras = _ex;[\s\S]{0,2000}_cronosReevaluaBarrasDirecto\(\);/.test(rl));
+    ok('role-launch: el arranque abre la escucha EN VIVO del documento de la entidad',
+       /_vig\.extras = _ex;[\s\S]{0,600}_escuchaExtras\(\)/.test(rl) &&
+       /onSnapshot\(doc\(_db, col, id\)/.test(rl) && /_aplicaExtras\(id, \(snap\.data\(\) \|\| \{\}\)\.extras \|\| \{\}\)/.test(rl));
+    ok('role-launch: el arranque ya NO escribe en el `me` capturado antes del await',
+       !/if \(_ex\) me\.extras = _ex;/.test(rl));
+    const sm = leer('js/core/setup-modal.js');
+    ok('setup-modal: cambiar de equipo vuelve a pedir los extras de su club',
+       /_activeRoleData:\s*destino\._rol,\s*\}\);[\s\S]{0,700}window\.cronosRefrescaExtras\(/.test(sm));
+});
+
+// Los extras se aplican al usuario VIGENTE (el objeto se reasigna entero al
+// cambiar de equipo; escribir en una copia capturada los dejaba huérfanos).
+parte('10c · v776 · los extras van al usuario VIGENTE y de SU entidad', () => {
+    const rl = leer('js/services/auth/role-launch.js');
+    const ini = rl.indexOf('function _entidadActual()');
+    const fin = rl.indexOf('window._cronosAplicaExtras = _aplicaExtras;');
+    const repintados = [];
+    const ctx = { console: { log() {}, warn() {} }, JSON, String,
+                  window: { _cronosCurrentUser: { clubId: 'club_elda', extras: { registro_pr: false } } },
+                  _cronosReevaluaBarrasDirecto: () => repintados.push(1) };
+    vm.createContext(ctx);
+    vm.runInContext(rl.slice(ini, fin) + ';this.__ap = _aplicaExtras; this.__ent = _entidadActual;', ctx);
+    const capturado = ctx.window._cronosCurrentUser;
+    // Cambio de equipo MIENTRAS se esperaba al servidor: objeto nuevo.
+    ctx.window._cronosCurrentUser = Object.assign({}, capturado, { category: 'regional' });
+    const cambio = ctx.__ap('club_elda', { registro_pr: true, modulo_stats_avanzadas: true });
+    ok('🔴 los extras llegan al usuario VIGENTE, no a la copia capturada',
+       ctx.window._cronosCurrentUser.extras.modulo_stats_avanzadas === true &&
+       capturado.extras.registro_pr === false);
+    ok('…y como cambiaron, se re-decide el directo', cambio === true && repintados.length === 1);
+    ok('los mismos extras otra vez → no se repinta', ctx.__ap('club_elda', { registro_pr: true, modulo_stats_avanzadas: true }) === false && repintados.length === 1);
+    ok('extras de OTRA entidad (equipo anterior) → se ignoran',
+       ctx.__ap('club_otro', { modulo_stats_avanzadas: false }) === false &&
+       ctx.window._cronosCurrentUser.extras.modulo_stats_avanzadas === true);
+    ctx.window._cronosCurrentUser = { individualEntityId: 'individual_x' };
+    ok('ente individual: la entidad es su `individualEntityId`', ctx.__ent() === 'individual_x');
+});
+
+// Medido en prod (29-09, sólo lectura): la cuenta del autor es SÓLO superadmin,
+// sin clubId ni extras. Con `=== true` a secas nunca veía las avanzadas.
+parte('10b · v776 · el SuperAdmin sin club propio ve las avanzadas', () => {
+    const conUsuario = u => {
+        const ctx = { console, window: { _cronosCurrentUser: u } };
+        ctx.window.window = ctx.window;
+        vm.createContext(ctx);
+        vm.runInContext(REPORT, ctx, { filename: 'advanced-stats-report.js' });
+        return ctx.window.cronosSAvExtraActivo();
+    };
+    ok('🔴 SA sin clubId ni extras (la cuenta real de prod) → activo',
+       conUsuario({ role: 'superadmin', allRoles: [{ role: 'superadmin', clubId: null }] }) === true);
+    ok('SA con la plaza de un club que lo tiene APAGADO → apagado',
+       conUsuario({ role: 'superadmin', clubId: 'club_x', extras: { modulo_stats_avanzadas: false } }) === false);
+    ok('SA sin club pero con el extra guardado a false → apagado (manda lo guardado)',
+       conUsuario({ role: 'superadmin', extras: { modulo_stats_avanzadas: false } }) === false);
+    ok('CONTROL · entrenador sin extras → apagado (ausente = APAGADO sigue igual)',
+       conUsuario({ role: 'user', clubId: 'club_x' }) === false);
+    ok('CONTROL · entrenador con el extra encendido → activo',
+       conUsuario({ role: 'user', clubId: 'club_x', extras: { modulo_stats_avanzadas: true } }) === true);
+});
+
 (async () => {
     await parte9();
     console.log(`\n${total - fallos}/${total} aserciones OK`);

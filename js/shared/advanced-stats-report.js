@@ -102,6 +102,18 @@
         var me = (typeof window._getEffectiveUser === 'function')
             ? (window._getEffectiveUser() || window._cronosCurrentUser)
             : window._cronosCurrentUser;
+        // 👑 v776 · EL SUPERADMIN SIN CLUB PROPIO LO VE. Medido en producción
+        // (29-09, sólo lectura): la cuenta con la que el autor probó el directo
+        // es SÓLO superadmin —sin `clubId`, sin plaza de entrenador y sin
+        // `extras`—, así que aquí siempre salía `undefined === true` → apagado,
+        // aunque todos los clubes lo tuvieran en verde. Su partido no cuelga de
+        // ningún club: no hay extras que consultar, y es el «Control Total».
+        // ⚠️ Sólo sin club: un SA que entra con la plaza de un club se juzga
+        // por los extras de ESE club, como cualquiera.
+        var raiz = window._cronosCurrentUser || {};
+        var esSA = raiz.role === 'superadmin' || raiz.role === 'admin';
+        if (esSA && !raiz.clubId && !(raiz.extras && typeof raiz.extras === 'object' &&
+            Object.prototype.hasOwnProperty.call(raiz.extras, window.CRONOS_SAV_EXTRA))) return true;
         var extras = (me && me.extras) || {};
         return extras[window.CRONOS_SAV_EXTRA] === true;
     };

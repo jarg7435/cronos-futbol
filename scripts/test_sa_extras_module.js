@@ -196,6 +196,32 @@ function buildSandbox({ hasDb = true, clubs = [], individuals = [], fetchThrows 
         ok('3h · ante el fallo, reintenta en individuals/{id} con éxito', calls[1] && calls[1].col === 'individuals');
     }
 
+    console.log('\n── PARTE 4 · v776 · verde = guardado, y sólo la clave pulsada ──');
+    {
+        // Medido en testeo 29-09: CD PRUEBA con `modulo_stats_avanzadas:false`
+        // en la base y el panel en verde. El interruptor no guardaba nada.
+        const { sandbox, updateDocCalls } = buildSandbox({});
+        const bien = await sandbox.window._saGuardaExtrasEntidad('club1', 'modulo_stats_avanzadas', true);
+        ok('4a · guardar un interruptor escribe al momento', bien === true && updateDocCalls.length === 1);
+        const c = updateDocCalls[0] || { data: {} };
+        ok('4b · escribe SÓLO `extras.<clave>` (no pisa el resto del mapa)',
+           Object.keys(c.data).length === 1 && c.data['extras.modulo_stats_avanzadas'] === true, JSON.stringify(c.data));
+        ok('4c · en el club pulsado', c.id === 'club1');
+        const { sandbox: sb2 } = buildSandbox({ hasDb: false });
+        ok('4d · sin Firebase → devuelve false (el panel vuelve atrás el interruptor)',
+           (await sb2.window._saGuardaExtrasEntidad('club1', 'registro_pr', true)) === false);
+    }
+    {
+        const { sandbox, getBodyHtml } = buildSandbox({ clubs: [{ id: 'club1', name: 'CD Prueba', extras: {} }] });
+        await sandbox.window.saExtras();
+        const html = getBodyHtml();
+        ok('4e · ya no hay botón «Guardar Cambios» que reescriba TODAS las entidades',
+           !/onclick="saSaveExtras\(\)"/.test(html) && /se guardan al momento/.test(html));
+    }
+    const src4 = fs.readFileSync(SOURCE, 'utf8');
+    ok('4f · cada interruptor llama al guardado con SU entidad, clave y valor',
+       /_saGuardaExtrasEntidad\(this\.dataset\.entity, this\.dataset\.key, this\.checked\)/.test(src4));
+
     console.log(`\n${pass} PASS / ${fail} FAIL`);
     process.exit(fail ? 1 : 0);
 })();

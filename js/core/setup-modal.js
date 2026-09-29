@@ -187,6 +187,13 @@ window._cronosAplicarEquipoActivo = function(teamId) {
             clubName:        destino.clubName || me.clubName,
             _activeRoleData: destino._rol,
         });
+        // 🔴 v776 · Los extras son del CLUB del equipo: si el nuevo es de otro
+        // club, los que se copiaron arriba son los del anterior. Se piden (y se
+        // escuchan) los de la entidad nueva; mismo club = sin coste (plazo).
+        if (typeof window.cronosRefrescaExtras === 'function') {
+            window.cronosRefrescaExtras(String(destino.clubId || '') !== String(me.clubId || ''))
+                .catch(function () {});
+        }
 
         // ⚠️ SE TIRA EL ESTADO PENDIENTE DEL FORMULARIO (v540): guarda la
         // modalidad y la categoría del equipo ANTERIOR.

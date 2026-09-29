@@ -943,8 +943,30 @@
     //  Se llama desde `renderPlayers()`, que es el único punto por el que
     //  pasan TODOS los caminos de arranque y repintado del partido (lección
     //  de v692: enganchar por camino deja la función viva sólo en algunos).
+    // ════════════════════════════════════════════════════════════════
+    //  🔴 v776 · LA DECISIÓN SE REPASA, NO SÓLO SE TOMA AL REPINTAR
+    // ════════════════════════════════════════════════════════════════
+    //  Reporte del autor (capturas 10948/10949): extras en verde en el panel
+    //  del SuperAdmin y el directo sin botones. `cronosPRActualiza()` sólo se
+    //  llamaba desde `renderPlayers()`: si en ese momento los extras aún no
+    //  habían llegado, o la pantalla seguía en `setup-mode`, la barra quedaba
+    //  apagada hasta el siguiente cambio de jugador. Este vigía compara cada
+    //  2 s lo que DEBERÍA verse con lo que se ve, y sólo actúa si difieren.
+    function _vigiaDecision() {
+        if (_vigiaDecision._t) return;
+        _vigiaDecision._t = setInterval(function () {
+            var barra = document.getElementById('cronos-pr-bar');
+            if (!barra || !document.body) return;
+            var quiere = _disponible() && !document.body.classList.contains('setup-mode');
+            if (quiere !== barra.classList.contains('on')) {
+                try { window.cronosPRActualiza(); } catch (e) {}
+            }
+        }, 2000);
+    }
+
     window.cronosPRActualiza = function () {
         _monta();
+        _vigiaDecision();
         var barra = document.getElementById('cronos-pr-bar');
         if (!barra) return;
         var enPartido = !document.body.classList.contains('setup-mode');

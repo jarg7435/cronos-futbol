@@ -831,8 +831,24 @@
     // ════════════════════════════════════════════════════════════════
     //  ⚠️ Si la puerta está cerrada, la barra ni se ve ni ocupa sitio: el
     //  encargo pide que con la bandera apagada «no se altere el layout».
+    // 🔴 v776 · Vigía de la decisión (ver el de R/P, possession-tracker.js):
+    // los extras llegan en segundo plano y pueden cambiar con el partido
+    // abierto; la barra no puede depender de que haya un repintado después.
+    function _vigiaDecision() {
+        if (_vigiaDecision._t) return;
+        _vigiaDecision._t = setInterval(function () {
+            var barra = document.getElementById('cronos-sav-bar');
+            if (!barra || !document.body) return;
+            var quiere = _disponible() && !document.body.classList.contains('setup-mode');
+            if (quiere !== barra.classList.contains('on')) {
+                try { window.cronosSAvActualiza(); } catch (e) {}
+            }
+        }, 2000);
+    }
+
     window.cronosSAvActualiza = function () {
         _monta();
+        _vigiaDecision();
         var barra = document.getElementById('cronos-sav-bar');
         if (!barra) return;
         var enPartido = !document.body.classList.contains('setup-mode');

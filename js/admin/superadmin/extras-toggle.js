@@ -149,22 +149,70 @@ window.saExtras = async function saExtras() {
                 '</div>';
         });
         
-        html += '<button onclick="saSaveExtras()" style="width:100%;padding:0.7rem;background:rgba(63,185,80,0.15);border:1px solid rgba(63,185,80,0.4);border-radius:10px;color:#3fb950;font-weight:700;cursor:pointer;font-size:0.88rem;margin-top:0.5rem;">💾 Guardar Cambios</button>';
+        // v776 · Sin botón «Guardar Cambios»: cada interruptor se guarda al
+        // pulsarlo (ver abajo). El botón reescribía TODAS las entidades con lo
+        // que hubiera en pantalla y, desde una pestaña vieja, apagaba lo que se
+        // había encendido en otra. `saSaveExtras` sigue existiendo (guards).
+        html += '<div style="text-align:center;padding:0.6rem;font-size:0.75rem;color:#8b949e;margin-top:0.5rem;">✅ Los cambios se guardan al momento de pulsar cada interruptor</div>';
         
         body.innerHTML = html;
         
         // Animar toggles al cambiar
+        // ════════════════════════════════════════════════════════════════
+        //  🔴 v776 · VERDE = GUARDADO (implementar.txt 29-09, capturas
+        //  10955/10956). El interruptor se ponía verde al pulsarlo, pero NO se
+        //  escribía nada hasta «💾 Guardar Cambios», al final de una lista
+        //  larga. Con la regla de siempre (ausente = activo) no se notaba; con
+        //  `modulo_stats_avanzadas` (ausente = APAGADO) el panel decía «activo»
+        //  y el directo del entrenador, con razón, «apagado». Ahora cada
+        //  interruptor se guarda al pulsarlo; si falla, vuelve atrás y avisa.
+        // ════════════════════════════════════════════════════════════════
+        const _pinta = (t) => {
+            const span1 = t.nextElementSibling;
+            const span2 = span1.nextElementSibling;
+            span1.style.background = t.checked ? '#3fb950' : '#555';
+            span2.style.left = t.checked ? '20px' : '3px';
+        };
         body.querySelectorAll('.sa-extra-toggle').forEach(toggle => {
-            toggle.addEventListener('change', function() {
-                const span1 = this.nextElementSibling;
-                const span2 = span1.nextElementSibling;
-                span1.style.background = this.checked ? '#3fb950' : '#555';
-                span2.style.left = this.checked ? '20px' : '3px';
+            toggle.addEventListener('change', async function() {
+                _pinta(this);
+                const ok = await window._saGuardaExtrasEntidad(this.dataset.entity, this.dataset.key, this.checked);
+                if (!ok) {
+                    this.checked = !this.checked;
+                    _pinta(this);
+                    if (typeof showToast === 'function') showToast('⚠️ No se pudo guardar el extra. Inténtalo de nuevo', 3500);
+                } else if (typeof showToast === 'function') {
+                    showToast('✅ ' + (this.checked ? 'Activado' : 'Desactivado') + ' y guardado', 1800);
+                }
             });
         });
         
     } catch(e) {
         body.innerHTML = '<div style="color:#ff5858;padding:1rem;">⚠️ Error: ' + e.message + '</div>';
+    }
+};
+
+// v776 · Guarda UN extra de UNA entidad: sólo la clave pulsada
+// (`extras.<clave>`), nunca el mapa entero. Medido en testeo 29-09: CD PRUEBA
+// tenía `modulo_stats_avanzadas:false` en la base con el panel en verde; el
+// «Guardar Cambios» de abajo reescribe el mapa de TODAS las entidades con lo
+// que haya en pantalla, así que una pestaña de Extras vieja pisaba lo
+// encendido en otra. Misma cascada que saSaveExtras (clubs → individuals →
+// setDoc merge en clubs). Devuelve true si quedó escrito.
+window._saGuardaExtrasEntidad = async function (entityId, key, valor) {
+    try {
+        if (!entityId || !key) return false;
+        const { doc, updateDoc, setDoc } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
+        const db = window._cronos_auth?.db;
+        if (!db) return false;
+        const campo = { ['extras.' + key]: valor === true };
+        try { await updateDoc(doc(db, 'clubs', entityId), campo); return true; } catch (e1) {}
+        try { await updateDoc(doc(db, 'individuals', entityId), campo); return true; } catch (e2) {}
+        await setDoc(doc(db, 'clubs', entityId), { extras: { [key]: valor === true } }, { merge: true });
+        return true;
+    } catch (e) {
+        console.warn('[saExtras] no se pudo guardar', entityId, e && e.message);
+        return false;
     }
 };
 
