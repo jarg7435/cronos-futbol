@@ -360,7 +360,8 @@ console.log('\n6) 🚪 El invitado aterriza en el ALTA, no en el login');
 
     ok('6b · el resolutor lee `?invite=` y resuelve el token',
        /var token = p\.get\('invite'\)/.test(PREF) &&
-       /await window\.cronosLeerInvitacion\(token\)/.test(PREF));
+       // v779 · ahora por el resolutor que distingue «caducada» de «sin red»
+       /await window\.cronosResolverInvitacion\(token\)/.test(PREF));
 
     ok('6c · ⚠️ y las DOS formas conviven: manda el token si vienen las dos',
        /email = inv\.email \|\| email/.test(PREF),

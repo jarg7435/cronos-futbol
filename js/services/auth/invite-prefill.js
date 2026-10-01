@@ -155,22 +155,46 @@
             //  seguir funcionando. Si vienen las dos, MANDA EL TOKEN: es el
             //  dato que puso quien invita, no lo que traiga la barra.
             var token = p.get('invite');
-            if (token && typeof window.cronosLeerInvitacion === 'function') {
-                var inv = await window.cronosLeerInvitacion(token);
-                if (inv) {
+            if (token && typeof window.cronosResolverInvitacion === 'function') {
+                // 🔴 v779 · Se dice que se está comprobando: la lectura ahora
+                // ESPERA a Firebase y reintenta, y puede tardar unos segundos.
+                var _ae = _el('auth-email');
+                if (_ae) _nota('inv-nota-token', _ae,
+                    '⏳ Comprobando tu invitación…', 'rgba(88,166,255,0.85)');
+                var res = await window.cronosResolverInvitacion(token);
+                if (res && res.estado === 'ok') {
+                    var inv = res.inv;
                     email = inv.email || email;
                     rol   = inv.role || rol;
                     club  = inv.clubName || club;
                     // Se recuerda para consumirla en cuanto haya sesión.
                     window._cronosInviteToken = inv.token;
+                    if (_ae) _nota('inv-nota-token', _ae,
+                        '✅ Invitación válida: sólo te falta elegir tu contraseña.',
+                        'rgba(63,185,80,0.9)');
+                    _intentarConsumir();
+                } else if (res && res.estado === 'error') {
+                    // 🔑 NO se sabe si vale: no se le dice «caducada». Se le
+                    // ofrece reintentar sin tener que volver al correo.
+                    if (_ae) {
+                        _nota('inv-nota-token', _ae,
+                            '⚠️ No hemos podido comprobar tu invitación (revisa la conexión). ' +
+                            '<a href="#" id="inv-reintentar" style="color:#58a6ff;">Reintentar</a>',
+                            'rgba(240,136,62,0.9)');
+                        var _r = _el('inv-reintentar');
+                        if (_r) _r.onclick = function (ev) {
+                            if (ev && ev.preventDefault) ev.preventDefault();
+                            window.cronosAplicarInvitacion(p);
+                        };
+                    }
                 } else {
                     // Token invalido, caducado o ya usado. NO se bloquea el
                     // alta: se avisa y se deja el formulario a mano, que es
                     // mucho mejor que una pantalla que no explica nada.
-                    var _ae = _el('auth-email');
                     if (_ae) _nota('inv-nota-token', _ae,
                         '⚠️ Este enlace de invitación ya no es válido (puede haber caducado ' +
-                        'o haberse usado). Puedes registrarte igualmente rellenando los datos.',
+                        'o haberse usado ya para crear una cuenta). Pide uno nuevo a quien te ' +
+                        'invitó. Puedes registrarte igualmente rellenando los datos.',
                         'rgba(240,136,62,0.9)');
                 }
             }
@@ -320,31 +344,61 @@
     //  caducará sola a los 14 días. Lo que NUNCA puede hacer es tumbar un alta
     //  que ya se completó.
     // ══════════════════════════════════════════════════════════════════
+    //
+    //  🔴🔴 v779 · LA CONSUMÍA CUALQUIER SESIÓN, TAMBIÉN LA QUE YA ESTABA.
+    //  `onAuthStateChanged` avisa nada más suscribirse con la sesión que
+    //  hubiera abierta. Si en ese navegador ya había alguien dentro —el
+    //  SuperAdmin probando su propio enlace, o la cuenta de otra persona en
+    //  ese dispositivo— la invitación se marcaba USADA AL ABRIR LA PÁGINA, sin
+    //  haber dado de alta a nadie, y desde entonces el enlace decía
+    //  «ya no es válido». Ahora sólo cuenta una sesión NUEVA: un uid que no
+    //  es el que había cuando se abrió la página.
+    //
+    //  🔴 Y el vigilante arrancaba UNA vez a los 400 ms: si la lectura de la
+    //  invitación tardaba más (lo normal con red móvil), encontraba el token
+    //  vacío, se iba y no volvía — la invitación no se consumía nunca. Ahora
+    //  vigila desde el arranque y el resolutor le avisa al dejar el token.
+    // ══════════════════════════════════════════════════════════════════
     var _yaConsumida = false;
     var _intentosSesion = 0;
+    var _uidPrevio;          // undefined = aún no se sabe qué sesión había
+    var _uidActual = null;
+
+    function _intentarConsumir() {
+        if (_yaConsumida || !window._cronosInviteToken) return;
+        if (_uidPrevio === undefined) return;               // sesión aún sin resolver
+        if (!_uidActual || _uidActual === _uidPrevio) return; // nadie nuevo ha entrado
+        _yaConsumida = true;
+        var t = window._cronosInviteToken;
+        window._cronosInviteToken = null;
+        if (typeof window.cronosConsumirInvitacion === 'function') {
+            window.cronosConsumirInvitacion(t);
+        }
+    }
+
     function _vigilarSesion() {
-        if (!window._cronosInviteToken || _yaConsumida) return;
+        if (!/[?&]invite=/.test(String((window.location && window.location.search) || ''))) return;
         var fa = window._cronos_auth;
         if (!fa || !fa.auth || typeof fa.onAuthStateChanged !== 'function') {
             // Firebase todavía no está montado. Se reintenta un rato acotado.
-            if (++_intentosSesion < 60) setTimeout(_vigilarSesion, 250);
+            if (++_intentosSesion < 120) setTimeout(_vigilarSesion, 250);
             return;
         }
         try {
             fa.onAuthStateChanged(fa.auth, function (u) {
-                if (!u || _yaConsumida || !window._cronosInviteToken) return;
-                _yaConsumida = true;
-                var t = window._cronosInviteToken;
-                window._cronosInviteToken = null;
-                if (typeof window.cronosConsumirInvitacion === 'function') {
-                    window.cronosConsumirInvitacion(t);
+                var uid = u ? u.uid : null;
+                if (_uidPrevio === undefined) {
+                    // El primer aviso es la sesión que YA había: no consume.
+                    _uidPrevio = uid; _uidActual = uid;
+                    return;
                 }
+                _uidActual = uid;
+                _intentarConsumir();
             });
         } catch (e) {
             if (window._CRONOS_DEBUG) console.warn('[Invitación] no se pudo vigilar la sesión:', e);
         }
     }
-    // Se arranca en cuanto el resolutor haya podido dejar el token puesto.
-    setTimeout(_vigilarSesion, 400);
+    setTimeout(_vigilarSesion, 0);
 
 })();

@@ -1623,19 +1623,74 @@ if (typeof window.cronosCrearInvitacion !== 'function') {
 // Lee una invitación por su token. Devuelve {email, role, clubName, clubId} o
 // null. NUNCA lanza: si el token no existe, caducó o ya se usó, la regla
 // deniega la lectura y aquí se devuelve null — el alta sigue, sólo que a mano.
+//
+// 🔴 v779 · «CADUCADA» CON UNA INVITACIÓN RECIÉN HECHA (CD Arinaga, 01-10).
+//  Este lector daba null —y la pantalla decía «ya no es válido»— en tres
+//  casos que NO son una invitación caducada:
+//   1. FIREBASE TODAVÍA NO ESTABA. index.html llama al autorrelleno a los
+//      ~150 ms del `load`, y `firebase-init.js` es un MÓDULO diferido que
+//      además descarga el SDK: `_cronos_auth.db` aún no existe y se
+//      devolvía null sin mirar siquiera. Ahora se ESPERA, con tope.
+//   2. UN FALLO DE RED pasajero (sin cobertura, el token de App Check aún
+//      no listo) se contaba igual que «caducada». Ahora se reintenta, y si
+//      sigue fallando se dice «no se ha podido comprobar», no «caducada».
+//   3. (el tercero vive en invite-prefill.js: una sesión que YA estaba
+//      abierta la consumía nada más abrir el enlace).
+//  `cronosResolverInvitacion` distingue los casos; `cronosLeerInvitacion`
+//  se queda como envoltorio con su contrato de siempre.
 if (typeof window.cronosLeerInvitacion !== 'function') {
+    const _esperarFirebase = (msTope) => new Promise((resolve) => {
+        const t0 = Date.now();
+        (function mirar() {
+            const fa = window._cronos_auth;
+            if (fa && fa.db) { resolve(fa); return; }
+            if (Date.now() - t0 > msTope) { resolve(null); return; }
+            setTimeout(mirar, 200);
+        })();
+    });
+    const _pausa = (ms) => new Promise((r) => setTimeout(r, ms));
+
+    // → { estado: 'ok', inv } | { estado: 'invalida' } | { estado: 'error' }
+    //   'invalida' = no existe, caducó o ya se usó (lo que dice la regla).
+    //   'error'    = no se ha podido preguntar: NO se sabe si vale o no.
+    window.cronosResolverInvitacion = async function (token) {
+        const t = String(token || '').trim();
+        if (!t || !/^[a-z0-9_-]{8,64}$/i.test(t)) return { estado: 'invalida' };
+        const fa = await _esperarFirebase(20000);
+        if (!fa) return { estado: 'error' };
+        let m;
+        try {
+            m = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
+        } catch (e) { return { estado: 'error' }; }
+
+        // ⚠️ Un `permission-denied` es lo que da la regla con una invitación
+        //    muerta, pero también lo que se ve si App Check aún no ha emitido
+        //    su token en el primer segundo. Se le da UN reintento; a los
+        //    fallos de red, tres.
+        let denegadas = 0;
+        for (let intento = 0; intento < 4; intento++) {
+            try {
+                const snap = await m.getDoc(m.doc(fa.db, 'invites', t));
+                if (!snap.exists()) return { estado: 'invalida' };
+                const d = snap.data() || {};
+                return { estado: 'ok', inv: { token: t, email: d.email || '', role: d.role || '',
+                                              clubName: d.clubName || '', clubId: d.clubId || '' } };
+            } catch (e) {
+                const code = String((e && e.code) || '');
+                if (window._CRONOS_DEBUG) console.warn('[invitación] no se pudo leer:', code, e && e.message);
+                if (code.indexOf('permission-denied') !== -1) {
+                    if (++denegadas >= 2) return { estado: 'invalida' };
+                }
+                if (intento < 3) await _pausa(1200 * (intento + 1));
+            }
+        }
+        return { estado: denegadas ? 'invalida' : 'error' };
+    };
+
     window.cronosLeerInvitacion = async function (token) {
         try {
-            const t = String(token || '').trim();
-            if (!t || !/^[a-z0-9_-]{8,64}$/i.test(t)) return null;
-            const fa = window._cronos_auth;
-            if (!fa || !fa.db) return null;
-            const m = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
-            const snap = await m.getDoc(m.doc(fa.db, 'invites', t));
-            if (!snap.exists()) return null;
-            const d = snap.data() || {};
-            return { token: t, email: d.email || '', role: d.role || '',
-                     clubName: d.clubName || '', clubId: d.clubId || '' };
+            const r = await window.cronosResolverInvitacion(token);
+            return (r && r.estado === 'ok') ? r.inv : null;
         } catch (e) {
             if (window._CRONOS_DEBUG) console.warn('[invitación] no se pudo leer:', e && e.message);
             return null;
