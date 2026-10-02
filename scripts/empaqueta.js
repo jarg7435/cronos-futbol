@@ -171,7 +171,9 @@ function main() {
         // dejaría la carpeta temporal con una copia entera del proyecto.)
         const a = git(['archive', '--format=tar', '--prefix=cronos-futbol/', '-o', tar, 'HEAD']);
         if (a.status !== 0) throw new Error('git archive (tar) falló: ' + a.stderr);
-        const x = cp.spawnSync('tar', ['-xf', tar, '-C', tmp], { encoding: 'utf8' });
+        // Ruta RELATIVA y `cwd`: el tar de GNU (el de Git Bash) lee `C:\…`
+        // como «servidor C» y falla con «Cannot connect to C».
+        const x = cp.spawnSync('tar', ['-xf', path.basename(tar)], { cwd: tmp, encoding: 'utf8' });
         if (x.status !== 0) throw new Error('no se pudo descomprimir: ' + x.stderr);
         console.log('\n🧪 Verificando desde cero en ' + dir);
         ok = npm(['ci', '--no-audit', '--no-fund'], dir) &&
