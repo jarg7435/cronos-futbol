@@ -83,6 +83,16 @@ console.log('\n1) 🔴 Los hashes de contraseña de las familias, fuera de git')
         ok('1b · y no hay NI UN fichero de backups/ ya seguido por git',
            seguidos.status === 0 && (seguidos.stdout || '').trim() === '',
            seguidos.status !== 0 ? (seguidos.stderr || '') : (seguidos.stdout || '').slice(0, 300));
+
+        // 🚨 2026-10-02 · ESTAR IGNORADO POR GIT NO BASTABA. El hosting publica
+        //    la carpeta entera y un ZIP la comprime entera: los cinco respaldos
+        //    de aquí estuvieron descargables en producción. Desde entonces no
+        //    pueden estar NI EN DISCO dentro del proyecto (ver ruta_respaldos.js).
+        const dir = path.join(ROOT, 'backups');
+        const dentro = fs.existsSync(dir) ? fs.readdirSync(dir) : [];
+        ok('1b2 · 🔑🔑 y la carpeta del proyecto no tiene NI UN fichero en backups/',
+           dentro.length === 0,
+           'muévelos a ' + require('./ruta_respaldos').DIR_RESPALDOS + ': ' + dentro.slice(0, 10).join(', '));
     } else {
         console.log('  ℹ️  artefacto SIN metadatos de git (ZIP / git archive): se mide con un repo desechable');
         const tmp = fs.mkdtempSync(path.join(require('os').tmpdir(), 'cronos_gi_'));
@@ -110,9 +120,24 @@ console.log('\n1) 🔴 Los hashes de contraseña de las familias, fuera de git')
            dentro.length === 0, dentro.slice(0, 10).join(', '));
     }
 
-    ok('1c · 🔑 el exportador ABORTA si backups/ dejara de estar ignorado',
-       /check-ignore/.test(EXP) && /ABORTADO/.test(EXP) && /process\.exit\(1\)/.test(EXP),
+    // 2026-10-02: el exportador ya no escribe en `backups/` sino FUERA del
+    // proyecto, y lo que vigila es eso. Antes comprobaba `check-ignore`, que
+    // sólo protegía de git: el hosting y el ZIP se lo llevaban igual.
+    const RUTA_R = require('./ruta_respaldos');
+    ok('1c · 🔑 el exportador escribe en la ruta común y ABORTA si cae dentro del proyecto',
+       /require\(['"]\.\.\/ruta_respaldos['"]\)/.test(EXP) && /dentroDelProyecto\(/.test(EXP) &&
+       /ABORTADO/.test(EXP) && /process\.exit\(1\)/.test(EXP),
        'comprobarlo DESPUÉS de escribir el fichero no serviría de nada');
+
+    ok('1c2 · 🔑🔑 la ruta de respaldos por defecto está FUERA del proyecto',
+       !RUTA_R.dentroDelProyecto(RUTA_R.DIR_RESPALDOS) &&
+       RUTA_R.dentroDelProyecto(path.join(ROOT, 'backups')),
+       RUTA_R.DIR_RESPALDOS);
+
+    ok('1c3 · y el verificador de copias busca la exportación de Auth en esa MISMA ruta',
+       /require\(['"]\.\.\/ruta_respaldos['"]\)/.test(EST) && /DIR_RESPALDOS/.test(EST) &&
+       !/path\.join\(ROOT, 'backups'\)/.test(EST),
+       'si cada uno mira a un sitio, el verificador dice «no hay copia» con la copia hecha');
 
     // ⚠️ SE MIDE SOBRE EL CÓDIGO, SIN COMENTARIOS. Esta aserción comparaba la
     //    posición de las CADENAS 'check-ignore' y 'auth:export' en el fichero
@@ -125,8 +150,9 @@ console.log('\n1) 🔴 Los hashes de contraseña de las familias, fuera de git')
         const _cod = EXP.replace(/\/\*[\s\S]*?\*\//g, '')
             .split(/\r?\n/).map((l) => l.replace(/(^|\s)\/\/.*$/, '$1')).join('\n');
         ok('1d · …y lo comprueba ANTES de escribir nada',
-           _cod.indexOf('check-ignore') > -1 &&
-           _cod.indexOf('check-ignore') < _cod.indexOf("'auth:export'"),
+           _cod.indexOf('dentroDelProyecto(DIR)') > -1 &&
+           _cod.indexOf('dentroDelProyecto(DIR)') < _cod.indexOf('mkdirSync') &&
+           _cod.indexOf('dentroDelProyecto(DIR)') < _cod.indexOf("'auth:export'"),
            'el orden es la mitad del arreglo');
     }
 }

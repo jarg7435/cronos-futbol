@@ -160,9 +160,18 @@ Sin esto, una restauración deja la aplicación **sin nadie que pueda entrar**.
 npm run backup:auth
 ```
 
-Eso escribe `backups/auth_users_<fecha>.json`. **`backups/` está en `.gitignore`**, y
-tiene que seguir estándolo: ese fichero contiene el correo y el hash de contraseña de
-todas las familias. **Guárdalo cifrado y fuera de este ordenador.**
+Eso escribe `auth_users_<fecha>.json` en **`C:\Users\<usuario>\CRONOS_RESPALDOS_PRIVADOS\`**
+(o en la carpeta de la variable `CRONOS_RESPALDOS`), **siempre FUERA del proyecto**: si
+se le apunta dentro, aborta sin escribir. Ese fichero contiene el correo y el hash de
+contraseña de todas las familias. **Guárdalo cifrado y fuera de este ordenador.**
+
+> 🚨 **Incidente 2026-10-02.** Hasta esa fecha la exportación iba a `backups/`, dentro del
+> proyecto, y solo la protegía `.gitignore`. Pero el hosting publica la carpeta entera
+> (`"public": "."`) y `firebase.json` no excluía `backups/`: los cinco respaldos (incluido
+> este export) estuvieron **descargables en producción y en testeo**, y viajaron en el ZIP
+> de la auditoría del 30-09. Se retiraron de los dos sitios el 2026-10-02.
+> `.gitignore`, `firebase.json` y un ZIP son **tres listas distintas**: lo único seguro es
+> que el dato no esté en la carpeta.
 
 ⚠️ Hazlo **cada vez que se aprueben altas nuevas**, y como mínimo una vez al mes.
 

@@ -16,10 +16,12 @@
 //  exportacion no sirve para restaurar y hay que saberlo HOY, no el dia malo.
 //
 //  ⚠️⚠️ LO QUE ESCRIBE ES DATO PERSONAL DEL PEOR TIPO: correo y HASH DE
-//  CONTRASENA de todas las familias, menores incluidos. Va a `backups/`, que
-//  esta en .gitignore y TIENE QUE SEGUIR ESTANDOLO. Guardalo cifrado y fuera
-//  de este ordenador; un backup en la carpeta de Descargas es una brecha
-//  esperando a que alguien pierda el portatil.
+//  CONTRASENA de todas las familias, menores incluidos. Va FUERA del
+//  proyecto (`~/CRONOS_RESPALDOS_PRIVADOS`, ver scripts/ruta_respaldos.js).
+//  🚨 Hasta 2026-10-02 iba a `backups/`, dentro, y `firebase.json` lo PUBLICO
+//  en produccion: .gitignore solo protege de git, no del hosting ni de un ZIP.
+//  Guardalo cifrado y fuera de este ordenador; un backup en la carpeta de
+//  Descargas es una brecha esperando a que alguien pierda el portatil.
 //
 //  ⚠️ El hash se exporta con sus parametros (`hash_config` del fichero). Para
 //  reimportar hace falta el MISMO algoritmo, o las contrasenas no valdran:
@@ -31,9 +33,9 @@ const fs = require('fs');
 const path = require('path');
 const cp = require('child_process');
 
+const { ROOT, DIR_RESPALDOS: DIR, dentroDelProyecto } = require('../ruta_respaldos');
+
 const PROJECT = 'cronos-futbol-app';
-const ROOT = path.join(__dirname, '..', '..');
-const DIR = path.join(ROOT, 'backups');
 
 // Fecha en el nombre: un fichero que se pisa a si mismo no es una copia, es la
 // ultima copia. Aqui interesa poder volver a la de antes de un incidente.
@@ -41,43 +43,28 @@ const sello = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
 const nombre = 'auth_users_' + sello + '.json';
 const destino = path.join(DIR, nombre);
 
-// ⚠️⚠️ LA RUTA QUE SE LE PASA A LA CLI VA **RELATIVA**, Y NO ES ESTETICA.
-//   La ruta absoluta de este proyecto es
-//   `C:\...\JOSÉ ALBERTO\PROYECTOS IA\APP CRONOS FÚTBOL\...`: lleva ESPACIOS
-//   y ACENTOS. La primera version lanzaba `npx` con `shell: true`, que junta
-//   los argumentos en una cadena y deja que el interprete la parta por los
-//   espacios — con lo que `auth:export` recibia media docena de argumentos y
-//   respondia «Too many arguments». Relativa a `cwd` (la raiz del repo) es
-//   `backups/auth_users_….json`: sin un solo espacio.
-const destinoRelativo = path.join('backups', nombre).replace(/\\/g, '/');
-
-if (!fs.existsSync(DIR)) fs.mkdirSync(DIR, { recursive: true });
-
-// ⚠️ SE COMPRUEBA QUE `backups/` SIGA IGNORADO ANTES DE ESCRIBIR NADA. Si
-//    alguien tocara .gitignore, el siguiente `git add -A` subiria los hashes
-//    de contrasena de todas las familias a un repositorio. Se falla ANTES de
+// ⚠️ SE COMPRUEBA QUE EL DESTINO ESTE FUERA DEL PROYECTO ANTES DE ESCRIBIR
+//    NADA. Dentro, lo que saca el fichero de la carpeta no es solo git: el
+//    hosting (`"public": "."`) y cualquier ZIP tambien. Se falla ANTES de
 //    crear el fichero, no despues.
-try {
-    const r = cp.spawnSync('git', ['check-ignore', '-q', path.join('backups', 'x.json')],
-                           { cwd: ROOT, encoding: 'utf8' });
-    if (r.status !== 0) {
-        console.error('\n❌ ABORTADO: `backups/` NO está ignorado por git.');
-        console.error('   Este fichero lleva correos y hashes de contraseña de las familias.');
-        console.error('   Arregla .gitignore antes de exportar nada.\n');
-        process.exit(1);
-    }
-} catch (e) {
-    console.error('\n❌ ABORTADO: no se ha podido comprobar .gitignore (' + e.message + ').');
-    console.error('   No se exporta a ciegas un fichero con datos personales.\n');
+if (dentroDelProyecto(DIR)) {
+    console.error('\n❌ ABORTADO: el destino de los respaldos está DENTRO del proyecto:');
+    console.error('   ' + DIR);
+    console.error('   Este fichero lleva correos y hashes de contraseña de las familias.');
+    console.error('   Apunta CRONOS_RESPALDOS a una carpeta fuera del proyecto.\n');
     process.exit(1);
 }
 
+if (!fs.existsSync(DIR)) fs.mkdirSync(DIR, { recursive: true });
+
 console.log('\n🔐 Exportando cuentas de Firebase Auth · ' + PROJECT);
-console.log('   → ' + path.relative(ROOT, destino) + '\n');
+console.log('   → ' + destino + '\n');
 
 // 🔑 SIN `shell: true`, Y LLAMANDO AL BINARIO LOCAL CON NODE.
 //    Sin shell, los argumentos viajan como ARRAY y ninguno se parte, pase lo
-//    que pase con los espacios. Y usando `node_modules/firebase-tools` se usa
+//    que pase con los espacios (la primera version usaba `shell: true` y la
+//    CLI respondia «Too many arguments»: por eso la ruta absoluta del destino
+//    puede ir tal cual). Y usando `node_modules/firebase-tools` se usa
 //    la MISMA version que el resto del proyecto (la 15), no la que hubiera
 //    instalada por ahi globalmente.
 const BIN = path.join(ROOT, 'node_modules', 'firebase-tools', 'lib', 'bin', 'firebase.js');
@@ -87,7 +74,7 @@ if (!fs.existsSync(BIN)) {
 }
 
 const r = cp.spawnSync(process.execPath,
-                       [BIN, 'auth:export', destinoRelativo, '--format=json', '--project', PROJECT],
+                       [BIN, 'auth:export', destino, '--format=json', '--project', PROJECT],
                        { cwd: ROOT, encoding: 'utf8', stdio: 'inherit' });
 
 if (r.status !== 0) {

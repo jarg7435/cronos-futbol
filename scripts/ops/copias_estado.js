@@ -34,7 +34,7 @@ const https = require('https');
 const PROJECT = 'cronos-futbol-app';
 const DB = '(default)';
 const CONFIG = path.join(os.homedir(), '.config', 'configstore', 'firebase-tools.json');
-const ROOT = path.join(__dirname, '..', '..');
+const { ROOT, DIR_RESPALDOS } = require('../ruta_respaldos');
 
 // Cuantos dias puede tener la copia mas reciente antes de considerarla vieja.
 // Una copia DIARIA que lleve mas de 2 dias significa que la programacion se ha
@@ -193,12 +193,13 @@ const DB_URL = API + '/databases/' + encodeURIComponent(DB);
     //    que ya no existen: NADIE PUEDE ENTRAR. Ver RECUPERACION.md, Parte 0.
     console.log('\n4) Exportación de cuentas de Auth (lo que la copia NO cubre)');
     try {
-        const dir = path.join(ROOT, 'backups');
+        // Fuera del proyecto desde 2026-10-02 (ver scripts/ruta_respaldos.js).
+        const dir = DIR_RESPALDOS;
         const ficheros = fs.existsSync(dir)
             ? fs.readdirSync(dir).filter((f) => /^auth_users_.*\.json$/.test(f))
             : [];
         if (!ficheros.length) {
-            mal('NO hay ninguna exportación de cuentas en backups/',
+            mal('NO hay ninguna exportación de cuentas en ' + DIR_RESPALDOS,
                 'restaurar Firestore sin esto deja la aplicación sin nadie que pueda entrar.\n' +
                 '        Arreglo:  npm run backup:auth');
         } else {
@@ -216,7 +217,7 @@ const DB_URL = API + '/databases/' + encodeURIComponent(DB);
                 bien('la exportación de cuentas es reciente (≤ ' + MAX_DIAS_AUTH + ' días)');
             }
         }
-    } catch (e) { mal('error revisando backups/', e.message); }
+    } catch (e) { mal('error revisando ' + DIR_RESPALDOS, e.message); }
 
     // ── 5. El simulacro ────────────────────────────────────────────────
     // Una copia que no se ha restaurado nunca es una suposicion.

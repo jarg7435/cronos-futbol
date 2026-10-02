@@ -12,6 +12,8 @@
     "format": "prettier --write \"js/**/*.js\" \"functions/**/*.js\" \"*.json\" \"*.html\"",
     "format:check": "prettier --check \"js/**/*.js\" \"functions/**/*.js\"",
     "test": "node scripts/run-tests.js",
+    "package": "node scripts/empaqueta.js",
+    "package:verificar": "node scripts/empaqueta.js --verificar",
     "backup:auth": "node scripts/ops/exporta_auth.js",
     "backup:estado": "node scripts/ops/copias_estado.js",
     "testeo:semilla": "node scripts/semilla_testeo.js",
@@ -39,6 +41,8 @@
   "overrides": {
     "gaxios": {
       "uuid": "^11.1.1"
-    }
+    },
+    "basic-ftp": "^6.2.1",
+    "@opentelemetry/core": "^2.8.0"
   }
 }
