@@ -116,7 +116,7 @@ const rotulo = (v, i) => {
     if (!APPLY) { console.log('\n🔎 SIMULACRO: no se ha escrito nada. Repite con --apply para aplicarlo.'); return; }
 
     // ── Copia de seguridad del documento ENTERO, antes de escribir ──
-    const destino = path.join(__dirname, 'backup_users_' + uid + '_' + Date.now() + '.json');
+    const destino = path.join(((d) => (fs.mkdirSync(d, { recursive: true }), d))(require('../ruta_respaldos').DIR_RESPALDOS) /* fuera del proyecto (2026-10-02) */, 'backup_users_' + uid + '_' + Date.now() + '.json');
     fs.writeFileSync(destino, JSON.stringify(doc, null, 2), 'utf8');
     console.log('\n💾 Copia guardada en ' + path.relative(path.join(__dirname, '..', '..'), destino));
 
