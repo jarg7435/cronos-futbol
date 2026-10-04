@@ -85,6 +85,24 @@ window.CRONOS_SECRETARIA_ROLES = {
 // `club_admin`, `individual` ni `individual_admin`.
 window.CRONOS_SECRETARIA_ROLES_DIRECTOR = ['user', 'coordinator', 'parent'];
 
+// ════════════════════════════════════════════════════════════════════
+//  ✉️ v781 · LA SECRETARÍA TAMBIÉN EN EL ADMINISTRADOR DEL CLUB Y EN EL ENTE
+//
+//  Encargo del autor (implementar.txt, 2026-10-04, capturas 11041-11044): el
+//  Administrador del Club no tenía Secretaría y la logística exige que pueda
+//  invitar a su cuerpo técnico —directores, coordinadores y entrenadores—
+//  para después reenviar esas altas al SuperAdmin desde ✅ Solicitudes.
+//
+//  · CLUB_ADMIN: su cuerpo técnico. Sin `parent` (las familias las invita
+//    el Director, que es quien lleva los equipos) y sin `club_admin`.
+//  · ENTE: SÓLO `parent`. 🔑 Bajo un ente el alta no admite otro rol
+//    (auth.js, ROLES_BAJO_ENTE, decisión de la v598: el entrenador ES el
+//    administrador). Ofrecer «Entrenador» o «Director» mandaría un enlace
+//    que el formulario de alta no puede cumplir.
+// ════════════════════════════════════════════════════════════════════
+window.CRONOS_SECRETARIA_ROLES_CLUB_ADMIN = ['director', 'coordinator', 'user'];
+window.CRONOS_SECRETARIA_ROLES_ENTE       = ['parent'];
+
 // ═══════════════════════════════════════════════════════════════════
 // saSecretary() — Pestaña de Secretaría
 // ═══════════════════════════════════════════════════════════════════
@@ -126,6 +144,9 @@ window.saSecretary = async function saSecretary(opciones) {
         clubId:   String(_opts.clubId || ''),
         clubName: _clubPrefijado,
         clubFijo: _clubFijo,
+        // v781 · Quién firma la plantilla de fábrica. Vacío = la Dirección
+        // Deportiva del club, como siempre (ver secPlantillaFabrica).
+        firma:    String(_opts.firma || ''),
     };
 
     body.innerHTML = `
@@ -271,6 +292,12 @@ window.saSecretary = async function saSecretary(opciones) {
                        cursor:pointer;width:100%;display:flex;align-items:center;justify-content:center;gap:0.5rem;">
                 <span id="sec-btn-text">✉️ Enviar Invitación por Email</span>
             </button>
+
+            <!-- ✉️ v782 · RESULTADO DEL ENVÍO. Cuando el servidor no manda el
+                 correo (testeo, o un fallo real) aquí se dice POR QUÉ y se deja
+                 el enlace listo para copiar. Sustituye al antiguo salto al
+                 cliente de correo local (mailto), retirado a petición del autor. -->
+            <div id="sec-resultado" style="display:none;"></div>
         </div>
 
         <!-- 🎁 v672 · PASES DE REGALO (js/admin/superadmin/gift-passes.js).
@@ -304,7 +331,20 @@ window.saSecretary = async function saSecretary(opciones) {
 // ════════════════════════════════════════════════════════════════════
 // Contexto de la pantalla: quién la abrió y con qué club. Se rellena en
 // saSecretary y lo consultan el guardado y la carga de la plantilla.
-window._secCtx = window._secCtx || { clubId: '', clubName: '', clubFijo: false };
+window._secCtx = window._secCtx || { clubId: '', clubName: '', clubFijo: false, firma: '' };
+
+// ✉️ v781 · Los roles que un panel puede invitar, quitando los que el club no
+// tiene contratados. Mismo criterio que la Secretaría del Director (v596): un
+// rol sin su extra crearía una plaza que luego no puede entrar, y se RETIRA
+// del desplegable (un <option disabled> no se distingue en un móvil).
+// `extraOn(clave)` lo pone quien llama: cada panel lee sus extras a su modo.
+// ⚠️ Puede devolver una lista VACÍA y quien llama tiene que decirlo: caerse a
+// 'user' sería invitar a un rol que ese panel no puede dar.
+window.cronosSecretariaRoles = function (base, extraOn) {
+    const mapa = window.CRONOS_ROL_EXTRA || {};
+    const on = (typeof extraOn === 'function') ? extraOn : () => true;
+    return (Array.isArray(base) ? base : []).filter(r => !mapa[r] || on(mapa[r]));
+};
 
 // Clave de respaldo local (SuperAdmin, o club sin permiso de escritura).
 const _SEC_LS_KEY = 'cronos_invite_template';
@@ -376,8 +416,13 @@ async function _secEnlaceReal() {
 
     let inv;
     try {
+        // ✉️ v781 · Con el `clubId`, no sólo el nombre. El alta casaba el club
+        // ÚNICAMENTE por nombre contra la lista pública: dos clubes con el
+        // mismo nombre —o una tilde de diferencia— mandaban al invitado al
+        // club equivocado. invite-prefill.js busca primero por este id.
         inv = await window.cronosCrearInvitacion({
             email: email, role: roleVal, clubName: club,
+            clubId: (window._secCtx && window._secCtx.clubId) || '',
         });
     } catch (e) {
         console.warn('[secretaría] no se pudo acuñar el token:', e && e.message);
@@ -446,9 +491,14 @@ function _secDatosActuales() {
 // deportiva. Firmar siempre "El Equipo de Chronos Fútbol" era justo lo que
 // el autor pidió quitar — hacía parecer que el correo lo manda el dueño de
 // la plataforma y no su club.
-window.secPlantillaFabrica = function(metodo, clubName) {
+window.secPlantillaFabrica = function(metodo, clubName, firmante) {
     const club = String(clubName || '').trim();
-    const firma = club
+    // ✉️ v781 · `firmante` opcional: el Administrador del Club firma como su
+    // club y el ente con su nombre. Sin él, lo de siempre.
+    const _firmante = String(firmante || '').trim();
+    const firma = _firmante
+        ? ('Un saludo,\n' + _firmante)
+        : club
         ? ('Un saludo,\nLa Dirección Deportiva de ' + club)
         : 'Atentamente,\nEl Equipo de Chronos Fútbol';
     // v671 · aquí vivía la plantilla de WhatsApp. Retirada con el canal;
@@ -577,7 +627,7 @@ window.saUpdateInviteTemplate = function() {
         // Preferencia: lo guardado por el club > la plantilla de fábrica.
         const g = window._secGuardadas || null;
         const guardada = g && typeof g === 'object' ? g[method] : null;
-        secBody.value = guardada || window.secPlantillaFabrica(method, club);
+        secBody.value = guardada || window.secPlantillaFabrica(method, club, (window._secCtx || {}).firma);
     }
     window.saUpdateInvitePreview();
 };
@@ -623,7 +673,7 @@ window.saResetInviteTemplate = function() {
         secBody.classList.remove('user-edited');
         const method = 'email'   /* v671 · ya no hay selector de método: el correo es el único */;
         const club   = document.getElementById('sec-club')?.value.trim() || '';
-        secBody.value = window.secPlantillaFabrica(method, club);
+        secBody.value = window.secPlantillaFabrica(method, club, (window._secCtx || {}).firma);
         window.saUpdateInvitePreview();
         _saToast('🔄 Mensaje restablecido al predeterminado', 2500);
     }
@@ -738,13 +788,89 @@ window.secExplicarErrorEnvio = function(e) {
              texto: MAPA[code] || ('Fallo inesperado del servidor' + (e && e.message ? ': ' + e.message : '') + '.') };
 };
 
-// Enviar email de invitación vía Cloud Function (con fallback a mailto local)
+// ════════════════════════════════════════════════════════════════════
+//  ✉️ v782 · SIN CORREO LOCAL. NUNCA.
+//
+//  Encargo del autor (implementar.txt, 2026-10-04, capturas 11057-11061):
+//  «que el correo llegue automáticamente al destinatario sin dependencias de
+//  un cliente de correo local». Probando la Secretaría del Admin de Club en
+//  testeo, el botón ENVIAR le abrió su programa de correo.
+//
+//  🔑 EL PANEL YA LLAMABA AL SERVIDOR (el «Enviando invitación por email…» de
+//  la 11059 es esa llamada). Lo que abría el correo local era el RESPALDO de
+//  aquí abajo: cuando `sendInviteEmail` no envía —en testeo NUNCA envía, por
+//  decisión del autor del 24-09, y responde `noCredentials + testeo`— o
+//  cuando falla, se abría un `mailto:` con el cuerpo ya escrito.
+//
+//  Ahora, si el servidor no lo manda, la pantalla dice POR QUÉ y deja el
+//  enlace a la vista y copiable (#sec-resultado). La invitación ya existe en
+//  `invites/{token}`, así que el enlace es bueno: nada se pierde.
+//   · TESTEO: se dice que es simulado y que en producción llegaría solo; el
+//     formulario se limpia como en un envío bueno (es el «éxito» de testeo).
+//   · FALLO DE VERDAD: el formulario NO se limpia, para poder reintentar —y
+//     reintentar con los mismos datos reutiliza el mismo enlace (caché de
+//     `_secEnlaceReal`), sin dejar invitaciones duplicadas vivas—.
+// ════════════════════════════════════════════════════════════════════
+const _secEsc = (s) => String(s == null ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+
+// Pinta el recuadro de resultado. `tipo`: 'testeo' | 'fallo'. Sin el
+// recuadro en el DOM (otra pantalla, o el guard) no hace nada: el toast que
+// acompaña siempre a esta llamada ya dice lo esencial.
+function _secMostrarResultado(tipo, titulo, texto, url) {
+    const caja = document.getElementById('sec-resultado');
+    if (!caja) return;
+    const color = tipo === 'testeo' ? '210,168,255' : '240,136,62';
+    caja.style.display = 'block';
+    caja.innerHTML =
+        '<div style="margin-top:0.8rem;padding:0.8rem 0.9rem;border-radius:8px;' +
+               'background:rgba(' + color + ',0.08);border:1px solid rgba(' + color + ',0.35);">' +
+          '<div style="font-size:0.85rem;font-weight:700;color:rgb(' + color + ');margin-bottom:0.3rem;">' +
+            _secEsc(titulo) + '</div>' +
+          '<div style="font-size:0.78rem;color:#c9d1d9;line-height:1.5;margin-bottom:0.6rem;">' +
+            _secEsc(texto) + '</div>' +
+          (url
+            ? '<div style="display:flex;gap:0.4rem;align-items:stretch;">' +
+                '<input id="sec-resultado-link" type="text" readonly onclick="this.select()" value="' + _secEsc(url) + '" ' +
+                  'style="flex:1;min-width:0;padding:0.55rem;background:rgba(0,0,0,0.25);' +
+                         'border:1px solid rgba(255,255,255,0.15);border-radius:6px;color:#58a6ff;' +
+                         'font-size:0.74rem;font-family:monospace;box-sizing:border-box;">' +
+                '<button onclick="window.saCopiarResultado()" ' +
+                  'style="padding:0.55rem 0.8rem;background:rgba(88,166,255,0.12);' +
+                         'border:1px solid rgba(88,166,255,0.35);border-radius:6px;color:#58a6ff;' +
+                         'font-size:0.76rem;font-weight:700;cursor:pointer;white-space:nowrap;">📋 Copiar</button>' +
+              '</div>'
+            : '') +
+        '</div>';
+}
+function _secOcultarResultado() {
+    const caja = document.getElementById('sec-resultado');
+    if (caja) { caja.style.display = 'none'; caja.innerHTML = ''; }
+}
+
+// Copia el enlace del recuadro de resultado.
+window.saCopiarResultado = async function () {
+    const campo = document.getElementById('sec-resultado-link');
+    const url = campo ? campo.value : '';
+    if (!url) return;
+    try {
+        if (navigator.clipboard && navigator.clipboard.writeText) await navigator.clipboard.writeText(url);
+        else { campo.select(); document.execCommand('copy'); }
+        _saToast('📋 Enlace copiado al portapapeles', 2500);
+    } catch (e) {
+        try { campo.select(); } catch (_) { /* sin foco */ }
+        _saToast('⚠️ No se pudo copiar solo. Está seleccionado: pulsa Ctrl+C', 4500);
+    }
+};
+
+// Enviar la invitación por el servidor (Cloud Function `sendInviteEmail`).
 window.saSendInviteEmail = async function() {
     const to      = document.getElementById('sec-email')?.value.trim();
     const role    = document.getElementById('sec-role')?.value || 'individual';
     const clubName= document.getElementById('sec-club')?.value.trim() || '';
     const subject = document.getElementById('sec-subject')?.value.trim() || 'Invitación a Chronos Fútbol';
     if (!to) { _saToast('⚠️ El email de destino es obligatorio', 3000); return; }
+    _secOcultarResultado();
 
     // 🎟️ v633 · Se acuña el token ANTES de componer nada: el cuerpo lleva
     // `{enlace}` y sin esto saldría el aviso de "pendiente" dentro del correo.
@@ -752,8 +878,8 @@ window.saSendInviteEmail = async function() {
     // 🔒 SEC-INV2 · Y SI NO SE PUEDE ACUÑAR, NO SE ENVÍA NADA. Antes esta
     //    llamada no podía fallar porque degradaba sola al enlace con el correo
     //    en claro; ahora lanza, y hay que parar AQUÍ: más abajo se compone el
-    //    cuerpo y se abre el correo local, así que seguir adelante mandaría a
-    //    la familia un mensaje con el aviso de «pendiente» donde va el enlace.
+    //    cuerpo y se manda al servidor, así que seguir adelante mandaría a la
+    //    familia un mensaje con el aviso de «pendiente» donde va el enlace.
     //    Se para antes del spinner, que aún no se ha mostrado.
     try {
         await _secEnlaceReal();
@@ -764,6 +890,7 @@ window.saSendInviteEmail = async function() {
         return;
     }
     const inviteToken = (window._secTokenActual || {}).token || '';
+    const inviteUrl   = (window._secTokenActual || {}).url || '';
 
     // 🔑 SE ENVÍA LA PLANTILLA YA SUSTITUIDA, no las marcas: el servidor no
     // sabe nada de {nombre} y mandaría el correo con las llaves dentro.
@@ -773,7 +900,16 @@ window.saSendInviteEmail = async function() {
     const body    = window.secRenderPlantilla(
         _secCuerpoParaEnviar(document.getElementById('sec-body')?.value || ''), datos).trim();
 
-    const _mailto = () => `mailto:${to}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+    // El fallo de verdad: se dice el motivo, el enlace queda a mano y el
+    // formulario SE QUEDA (ver la cabecera de v782).
+    const _noEnviado = (motivo) => {
+        const link = document.getElementById('sec-link');
+        if (link && inviteUrl) link.value = inviteUrl;
+        _saToast('⚠️ No se ha enviado el correo. ' + motivo, 6000);
+        _secMostrarResultado('fallo', '⚠️ El correo NO se ha enviado',
+            motivo + ' La invitación sí está creada: puedes reintentar el envío o copiar el ' +
+            'enlace y hacérselo llegar tú.', inviteUrl);
+    };
 
     _saShowSpinner('Enviando invitación por email...');
     try {
@@ -792,30 +928,33 @@ window.saSendInviteEmail = async function() {
             // ✅ Email enviado correctamente por el servidor
             _saToast('✅ Invitación enviada con éxito a ' + to, 5000);
             _limpiarFormularioSecretaria();
-        } else if (d.noCredentials || d.error) {
-            // ⚠️ El servidor no tiene credenciales configuradas o Nodemailer falló
-            // → Usamos mailto automáticamente sin molestar al usuario con confirm()
-            const motivo = d.noCredentials
-                ? 'El servidor no tiene credenciales Gmail configuradas.'
-                : 'Error del servidor: ' + d.error;
-            console.warn('[saSendInviteEmail] Fallback a mailto. Motivo:', motivo);
-            _saToast('📧 Abriendo tu correo local para enviar la invitación...', 4000);
-            window.open(_mailto(), '_self');
+        } else if (d.testeo === true) {
+            // 🧪 Testeo: el servidor no manda correos reales (decisión del
+            // autor, 24-09). Es el «éxito» de este entorno: se dice claro y
+            // se deja el enlace para probar el alta a mano.
+            _saToast('🧪 Testeo: correo simulado para ' + to + '. En producción le llegaría automáticamente.', 6000);
+            _secMostrarResultado('testeo', '🧪 Testeo: el correo no se envía de verdad',
+                'En producción, ' + to + ' recibiría la invitación automáticamente, sin abrir ningún ' +
+                'programa de correo. Para probar el alta, copia este enlace y ábrelo en una ventana de incógnito.',
+                inviteUrl);
             _limpiarFormularioSecretaria();
+        } else if (d.noCredentials) {
+            console.warn('[saSendInviteEmail] el servidor no tiene credenciales de correo');
+            _noEnviado('El servidor no tiene configurada la cuenta de correo de envío. Avisa al SuperAdmin.');
+        } else if (d.error) {
+            console.warn('[saSendInviteEmail] el servidor no pudo enviar:', d.error);
+            _noEnviado('El servidor no ha podido enviarlo (' + d.error + ').');
         } else {
-            _saToast('⚠️ Respuesta inesperada del servidor. Revisa la consola.', 4000);
             console.warn('[saSendInviteEmail] Respuesta inesperada:', d);
+            _noEnviado('El servidor ha dado una respuesta inesperada.');
         }
     } catch (e) {
         _saHideSpinner();
         const info = window.secExplicarErrorEnvio(e);
         console.error('[saSendInviteEmail] code=' + info.code, e);
-        // ⚠️ SIN confirm(). Un diálogo modal para decir "no he podido" obliga a
-        // contestar antes de poder seguir, y la salida (el correo local) es la
-        // misma se conteste lo que se conteste. Se abre y se explica POR QUÉ.
-        _saToast('⚠️ ' + info.texto + ' Abriendo tu correo local…', 6000);
-        window.open(_mailto(), '_self');
-        _limpiarFormularioSecretaria();
+        // ⚠️ SIN confirm() (v594) y, desde v782, SIN correo local: se explica
+        // el motivo real y el enlace queda a mano.
+        _noEnviado(info.texto);
     }
 };
 

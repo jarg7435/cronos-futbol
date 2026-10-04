@@ -122,10 +122,27 @@
     // El texto del <option> lleva un emoji delante ('🏟️ CD DORAMAS'): se compara
     // por NORMALIZACIÓN, no por igualdad literal, y se devuelve el nombre limpio
     // para poder escribirlo tal cual donde haga falta.
-    function _buscarClub(sel, nombre) {
-        if (!sel || !nombre) return null;
-        var objetivo = _norm(nombre);
+    //
+    // ✉️ v781 · PRIMERO POR ID. Las invitaciones nuevas llevan el `clubId` de
+    // quien invita: con él se casa la opción exacta (`club:<id>` o
+    // `individual:<id>`), y dos clubes con el mismo nombre ya no se confunden.
+    // El nombre queda de respaldo para las invitaciones viejas, que no lo
+    // traen, y para un id que no esté en la lista.
+    function _buscarClub(sel, nombre, clubId) {
+        if (!sel || (!nombre && !clubId)) return null;
         var opts = sel.querySelectorAll('option[value^="club:"], option[value^="individual:"]');
+        var _limpio = function (o) {
+            return String(o.textContent || '').replace(/^[^\p{L}\p{N}]+/u, '').trim();
+        };
+        if (clubId) {
+            for (var k = 0; k < opts.length; k++) {
+                if (opts[k].value === 'club:' + clubId || opts[k].value === 'individual:' + clubId) {
+                    return { value: opts[k].value, nombre: _limpio(opts[k]) };
+                }
+            }
+        }
+        if (!nombre) return null;
+        var objetivo = _norm(nombre);
         for (var i = 0; i < opts.length; i++) {
             var limpio = String(opts[i].textContent || '').replace(/^[^\p{L}\p{N}]+/u, '').trim();
             if (_norm(limpio) === objetivo) return { value: opts[i].value, nombre: limpio };
@@ -142,6 +159,7 @@
             var email = p.get('email');
             var rol   = p.get('role');
             var club  = p.get('clubName');
+            var clubId = '';   // v781 · sólo lo trae el token, nunca la URL
 
             // ── 🎟️ SEC-INV (2026-08-26) · EL TOKEN OPACO ────────────
             //  La forma nueva es `?invite=<token>`: el correo, el rol y el
@@ -167,6 +185,7 @@
                     email = inv.email || email;
                     rol   = inv.role || rol;
                     club  = inv.clubName || club;
+                    clubId = inv.clubId || '';
                     // Se recuerda para consumirla en cuanto haya sesión.
                     window._cronosInviteToken = inv.token;
                     if (_ae) _nota('inv-nota-token', _ae,
@@ -253,7 +272,7 @@
 
             // ── El club ─────────────────────────────────────────────
             var selClub = await _esperarClubes(20000);
-            var hallado = _buscarClub(selClub, club);
+            var hallado = _buscarClub(selClub, club, clubId);
 
             // Si es un ENTE individual, el tipo de entidad tiene que decirlo.
             if (hallado && hallado.value.indexOf('individual:') === 0 &&

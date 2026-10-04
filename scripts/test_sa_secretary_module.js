@@ -55,7 +55,8 @@ function buildSandbox({ elements = {}, secMethod = 'email', hasFunctions = true,
     // (la vista previa ya sustituida). Sin ellos, saUpdateInvitePreview
     // sencillamente no pinta nada — no falla —, pero entonces el guard no
     // podría comprobar ninguna de las dos cosas nuevas.
-    for (const id of ['sec-name', 'sec-email', 'sec-phone', 'sec-club', 'sec-role', 'sec-subject', 'sec-body', 'sec-btn-text', 'sec-email-block', 'sec-phone-block', 'sec-subject-block', 'sa-body', 'sec-link', 'sec-preview']) {
+    // v782 añade 'sec-resultado' (el recuadro que sustituye al correo local).
+    for (const id of ['sec-name', 'sec-email', 'sec-phone', 'sec-club', 'sec-role', 'sec-subject', 'sec-body', 'sec-btn-text', 'sec-email-block', 'sec-phone-block', 'sec-subject-block', 'sa-body', 'sec-link', 'sec-preview', 'sec-resultado']) {
         if (!els[id]) els[id] = makeEl({});
     }
 
@@ -291,29 +292,54 @@ function buildSandbox({ elements = {}, secMethod = 'email', hasFunctions = true,
         ok('8b · limpia el formulario (sec-email vacío tras enviar)', els['sec-email'].value === '');
     }
 
-    console.log('\n── PARTE 9 · saSendInviteEmail — sin credenciales en servidor (fallback mailto) ──');
+    // ══════════════════════════════════════════════════════════════════
+    //  ⚠️⚠️ v782 · CAMBIO DELIBERADO DE CONTRATO EN LAS PARTES 9-11.
+    //  Antes fijaban que, si el servidor no enviaba, se ABRÍA EL CORREO
+    //  LOCAL (`mailto:`). El autor pidió lo contrario (implementar.txt,
+    //  2026-10-04): «sin dependencias de un cliente de correo local». Ahora
+    //  se fija que NUNCA se abre, que se dice el motivo y que el enlace queda
+    //  a mano en #sec-resultado.
+    // ══════════════════════════════════════════════════════════════════
+    console.log('\n── PARTE 9 · saSendInviteEmail — servidor sin credenciales (v782: sin correo local) ──');
     {
-        const { sandbox, toasts, openCalls } = buildSandbox({
+        const { sandbox, toasts, openCalls, els } = buildSandbox({
             elements: { 'sec-email': { value: 'nocred@x.com' }, 'sec-name': { value: 'Ana' } },
             sendEmailResult: { noCredentials: true },
         });
         await sandbox.window.saSendInviteEmail();
-        ok('9a · abre mailto automáticamente sin pedir confirmación', openCalls.some(u => u.startsWith('mailto:nocred@x.com')));
-        ok('9b · toast explicativo', toasts.some(t => /correo local/i.test(t)));
+        ok('9a · 🔑 NO abre el correo local', !openCalls.some(u => String(u).startsWith('mailto:')), openCalls);
+        ok('9b · dice que no se ha enviado y por qué', toasts.some(t => /No se ha enviado/i.test(t) && /cuenta de correo/i.test(t)), toasts);
+        ok('9c · el enlace queda a la vista para copiarlo',
+           els['sec-resultado'].style.display === 'block' && /\?invite=tok/.test(els['sec-resultado'].innerHTML));
+        ok('9d · el formulario NO se limpia (se puede reintentar)', els['sec-email'].value === 'nocred@x.com');
+    }
+    {
+        // 🧪 TESTEO: el servidor responde `noCredentials` + `testeo:true`.
+        const { sandbox, toasts, openCalls, els } = buildSandbox({
+            elements: { 'sec-email': { value: 'test@x.com' }, 'sec-name': { value: 'Ana' } },
+            sendEmailResult: { success: false, noCredentials: true, testeo: true },
+        });
+        await sandbox.window.saSendInviteEmail();
+        ok('9e · testeo: NO abre el correo local', !openCalls.some(u => String(u).startsWith('mailto:')), openCalls);
+        ok('9f · testeo: dice que es simulado y que en producción llegaría solo',
+           toasts.some(t => /Testeo/.test(t) && /producción/i.test(t)), toasts);
+        ok('9g · testeo: recuadro con el enlace para probar el alta',
+           els['sec-resultado'].style.display === 'block' && /\?invite=tok/.test(els['sec-resultado'].innerHTML)
+           && /Testeo/.test(els['sec-resultado'].innerHTML));
+        ok('9h · testeo: el formulario se limpia, como en un envío bueno', els['sec-email'].value === '');
     }
 
-    console.log('\n── PARTE 10 · saSendInviteEmail — error de conexión (catch + confirm) ──');
+    console.log('\n── PARTE 10 · saSendInviteEmail — error de conexión (v782: sin correo local) ──');
     {
-        const { sandbox, openCalls, toasts } = buildSandbox({
+        const { sandbox, openCalls, toasts, els } = buildSandbox({
             elements: { 'sec-email': { value: 'err@x.com' }, 'sec-name': { value: 'Ana' } },
             sendEmailThrows: 'network down', confirmReturns: true,
         });
         await sandbox.window.saSendInviteEmail();
-        ok('10a · el fallo del servidor lleva igualmente al correo local', openCalls.some(u => u.startsWith('mailto:err@x.com')));
-        // ⚠️⚠️ v594 · YA NO HAY confirm(). Un modal para decir "no he podido"
-        // obliga a contestar y la salida es la MISMA se conteste lo que se
-        // conteste. Se abre el correo local y se explica el motivo.
-        ok('10b · avisa de que abre el correo local', toasts.some(t => /correo local/i.test(t)));
+        ok('10a · 🔑 el fallo del servidor NO abre el correo local', !openCalls.some(u => String(u).startsWith('mailto:')), openCalls);
+        // ⚠️ v594 · sigue sin confirm(): se explica el motivo y punto.
+        ok('10b · avisa de que no se ha enviado, con el enlace a mano',
+           toasts.some(t => /No se ha enviado/i.test(t)) && /\?invite=tok/.test(els['sec-resultado'].innerHTML), toasts);
     }
     {
         // 🔑🔑🔑 EL ENCARGO 1 DEL AUTOR, FIJADO: un permission-denied NO se
@@ -346,7 +372,8 @@ function buildSandbox({ elements = {}, secMethod = 'email', hasFunctions = true,
             hasFunctions: false, confirmReturns: true,
         });
         await sandbox.window.saSendInviteEmail();
-        ok('11a · fa.functions ausente -> cae al mismo fallback mailto', openCalls.some(u => u.startsWith('mailto:nofn@x.com')));
+        // v782 · ANTES: «cae al mismo fallback mailto». Ya no existe.
+        ok('11a · fa.functions ausente -> NO abre el correo local', !openCalls.some(u => String(u).startsWith('mailto:')), openCalls);
     }
 
     // ══════════════════════════════════════════════════════════════════

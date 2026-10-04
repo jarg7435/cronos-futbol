@@ -187,9 +187,12 @@ console.log('\n3) 🚪 Los dos caminos de salida PARAN en vez de seguir');
        enviar.indexOf('return;') < enviar.indexOf('const datos'),
        'si parase después, el cuerpo ya llevaría dentro el aviso de «pendiente»');
 
-    ok('3c · 🔑 y para ANTES de abrir el correo local (`_mailto`)',
-       enviar.indexOf('return;') < enviar.indexOf('_mailto()'),
-       'el respaldo de mailto abre el cliente de correo del SuperAdmin con el cuerpo ya escrito');
+    // v782 · ANTES: «para ANTES de abrir el correo local (`_mailto`)». El
+    // correo local se ha retirado entero (encargo del autor, 2026-10-04): lo
+    // que se fija ahora es que el envío NO PUEDE abrirlo, ni antes ni después.
+    ok('3c · 🔑 y el envío ya no abre NUNCA el correo local',
+       !/mailto/.test(enviar) && enviar.indexOf('return;') < enviar.indexOf('sendInviteEmail'),
+       'v782: sin respaldo de mailto; y el acuñado para antes de llamar al servidor');
 
     ok('3d · el acuñado va dentro de un try/catch, no suelto',
        /try\s*\{\s*await _secEnlaceReal\(\);\s*\}\s*catch/.test(enviar),

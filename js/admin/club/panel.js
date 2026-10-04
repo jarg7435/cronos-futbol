@@ -1306,8 +1306,8 @@ async function openClubAdminPanel(preClubId = null) {
         const add = (icono, texto) => chips.push(icono + ' ' + texto);
         switch (rol) {
             case 'club_admin':
-                add('👥', 'Usuarios y altas'); add('💰', 'Cuotas'); add('💳', 'Plan y facturas');
-                add('💬', 'Mensajes');
+                add('👥', 'Usuarios y altas'); add('✉️', 'Secretaría'); add('💰', 'Cuotas');
+                add('💳', 'Plan y facturas'); add('💬', 'Mensajes');
                 break;
             case 'director':
                 add('📋', 'Convocatorias'); add('🏃', 'Entrenamientos'); add('✅', 'Asistencia');
@@ -1445,7 +1445,18 @@ async function openClubAdminPanel(preClubId = null) {
         usuarios:    { titulo: '👥 Usuarios del Club',  html: _secUsuarios },
         contactos:   { titulo: '📇 Contactos del Club', html: _secContactos },
         plan:        { titulo: '💳 Mi Suscripción',     html: _secPlan },
+        // ✉️ v781 · Sólo el HUECO: el formulario lo pinta saSecretary
+        // (js/admin/superadmin/secretary.js) desde caTab, ya con el div en el
+        // DOM. Es el MISMO módulo del Director y del SuperAdmin: una copia
+        // divergiría a la primera corrección.
+        secretaria:  { titulo: '✉️ Secretaría',         html: '<div id="ca-secretaria-body"></div>' },
     };
+
+    // ✉️ v781 · A quién puede invitar el Administrador del Club: su cuerpo
+    // técnico, sin los roles que el club no tiene contratados.
+    const _caRolesSecretaria = (typeof window.cronosSecretariaRoles === 'function')
+        ? window.cronosSecretariaRoles(window.CRONOS_SECRETARIA_ROLES_CLUB_ADMIN || ['director', 'coordinator', 'user'], _caExtraOn)
+        : ['director', 'coordinator', 'user'];
 
     // ⚠️ v598 · TRES TARJETAS MENOS QUE EN LA v597, Y NINGUNA POR ESTÉTICA:
     //   · 📩 Solicitar Alta — duplicaba el registro del propio interesado.
@@ -1465,6 +1476,15 @@ async function openClubAdminPanel(preClubId = null) {
               ? 'Tienes ' + _caPendientes + ' pendiente(s) de reenviar o confirmar.'
               : 'Altas pendientes de reenviar al SuperAdmin o de confirmar.',
           onclick: "caTab('solicitudes')" },
+        // ✉️ v781 · Encargo del autor (2026-10-04): el administrador invita a
+        // directores, coordinadores y entrenadores; cuando se registran, su
+        // alta cae en ✅ Solicitudes y desde allí la reenvía al SuperAdmin.
+        // ⚠️ NO depende del extra `secretaria`: ése es la sub-opción del
+        // DIRECTOR (extras-toggle.js). Dar de alta al personal es el oficio
+        // del administrador, no un añadido contratable.
+        { icono: '✉️', titulo: 'Secretaría', color: '#58a6ff',
+          desc: 'Invita a directores, coordinadores y entrenadores con el enlace de la app.',
+          onclick: "caTab('secretaria')" },
         { icono: '📇', titulo: 'Contactos', color: '#31d0aa',
           desc: 'Quién es quién y qué le da su rol. Sólo lectura.',
           onclick: "caTab('contactos')" },
@@ -1532,6 +1552,35 @@ async function openClubAdminPanel(preClubId = null) {
         }
         cuerpo.innerHTML = _CA_SECCIONES[sec].html;
         cuerpo.scrollTop = 0;
+
+        // ✉️ v781 · La Secretaría se pinta DESPUÉS del innerHTML: saSecretary
+        // busca su contenedor en el DOM. Si el módulo no ha cargado se dice
+        // por qué está vacío (un hueco mudo parece una avería).
+        if (sec === 'secretaria') {
+            const _sb = document.getElementById('ca-secretaria-body');
+            if (!_sb) return;
+            if (typeof window.saSecretary !== 'function') {
+                _sb.innerHTML = '<div style="text-align:center;padding:3rem;color:#ff5858;">' +
+                    '⚠️ El módulo de Secretaría no está disponible. Recarga el panel.</div>';
+                return;
+            }
+            if (!_caRolesSecretaria.length) {
+                _sb.innerHTML = '<div style="text-align:center;padding:3rem;color:var(--text-muted);">' +
+                    '🔒 Tu plan no incluye ningún rol que se pueda invitar. Habla con el SuperAdmin.</div>';
+                return;
+            }
+            Promise.resolve(window.saSecretary({
+                contenedorId: 'ca-secretaria-body',
+                roles:    _caRolesSecretaria,
+                club:     club.name || '',
+                // `clubId` para guardar la plantilla en el club y atar la
+                // invitación a ESTE club; `clubFijo` porque el servidor le
+                // impone el suyo (sendInviteEmail, SEC-F03).
+                clubId:   clubId,
+                clubFijo: true,
+                firma:    club.name || '',
+            })).catch(e => console.warn('[ClubAdmin] Secretaría:', e && e.message ? e.message : e));
+        }
     };
 
     modalHTML = SA_CSS + `

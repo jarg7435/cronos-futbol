@@ -1262,7 +1262,22 @@ async function openIndividualAdminPanel(mantenerSeccion = false) {
         resumen:     { titulo: '⚽ Mi Equipo',       html: _secMiEquipo },
         solicitudes: { titulo: '✅ Solicitudes',     html: (saForwardHTML || '') + (pendingRegHTML || '') + (infoHTML || '') },
         plan:        { titulo: '💳 Mi Suscripción',  html: billingHTML },
+        // ✉️ v781 · Sólo el HUECO; lo pinta saSecretary desde indTab (mismo
+        // módulo que el Director, el Admin de Club y el SuperAdmin).
+        secretaria:  { titulo: '✉️ Secretaría',      html: '<div id="ind-secretaria-body"></div>' },
     };
+
+    // ✉️ v781 · El ente invita SÓLO a familias: bajo un ente el alta no admite
+    // otro rol (auth.js, ROLES_BAJO_ENTE). Y sólo si tiene el acceso de
+    // Familias contratado — misma lectura de extras que el Cuadrante.
+    const _indRolesSecretaria = (typeof window.cronosSecretariaRoles === 'function')
+        ? window.cronosSecretariaRoles(window.CRONOS_SECRETARIA_ROLES_ENTE || ['parent'],
+              k => (typeof window._cronosExtraEnabled !== 'function') || window._cronosExtraEnabled(k))
+        : ['parent'];
+    const _indNombreEnte = (entityData && entityData.name) || displayName || '';
+    const _indSecMotivo = _indRolesSecretaria.length ? ''
+        : ((window.CRONOS_ROL_EXTRA_MOTIVO || {}).rol_padres
+           || 'El acceso de Familias no está contratado en tu plan.');
 
     const _indOpciones = [
         // ⚽ v601 · La ida a partidos pasa por `cronosEntrarAPartidos`
@@ -1307,6 +1322,12 @@ async function openIndividualAdminPanel(mantenerSeccion = false) {
               ? 'Tienes ' + _indPendientes + ' pendiente(s) de reenviar al SuperAdmin.'
               : 'Altas pendientes de reenviar al SuperAdmin.',
           onclick: "indTab('solicitudes')" },
+        // ✉️ v781 · Encargo del autor (2026-10-04): invitar desde el panel; el
+        // alta del invitado cae en ✅ Solicitudes y se reenvía al SuperAdmin.
+        { icono: '✉️', titulo: 'Secretaría', color: '#58a6ff',
+          desc: 'Invita a las familias de tus equipos con el enlace de la app.',
+          onclick: "indTab('secretaria')",
+          bloqueado: _indSecMotivo },
         // ⚠️ v602 · "👥 Mis Usuarios" y "📊 Resumen" YA NO SON TARJETAS. Su
         //    contenido no se ha perdido: abre "⚽ Mi Equipo", donde el cuadro de
         //    cifras es lo primero que se ve y las familias están dentro de su
@@ -1369,6 +1390,35 @@ async function openIndividualAdminPanel(mantenerSeccion = false) {
         }
         cuerpo.innerHTML = _IND_SECCIONES[sec].html;
         cuerpo.scrollTop = 0;
+
+        // ✉️ v781 · Secretaría: después del innerHTML (busca su contenedor).
+        // ⚠️ SEGUNDA PUERTA: la tarjeta bloqueada no impide llegar aquí por
+        // `_indSeccionActual` o por la consola.
+        if (sec === 'secretaria') {
+            const _sb = document.getElementById('ind-secretaria-body');
+            if (!_sb) return;
+            if (_indSecMotivo) {
+                _sb.innerHTML = '<div style="text-align:center;padding:3rem;color:var(--text-muted);">🔒 ' +
+                    _indEsc(_indSecMotivo) + '</div>';
+                return;
+            }
+            if (typeof window.saSecretary !== 'function') {
+                _sb.innerHTML = '<div style="text-align:center;padding:3rem;color:#ff5858;">' +
+                    '⚠️ El módulo de Secretaría no está disponible. Recarga el panel.</div>';
+                return;
+            }
+            Promise.resolve(window.saSecretary({
+                contenedorId: 'ind-secretaria-body',
+                roles:    _indRolesSecretaria,
+                // El NOMBRE del ente tal y como sale en la lista del alta
+                // (clubs_public), y su id para atar la invitación a él.
+                club:     _indNombreEnte,
+                clubId:   individualEntityId || '',
+                clubFijo: true,
+                firma:    _indNombreEnte,
+            })).catch(e => console.warn('[IndPanel] Secretaría:', e && e.message ? e.message : e));
+            return;
+        }
 
         // 🗓️ v626 · El cuadrante se pinta DESPUÉS del innerHTML, porque el
         // módulo busca su contenedor en el DOM, y se le dice cuál es el suyo.

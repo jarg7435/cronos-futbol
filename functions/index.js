@@ -1628,8 +1628,15 @@ exports.sendInviteEmail = functions
   const _esSA = await _esSuperAdmin(context);
   const _habilitado = _cuentaHabilitada(_cd);
   const _tk = (context.auth && context.auth.token) || {};
-  const _esStaffRaiz = _habilitado && ['director', 'club_admin'].includes(_cd.role);
-  const _esStaffClaim = ['director', 'club_admin'].includes(_tk.role || '');
+  /* ✉️ v781 · `individual` (el Entrenador-Administrador del ente) entra en la
+     lista: el autor le pidio Secretaria para invitar a sus familias. Se le
+     reconoce por las MISMAS dos fuentes no falsificables —la raiz, que el
+     usuario no puede reescribirse, y el claim—, nunca por `allRoles`. Su
+     club se le impone igual que al resto (`_clubPropio`, mas abajo): el
+     del documento `clubs/{id}` de su ente. */
+  const _ROLES_QUE_INVITAN = ['director', 'club_admin', 'individual'];
+  const _esStaffRaiz = _habilitado && _ROLES_QUE_INVITAN.includes(_cd.role);
+  const _esStaffClaim = _ROLES_QUE_INVITAN.includes(_tk.role || '');
   /* 🌱 SEC-F05 · TERCERA VIA, Y DEVUELVE LO QUE SEC-F03 QUITO. Al cerrar la
      puerta de `allRoles` se quedaron sin invitar 6 plazas legitimas que solo
      vivian ahi (medido: 4 de 10 las corroboraba la raiz). El backfill del
@@ -1645,7 +1652,7 @@ exports.sendInviteEmail = functions
     /* Mensaje que dice QUE pasa, para que el cliente no tenga que adivinar. */
     throw new functions.https.HttpsError(
       'permission-denied',
-      'Solo el SuperAdmin, el Administrador de Club o el Director Deportivo pueden enviar invitaciones.'
+      'Solo el SuperAdmin, el Administrador de Club, el Director Deportivo o el Entrenador-Administrador Individual pueden enviar invitaciones.'
     );
   }
 
