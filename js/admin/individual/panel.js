@@ -1415,7 +1415,6 @@ async function openIndividualAdminPanel(mantenerSeccion = false) {
                 club:     _indNombreEnte,
                 clubId:   individualEntityId || '',
                 clubFijo: true,
-                firma:    _indNombreEnte,
             })).catch(e => console.warn('[IndPanel] Secretaría:', e && e.message ? e.message : e));
             return;
         }

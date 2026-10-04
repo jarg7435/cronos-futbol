@@ -82,11 +82,14 @@ ok('1f · el Entrenador nunca se filtra (no tiene extra)',
 ok('1g · ente sin Familias → lista VACÍA, no se cae a otro rol',
    W.cronosSecretariaRoles(W.CRONOS_SECRETARIA_ROLES_ENTE, () => false).length === 0);
 
-const pf = W.secPlantillaFabrica('email', 'CD DÍA', 'CD DÍA');
-ok('1h · con firmante, firma ese nombre', /Un saludo,\nCD DÍA$/.test(pf), pf.slice(-40));
-const pfDir = W.secPlantillaFabrica('email', 'CD DÍA');
-ok('1i · sin firmante, el Director firma como siempre',
-   /La Dirección Deportiva de CD DÍA$/.test(pfDir), pfDir.slice(-40));
+// ⚠️ v783 · ANTES 1h/1i fijaban la firma POR INVITANTE de v781 (`firmante`).
+// El autor pidió la marca {club} para todos; el texto exacto lo fija ahora
+// test_plantilla_invitacion.js. Aquí queda lo que toca a estos paneles:
+// Administrador y ente firman con su club, sin parámetro aparte.
+const pf = W.secPlantillaFabrica('email', 'CD DÍA');
+ok('1h · con club, la firma es la marca {club}', /Un saludo,\n\{club\}$/.test(pf), pf.slice(-40));
+ok('1i · los paneles ya no pasan una firma aparte',
+   !/firma:\s/.test(CLUB) && !/firma:\s/.test(IND));
 
 // ── PARTE 2 · la invitación lleva el clubId ───────────────────────────────
 console.log('\nPARTE 2 · el enlace se acuña CON el clubId');

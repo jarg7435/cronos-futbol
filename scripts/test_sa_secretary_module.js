@@ -43,6 +43,15 @@ function makeEl(initial) {
     return Object.assign({ value: '', innerHTML: '', textContent: '', style: {}, classList: makeClassList(), addEventListener: () => {}, setAttribute: () => {}, removeAttribute: () => {}, select: () => {} }, initial);
 }
 
+// ✍️ v783 · La vista previa se pinta por innerHTML (para la negrita). Las
+// aserciones leen su TEXTO: sin etiquetas y con las entidades deshechas.
+function textoPrevia(el) {
+    return String((el && el.innerHTML) || '')
+        .replace(/<[^>]+>/g, '')
+        .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"')
+        .replace(/&#39;/g, "'").replace(/&amp;/g, '&');
+}
+
 function buildSandbox({ elements = {}, secMethod = 'email', hasFunctions = true, confirmReturns = true, sendEmailResult = null, sendEmailThrows = null } = {}) {
     const toasts = [];
     const spinners = [];
@@ -199,10 +208,10 @@ function buildSandbox({ elements = {}, secMethod = 'email', hasFunctions = true,
         ok('4a · la plantilla lleva las MARCAS, no el nombre incrustado',
            /\{nombre\}/.test(els['sec-body'].value) && !/Ana/.test(els['sec-body'].value));
         ok('4a2 · 🔑 y la VISTA PREVIA sí trae nombre, rol y club ya sustituidos',
-           /Ana/.test(els['sec-preview'].textContent) &&
-           /Administrador de Club/.test(els['sec-preview'].textContent) &&
-           /CD Prueba/.test(els['sec-preview'].textContent),
-           els['sec-preview'].textContent.slice(0, 90));
+           /Ana/.test(textoPrevia(els['sec-preview'])) &&
+           /Administrador de Club/.test(textoPrevia(els['sec-preview'])) &&
+           /CD Prueba/.test(textoPrevia(els['sec-preview'])),
+           textoPrevia(els['sec-preview']).slice(0, 90));
         ok('4b · plantilla email NO usa formato markdown de WhatsApp', !els['sec-body'].value.includes('*Invitación'));
     }
     {
@@ -215,7 +224,7 @@ function buildSandbox({ elements = {}, secMethod = 'email', hasFunctions = true,
         ok('4c · ⚠️ con el método viejo cae en la plantilla de CORREO, no en una vacía',
            els['sec-body'].value.length > 0
            && !els['sec-body'].value.includes('*Invitación')
-           && /Luis/.test(els['sec-preview'].textContent),
+           && /Luis/.test(textoPrevia(els['sec-preview'])),
            els['sec-body'].value.slice(0, 70));
     }
     {
@@ -236,7 +245,7 @@ function buildSandbox({ elements = {}, secMethod = 'email', hasFunctions = true,
         // fue, y que el nombre vuelve a llegar al mensaje.
         ok('5b · regenera la plantilla de fábrica y la previa trae el nombre',
            !/editado/.test(els['sec-body'].value) && /\{nombre\}/.test(els['sec-body'].value) &&
-           /Ana/.test(els['sec-preview'].textContent));
+           /Ana/.test(textoPrevia(els['sec-preview'])));
         ok('5c · toast de confirmación', toasts.some(t => /restablecido/i.test(t)));
     }
 
@@ -452,7 +461,7 @@ function buildSandbox({ elements = {}, secMethod = 'email', hasFunctions = true,
         // en WhatsApp —donde el enlace SÍ va en el cuerpo, porque no hay botón—
         // tiene que ser exactamente el mismo que el de pantalla.
         ok('13d · ⚠️ v630 · en EMAIL el cuerpo ya NO repite el enlace',
-           !els['sec-preview'].textContent.includes(url),
+           !textoPrevia(els['sec-preview']).includes(url),
            'lo llevan el botón y la frase de respaldo del HTML (functions/index.js)');
     }
     // v671 · aquí iba «13d-wa», que comprobaba lo mismo pero en la plantilla
@@ -495,14 +504,22 @@ function buildSandbox({ elements = {}, secMethod = 'email', hasFunctions = true,
         sandbox.window.saUpdateInviteTemplate();
         ok('14a · 🔑 con club, la firma NO es "El Equipo de Chronos Fútbol" (era el encargo del autor)',
            !/El Equipo de Chronos/.test(els['sec-body'].value), els['sec-body'].value.slice(-70));
-        ok('14b · … firma la dirección deportiva de ESE club',
-           /Dirección Deportiva de CD Prueba/.test(els['sec-body'].value));
+        // ⚠️ v783 · CAMBIO DE CONTRATO pedido por el autor (implementar.txt,
+        // 2026-10-04): la firma deja de ser «La Dirección Deportiva de …» y
+        // pasa a ser la MARCA {club}, para cualquiera que invite.
+        ok('14b · … firma ESE club, con la marca {club}',
+           /Un saludo,\n\{club\}$/.test(els['sec-body'].value) &&
+           /Un saludo,\nCD Prueba$/.test(textoPrevia(els['sec-preview'])), els['sec-body'].value.slice(-40));
     }
     {
         const { sandbox, els } = buildSandbox({});
         sandbox.window.saUpdateInviteTemplate();
-        ok('14c · sin club (SuperAdmin) se mantiene la firma genérica de siempre',
-           /El Equipo de Chronos Fútbol/.test(els['sec-body'].value));
+        // v783 · ANTES: «Atentamente, El Equipo de Chronos Fútbol». Ahora
+        // firma la plataforma, y SIN el «del {club}», que quedaría «del .».
+        ok('14c · sin club (SuperAdmin): firma CHRONOS FÚTBOL y no hay «del .»',
+           /Un saludo,\nCHRONOS FÚTBOL$/.test(els['sec-body'].value) &&
+           !/\{club\}/.test(els['sec-body'].value) && !/ del \./.test(textoPrevia(els['sec-preview'])),
+           els['sec-body'].value.slice(-40));
     }
     {
         // Lo guardado por el club MANDA sobre la plantilla de fábrica.
@@ -513,7 +530,7 @@ function buildSandbox({ elements = {}, secMethod = 'email', hasFunctions = true,
         ok('14d · la plantilla guardada del club sustituye a la de fábrica',
            els['sec-body'].value === 'Plantilla propia para {nombre}');
         ok('14e · y se sustituye en la vista previa',
-           els['sec-preview'].textContent === 'Plantilla propia para Ana');
+           textoPrevia(els['sec-preview']) === 'Plantilla propia para Ana');
     }
     {
         // ⚠️ Editar a mano protege el texto: ni cambiar de rol, ni de club, ni

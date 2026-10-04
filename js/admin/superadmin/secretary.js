@@ -144,9 +144,6 @@ window.saSecretary = async function saSecretary(opciones) {
         clubId:   String(_opts.clubId || ''),
         clubName: _clubPrefijado,
         clubFijo: _clubFijo,
-        // v781 · Quién firma la plantilla de fábrica. Vacío = la Dirección
-        // Deportiva del club, como siempre (ver secPlantillaFabrica).
-        firma:    String(_opts.firma || ''),
     };
 
     body.innerHTML = `
@@ -331,7 +328,7 @@ window.saSecretary = async function saSecretary(opciones) {
 // ════════════════════════════════════════════════════════════════════
 // Contexto de la pantalla: quién la abrió y con qué club. Se rellena en
 // saSecretary y lo consultan el guardado y la carga de la plantilla.
-window._secCtx = window._secCtx || { clubId: '', clubName: '', clubFijo: false, firma: '' };
+window._secCtx = window._secCtx || { clubId: '', clubName: '', clubFijo: false };
 
 // ✉️ v781 · Los roles que un panel puede invitar, quitando los que el club no
 // tiene contratados. Mismo criterio que la Secretaría del Director (v596): un
@@ -487,20 +484,22 @@ function _secDatosActuales() {
 }
 
 // ── Plantillas de fábrica, CON MARCAS ───────────────────────────────
-// ⚠️ La firma depende de quién invita: un club firma como su dirección
-// deportiva. Firmar siempre "El Equipo de Chronos Fútbol" era justo lo que
-// el autor pidió quitar — hacía parecer que el correo lo manda el dueño de
-// la plataforma y no su club.
-window.secPlantillaFabrica = function(metodo, clubName, firmante) {
-    const club = String(clubName || '').trim();
-    // ✉️ v781 · `firmante` opcional: el Administrador del Club firma como su
-    // club y el ente con su nombre. Sin él, lo de siempre.
-    const _firmante = String(firmante || '').trim();
-    const firma = _firmante
-        ? ('Un saludo,\n' + _firmante)
-        : club
-        ? ('Un saludo,\nLa Dirección Deportiva de ' + club)
-        : 'Atentamente,\nEl Equipo de Chronos Fútbol';
+// ════════════════════════════════════════════════════════════════════
+//  ✍️ v783 · EL TEXTO EXACTO DEL AUTOR (implementar.txt, 2026-10-04,
+//  capturas 11090-11092), con la marca en negrita (`**CHRONOS FÚTBOL**`)
+//  y el club como MARCA (`{club}`), también en la firma: firma el club, sea
+//  quien sea quien invita (Director, Administrador o ente).
+//  · La negrita la pintan la vista previa (secNegritaHtml) y el correo
+//    (functions/index.js, sendInviteEmail); el texto plano la quita.
+//  · SIN CLUB (el SuperAdmin puede invitar sin él): no hay «del {club}» —
+//    quedaría «del .»— y firma la plataforma.
+//  ⚠️ Sustituye a la firma por invitante de v781 (`firmante`) y a la de
+//    «La Dirección Deportiva de …» de v594: el autor pidió {club} para todos.
+//  ⚠️ Las plantillas GUARDADAS por cada club siguen mandando (son texto
+//    suyo): para pasar a ésta, «🔄 Restablecer» y «💾 Guardar plantilla».
+// ════════════════════════════════════════════════════════════════════
+window.secPlantillaFabrica = function(metodo, clubName) {
+    const conClub = !!String(clubName || '').trim();
     // v671 · aquí vivía la plantilla de WhatsApp. Retirada con el canal;
     // queda una sola plantilla, la del correo.
     // ══════════════════════════════════════════════════════════════════
@@ -522,14 +521,26 @@ window.secPlantillaFabrica = function(metodo, clubName, firmante) {
     //  `{enlace}` es el ÚNICO camino y se queda donde está (arriba).
     // ══════════════════════════════════════════════════════════════════
     return 'Hola, {nombre}:\n\n' +
-           'Te damos la bienvenida a Chronos Fútbol. Has sido invitado a unirte a nuestra plataforma como {rol}' +
-           (club ? ' del club ' + club : '') + '.\n\n' +
-           'Chronos Fútbol es una aplicación diseñada para el fútbol base: ayuda a que directiva, cuerpo técnico y familias ' +
-           'compartan un mismo espacio de trabajo y disfruten al máximo de este deporte.\n\n' +
+           'Te damos la bienvenida a **CHRONOS FÚTBOL**. Has sido invitado a unirte a nuestra plataforma como {rol}' +
+           (conClub ? ' del {club}' : '') + '.\n\n' +
+           '**CHRONOS FÚTBOL** es una aplicación diseñada especialmente para el fútbol base: ayuda a que directiva, ' +
+           'cuerpo técnico y familias compartan un mismo espacio de trabajo y disfruten al máximo de este deporte.\n\n' +
            'Pulsa el botón de abajo para completar tu registro: el correo, el rol y el club ya te vendrán rellenos ' +
            'y sólo tendrás que elegir tu contraseña.\n\n' +
            '¡Muchas gracias por tu implicación y bienvenido a bordo!\n\n' +
-           firma;
+           'Un saludo,\n' + (conClub ? '{club}' : 'CHRONOS FÚTBOL');
+};
+
+// ✍️ v783 · La NEGRITA del mensaje: `**texto**` → <strong>texto</strong>.
+// 🔑 SE ESCAPA PRIMERO y se marca DESPUÉS: así lo único que puede volverse
+// HTML es la propia negrita, nunca algo que el usuario escriba en el mensaje.
+// Misma regla, letra por letra, que la de sendInviteEmail (functions/index.js):
+// lo que se ve en la vista previa es lo que llega.
+window.secNegritaHtml = function (texto) {
+    return String(texto == null ? '' : texto)
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;').replace(/'/g, '&#39;')
+        .replace(/\*\*([^*\n]+?)\*\*/g, '<strong>$1</strong>');
 };
 
 // ════════════════════════════════════════════════════════════════════
@@ -627,7 +638,7 @@ window.saUpdateInviteTemplate = function() {
         // Preferencia: lo guardado por el club > la plantilla de fábrica.
         const g = window._secGuardadas || null;
         const guardada = g && typeof g === 'object' ? g[method] : null;
-        secBody.value = guardada || window.secPlantillaFabrica(method, club, (window._secCtx || {}).firma);
+        secBody.value = guardada || window.secPlantillaFabrica(method, club);
     }
     window.saUpdateInvitePreview();
 };
@@ -652,8 +663,10 @@ window.saUpdateInvitePreview = function() {
     // ✉️ v630 · La vista previa pasa por el MISMO filtro que el envío. Si sólo
     // lo hiciera uno de los dos, lo que se ve no sería lo que sale — y eso es
     // peor que la repetición que se venía a quitar.
-    if (prev) prev.textContent = window.secRenderPlantilla(
-        _secCuerpoParaEnviar(secBody ? secBody.value : ''), datos);
+    // ✍️ v783 · innerHTML a través de secNegritaHtml (que ESCAPA antes de
+    // marcar), para que la negrita se vea aquí igual que en el correo.
+    if (prev) prev.innerHTML = window.secNegritaHtml(window.secRenderPlantilla(
+        _secCuerpoParaEnviar(secBody ? secBody.value : ''), datos));
 };
 
 // El cuerpo tal y como va a salir: en EMAIL, sin el enlace repetido.
@@ -673,7 +686,7 @@ window.saResetInviteTemplate = function() {
         secBody.classList.remove('user-edited');
         const method = 'email'   /* v671 · ya no hay selector de método: el correo es el único */;
         const club   = document.getElementById('sec-club')?.value.trim() || '';
-        secBody.value = window.secPlantillaFabrica(method, club, (window._secCtx || {}).firma);
+        secBody.value = window.secPlantillaFabrica(method, club);
         window.saUpdateInvitePreview();
         _saToast('🔄 Mensaje restablecido al predeterminado', 2500);
     }

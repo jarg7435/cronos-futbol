@@ -1578,7 +1578,6 @@ async function openClubAdminPanel(preClubId = null) {
                 // impone el suyo (sendInviteEmail, SEC-F03).
                 clubId:   clubId,
                 clubFijo: true,
-                firma:    club.name || '',
             })).catch(e => console.warn('[ClubAdmin] Secretaría:', e && e.message ? e.message : e));
         }
     };

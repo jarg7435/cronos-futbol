@@ -1845,7 +1845,13 @@ exports.sendInviteEmail = functions
   const LOGO_URL = APP_URL + '/public/assets/img_0f3942d4.png';
 
   /* ---- Cuerpo en texto plano (fallback para clientes que no soportan HTML) ---- */
-  const textBody = body || (
+  /* ✍️ v783 · NEGRITA DEL MENSAJE. La plantilla del autor marca la plataforma
+     como `**CHRONOS FÚTBOL**`. En HTML se pinta en negrita (mas abajo); en
+     el texto plano se quitan los asteriscos, que ahi solo serian ruido.
+     🔑 Misma expresion que secNegritaHtml (secretary.js): lo que se ve en la
+     vista previa es lo que llega. */
+  const _NEGRITA = /\*\*([^*\n]+?)\*\*/g;
+  const textBody = (body ? body.replace(_NEGRITA, '$1') : '') || (
     'Hola,\n\n' +
     'Has sido invitado a unirte a Chronos Fútbol como ' + roleLabel +
     (clubName ? ' del club ' + clubName : '') + '.\n\n' +
@@ -1859,7 +1865,11 @@ exports.sendInviteEmail = functions
 
   /* ---- Cuerpo principal del mensaje (por defecto o personalizado) ---- */
   const customBodyHtml = body
-    ? _esc(body).replace(/\n\n/g, '</p><p style="font-size: 16px; color: #333333; line-height: 1.6; margin: 0 0 20px 0;">')
+    /* 🔑 Se ESCAPA PRIMERO y se marca DESPUES: `_esc` no toca el asterisco,
+       asi que lo unico que puede convertirse en HTML es la propia negrita, y
+       lo que va dentro ya esta escapado. Nunca al reves. */
+    ? _esc(body).replace(_NEGRITA, '<strong>$1</strong>')
+          .replace(/\n\n/g, '</p><p style="font-size: 16px; color: #333333; line-height: 1.6; margin: 0 0 20px 0;">')
           .replace(/\n/g, '<br/>')
     : `<strong>${_esc(senderName)}</strong> te ha invitado a unirte a <strong>Chronos Fútbol</strong> como:`;
 
