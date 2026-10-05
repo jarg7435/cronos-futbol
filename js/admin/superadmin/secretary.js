@@ -269,6 +269,9 @@ window.saSecretary = async function saSecretary(opciones) {
                     <code style="color:#d2a8ff;">{club}</code>
                     <code style="color:#d2a8ff;">{enlace}</code>
                 </span>
+                <!-- ✍️ v784 · Aviso de plantilla guardada ANTERIOR a la de fábrica
+                     actual: se muestra la nueva y se ofrece recuperar la suya. -->
+                <div id="sec-aviso-antigua" style="display:none;"></div>
             </div>
 
             <!-- Vista previa: lo que va a salir de verdad -->
@@ -310,6 +313,10 @@ window.saSecretary = async function saSecretary(opciones) {
     </div>`;
 
     // Inicializar plantillas (con la guardada del club, si la hay)
+    // ✍️ v784 · se olvida la de la apertura anterior (otro club u otro panel)
+    // antes de pintar: la de este club la trae saCargarPlantillaGuardada.
+    window._secGuardadas = null;
+    window._secGuardadaAntigua = null;
     setTimeout(() => {
         window.saCargarPlantillaGuardada?.();
         window.saUpdateInviteTemplate();
@@ -495,8 +502,9 @@ function _secDatosActuales() {
 //    quedaría «del .»— y firma la plataforma.
 //  ⚠️ Sustituye a la firma por invitante de v781 (`firmante`) y a la de
 //    «La Dirección Deportiva de …» de v594: el autor pidió {club} para todos.
-//  ⚠️ Las plantillas GUARDADAS por cada club siguen mandando (son texto
-//    suyo): para pasar a ésta, «🔄 Restablecer» y «💾 Guardar plantilla».
+//  ⚠️ v784 · Una plantilla GUARDADA sólo manda si se guardó sobre ESTA
+//    fábrica (SEC_FABRICA_VERSION, más abajo): si cambias este texto, SUBE
+//    esa versión, o los clubes que guardaron la anterior no verán la nueva.
 // ════════════════════════════════════════════════════════════════════
 window.secPlantillaFabrica = function(metodo, clubName) {
     const conClub = !!String(clubName || '').trim();
@@ -582,11 +590,64 @@ window.secQuitarEnlaceRepetido = function (texto) {
     return fuera.join('\n').replace(/\n{3,}/g, '\n\n').trim();
 };
 
+// ════════════════════════════════════════════════════════════════════
+//  ✍️ v784 · LA FÁBRICA TIENE VERSIÓN (implementar.txt, 2026-10-05,
+//  capturas 11104-11105)
+//
+//  El Administrador del CD DÍA seguía viendo el texto viejo y el ente el
+//  nuevo con LA MISMA plantilla de fábrica: el club tenía una GUARDADA
+//  (anterior a v783) y la guardada manda. El autor pide que la de fábrica
+//  nueva se vea en los dos perfiles.
+//
+//  🔑 Cada plantilla se guarda con la versión de fábrica sobre la que se
+//  escribió (`fabrica`). Una guardada SIN esa marca o con otra versión es
+//  ANTERIOR a la fábrica actual: no se aplica sola, se muestra la de fábrica
+//  y un aviso con «Recuperar la guardada» (es texto del club: NO se borra
+//  ni se reescribe en la nube; si la recupera y pulsa Guardar, queda
+//  sellada con la versión actual y vuelve a mandar).
+//  ⚠️ Si se cambia el texto de secPlantillaFabrica, SUBIR esta versión.
+// ════════════════════════════════════════════════════════════════════
+window.SEC_FABRICA_VERSION = 'v783';
+window.secGuardadaVigente = function (g) {
+    return !!(g && typeof g === 'object' && g.email && g.fabrica === window.SEC_FABRICA_VERSION);
+};
+
+function _secPintaAvisoAntigua() {
+    const caja = document.getElementById('sec-aviso-antigua');
+    if (!caja) return;
+    const vieja = window._secGuardadaAntigua;
+    if (!vieja || !vieja.email) { caja.style.display = 'none'; caja.innerHTML = ''; return; }
+    caja.style.cssText = 'display:flex;align-items:center;gap:0.5rem;flex-wrap:wrap;margin-top:6px;' +
+        'padding:0.5rem 0.7rem;border-radius:8px;background:rgba(210,153,34,0.1);' +
+        'border:1px solid rgba(210,153,34,0.35);font-size:0.72rem;color:#d29922;';
+    caja.innerHTML =
+        '<span style="flex:1;min-width:180px;">ℹ️ Se muestra la plantilla nueva. Tu club tenía guardada una ' +
+        'versión anterior del mensaje.</span>' +
+        '<button onclick="window.saRecuperarPlantillaAntigua()" style="background:none;border:1px solid ' +
+        'rgba(210,153,34,0.5);color:#d29922;font-size:0.68rem;font-weight:700;cursor:pointer;' +
+        'padding:0.25rem 0.55rem;border-radius:6px;">↩️ Recuperar la guardada</button>';
+}
+
+// Vuelve a poner en el mensaje la plantilla guardada anterior. No guarda
+// nada: para que mande de nuevo, «💾 Guardar plantilla» (la sella).
+window.saRecuperarPlantillaAntigua = function () {
+    const vieja = window._secGuardadaAntigua;
+    const secBody = document.getElementById('sec-body');
+    if (!vieja || !vieja.email || !secBody) return;
+    secBody.value = vieja.email;
+    secBody.classList.add('user-edited');
+    window._secGuardadaAntigua = null;
+    _secPintaAvisoAntigua();
+    window.saUpdateInvitePreview();
+    _saToast('↩️ Recuperada. Pulsa «💾 Guardar plantilla» para conservarla', 4000);
+};
+
 // ── Cargar la plantilla guardada del club (o la local del SuperAdmin) ──
 // ⚠️ NUNCA BLOQUEA NI ROMPE LA PANTALLA: si la lectura falla o no hay nada
 // guardado, se queda la de fábrica. Una Secretaría que no abre por no poder
 // leer una preferencia sería mucho peor que una Secretaría sin preferencia.
 window._secGuardadas = window._secGuardadas || null;
+window._secGuardadaAntigua = null;
 window.saCargarPlantillaGuardada = async function() {
     try {
         const ctx = window._secCtx || {};
@@ -599,8 +660,15 @@ window.saCargarPlantillaGuardada = async function() {
         if (!guardadas && typeof localStorage !== 'undefined') {
             try { guardadas = JSON.parse(localStorage.getItem(_SEC_LS_KEY) || 'null'); } catch (_) { guardadas = null; }
         }
-        window._secGuardadas = guardadas || null;
-        if (guardadas) window.saUpdateInviteTemplate();
+        // ✍️ v784 · sólo manda la guardada sellada con la fábrica ACTUAL; la
+        // anterior queda aparte, para «Recuperar la guardada».
+        const vigente = window.secGuardadaVigente(guardadas);
+        window._secGuardadas = vigente ? guardadas : null;
+        window._secGuardadaAntigua = (guardadas && !vigente) ? guardadas : null;
+        _secPintaAvisoAntigua();
+        // Siempre: sin guardada también hay que repintar, o se quedaría la
+        // de una apertura anterior (`_secGuardadas` vive en window).
+        window.saUpdateInviteTemplate();
     } catch (e) {
         if (window._CRONOS_DEBUG) console.warn('[Secretaría] plantilla guardada:', e.message);
     }
@@ -702,10 +770,14 @@ window.saGuardarPlantilla = async function() {
     const ctx = window._secCtx || {};
     // Se conservan las DOS plantillas (correo y WhatsApp): guardar la de
     // correo no puede borrar la de WhatsApp.
-    const previas = (window._secGuardadas && typeof window._secGuardadas === 'object')
-        ? window._secGuardadas : {};
+    const base = window._secGuardadas || window._secGuardadaAntigua;
+    const previas = (base && typeof base === 'object') ? base : {};
     const nuevas = Object.assign({}, previas);
     nuevas[method] = texto;
+    // ✍️ v784 · se sella con la fábrica vigente: desde ahora vuelve a mandar.
+    nuevas.fabrica = window.SEC_FABRICA_VERSION;
+    window._secGuardadaAntigua = null;
+    _secPintaAvisoAntigua();
 
     // Respaldo local SIEMPRE, y primero: si la escritura en la nube falla,
     // su trabajo no se pierde.
