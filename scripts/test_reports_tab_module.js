@@ -89,6 +89,7 @@ function buildSandbox({
     rpThrows = null,
     confirmReturns = true,
     updateDocFailFor = null,      // id de doc cuyo updateDoc falla
+    paginate = false,             // v785 · el fake respeta orderBy/limit y ofrece startAfter
 } = {}) {
     const store = { cronos_player_reports: reports, users, clubs: {} };
     const queries = [];           // {col, clauses}
@@ -128,7 +129,8 @@ function buildSandbox({
         },
         getDocs: async (ref) => {
             queries.push({ col: ref.__col, clauses: (ref.__clauses || []).map(c =>
-                c.__where ? c.field + c.op : (c.__orderBy ? 'orderBy:' + c.__orderBy : 'limit:' + c.__limit)) });
+                c.__where ? c.field + c.op : (c.__orderBy ? 'orderBy:' + c.__orderBy
+                    : (c.__startAfter !== undefined ? 'startAfter' : 'limit:' + c.__limit))) });
             if (ref.__col === 'cronos_player_reports') {
                 const isStaffUids = clauseHas(ref, 'staffUids');
                 if (!isStaffUids) {
@@ -138,7 +140,18 @@ function buildSandbox({
                 }
             }
             const st = store[ref.__col] || {};
-            const rows = Object.keys(st).filter(id => matches(st[id], ref.__clauses)).map(id => [id, st[id]]);
+            let rows = Object.keys(st).filter(id => matches(st[id], ref.__clauses)).map(id => [id, st[id]]);
+            if (paginate) {
+                const cl = ref.__clauses || [];
+                if (cl.some(c => c && c.__orderBy)) {
+                    rows.sort((a, b) => String(b[1].createdAt || '').localeCompare(String(a[1].createdAt || ''))
+                                        || (a[0] < b[0] ? 1 : -1));
+                }
+                const sa = cl.find(c => c && c.__startAfter !== undefined);
+                if (sa) rows = rows.slice(rows.findIndex(r => r[0] === sa.__startAfter) + 1);
+                const li = cl.find(c => c && c.__limit !== undefined);
+                if (li) rows = rows.slice(0, li.__limit);
+            }
             return { forEach: (cb) => rows.forEach(r => cb({ id: r[0], data: () => r[1] })) };
         },
         updateDoc: async (ref, data) => {
@@ -148,6 +161,7 @@ function buildSandbox({
         deleteDoc: async (ref) => { deleted.push(ref.__id); },
         arrayUnion: (...items) => ({ __arrayUnion: items }),
     };
+    if (paginate) fakeFS.startAfter = (d) => ({ __startAfter: d.id });
 
     const sandbox = {
         window: {
@@ -383,6 +397,36 @@ function walk(dir, out) {
         ok('4d · si ninguna query por clubId funciona, prueba por staffUids',
             queries.some(q => q.col === 'cronos_player_reports' && q.clauses.includes('staffUidsarray-contains')),
             queries.filter(q => q.col === 'cronos_player_reports').map(q => q.clauses.join('+')));
+    }
+
+    {
+        // 🔴 v785 · LOS 500 ERAN UN TOPE (implementar.txt 2026-10-07). Con más
+        // de 500 docs staff, el panel sólo veía los más recientes; al purgar un
+        // partido entraba otro antiguo y el contador NO bajaba. 40 partidos ×
+        // 30 docs = 1.200: hacen falta tres páginas para verlos todos.
+        const reps = {};
+        for (let p = 0; p < 40; p++) {
+            const fecha = '2026-' + String(1 + Math.floor(p / 28)).padStart(2, '0') + '-' +
+                          String(1 + (p % 28)).padStart(2, '0');
+            for (let j = 0; j < 30; j++) {
+                reps['m' + p + '_p' + j] = staffRep({ matchId: 'm' + p, matchDate: fecha,
+                    playerNumber: j + 1, createdAt: fecha + 'T10:00:' + String(j).padStart(2, '0') + 'Z' });
+            }
+        }
+        const { g, store, queries } = buildSandbox({ reports: reps, paginate: true });
+        await g._sdLoadReports();
+        const prim = queries.filter(q => q.col === 'cronos_player_reports' && q.clauses.includes('orderBy:createdAt'));
+        ok('4e · 🔑 pagina con startAfter hasta agotar el club (1.200 docs → los 40 partidos)',
+            mdKeys(g).length === 40 && prim.length === 3 && prim.slice(1).every(q => q.clauses.includes('startAfter')),
+            { partidos: mdKeys(g).length, paginas: prim.length });
+        // La purga borra los 30 docs del partido más reciente; al recargar el
+        // contador tiene que BAJAR, no quedarse igual con otro partido dentro.
+        Object.keys(store.cronos_player_reports).filter(id => id.startsWith('m39_'))
+            .forEach(id => delete store.cronos_player_reports[id]);
+        await g._sdLoadReports();
+        ok('4f · 🔑 tras purgar un partido el recuento baja (40 → 39) y ese partido no vuelve',
+            mdKeys(g).length === 39 && !Object.values(g.window._sdMatchData).some(m => m.matchId === 'm39'),
+            mdKeys(g).length);
     }
 
     // ═════════════════════════════════════════════════════════════════════

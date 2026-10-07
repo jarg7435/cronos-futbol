@@ -231,6 +231,9 @@
     //     partido MUY antiguo puede caer fuera de esa ventana de 500, igual que
     //     le pasa a un partido en directo de esa misma fecha. La ventana es de
     //     v508 y no se toca aquí; si algún día estorba, se arregla PARA LOS DOS.
+    //     → v785: estorbó y se arregló para los dos — «Mis Informes» PAGINA
+    //     hasta agotar, así que ya no queda nada fuera. El prefijo `match_`
+    //     sigue importando para el ORDEN en que llegan las páginas.
     //
     //  ⚠️ SIN EL MARCADOR EN LA CLAVE, al revés que `autoDispatchMatchReports`:
     //     aquí el marcador es un campo del formulario, y corregir un 8-4 mal

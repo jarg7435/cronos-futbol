@@ -117,7 +117,7 @@ window.openMisInformes = async function openMisInformes() {
     </div>`;
 
     try {
-        const { db, collection, getDocs, query, where, limit, orderBy } = await _cFS();
+        const { db, collection, getDocs, query, where, limit, orderBy, startAfter } = await _cFS();
 
         // ══════════════════════════════════════════════════════════════
         // EL INFORME ES DEL EQUIPO, NO DE QUIEN LO FIRMÓ
@@ -176,23 +176,67 @@ window.openMisInformes = async function openMisInformes() {
         const COL = () => collection(db, 'cronos_player_reports');
         const NUEVOS_PRIMERO = orderBy('__name__', 'desc');
 
+        // ══════════════════════════════════════════════════════════════
+        //  🔴 v785 · Y EL `limit(500)` SEGUÍA SIENDO UN TOPE
+        //
+        //  Mismo fallo que el Panel de Dirección (implementar.txt
+        //  2026-10-07): con 3.600 informes en el club, la ventana de 500
+        //  dejaba fuera partidos — y en la consulta por CLUB el id empieza
+        //  por `match_{uid}_…`, así que `__name__ desc` agrupa por ENTRENADOR,
+        //  no por fecha: la ventana cortaba el histórico heredado del equipo
+        //  por donde cayera. Y al purgar, un partido de fuera entraba por el
+        //  hueco y el recuento no bajaba.
+        //
+        //  🔑 Dos cambios:
+        //   1. Se PAGINA con `startAfter` hasta agotar (tope 40 páginas).
+        //   2. Se pide sólo `_forCoach == true`, lo único que esta pantalla
+        //      enseña (el filtro de abajo descarta el resto): de cada partido
+        //      se dejan de leer las copias de dirección y de familias.
+        //  ⚠️ Si la consulta con `_forCoach` falla (índice, reglas), se
+        //  repite SIN ese filtro: más lecturas, mismo resultado. Nunca
+        //  «Sin informes» por un filtro de ahorro.
+        //  ⚠️ Sin `startAfter` (arneses de prueba) se lee UNA página, que es
+        //  el comportamiento anterior.
+        const PAGINA = 500;
+        const leerTodo = async (filtros) => {
+            const docs = [];
+            let cursor = null;
+            for (let pag = 0; pag < 40; pag++) {
+                const partes = [...filtros, NUEVOS_PRIMERO];
+                if (cursor) partes.push(startAfter(cursor));
+                partes.push(limit(PAGINA));
+                const s = await getDocs(query(COL(), ...partes));
+                let n = 0, ultimo = null;
+                s.forEach(d => { n++; ultimo = d; docs.push(d); });
+                if (n < PAGINA || !ultimo || typeof startAfter !== 'function') break;
+                cursor = ultimo;
+            }
+            return docs;
+        };
+        const leerSoloEntrenador = async (filtro) => {
+            try {
+                return await leerTodo([filtro, where('_forCoach', '==', true)]);
+            } catch (e) {
+                console.warn('[MisInformes] consulta con _forCoach falló, sin filtro:', e && (e.code || e.message));
+                return leerTodo([filtro]);
+            }
+        };
+
         // Consulta principal: el equipo (o, sin equipo asignado, lo suyo).
         const consultas = [ puedeFiltrarPorEquipo
-            ? query(COL(), where('clubId', '==', me.clubId), NUEVOS_PRIMERO, limit(500))
-            : query(COL(), where('coachUid', '==', me.uid),  NUEVOS_PRIMERO, limit(500)) ];
+            ? where('clubId', '==', me.clubId)
+            : where('coachUid', '==', me.uid) ];
 
-        // ⚠️ Y SIEMPRE lo que él firmó. En un club activo, los 500 más
-        // recientes del CLUB pueden ser casi todos de otros entrenadores y
-        // volver a dejarle fuera de su propia pestaña. Con esta segunda
-        // consulta su histórico no depende del volumen ajeno.
+        // ⚠️ Y SIEMPRE lo que él firmó, con el clubId que lleve cada informe:
+        // la consulta por club sólo alcanza los que llevan el clubId ACTUAL.
         if (puedeFiltrarPorEquipo) {
-            consultas.push(query(COL(), where('coachUid', '==', me.uid), NUEVOS_PRIMERO, limit(500)));
+            consultas.push(where('coachUid', '==', me.uid));
         }
 
         const porId = new Map();
         for (const c of consultas) {
-            const s = await getDocs(c);
-            s.forEach(d => { if (!porId.has(d.id)) porId.set(d.id, d); });
+            const docs = await leerSoloEntrenador(c);
+            docs.forEach(d => { if (!porId.has(d.id)) porId.set(d.id, d); });
         }
         const rawSnap = { forEach: (fn) => porId.forEach(d => fn(d)) };
 

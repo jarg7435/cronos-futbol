@@ -134,7 +134,7 @@ async function _sdLoadReports() {
     }
 
     try {
-        const { db, collection, getDocs, query, where, orderBy, limit, doc, getDoc } = await _sdFS();
+        const { db, collection, getDocs, query, where, orderBy, limit, startAfter, doc, getDoc } = await _sdFS();
 
         // FIX (v179): Query multi-clubId para acceder a informes de staff.
         // PROBLEMA IDENTIFICADO: El clubId del entrenador y el del director
@@ -244,21 +244,51 @@ async function _sdLoadReports() {
             // Requiere el índice compuesto (clubId, staffReport, createdAt desc).
             // Si el índice aún no está desplegado (failed-precondition), se hace
             // fallback a la query antigua sin orderBy para no romper nada.
+            // ══════════════════════════════════════════════════════════
+            //  🔴 v785 · LOS 500 ERAN UN TOPE, NO UNA PÁGINA
+            //
+            //  Reporte del autor (implementar.txt 2026-10-07, capturas
+            //  11228-11231): «Purgar» en Regional decía «Purgado · 36
+            //  informes» y el contador volvía a 17. El borrado SÍ ocurría
+            //  (match-purge.js sólo cuenta lo que `deleteDoc` acepta): lo
+            //  que mentía era ESTA lectura. Con `limit(500)` el panel sólo
+            //  veía los 500 documentos más recientes del club; al purgar un
+            //  partido quedaban 36 huecos que rellenaban informes ANTIGUOS
+            //  que hasta entonces caían fuera, y entraba en la lista un
+            //  partido que antes no se veía. Mismo número, otro partido.
+            //
+            //  🔑 Ahora se pagina con `startAfter` hasta agotar el club. El
+            //  tope de páginas es sólo un freno de seguridad (20.000 docs).
+            //  ⚠️ Los fallbacks de abajo NO se paginan: sin `orderBy` no
+            //  hay cursor estable, y sólo se usan si falta el índice.
+            //  ⚠️ Si `startAfter` no existe (arneses de prueba) se lee UNA
+            //  página, que es el comportamiento anterior.
+            // ══════════════════════════════════════════════════════════
             try {
-                const snap = await getDocs(query(
-                    collection(db, 'cronos_player_reports'),
-                    where('clubId', '==', cid),
-                    where('staffReport', '==', true),
-                    orderBy('createdAt', 'desc'),
-                    limit(500)
-                ));
-                _clubQueryOk = true;
-                snap.forEach(d => {
-                    if (!seenIds.has(d.id)) {
-                        seenIds.add(d.id);
-                        combinedDocs.push(d);
-                    }
-                });
+                const _SD_PAGINA = 500;
+                let _sdCursor = null;
+                for (let _pag = 0; _pag < 40; _pag++) {
+                    const _sdClausulas = [
+                        where('clubId', '==', cid),
+                        where('staffReport', '==', true),
+                        orderBy('createdAt', 'desc'),
+                    ];
+                    if (_sdCursor) _sdClausulas.push(startAfter(_sdCursor));
+                    _sdClausulas.push(limit(_SD_PAGINA));
+                    const snap = await getDocs(query(
+                        collection(db, 'cronos_player_reports'), ..._sdClausulas));
+                    _clubQueryOk = true;
+                    let _n = 0, _ultimo = null;
+                    snap.forEach(d => {
+                        _n++; _ultimo = d;
+                        if (!seenIds.has(d.id)) {
+                            seenIds.add(d.id);
+                            combinedDocs.push(d);
+                        }
+                    });
+                    if (_n < _SD_PAGINA || !_ultimo || typeof startAfter !== 'function') break;
+                    _sdCursor = _ultimo;
+                }
             } catch (clubErr) {
                 const _code = clubErr.code || clubErr.message || '';
                 if(window._CRONOS_DEBUG) console.warn('[StaffDashboard][DIAG] Query staff por clubId', cid, 'FALLÓ:', _code, '— intentando fallback sin orderBy');

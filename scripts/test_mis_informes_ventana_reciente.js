@@ -123,11 +123,9 @@ function corpus({ viejos = 3600, deOtros = false } = {}) {
 
 // Firestore de mentira que se comporta como el de verdad: filtra por las
 // igualdades, ORDENA (por id ascendente si NO se pide orden) y recorta.
-function firestoreFalso(docs) {
+function firestoreFalso(docs, { paginar = false, fallaForCoach = false } = {}) {
     const consultas = [];
-    return {
-        consultas,
-        api: {
+    const api = {
             collection: () => ({ __col: 'cronos_player_reports' }),
             where: (f, o, v) => ({ __t: 'where', f, v }),
             limit: (n) => ({ __t: 'limit', n }),
@@ -137,6 +135,11 @@ function firestoreFalso(docs) {
                 const wheres = q.partes.filter(p => p.__t === 'where');
                 const ord    = q.partes.find(p => p.__t === 'orderBy');
                 const lim    = q.partes.find(p => p.__t === 'limit');
+                const sa     = q.partes.find(p => p.__t === 'startAfter');
+                if (fallaForCoach && wheres.some(w => w.f === '_forCoach')) {
+                    consultas.push({ campos: wheres.map(w => w.f).join('+'), fallo: true });
+                    throw new Error('failed-precondition');
+                }
                 consultas.push({
                     campos: wheres.map(w => w.f).join('+'),
                     orden: ord ? ord.f + ' ' + ord.dir : '(SIN ORDEN)',
@@ -147,11 +150,14 @@ function firestoreFalso(docs) {
                 const desc = ord && String(ord.dir).toLowerCase() === 'desc';
                 r = r.slice().sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
                 if (desc) r.reverse();
+                if (sa) r = r.slice(r.findIndex(d => d.id === sa.id) + 1);
                 if (lim) r = r.slice(0, lim.n);
                 return { forEach: (fn) => r.forEach(d => fn({ id: d.id, data: () => d.data })) };
             },
-        }
     };
+    // v785 · sólo si se pide: sin `startAfter` la pantalla lee UNA página.
+    if (paginar) api.startAfter = (d) => ({ __t: 'startAfter', id: d.id });
+    return { consultas, api };
 }
 
 const mkEl = () => {
@@ -163,8 +169,8 @@ const mkEl = () => {
     return el;
 };
 
-async function abrirMisInformes(docs, me) {
-    const ff = firestoreFalso(docs);
+async function abrirMisInformes(docs, me, opts) {
+    const ff = firestoreFalso(docs, opts);
     const els = {};
     const sb = {
         _cronosCurrentUser: me,
@@ -243,7 +249,7 @@ console.log('\n── PARTE 2 · los 500 más recientes del club son de otros �
     ok('2a · ⚠️ aun así aparece SU partido de hoy',
        traeElDeHoy(r.cuerpo), r.cuerpo.slice(0, 220));
     ok('2b · 🔑 porque además se consulta SIEMPRE por su coachUid',
-       r.consultas.some(c => c.campos === 'coachUid'),
+       r.consultas.some(c => c.campos.split('+')[0] === 'coachUid'),
        JSON.stringify(r.consultas));
 }
 
@@ -260,6 +266,52 @@ console.log('\n── PARTE 3 · contraprueba: pocos informes ──');
     const r2 = await abrirMisInformes(corpus({ viejos: 3600 }), { uid: UID, clubId: CLUB });
     ok('3b · ⚠️ sin categoría asignada también alcanza el de hoy',
        traeElDeHoy(r2.cuerpo), r2.cuerpo.slice(0, 220));
+}
+
+// ═══ PARTE 4 · v785 · los 500 eran un TOPE (implementar.txt 2026-10-07) ═══
+// El histórico heredado del equipo: 60 partidos de OTRO entrenador, cada uno
+// con 20 copias de entrenador y 20 de dirección (2.400 docs). Con la ventana
+// de 500 sólo se veía una parte y, al purgar, entraba otro por el hueco.
+console.log('\n── PARTE 4 · v785 · se pagina hasta agotar ──');
+{
+    const heredado = () => {
+        const docs = [];
+        for (let k = 0; k < 60; k++) {
+            const f = '2026-07-' + String(1 + (k % 28)).padStart(2, '0');
+            const mid = `match_coachB_${f}_r${String(k).padStart(2, '0')}`;
+            for (let j = 0; j < 20; j++) {
+                for (const tipo of ['coach', 'staff']) {
+                    docs.push({ id: `${mid}_${tipo}_p${j}`, data: {
+                        matchId: mid, _forCoach: tipo === 'coach', staffReport: tipo === 'staff',
+                        type: 'collective_match_report', clubId: CLUB, coachUid: 'coachB',
+                        matchDate: f, createdAt: f + 'T10:00:00.000Z',
+                        rival: 'HEREDADO' + String(k).padStart(2, '0'), scoreHome: '1', scoreAway: '0',
+                        category: CAT, subcategory: '', teamId: TEAM,
+                        playerNumber: String(j), playerAlias: 'J' + j, minutesPlayed: '10', goals: 0, history: [],
+                    } });
+                }
+            }
+        }
+        return docs;
+    };
+    const todos = (cuerpo) => {
+        let n = 0;
+        for (let k = 0; k < 60; k++) if (cuerpo.includes('HEREDADO' + String(k).padStart(2, '0'))) n++;
+        return n;
+    };
+    const me = { uid: UID, clubId: CLUB, category: CAT, subcategory: '' };
+    const r = await abrirMisInformes(heredado(), me, { paginar: true });
+    ok('4a · 🔑🔑 aparecen los 60 partidos heredados del equipo (antes: los que cupieran en 500)',
+       todos(r.cuerpo) === 60 && salioBien(r.cuerpo), 'vistos: ' + todos(r.cuerpo));
+    ok('4b · 🔑 se pide sólo la copia del entrenador (_forCoach) y se pagina con startAfter',
+       r.consultas.every(c => c.campos.includes('_forCoach')) && r.consultas.length >= 3,
+       JSON.stringify(r.consultas));
+
+    const r2 = await abrirMisInformes(heredado(), me, { paginar: true, fallaForCoach: true });
+    ok('4c · ⚠️ si la consulta con _forCoach falla, repite SIN el filtro y lo enseña todo igual',
+       todos(r2.cuerpo) === 60 && salioBien(r2.cuerpo)
+       && r2.consultas.some(c => c.fallo) && r2.consultas.some(c => !c.fallo && !c.campos.includes('_forCoach')),
+       'vistos: ' + todos(r2.cuerpo));
 }
 
 console.log('\n' + (fail === 0 ? 'TODO OK' : 'FALLOS: ' + fail) + ' (pass=' + pass + ')');
