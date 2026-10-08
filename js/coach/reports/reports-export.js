@@ -527,19 +527,21 @@
                '</td><td class="rx-l">' + _rxEsc(val) + '</td></tr>';
     }
 
-    function _rxTablaJugadores(lista, conPapel) {
+    // v791 · encargo del autor (implementar.txt 08-10): sólo DORSAL y JUGADOR.
+    //  La columna «Observaciones» iba vacía casi siempre; lo único que traía
+    //  era el origen del jugador de apoyo, que pasa a una nota junto al nombre
+    //  para no perder el dato.
+    function _rxTablaJugadores(lista) {
         if (!lista.length) return '<div class="rx-vacio">Ninguno.</div>';
         return '<table class="rx-tabla"><thead><tr>' +
                 '<th style="width:70px;">Dorsal</th><th class="rx-l">Jugador</th>' +
-                (conPapel ? '<th style="width:110px;">Papel</th>' : '') +
-                '<th class="rx-l" style="width:30%;">Observaciones</th>' +
             '</tr></thead><tbody>' +
             lista.map(function (j) {
                 return '<tr>' +
                     '<td><span class="rx-dorsal">' + _rxEsc(j.num || '—') + '</span></td>' +
-                    '<td class="rx-l" style="font-weight:700;color:#111827;">' + _rxEsc(j.name || '—') + '</td>' +
-                    (conPapel ? '<td>' + (j.titular ? '<strong style="color:#c2410c;">TITULAR</strong>' : 'Suplente') + '</td>' : '') +
-                    '<td class="rx-l">' + (j.origin ? 'Jugador de apoyo · ' + _rxEsc(j.origin) : '') + '</td>' +
+                    '<td class="rx-l" style="font-weight:700;color:#111827;">' + _rxEsc(j.name || '—') +
+                        (j.origin ? ' <span style="font-weight:400;color:#6b7280;font-size:9px;">· jugador de apoyo · ' +
+                            _rxEsc(j.origin) + '</span>' : '') + '</td>' +
                 '</tr>';
             }).join('') +
             '</tbody></table>';
@@ -547,22 +549,24 @@
 
     // rxImprimirConvocatoria({ club, equipo, tipo, jornada, fecha, hora,
     //   presentacion, lugar, rival, mensaje, estado, pie,
-    //   jugadores: [{ num, name, origin, titular: true|false|null }] })
-    //  `titular: null` = no se sabe (convocatorias enviadas antes de v753, que
-    //  no guardaban quién salía de inicio): se imprime UNA lista y se dice por
-    //  qué, en vez de inventarse una división en titulares y suplentes.
+    //   jugadores: [{ num, name, origin, titular }] })
+    //  v791 · encargo del autor (implementar.txt 08-10): la convocatoria se
+    //  envía EN BLOQUE, así que el papel ya no habla de titulares ni suplentes:
+    //  una sola lista y el total de convocados. `titular` se sigue recibiendo
+    //  (lo usa la app en pantalla) pero aquí se ignora.
     window.rxImprimirConvocatoria = function (c) {
         c = c || {};
         const jug = (c.jugadores || []).filter(function (j) { return j && (j.name || j.num); });
-        const conoce = jug.length > 0 && jug.every(function (j) { return j.titular === true || j.titular === false; });
-        const tit = conoce ? jug.filter(function (j) { return j.titular; }) : [];
-        const sup = conoce ? jug.filter(function (j) { return !j.titular; }) : [];
+        // v792 · encargo del autor: el rival va LIMPIO («DORAMAS», no «vs
+        //  DORAMAS»), en el título y en los datos. Se quita también un «vs»
+        //  que el entrenador haya escrito a mano en el campo Rival.
+        const rival = String(c.rival == null ? '' : c.rival).trim().replace(/^vs\.?\s+/i, '');
 
         const datos =
             '<div class="rx-block"><div class="rx-block-title">Datos del partido</div>' +
             '<table class="rx-tabla"><tbody>' +
                 _rxFila('Equipo', c.equipo) +
-                _rxFila('Rival', c.rival ? 'vs ' + c.rival : '') +
+                _rxFila('Rival', rival) +
                 _rxFila('Tipo de partido', c.tipo) +
                 _rxFila('Jornada', c.jornada) +
                 _rxFila('Fecha', c.fecha) +
@@ -575,25 +579,13 @@
             '<div style="background:#eff6ff;border:2px solid #2563eb;border-radius:6px;padding:8px 12px;' +
                  'margin-bottom:14px;display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap;">' +
                 '<div style="font-size:11px;font-weight:800;color:#1d4ed8;">TOTAL DE CONVOCADOS</div>' +
-                '<div style="font-size:11px;font-weight:800;color:#111827;">' + jug.length + ' convocados' +
-                    (conoce ? ' · ' + tit.length + ' titulares · ' + sup.length + ' suplentes' : '') + '</div>' +
+                '<div style="font-size:11px;font-weight:800;color:#111827;">' + jug.length +
+                    (jug.length === 1 ? ' convocado' : ' convocados') + '</div>' +
             '</div>';
 
-        let listas;
-        if (conoce) {
-            listas =
-                '<div class="rx-block"><div class="rx-block-title">Titulares (' + tit.length + ')</div>' +
-                    _rxTablaJugadores(tit, false) + '</div>' +
-                '<div class="rx-block"><div class="rx-block-title">Suplentes (' + sup.length + ')</div>' +
-                    _rxTablaJugadores(sup, false) + '</div>';
-        } else {
-            listas =
-                '<div class="rx-block"><div class="rx-block-title">Convocados (' + jug.length + ')</div>' +
-                    _rxTablaJugadores(jug, false) +
-                    (jug.length ? '<div style="font-size:8.5px;color:#6b7280;margin-top:6px;">Esta convocatoria no ' +
-                        'registra qué jugadores salen de titulares (se envió antes de que la aplicación lo guardara).</div>' : '') +
-                '</div>';
-        }
+        const listas =
+            '<div class="rx-block"><div class="rx-block-title">Convocados (' + jug.length + ')</div>' +
+                _rxTablaJugadores(jug) + '</div>';
 
         const mensaje = c.mensaje
             ? '<div class="rx-block"><div class="rx-block-title">Mensaje del entrenador</div>' +
@@ -602,7 +594,7 @@
             : '';
 
         return window.rxImprimir({
-            titulo:    'Convocatoria' + (c.rival ? ' · vs ' + c.rival : ''),
+            titulo:    'Convocatoria' + (rival ? ' · ' + rival : ''),
             subtitulo: [c.equipo, c.fecha].filter(Boolean).join(' · '),
             // `estado`: cadena o lista de líneas (Entrenador, Enviado…).
             meta:      [c.club ? 'Club: ' + c.club : ''].concat(c.estado || []),
