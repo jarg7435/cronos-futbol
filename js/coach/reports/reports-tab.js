@@ -62,13 +62,14 @@ if (typeof window !== 'undefined') window._sdTipoPartidoPill = _sdTipoPartidoPil
 //  staffUids. Todo eso lo fija la parte 3 y 4 del test: no simplificarlo a una
 //  sola query sin comprobar que el filtrado en cliente se mantiene.
 //
-//  BORRADO LÓGICO POR ROL: sdDeleteReport NO borra nada. Añade `uid_rol` al
-//  array dismissedBy vía arrayUnion, sobre varios ids candidatos por jugador
-//  (el id real del documento y los derivados de matchId), cada uno con su
-//  propio catch para que un fallo aislado no aborte el resto. El filtro de
-//  lectura excluye por esa misma clave, de modo que Director y Coordinador
-//  ocultan informes de forma independiente. La aserción 8b impide que alguien
-//  lo convierta en un deleteDoc.
+//  BORRADO LÓGICO POR ROL: sdDeleteReport NO borra nada. Añade `uid_rol` vía
+//  arrayUnion a `dismissedBy` (Director y demás) o a `hiddenByCoordinators`
+//  (Coordinador, v787), sobre TODOS los documentos reales del partido
+//  (`docIds`). Si falla alguna escritura NO se da por oculto (v787: antes se
+//  tragaba el fallo). El filtro de lectura excluye por esa misma clave en los
+//  dos campos, de modo que Director y Coordinador ocultan informes de forma
+//  independiente. La aserción 8b impide que alguien lo convierta en un
+//  deleteDoc.
 //
 //  ⚠️ REGRESIÓN PREEXISTENTE QUE VIAJA CON ESTE CÓDIGO (no corregida aquí):
 //  el dismissKey se construye leyendo un campo `currentRole` del usuario, pero
@@ -392,20 +393,24 @@ async function _sdLoadReports() {
         const currentRole = me._activeRole || me.role || 'staff';
         const dismissKey = `${me.uid}_${currentRole}`;
 
+        // 🎯 v787 · Oculto para mí = mi clave en `dismissedBy` (Director y
+        // demás) o en `hiddenByCoordinators` (lo que escribe el Coordinador,
+        // ver _sdOcultarUno). La clave es la misma `uid_rol` en los dos.
+        const _sdOcultoParaMi = (data) =>
+            (data.dismissedBy || []).includes(dismissKey) ||
+            (data.hiddenByCoordinators || []).includes(dismissKey);
         const snap = { empty: true, forEach: (fn) => {
             rawSnap.forEach(d => {
                 const data = d.data();
-                const dismissed = data.dismissedBy || [];
                 // Solo excluir si contiene la clave específica de rol de este usuario
-                if (data.staffReport === true && !dismissed.includes(dismissKey)) fn(d);
+                if (data.staffReport === true && !_sdOcultoParaMi(data)) fn(d);
             });
         }};
         // Recalcular si está vacío
         let _snapHasDocs = false;
         rawSnap.forEach(d => {
             const data = d.data();
-            const dismissed = data.dismissedBy || [];
-            if (data.staffReport === true && !dismissed.includes(dismissKey)) _snapHasDocs = true;
+            if (data.staffReport === true && !_sdOcultoParaMi(data)) _snapHasDocs = true;
         });
         Object.defineProperty(snap, 'empty', { get: () => !_snapHasDocs });
 
@@ -505,6 +510,13 @@ async function _sdLoadReports() {
                     duration:      r.duration,
                     stoppageTime:  r.stoppageTime,
                     players:       [],
+                    // 🎯 v787 · TODOS los documentos del partido, sin
+                    // deduplicar. `players` se queda con UNA copia por jugador,
+                    // pero ocultar tiene que marcar las DOS (`_staff_pN` y
+                    // `_pN`) o el partido reaparece por la que quedó sin
+                    // marcar. Son ids LEÍDOS, así que existen: nada de ids
+                    // reconstruidos a mano, que fallan si no existen.
+                    docIds:        [],
                     // Índice de deduplicación por jugador. Se elimina antes de
                     // renderizar: no forma parte de los datos del partido y no
                     // debe acabar en window._sdMatchData ni en el motor _RP.
@@ -531,6 +543,7 @@ async function _sdLoadReports() {
             // reenvío refleja el estado final del partido); a igualdad, el de
             // _id menor, para que el resultado no dependa del orden de llegada
             // de las consultas.
+            matches[key].docIds.push(r._id);
             const _pKey = _sdPlayerKey(r);
             const _prev = matches[key]._byPlayer.get(_pKey);
             if (!_prev) {
@@ -1215,34 +1228,46 @@ async function _sdLoadReports() {
 
             const { db, doc, updateDoc, arrayUnion } = await _sdFS();
 
-            // Añadir mi UID a dismissedBy en cada documento de jugador
-            // Usar SIEMPRE el ID real del documento (p._id), no construir IDs
-            // con matchId que puede ser undefined
-            const updatePromises = match.players.flatMap(p => {
-                const docIds = [];
-                // Prioridad 1: ID real del documento
-                if (p._id || p.id) docIds.push(p._id || p.id);
-                // Prioridad 2: IDs derivados si matchId es válido
-                const mid = match.matchId;
-                if (mid && mid !== 'undefined' && mid !== '') {
-                    const pNum = p.playerNumber || p.number || '';
-                    if (pNum) {
-                        docIds.push(`${mid}_coach_p${pNum}`);
-                        docIds.push(`${mid}_staff_p${pNum}`);
-                        docIds.push(`${mid}_p${pNum}`);
-                    }
-                }
-                const uniqueIds = [...new Set(docIds)];
-                return uniqueIds.map(docId =>
-                    updateDoc(doc(db, 'cronos_player_reports', docId), {
-                        dismissedBy: arrayUnion(dismissKey)
-                    }).catch(err => {
-                        console.warn(`[StaffDashboard] No se pudo ocultar ${docId}:`, err.message);
-                    })
-                );
-            });
-
-            await Promise.all(updatePromises);
+            // ══════════════════════════════════════════════════════════
+            //  🎯 v787 · CADA PLAZA OCULTA EN SU CAMPO, Y NADA SE TRAGA
+            //
+            //  Encargo del autor (implementar.txt 2026-10-08, capturas
+            //  11238-11242): el Coordinador está supeditado al Director y
+            //  sólo gestiona SU vista. Escribía `dismissedBy`, que las reglas
+            //  no le dejan tocar → «Missing or insufficient permissions» en
+            //  cada documento, y el fallo se TRAGABA: la función devolvía
+            //  `true`, el partido salía del mapa y el rótulo decía «0
+            //  encuentros» con el árbol aún lleno.
+            //
+            //  🔑 El campo depende de la plaza:
+            //   · Coordinador → `hiddenByCoordinators`, el único que
+            //     firestore.rules le deja modificar, y sólo para añadirse a sí
+            //     mismo (`uid_coordinator`).
+            //   · Director y demás → `dismissedBy`, como siempre.
+            //  Ninguno borra ni altera el informe: es una marca que sólo lee
+            //  el panel de quien la pone.
+            //
+            //  🔑 Y en los documentos REALES del partido (`docIds`, los que
+            //  se acaban de leer), no en ids reconstruidos con el dorsal
+            //  (`_coach_pN`, `_staff_pN`, `_pN`): los que no existían fallaban
+            //  siempre, y por eso el fallo había que ignorarlo — con lo que
+            //  también se ignoraba el de verdad. `_coach_pN` además sobraba:
+            //  no es `staffReport` y este panel no lo lee.
+            //  ⚠️ Sólo se da por oculto si TODAS las escrituras salen bien.
+            const campo = currentRole === 'coordinator' ? 'hiddenByCoordinators' : 'dismissedBy';
+            const ids = [...new Set((match.docIds && match.docIds.length)
+                ? match.docIds
+                : match.players.map(p => p._id || p.id).filter(Boolean))];
+            let fallos = 0;
+            await Promise.all(ids.map(docId =>
+                updateDoc(doc(db, 'cronos_player_reports', docId), {
+                    [campo]: arrayUnion(dismissKey)
+                }).catch(err => {
+                    fallos++;
+                    console.warn(`[StaffDashboard] No se pudo ocultar ${docId}:`, err.message);
+                })
+            ));
+            if (!ids.length || fallos) return false;
             delete window._sdMatchData[key64];
             return true;
         };
@@ -1253,9 +1278,15 @@ async function _sdLoadReports() {
 
             try {
                 if (typeof showSpinner === 'function') showSpinner('Ocultando informe…');
-                await _sdOcultarUno(key64);
+                const _ocultado = await _sdOcultarUno(key64);
 
                 if (typeof hideSpinner === 'function') hideSpinner();
+                // 🎯 v787 · Si no se pudo, se DICE y la ficha se queda: antes
+                // se anunciaba «ocultado» y reaparecía al recargar.
+                if (!_ocultado) {
+                    if (typeof showToast === 'function') showToast('⚠️ No se pudo ocultar el informe. Inténtalo de nuevo.', 4000);
+                    return;
+                }
                 if (typeof showToast === 'function') showToast('✅ Informe ocultado de tu panel', 3000);
 
                 // Quitar de la UI

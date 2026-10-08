@@ -1842,6 +1842,34 @@ service cloud.firestore {
          request.resource.data.diff(resource.data).affectedKeys()
             .hasOnly(['dismissedByStaff']) &&
          soloSeAnyadeUnoMismo('dismissedByStaff')) ||
+        // ══════════════════════════════════════════════════════════
+        //  🎯 v787 · EL COORDINADOR OCULTA DE SU VISTA, Y NADA MÁS
+        //
+        //  Encargo del autor (implementar.txt 2026-10-08, capturas
+        //  11238-11242): el Coordinador está supeditado al Director
+        //  Deportivo. Puede ocultar informes de SU panel, pero no borrar ni
+        //  alterar lo que custodia la dirección. Su «Ocultar» escribía
+        //  `dismissedBy`, que sólo admite a quien figura en `staffUids` o
+        //  comparte club por claim: «Missing or insufficient permissions».
+        //
+        //  🔑 Un campo SUYO, `hiddenByCoordinators`, y una rama que sólo
+        //  deja: tocar ESE campo y ningún otro, que la lista sólo CREZCA
+        //  (`hasAll`) y que lo único añadido sea SU clave de plaza
+        //  `{uid}_coordinator` (`hasOnly`). No puede ocultárselo a otro ni
+        //  deshacer la ocultación ajena. El `delete` de abajo no cambia: el
+        //  coordinador sigue sin poder destruir un informe colectivo.
+        //  ⚠️ `isStaffRoleByDoc()` es autoafirmable (ver SEC-R01): por eso
+        //  la protección está en QUÉ se escribe, no en quién entra.
+        //  Guard: scripts/test_ocultar_coordinador_rules.js
+        (isStaffRoleByDoc() &&
+         request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['hiddenByCoordinators']) &&
+         request.resource.data.get('hiddenByCoordinators', []) is list &&
+         request.resource.data.get('hiddenByCoordinators', [])
+            .hasAll(resource.data.get('hiddenByCoordinators', [])) &&
+         request.resource.data.get('hiddenByCoordinators', []).hasOnly(
+            resource.data.get('hiddenByCoordinators', [])
+              .concat([request.auth.uid + '_coordinator']))) ||
         // FIX v2: padres pueden añadir su UID a dismissedBy para ocultar
         // informes de su panel sin afectar a otros usuarios.
         (request.auth.uid == resource.data.get('parentUid', null) &&

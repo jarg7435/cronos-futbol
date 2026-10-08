@@ -600,9 +600,10 @@ function walk(dir, out) {
             && updated.every(u => u.col === 'cronos_player_reports')
             && updated[0].data.dismissedBy.__arrayUnion[0] === 'u1_director',
             { updated: updated.length, deleted: deleted.length, key: updated[0] && updated[0].data.dismissedBy });
-        ok('8c · intenta el id real del documento y los tres derivados de matchId',
-            updated.map(u => u.id).sort().join(',') === ['M1_coach_p5', 'M1_p5', 'M1_staff_p5', 'a'].join(','),
-            updated.map(u => u.id).sort());
+        // v787 · YA NO se inventan ids con el dorsal (M1_coach_p5…): los que
+        // no existían fallaban siempre y obligaban a ignorar los fallos.
+        ok('8c · 🔑 escribe sólo en los documentos REALES leídos, sin ids derivados',
+            updated.map(u => u.id).join(',') === 'a', updated.map(u => u.id));
         ok('8d · muestra y oculta el spinner y confirma con un toast',
             spinners.some(s => s.on) && spinners.some(s => !s.on)
             && toasts.some(t => t.includes('Informe ocultado')), { spinners, toasts });
@@ -619,14 +620,70 @@ function walk(dir, out) {
             updated.map(u => u.id).join(',') === 'solo', updated.map(u => u.id));
     }
     {
-        const { g, w, updated, toasts } = buildSandbox({
-            reports: withPlayers(), updateDocFailFor: 'M1_coach_p5',
+        // v787 · DIRECTOR con dos copias staff del mismo jugador: se marcan
+        // las dos; si una falla, NO se anuncia «ocultado» (antes sí, y el
+        // partido reaparecía al recargar).
+        const dos = () => ({
+            M1_staff_p5: staffRep({ playerNumber: '5', matchId: 'M1', createdAt: '2026-03-02T10:00:00Z' }),
+            M1_p5:       staffRep({ playerNumber: '5', matchId: 'M1', createdAt: '2026-03-02T09:00:00Z' }),
         });
+        const { g, w, updated, toasts } = buildSandbox({ reports: dos() });
         await g._sdLoadReports();
         await w.sdDeleteReport(KM);
-        ok('8g · el fallo de un id concreto no aborta los demás ni el flujo',
-            updated.length === 3 && toasts.some(t => t.includes('Informe ocultado')),
-            { updated: updated.map(u => u.id), toasts });
+        ok('8g · el Director marca dismissedBy en LAS DOS copias reales',
+            updated.map(u => u.id).sort().join(',') === 'M1_p5,M1_staff_p5'
+            && updated.every(u => Object.keys(u.data).join() === 'dismissedBy'),
+            updated.map(u => ({ id: u.id, campos: Object.keys(u.data) })));
+        const f = buildSandbox({ reports: dos(), updateDocFailFor: 'M1_p5' });
+        await f.g._sdLoadReports();
+        await f.w.sdDeleteReport(KM);
+        ok('8g-bis · 🔑 si falla una escritura del Director, NO dice «ocultado» y el partido se queda',
+            !f.toasts.some(t => t.includes('Informe ocultado')) && f.toasts.some(t => t.includes('No se pudo ocultar'))
+            && (f.g.window._sdMatchData || {})[KM] !== undefined, f.toasts);
+    }
+
+    // ── 🎯 v787 · EL COORDINADOR OCULTA EN SU PROPIO CAMPO ──
+    // implementar.txt 2026-10-08: su «Ocultar» escribía dismissedBy, las
+    // reglas lo denegaban y la función decía que sí. Dos copias staff del
+    // mismo jugador (_staff_p5 y _p5): hay que marcar LAS DOS.
+    const coordMe = () => ({ uid: 'u1', clubId: 'club1', role: 'club_admin', _activeRole: 'coordinator',
+                             email: 'd@x.com', clubName: 'CD Test' });
+    const dosCopias = () => ({
+        M1_staff_p5: staffRep({ playerNumber: '5', matchId: 'M1', createdAt: '2026-03-02T10:00:00Z' }),
+        M1_p5:       staffRep({ playerNumber: '5', matchId: 'M1', createdAt: '2026-03-02T09:00:00Z' }),
+    });
+    {
+        const { g, w, updated, deleted, toasts } = buildSandbox({ me: coordMe(), reports: dosCopias() });
+        await g._sdLoadReports();
+        await w.sdDeleteReport(KM);
+        ok('8h · 🔑🔑 el coordinador escribe SÓLO hiddenByCoordinators (uid_coordinator), nunca dismissedBy ni borra',
+            updated.length === 2 && deleted.length === 0
+            && updated.every(u => Object.keys(u.data).join() === 'hiddenByCoordinators'
+                               && u.data.hiddenByCoordinators.__arrayUnion[0] === 'u1_coordinator'),
+            updated.map(u => ({ id: u.id, campos: Object.keys(u.data) })));
+        ok('8i · 🔑 marca los documentos REALES del partido (las dos copias), sin ids inventados',
+            updated.map(u => u.id).sort().join(',') === 'M1_p5,M1_staff_p5', updated.map(u => u.id));
+        ok('8j · y lo confirma', toasts.some(t => t.includes('Informe ocultado')), toasts);
+    }
+    {
+        const { g, w, toasts } = buildSandbox({ me: coordMe(), reports: dosCopias(), updateDocFailFor: 'M1_p5' });
+        await g._sdLoadReports();
+        await w.sdDeleteReport(KM);
+        ok('8k · 🔑 si una escritura falla NO dice «ocultado» y el partido sigue en el panel',
+            !toasts.some(t => t.includes('Informe ocultado')) && toasts.some(t => t.includes('No se pudo ocultar'))
+            && (g.window._sdMatchData || {})[KM] !== undefined, toasts);
+    }
+    {
+        const reps = dosCopias();
+        Object.values(reps).forEach(r => { r.hiddenByCoordinators = ['u1_coordinator']; });
+        const { g } = buildSandbox({ me: coordMe(), reports: reps });
+        await g._sdLoadReports();
+        ok('8l · 🔑 al recargar, lo oculto en hiddenByCoordinators no vuelve a su panel',
+            mdKeys(g).length === 0, mdKeys(g));
+        const { g: g2 } = buildSandbox({ reports: reps });   // me por defecto: u1 como director
+        await g2._sdLoadReports();
+        ok('8m · …pero el DIRECTOR (misma cuenta, otra plaza) lo sigue viendo',
+            mdKeys(g2).length === 1, mdKeys(g2));
     }
 
     // ═════════════════════════════════════════════════════════════════════

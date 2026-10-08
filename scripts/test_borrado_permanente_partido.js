@@ -236,8 +236,14 @@ function montar(opts) {
     const bloqueOcultar = SRC_TAB.slice(SRC_TAB.indexOf('const _sdOcultarUno = async'));
     ok('F1b · 🔑 la mitad que HACE existe y es la que escribe',
        SRC_TAB.indexOf('const _sdOcultarUno = async') !== -1);
-    ok('F2 · ⚠️ y NO borra: sigue con arrayUnion sobre dismissedBy',
-       /dismissedBy: arrayUnion\(dismissKey\)/.test(bloqueOcultar) &&
+    //    v787 · el campo depende de la plaza (`dismissedBy` o, para el
+    //    Coordinador, `hiddenByCoordinators`) y se escribe como `[campo]`.
+    //    Se vigila lo mismo: arrayUnion con la clave por rol sobre esos dos
+    //    campos, y ni un deleteDoc. El comportamiento lo fijan 8b/8g/8h de
+    //    test_reports_tab_module.js.
+    ok('F2 · ⚠️ y NO borra: sigue con arrayUnion sobre dismissedBy / hiddenByCoordinators',
+       /\[campo\]: arrayUnion\(dismissKey\)/.test(bloqueOcultar) &&
+       /campo = currentRole === 'coordinator' \? 'hiddenByCoordinators' : 'dismissedBy'/.test(bloqueOcultar) &&
        bloqueOcultar.indexOf('deleteDoc') === -1);
     ok('F3 · ⚠️ el botón de ocultar no promete "definitivamente"',
        !/title="Eliminar este informe definitivamente"/.test(SRC_TAB));
