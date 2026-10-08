@@ -161,6 +161,38 @@ const _RP = (() => {
         return evs.filter((_, i) => !fuera.has(i));
     };
 
+    // ⚽❌ v789 · UN GOL ANULADO SE LLEVA SU GOL (implementar.txt 2026-10-08).
+    // El historial guarda «GOL (1º)» al sumar y «GOL ANULADO (Quedan: 0)» al
+    // quitar: el registro pintaba el gol en verde Y la anulación, y el
+    // cronograma DOS balones. Cada anulación se empareja con el último gol
+    // válido del jugador: ese gol queda `anulado` (con `anuladoEn`) y la fila
+    // de la anulación desaparece. Una anulación huérfana se queda, como gol
+    // anulado — nunca como gol.
+    // ⚠️ ESPEJO de `cronosGolesAnulados` (js/core/utils.js): este motor es
+    // autocontenido y no puede nombrarla. scripts/test_goles_anulados.js
+    // comprueba que las dos copias responden igual.
+    const _golesAnulados = (hist) => {
+        const lista = Array.isArray(hist) ? hist : [];
+        const anulados = new Map();      // índice del gol → minuto de la anulación
+        const anulaciones = new Set();
+        const pila = [];
+        lista.forEach((e, i) => {
+            if (!e || e.type !== 'goal') return;
+            if (/ANULAD/i.test(String(e.note || ''))) {
+                if (pila.length) { anulados.set(pila.pop(), e.timeStr || ''); anulaciones.add(i); }
+                else anulados.set(i, '');
+            } else {
+                pila.push(i);
+            }
+        });
+        const out = [];
+        lista.forEach((e, i) => {
+            if (anulaciones.has(i)) return;
+            out.push(anulados.has(i) ? { ...e, anulado: true, anuladoEn: anulados.get(i) } : e);
+        });
+        return out;
+    };
+
     // ── Segundos jugados SEGÚN EL CRONÓMETRO, tal y como se guardan ────
     // 🔑 v458 · `minutesPlayed` NO ES UN NÚMERO en el documento: los tres
     // escritores (collective-report.js, match-reports-auto.js,
@@ -757,12 +789,15 @@ const _RP = (() => {
             //  que un gol cerca de un cambio se pisaba con él sin remedio.
             //  Ahora los dos tipos de texto van a la MISMA repartición, y por eso
             //  cada elemento lleva su propio tamaño de fuente.
-            const eventos = (p.history || [])
-                .filter(e => ['goal','yellow','red','injury'].includes(e.type))
+            // ⚽❌ v789 · los goles anulados salen como tales (balón hueco gris)
+            // y la fila de la anulación no se dibuja: eran DOS balones verdes.
+            const eventos = _golesAnulados(p.history || [])
+                .filter(e => e && ['goal','yellow','red','injury'].includes(e.type))
                 .map(ev => {
                     const ef = (ev.minute||0) + (ev.second||0)/60;
                     return {
                         tipo: ev.type,
+                        anulado: ev.type === 'goal' && ev.anulado === true,
                         ex: ef * sc,
                         // v531 · EVENTO PERDIDO: registrado a posteriori por
                         // pérdida de batería o cobertura. Viaja como campo
@@ -877,7 +912,10 @@ const _RP = (() => {
             // TRACK_Y-8 la ponía a un píxel de las etiquetas de cambio.
             eventos.forEach(e => {
                 const ex = e.ex;
-                if (e.tipo === 'goal') {
+                if (e.tipo === 'goal' && e.anulado) {
+                    // v789 · gol anulado: balón HUECO y gris, como en el registro.
+                    svg += `<circle cx="${ex.toFixed(1)}" cy="${EVT_Y}" r="5.5" fill="none" stroke="#7d8590" stroke-width="1.5" data-gol-anulado="1"/>`;
+                } else if (e.tipo === 'goal') {
                     svg += `<circle cx="${ex.toFixed(1)}" cy="${EVT_Y}" r="5.5" fill="white" stroke="#3fb950" stroke-width="1.5"/>`;
                     svg += `<circle cx="${ex.toFixed(1)}" cy="${EVT_Y}" r="2.2" fill="#3fb950"/>`;
                 } else if (e.tipo === 'yellow') {
@@ -1064,7 +1102,8 @@ const _RP = (() => {
         const fuera = indicesDeFase(subs);
         const descartados = new Set();
         subs.forEach((e, i) => { if (fuera.has(i)) descartados.add(e); });
-        return hist.filter(e => !descartados.has(e));
+        // ⚽❌ v789 · y cada gol anulado, emparejado con su anulación.
+        return _golesAnulados(hist.filter(e => !descartados.has(e)));
     };
 
     // Orden de desempate dentro del mismo instante. Sin él, dos sucesos del
@@ -1343,7 +1382,10 @@ const _RP = (() => {
             // v458 · el TEXTO original del apunte, para no contar como gol un
             // gol anulado ni como expulsión una roja revertida. Ver _matiz.
             const nota = String(ev.note || '');
-            const anulado  = /ANULAD/i.test(nota);
+            // v789 · `anulado` lo pone el emparejamiento (sucesosReales →
+            // _golesAnulados) en el GOL que se anuló; el texto cubre la
+            // anulación huérfana.
+            const anulado  = ev.anulado === true || /ANULAD/i.test(nota);
             const revertida = /REVERTID|RECTIFIC/i.test(nota);
             const dobleAmarilla = /DOBLE\s+AMARILLA/i.test(nota);
             let icon = '', col = 'var(--text-muted)', txt = '';
@@ -1355,7 +1397,9 @@ const _RP = (() => {
                 // árbitro anuló: lo contrario del rigor que se pide.
                 icon = `<span style="width:10px;height:10px;border-radius:50%;background:transparent;border:2px solid #7d8590;display:inline-block;flex-shrink:0;"></span>`;
                 col = 'var(--text-muted)';
-                txt = `<strong style="letter-spacing:0.5px;">GOL ANULADO</strong> &middot; ${name}`;
+                txt = `<strong style="letter-spacing:0.5px;">GOL ANULADO</strong> &middot; ${name}` +
+                      (ev.anuladoEn ? ` <span style="font-size:0.68rem;">(no computa · anulado ${esc(ev.anuladoEn)})</span>`
+                                    : ` <span style="font-size:0.68rem;">(no computa)</span>`);
             } else if (ev.type === 'goal') {
                 icon = `<span style="width:10px;height:10px;border-radius:50%;background:#3fb950;border:2px solid #27500A;display:inline-block;flex-shrink:0;"></span>`;
                 // v218: GOL en MAYÚSCULAS (verde).

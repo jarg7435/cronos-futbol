@@ -1822,18 +1822,18 @@
      así los envoltorios lo resuelven en cada llamada y no al cargar, para que
      un cambio de orden no los deje mirando a `undefined` para siempre.
      ══════════════════════════════════════════════════════════════════ -->
-<script src="js/shared/live-feed.js?v=v788"></script>
+<script src="js/shared/live-feed.js?v=v790"></script>
 <!-- 🔊 v709 · Las melodías de cada suceso (gol, amarilla, roja, cambio,
      lesión), compartidas con el panel en vivo del Área de Familias. Este visor
      le presta su AudioContext, que es el que lleva el keep-alive de iOS. -->
-<script src="js/shared/live-sound.js?v=v788"></script>
+<script src="js/shared/live-sound.js?v=v790"></script>
 <!-- 🔴🔴🔴 v721 · El caché en disco de Firestore es de UNA sola cuenta (ver
      js/shared/fs-cache-mode.js). El visor lo comparte con la app, así que
      tiene que decidir con la MISMA regla y antes de crear su instancia. -->
-<script src="js/shared/fs-cache-mode.js?v=v788"></script>
+<script src="js/shared/fs-cache-mode.js?v=v790"></script>
 <!-- 📈 v778 · Las reglas de categoría de las estadísticas avanzadas, las
      MISMAS que usa el panel del entrenador (una lista, no dos). -->
-<script src="js/shared/advanced-stats-report.js?v=v788"></script>
+<script src="js/shared/advanced-stats-report.js?v=v790"></script>
 
 <!-- ══ FIREBASE ══════════════════════════════════════════════════ -->
 <script type="module">
@@ -2649,6 +2649,9 @@ const EVENT_META = {
     red:    { icon: "🟥", cls: "ev-red",    title: "TARJETA ROJA",  flash: "rgba(218,54,51,0.22)",  vib: [300,80,300] },
     sub:    { icon: "🔄", cls: "ev-sub",    title: "CAMBIO",        flash: "rgba(88,166,255,0.18)", vib: [100] },
     injury: { icon: "🚑", cls: "ev-injury", title: "LESIÓN",        flash: "rgba(231,76,60,0.20)",  vib: [250,100,250] },
+    // ⚽❌ v789 · GOL ANULADO (implementar.txt 2026-10-08): se avisa igual que
+    // se avisó el gol, para que el marcador no baje sin explicación.
+    goal_cancelled: { icon: "❌", cls: "ev-sub", title: "GOL ANULADO", flash: "rgba(125,133,144,0.22)", vib: [200,80,200] },
     // 💬 v690 · No se anuncia (ver detectAndAlert): este meta sólo da el icono
     // si algún día llega por la vía del aviso, en vez de caer en el de CAMBIO.
     comment: { icon: "💬", cls: "ev-sub",   title: "COMENTARIO",    flash: "rgba(210,168,255,0.14)", vib: [] }
@@ -2661,6 +2664,7 @@ const EVENT_KEYWORD_COLOR = {
     TARJETA_AMR: '#eab308', // amarillo
     TARJETA_ROJ: '#ef4444', // rojo
     LESION:      '#ef4444', // rojo
+    GOL_ANULADO: '#8b949e', // gris (v789): un gol que NO computa
     CAMBIO:      '#58a6ff', // azul
     COMENTARIO:  '#d2a8ff'  // malva (v690): una nota, no una incidencia de juego
 };
@@ -2685,6 +2689,7 @@ function _formateaLineaEvento(type, texto) {
     }
     const color =
         type === 'goal'   ? EVENT_KEYWORD_COLOR.GOL :
+        type === 'goal_cancelled' ? EVENT_KEYWORD_COLOR.GOL_ANULADO :
         type === 'yellow' ? EVENT_KEYWORD_COLOR.TARJETA_AMR :
         type === 'red'    ? EVENT_KEYWORD_COLOR.TARJETA_ROJ :
         type === 'injury' ? EVENT_KEYWORD_COLOR.LESION :
@@ -4191,6 +4196,27 @@ const _cronosDiag = (function () {
 // v575 las llevaba dentro del documento gordo.
 let _posicionesVivas = null;
 
+// ══════════════════════════════════════════════════════════════════
+//  ⚽📡 v790 · EL MARCADOR, POR EL CANAL RÁPIDO
+// ══════════════════════════════════════════════════════════════════
+//  Encargo del autor (implementar.txt 2026-10-08, capturas 11257-11260): el
+//  directo iba 2-0 y el visor 1-0. El marcador viajaba SÓLO dentro del
+//  documento gordo (17-23 KB), que sale en fila con el latido y espera acuse;
+//  un gol podía tardar decenas de segundos. Ahora cada cambio de goles escribe
+//  también el marcador en `live_index` (~1 KB, el canal que ya escuchamos para
+//  las posiciones) con un número de orden `marcadorSeq`.
+//  🔑 Gana el de número MAYOR: si el gordo llega después pero se construyó
+//  antes del último gol, no puede devolver el marcador viejo.
+let _marcadorVivo = null;   // { home, away, seq } del índice
+function _aplicaMarcador(data) {
+    const mv = _marcadorVivo;
+    if (!data || !mv || !(mv.seq > (Number(data.marcadorSeq) || 0))) return data;
+    return Object.assign({}, data, {
+        homeTeam: Object.assign({}, data.homeTeam || {}, { score: mv.home }),
+        awayTeam: Object.assign({}, data.awayTeam || {}, { score: mv.away })
+    });
+}
+
 function _aplicaPosiciones(data) {
     const _pos = _posicionesVivas || (data && data.positions);
     if (!data || !Array.isArray(_pos) || !Array.isArray(data.players)) return data;
@@ -5406,11 +5432,22 @@ window.loadMatch = function(matchId) {
     //  jugadores, marcador, cronómetro y sucesos. Éste sólo mueve las fichas.
     if (unsubscribeMatchIdx) unsubscribeMatchIdx();
     _posicionesVivas = null;   // del partido anterior, no del que se abre
+    _marcadorVivo = null;      // v790 · ídem con el marcador rápido
     unsubscribeMatchIdx = onSnapshot(
         doc(db, 'live_index', matchId),
         (s) => {
             if (!s.exists()) return;
             const d = s.data();
+            // ⚽📡 v790 · el marcador rápido: se guarda y se repinta YA, sin
+            // esperar al documento gordo. Sólo si es MÁS NUEVO que lo que hay.
+            const _seq = Number(d.marcadorSeq) || 0;
+            if (_seq > 0 && (!_marcadorVivo || _seq > _marcadorVivo.seq) && d.homeTeam && d.awayTeam) {
+                _marcadorVivo = { home: Number(d.homeTeam.score) || 0,
+                                  away: Number(d.awayTeam.score) || 0, seq: _seq };
+                if (lastSnapshot && _enDetalleDePartido() && !Array.isArray(d.positions)) {
+                    try { renderMatch(_aplicaPosiciones(lastSnapshot)); } catch (e) {}
+                }
+            }
             if (!Array.isArray(d.positions)) return;
             _posicionesVivas = d.positions;
             if (typeof _cronosDiag === 'object' && _cronosDiag) _cronosDiag.anota(d, 'idx');
@@ -5712,6 +5749,8 @@ function _liveSAvPintaPanel() {
 }
 
 function renderMatch(data) {
+    // v790 · el marcador más reciente que se sepa (ver _aplicaMarcador).
+    if (typeof _aplicaMarcador === 'function') data = _aplicaMarcador(data);
     // Show match UI
     document.getElementById('loading-screen').style.display  = 'none';
     // 📈 v774 · Estadísticas avanzadas: SÓLO roles técnicos (ver arriba).
@@ -7877,9 +7916,9 @@ setInterval(function() {
 }
 </style>
 <!-- v434 · Inmutabilidad: antes de retroactive-modal.js, que la consulta. -->
-<script src="js/match/immutability.js?v=v788"></script>
-<script src="js/match/replay/replay-player.js?v=v788"></script>
-<script src="js/match/events/retroactive-modal.js?v=v788"></script>
+<script src="js/match/immutability.js?v=v790"></script>
+<script src="js/match/replay/replay-player.js?v=v790"></script>
+<script src="js/match/events/retroactive-modal.js?v=v790"></script>
 
 <!-- ══════════════════════════════════════════════════════════════════
      🟩 v577 · FRANJA DE VERSIÓN TAMBIÉN EN EL VISOR
@@ -7892,7 +7931,7 @@ setInterval(function() {
      El sello lo escribe `scripts/cache-bust.js` a partir del CACHE_NAME de
      sw.js, nunca a mano: un número puesto a mano miente en cuanto alguien
      olvida cambiarlo (v527 lo encontró mintiendo 185 versiones seguidas). -->
-<div id="cronos-version-badge" data-version="v788" style="position:fixed;bottom:calc(4px + env(safe-area-inset-bottom, 0px));right:6px;z-index:2147483000;pointer-events:none;background:rgba(0,0,0,0.55);color:#2ea043;font-family:monospace;font-size:0.6rem;font-weight:700;letter-spacing:0.5px;padding:2px 6px;border-radius:4px;">CHRONOS v788</div>
+<div id="cronos-version-badge" data-version="v790" style="position:fixed;bottom:calc(4px + env(safe-area-inset-bottom, 0px));right:6px;z-index:2147483000;pointer-events:none;background:rgba(0,0,0,0.55);color:#2ea043;font-family:monospace;font-size:0.6rem;font-weight:700;letter-spacing:0.5px;padding:2px 6px;border-radius:4px;">CHRONOS v790</div>
 <script>
 /* 🧪 v577 · Y DE QUÉ ENTORNO ES ESA VERSIÓN.
    El problema real del autor no era no ver la versión: era no saber si la

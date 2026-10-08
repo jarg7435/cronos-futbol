@@ -338,9 +338,13 @@ console.log('\n── PARTE 4 · integridad: ni omitir NI inventar ──');
     const html = RP.build(m, { clubName: 'CD Test' });
     const fs_ = filasSuceso(html);
 
+    // ⚽❌ v789 · ANTES exigía `=== 1`: una fila «GOL» válida además de la
+    // anulación. Esa fila era el propio gol anulado contado como bueno — el
+    // fallo que reportó el autor (implementar.txt 2026-10-08). Ahora el gol y
+    // su anulación son UNA fila «GOL ANULADO» y no queda ningún gol válido.
     ok('4a · 🔑 un gol ANULADO no se cuenta como gol en el registro',
-       fs_.some(f => f.txt.includes('GOL ANULADO')) &&
-       fs_.filter(f => f.tipo === 'goal' && !f.txt.includes('ANULADO')).length === 1,
+       fs_.filter(f => f.txt.includes('GOL ANULADO')).length === 1 &&
+       fs_.filter(f => f.tipo === 'goal' && !f.txt.includes('ANULADO')).length === 0,
        JSON.stringify(fs_.filter(f => f.tipo === 'goal').map(f => f.txt)));
     ok('4b · 🔑 una roja REVERTIDA no se enseña como expulsión',
        fs_.some(f => f.txt.includes('ROJA REVERTIDA')));

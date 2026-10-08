@@ -127,9 +127,15 @@ window.openCollectiveReport = async function openCollectiveReport() {
         const allEvents = [];
         playerData.forEach(p => {
             const alias = p.name || 'Jugador';
-            (p.history||[]).forEach(ev => {
+            // ⚽❌ v789 · el gol que se anuló sale como GOL ANULADO y su fila de
+            // anulación no se repite (regla única de js/core/utils.js).
+            const _hist = (typeof window.cronosMarcaGolesAnulados === 'function')
+                ? window.cronosMarcaGolesAnulados(p.history || []) : (p.history || []);
+            _hist.forEach(ev => {
                 if (typeof ev === 'object' && ev.type) {
-                    allEvents.push({ minute: ev.minute||0, type: ev.type, player: alias });
+                    allEvents.push({ minute: ev.minute||0, type: ev.type, player: alias,
+                                     anulado: ev.type === 'goal' &&
+                                              (ev.anulado === true || /ANULAD/i.test(String(ev.note || ''))) });
                 }
             });
             // v218: sin '#<num>' en el fallback; solo el nombre del jugador.
@@ -142,7 +148,9 @@ window.openCollectiveReport = async function openCollectiveReport() {
         if (allEvents.length) {
             msg += `📋 *LÍNEA DE TIEMPO:*\n`;
             allEvents.forEach(ev => {
-                msg += `• ${ev.minute}' ${evIcon[ev.type]||'•'} ${ev.player}\n`;
+                msg += ev.anulado
+                    ? `• ${ev.minute}' ❌ GOL ANULADO ${ev.player} (no computa)\n`
+                    : `• ${ev.minute}' ${evIcon[ev.type]||'•'} ${ev.player}\n`;
             });
             msg += '\n';
         }

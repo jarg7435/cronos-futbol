@@ -872,6 +872,21 @@
                     if (ev.team === 'away') awayScore++; else homeScore++;
                 }
             }
+            // ⚽❌ v789 · Un GOL ANULADO resta lo que el gol sumó: desde v789 la
+            // anulación viaja como suceso (`goal_cancelled`) y la repetición
+            // tiene que acabar con el MISMO marcador que el partido.
+            if (ev.type === 'goal_cancelled') {
+                const foundP = _findPlayerByEventText(playersMap, ev.text);
+                if (foundP && (foundP.goals || 0) > 0) {
+                    foundP.goals--;
+                    if (foundP.team === 'home') homeScore = Math.max(0, homeScore - 1);
+                    else awayScore = Math.max(0, awayScore - 1);
+                } else if (ev.team === 'away') {
+                    awayScore = Math.max(0, awayScore - 1);
+                } else {
+                    homeScore = Math.max(0, homeScore - 1);
+                }
+            }
 
             // Tarjetas
             if (ev.type === 'yellow') {

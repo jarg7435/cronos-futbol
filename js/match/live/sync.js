@@ -517,13 +517,24 @@ async function startLiveSync() {
 //  scripts/test_startlivesync_idempotent.js corta desde `startLiveSync` hasta la
 //  siguiente `async function` y ejecuta el trozo; aquí queda dentro.
 function cronosArrancaLatido() {
+    // 🫀 v790 · señal de vida en PAUSA: muy por debajo de los 30 min con que
+    // la lista de Partidos en Vivo da un partido por colgado. Vive AQUÍ dentro
+    // porque varios guards ejecutan esta función suelta.
+    const _LATIDO_PAUSA_MS = 5 * 60 * 1000;
     if (liveSyncTimer) clearInterval(liveSyncTimer);
+    // 🫀 v790 · EN PAUSA TAMBIÉN SE DA SEÑAL DE VIDA, cada 5 min
+    // (_LATIDO_PAUSA_MS). Sin reloj no latía nada y `updatedAt` se quedaba
+    // quieto: la lista de Partidos en Vivo da por COLGADO lo que lleva 30 min
+    // sin actualizarse (encargo del autor, 2026-10-08) y un compañero podría
+    // borrar un partido sólo pausado o en un descanso largo. Cuesta ~3
+    // escrituras por descanso de 15 min, no las ~60 de latir a 15 s.
     liveSyncTimer = setInterval(() => {
         if (!liveIsActive) return;
         if (isRunning) { pushLiveSnapshot('active'); return; }
         const pulsado = window._cronosUltimoToggleLocal || 0;
         const emitido = window._cronosUltimoLatidoOk || 0;
         if (pulsado && pulsado > emitido) pushLiveSnapshot('active');
+        else if (emitido && Date.now() - emitido > _LATIDO_PAUSA_MS) pushLiveSnapshot('active');
     }, LIVE_HEARTBEAT_MS);
     return liveSyncTimer;
 }
@@ -821,6 +832,7 @@ function _buildLiveIndexDoc(snapshot, players) {
         phaseStartedAt: snapshot.phaseStartedAt,
 
         // Marcador. Sin colores: la tarjeta de la lista no los usa.
+        marcadorSeq: snapshot.marcadorSeq || 0,   // v790
         homeTeam: {
             name:  snapshot.homeTeam?.name  || '',
             score: snapshot.homeTeam?.score ?? 0
@@ -929,8 +941,22 @@ async function pushLiveSnapshot(status = 'active') {
             s = _latidoStatusPend || s;
         }
     })();
+    let _quedaPendiente = false, _statusPendiente = null;
     try { await _latidoEnVuelo; }
-    finally { _latidoEnVuelo = null; _latidoRepetir = false; _latidoStatusPend = null; }
+    finally {
+        // 🔴 v790 · ANTES SE PERDÍA. El bucle hace como mucho 3 vueltas, y una
+        // petición que llegara DURANTE la tercera dejaba `_latidoRepetir` en
+        // true… que este finally borraba sin enviar: un gol marcado en ese
+        // instante no salía hasta el siguiente latido (15 s o más). Encargo del
+        // autor (implementar.txt 2026-10-08): «el directo marca 2-0 y el vivo
+        // 1-0». Ahora lo pendiente se relanza en una pasada nueva.
+        _quedaPendiente = _latidoRepetir;
+        _statusPendiente = _latidoStatusPend;
+        _latidoEnVuelo = null; _latidoRepetir = false; _latidoStatusPend = null;
+    }
+    if (_quedaPendiente) {
+        setTimeout(() => { pushLiveSnapshot(_statusPendiente || status); }, 0);
+    }
 }
 
 async function _emiteLatido(status = 'active') {
@@ -953,6 +979,13 @@ async function _emiteLatido(status = 'active') {
 
         const scoreHome = document.getElementById('score-home')?.textContent || '0';
         const scoreAway = document.getElementById('score-away')?.textContent || '0';
+        // ⚽📡 v790 · el número de orden del marcador, leído EN EL MISMO
+        // instante que el marcador: lo que tarde el resto (lecturas, acuse) no
+        // puede emparejar un marcador viejo con un número nuevo. Ver
+        // _pushMarcador. El primero se siembra con la hora: así un documento
+        // emitido tras recargar gana a lo que quedara en el índice de antes.
+        if (!_marcadorSeq) _marcadorSeq = Date.now();
+        const _seqMarcador = _marcadorSeq;
 
         const _clubId = window._cronosCurrentUser?.clubId;
         const _thresholds = await _fetchClubTimerThresholds(fa.db, _clubId);
@@ -1293,6 +1326,8 @@ async function _emiteLatido(status = 'active') {
             myTeamRole:  window._userTeamRole || 'home',
 
             // Equipos
+            // v790 · número de orden del marcador (ver _pushMarcador).
+            marcadorSeq: _seqMarcador,
             homeTeam: {
                 name:     TEAM_NAMES.home,
                 score:    parseInt(scoreHome) || 0,
@@ -1764,6 +1799,8 @@ function confirmStopLive() {
 let _liveSyncThrottleTimer = null;
 function liveSyncOnAction() {
     if (!liveIsActive) return;
+    // v790 · si el marcador cambió por una vía sin volcado inmediato, también.
+    _pushMarcador();
     if (_liveSyncThrottleTimer) return;
     _liveSyncThrottleTimer = setTimeout(() => {
         _liveSyncThrottleTimer = null;
@@ -1864,11 +1901,62 @@ async function _pushPositions() {
 }
 window.liveSyncPositions = liveSyncPositions;
 
+// ══════════════════════════════════════════════════════════════════
+//  ⚽📡 v790 · EL MARCADOR, POR EL CANAL RÁPIDO
+// ══════════════════════════════════════════════════════════════════
+//  Encargo del autor (implementar.txt 2026-10-08, capturas 11257-11260): el
+//  directo iba 2-0 y el visor 1-0 durante decenas de segundos. El marcador
+//  sólo viajaba en el documento gordo (17-23 KB), que sale EN FILA —un envío
+//  en vuelo por pestaña (v724)— y espera el acuse del servidor; un gol podía
+//  quedarse detrás de un latido lento.
+//  🔑 Ahora cada cambio de marcador escribe ADEMÁS ~200 B en `live_index`,
+//  el canal ligero que el visor ya escucha para las posiciones (v576), sin
+//  esperar a nadie. Lleva `marcadorSeq` (la hora del cambio): el visor se queda
+//  con el de número mayor, así que un gordo construido ANTES del gol no puede
+//  devolverle el marcador viejo (live.html · _aplicaMarcador).
+//  ⚠️ No sustituye al gordo: los balones de cada jugador y el resto llegan
+//  con él, como siempre. Esto sólo adelanta el número del marcador.
+let _marcadorSeq = 0;
+let _marcadorEnviado = null;
+async function _pushMarcador() {
+    const fa = window._cronos_auth;
+    if (!liveIsActive || !fa || !fa.db || !liveMatchId) return;
+    const h = parseInt(document.getElementById('score-home')?.textContent) || 0;
+    const a = parseInt(document.getElementById('score-away')?.textContent) || 0;
+    const clave = liveMatchId + '|' + h + '-' + a;
+    if (clave === _marcadorEnviado) return;
+    // 🔒 La misma puerta estanca que el latido y las posiciones (v469).
+    try {
+        const _S = window._cronosMatchSlots;
+        const _propio = _S && _S.getTabMatchId();
+        if (_propio && _propio !== liveMatchId && String(_propio).indexOf('tab:') !== 0) return;
+    } catch (e) { /* la puerta nunca impide el envío por sí misma */ }
+    _marcadorSeq = Math.max(Date.now(), _marcadorSeq + 1);
+    _marcadorEnviado = clave;
+    try {
+        const { setDoc, doc, serverTimestamp } = await import(
+            'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
+        await setDoc(doc(fa.db, 'live_index', liveMatchId), {
+            homeTeam:    { score: h },
+            awayTeam:    { score: a },
+            marcadorSeq: _marcadorSeq,
+            updatedAt:   serverTimestamp()
+        }, { merge: true });
+    } catch (err) {
+        // Sin canal rápido el marcador llega igual con el gordo: no es fatal.
+        _marcadorEnviado = null;
+        console.warn('[v790] Marcador rápido no enviado:', err && err.message);
+    }
+}
+window._cronosPushMarcador = _pushMarcador;
+
 // v225: flush inmediato para eventos críticos (gol, tarjeta, lesión, cambio).
 // Estos eventos deben llegar al live lo antes posible, sin esperar al throttle.
 // Cancela cualquier timer pendiente y envía el snapshot inmediatamente.
 function liveSyncFlushNow() {
     if (!liveIsActive) return;
+    // v790 · el marcador sale YA por el canal rápido, sin esperar a la fila.
+    _pushMarcador();
     if (_liveSyncThrottleTimer) {
         clearTimeout(_liveSyncThrottleTimer);
         _liveSyncThrottleTimer = null;

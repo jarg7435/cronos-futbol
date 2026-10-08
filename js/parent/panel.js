@@ -1691,7 +1691,12 @@ async function openParentPanel(initialTab) {
             // ── Función generadora de SVG de línea de tiempo ─────────────────
             const _buildTimeline = (r) => {
                 const playedSec  = _mmssToSec(r.minutesPlayed);
-                const history    = Array.isArray(r.history) ? r.history : [];
+                // ⚽❌ v789 · cada «GOL ANULADO» se lleva su gol: el gol queda
+                // `anulado` y la fila de la anulación desaparece (regla única de
+                // js/core/utils.js). Antes la familia veía el gol como válido.
+                const _histBruto = Array.isArray(r.history) ? r.history : [];
+                const history    = (typeof window.cronosMarcaGolesAnulados === 'function')
+                    ? window.cronosMarcaGolesAnulados(_histBruto) : _histBruto;
                 const toSec      = (ev) => (ev.minute||0)*60 + (ev.second||0);
 
                 // Calcular períodos de juego y eventos desde history
@@ -1764,7 +1769,12 @@ async function openParentPanel(initialTab) {
                         events.push({type:'sub_out', timeSec:t, note: ev.note||'', orphan: !cierra,
                                      retro: _esRetroPP(ev)});
                     } else if (['goal','yellow','red','injury'].includes(ev.type)) {
-                        events.push({type:ev.type, timeSec:t, note: ev.note||ev.timeStr||'',
+                        const _anulado = ev.type === 'goal' &&
+                            (ev.anulado === true || /ANULAD/i.test(String(ev.note || '')));
+                        events.push({type:ev.type, timeSec:t,
+                                     note: _anulado ? ('no computa' + (ev.anuladoEn ? ' · anulado ' + ev.anuladoEn : ''))
+                                                    : (ev.note||ev.timeStr||''),
+                                     anulado: _anulado,
                                      retro: _esRetroPP(ev)});
                     }
                 });
@@ -1874,7 +1884,7 @@ async function openParentPanel(initialTab) {
                 events.filter(e => evtIcon[e.type]).forEach(e => {
                     const ex = px(e.timeSec);
                     svg += `<text x="${ex.toFixed(1)}" y="${EVT_Y}" text-anchor="middle"
-                        font-size="10">${evtIcon[e.type]}</text>`;
+                        font-size="10">${e.anulado ? '❌' : evtIcon[e.type]}</text>`;
                     // Tiempo exacto debajo del icono
                     svg += `<text x="${ex.toFixed(1)}" y="${EVT_Y+10}" text-anchor="middle"
                         font-size="6" fill="rgba(255,255,255,0.45)">${_secToLabel(e.timeSec)}</text>`;
@@ -1974,7 +1984,7 @@ async function openParentPanel(initialTab) {
                         // v715 · En un TXT no hay color: la trazabilidad se
                         // escribe con palabras o no existe.
                         L.push(`  ${String(_secToLabel(ev.timeSec)).padStart(5)}  `
-                             + `${etiqueta[ev.type] || ev.type}`
+                             + `${ev.anulado ? 'GOL ANULADO' : (etiqueta[ev.type] || ev.type)}`
                              + (ev.retro === true ? '  [RETROACTIVO]' : '')
                              + `${ev.note ? ' · ' + ev.note : ''}`);
                     });
@@ -2118,7 +2128,10 @@ async function openParentPanel(initialTab) {
                 };
                 const allEvts = [...tlEvts].sort((a,b) => a.timeSec - b.timeSec);
                 const evRows = allEvts.length ? allEvts.map(ev => {
-                    const info = evIcons[ev.type] || {icon:'•', col:'#7d8590', txt: ev.type};
+                    // v789 · un gol anulado no es un gol: gris y con su nombre.
+                    const info = ev.anulado
+                        ? {icon:'❌', col:'#7d8590', txt:'GOL ANULADO'}
+                        : (evIcons[ev.type] || {icon:'•', col:'#7d8590', txt: ev.type});
                     // v715 · SIN BACKTICKS EN ESTE COMENTARIO. En naranja lo
                     // apuntado a posteriori, y con la palabra al lado: la
                     // familia tambien tiene derecho a saber que ese gol se

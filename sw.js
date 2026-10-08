@@ -2729,8 +2729,8 @@
 //        LIBERADA (no la borra), permission-denied = «no hay marca» y se
 //        escribe la propia, y el oyente sólo desaloja con datos del SERVIDOR
 //        y ante una marca ajena VIVA.
-const VERSION = 'v788';
-const CACHE_NAME = 'cronos-cache-v788';
+const VERSION = 'v790';
+const CACHE_NAME = 'cronos-cache-v790';
 
 const ASSETS = [
     './',

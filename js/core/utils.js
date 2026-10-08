@@ -3537,6 +3537,79 @@ function cronosEsRetro(ev) {
 window.cronosEsRetro       = cronosEsRetro;
 window.CRONOS_COLOR_RETRO  = CRONOS_COLOR_RETRO;
 
+// ════════════════════════════════════════════════════════════════════
+//  ⚽❌ v789 · UN GOL ANULADO SE LLEVA SU GOL
+// ════════════════════════════════════════════════════════════════════
+//  Encargo del autor (implementar.txt 2026-10-08, capturas 11249-11250): si
+//  se apunta un gol por error y luego se quita, el informe tiene que decir que
+//  fue un gol ANULADO, no contarlo como gol real.
+//
+//  🔑 EL HISTORIAL GUARDA DOS APUNTES: «GOL (1º)» al sumarlo y «GOL ANULADO
+//  (Quedan: 0)» al quitarlo. El total del jugador (`goals`) ya bajaba, pero
+//  el apunte del gol seguía ahí como válido: el registro de incidencias pintaba
+//  «GOL» en verde y luego «GOL ANULADO», y el cronograma DOS balones.
+//  Aquí cada anulación se EMPAREJA con el último gol válido del MISMO
+//  historial (uno por jugador): ese gol queda marcado `anulado` y la fila de la
+//  anulación desaparece, porque ya está dicha en el gol.
+//  ⚠️ Una anulación sin gol previo (historial recortado) se queda, como gol
+//  anulado: nunca se cuenta como gol.
+//
+//  Acepta los dos formatos del historial: objetos (`{type, note, timeStr}`,
+//  los de `_parseHistoryForFirestore`) y las cadenas crudas de `logEvent`.
+//
+//  ⚠️ ESPEJO en js/coach/reports/report-engine.js (`_golesAnulados`), que es
+//  autocontenido y no puede nombrar esto. Que no diverjan lo vigila
+//  scripts/test_goles_anulados.js.
+// ════════════════════════════════════════════════════════════════════
+function cronosGolesAnulados(hist) {
+    const res = { anulados: new Set(), anulaciones: new Set(), anuladoEn: {} };
+    if (!Array.isArray(hist)) return res;
+    const pila = [];
+    hist.forEach(function (e, i) {
+        if (!e) return;
+        const esTexto = typeof e === 'string';
+        if (!esTexto && typeof e !== 'object') return;
+        const texto = esTexto ? e : String(e.note == null ? '' : e.note);
+        const esGol = esTexto
+            ? (/gol/i.test(e) && !/^\s*(entra|sale)/i.test(e))
+            : e.type === 'goal';
+        if (!esGol) return;
+        if (/ANULAD/i.test(texto)) {
+            if (pila.length) {
+                const j = pila.pop();
+                res.anulados.add(j);
+                res.anulaciones.add(i);
+                const t = esTexto ? ((e.match(/(\d{1,2}:\d{2})/) || [])[1] || '') : (e.timeStr || '');
+                res.anuladoEn[j] = t;
+            } else {
+                res.anulados.add(i);
+            }
+        } else {
+            pila.push(i);
+        }
+    });
+    return res;
+}
+// Copia del historial con los goles anulados marcados (`anulado: true`,
+// `anuladoEn`) y SIN las filas de anulación ya emparejadas. Las cadenas no se
+// pueden marcar: se dejan tal cual (su texto ya dice ANULADO si lo es).
+function cronosMarcaGolesAnulados(hist) {
+    if (!Array.isArray(hist)) return [];
+    const r = cronosGolesAnulados(hist);
+    const out = [];
+    hist.forEach(function (e, i) {
+        if (r.anulaciones.has(i)) return;
+        if (r.anulados.has(i) && e && typeof e === 'object') {
+            out.push(Object.assign({}, e, { anulado: true, anuladoEn: r.anuladoEn[i] || '' }));
+        } else {
+            out.push(e);
+        }
+    });
+    return out;
+}
+window.cronosGolesAnulados      = cronosGolesAnulados;
+window.cronosMarcaGolesAnulados = cronosMarcaGolesAnulados;
+
 window.cronosFueTitular   = cronosFueTitular;
 window.cronosCupoConvocatoria = cronosCupoConvocatoria;
 window.cronosTiemposCategoria = cronosTiemposCategoria;   // ⏱️ v748

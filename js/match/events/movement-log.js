@@ -201,6 +201,20 @@ function _avisaGolDesdeMarcador(team, autor) {
     } catch (e) { /* un aviso nunca puede impedir que se sume el gol */ }
 }
 
+// ⚽❌ v789 · Y AL QUITAR UN GOL, TAMBIÉN SE AVISA (implementar.txt 2026-10-08,
+// decisión del autor). Antes el visor y el panel de familias cantaban el gol y
+// luego el marcador bajaba sin explicación. Mismo formato `PALABRA · quién`.
+function _avisaGolAnulado(team, autor) {
+    try {
+        if (typeof _registerMatchEvent !== 'function') return;
+        var nombre = (typeof TEAM_NAMES !== 'undefined')
+            ? (team === 'home' ? TEAM_NAMES.home : TEAM_NAMES.away) : '';
+        if (!nombre) nombre = (team === 'home') ? 'LOCAL' : 'VISITANTE';
+        _registerMatchEvent('goal_cancelled', 'GOL ANULADO · ' + (autor || nombre), '❌', undefined,
+                            { team: (team === 'away' ? 'away' : 'home'), teamName: nombre });
+    } catch (e) { /* un aviso nunca puede impedir que se quite el gol */ }
+}
+
 function changeScore(team, delta) {
     // 🔴 v716 · UNA SOLA PREGUNTA para los tres bloqueos («partido en juego»),
     // en vez de tres `!isRunning` por su cuenta. El bloqueo en sí es correcto
@@ -220,20 +234,33 @@ function changeScore(team, delta) {
     // que sumar `delta > 0` no garantiza que haya gol: sin esto se mandaría un
     // envío inmediato por un gol que el entrenador acaba de descartar.
     let _golAnotado = false;
+    let _golAnulado = false;
 
     if (delta > 0) {
         const teamPlayers = players.filter(p => p.team === team);
         if (teamPlayers.length > 0) {
-            const listLines = teamPlayers.map((p, i) =>
-                `${i + 1}. [${p.status === 'field' ? 'CAMPO' : 'BAN'}] ${p.number} - ${p.name}`
+            // ══════════════════════════════════════════════════════════
+            //  ⚽ v789 · SÓLO MARCA QUIEN ESTÁ EN EL CAMPO
+            //  Encargo del autor (implementar.txt 2026-10-08, capturas
+            //  11249-11250): la lista ofrecía también el BANQUILLO
+            //  («[BAN] 4 - SANTI») y se le podía dar un gol a quien no
+            //  había jugado. La ficha del jugador ya lo impedía
+            //  (`_requireOnField`, player-actions.js); el marcador no.
+            //  Ahora la lista es sólo de jugadores en el campo, y un número
+            //  que no esté en ella NO suma nada.
+            //  ⚠️ QUITAR un gol sigue alcanzando a cualquiera que lo tenga
+            //  (más abajo): es la vía para corregir uno mal puesto.
+            const enCampo = teamPlayers.filter(p => p.status === 'field');
+            const listLines = enCampo.map((p, i) =>
+                `${i + 1}. ${p.number} - ${p.name}`
             ).join('\n');
             const answer = prompt(
-                `⚽ GOL de ${team === 'home' ? TEAM_NAMES.home : TEAM_NAMES.away}\n¿Quién ha marcado? (escribe el número de la lista)\n\n0. Gol No Asignado / Propia Puerta\n${listLines}`, ''
+                `⚽ GOL de ${team === 'home' ? TEAM_NAMES.home : TEAM_NAMES.away}\n¿Quién ha marcado? (escribe el número de la lista · sólo jugadores EN EL CAMPO)\n\n0. Gol No Asignado / Propia Puerta\n${listLines}`, ''
             );
             if (answer !== null && answer.trim() !== '') {
                 const idx = parseInt(answer) - 1;
-                if (!isNaN(idx) && idx >= 0 && idx < teamPlayers.length) {
-                    const scorer = teamPlayers[idx];
+                if (!isNaN(idx) && idx >= 0 && idx < enCampo.length) {
+                    const scorer = enCampo[idx];
                     scorer.goals = (scorer.goals || 0) + 1;
                     if (typeof logEvent === 'function') {
                         logEvent(scorer, `GOL (${scorer.goals}º)`);
@@ -249,6 +276,11 @@ function changeScore(team, delta) {
                     // v471 · caso 2 · gol sin autor, con plantilla presente.
                     _avisaGolDesdeMarcador(team, null);
                     _golAnotado = true;
+                } else {
+                    // v789 · número fuera de la lista (p. ej. el de un jugador
+                    // del banquillo): no se suma nada y se dice por qué.
+                    alert('⛔ Número no válido. Sólo se puede asignar el gol a un jugador que esté EN EL CAMPO ' +
+                          '(o 0 para Gol No Asignado). No se ha sumado ningún gol.');
                 }
                 syncScoreFromPlayers(team);
             }
@@ -274,11 +306,15 @@ function changeScore(team, delta) {
                 if (typeof logEvent === 'function') {
                     logEvent(scorers[0], `GOL ANULADO (Quedan: ${scorers[0].goals})`);
                 }
+                _avisaGolAnulado(team, scorers[0].name);   // v789
+                _golAnulado = true;
                 renderPlayers();
                 syncScoreFromPlayers(team);
             } else if (scorers.length === 0 && extraGoals > 0) {
                 window._cronosExtraGoals[team]--;
                 if (typeof showToast === 'function') showToast(`⚽ Gol no asignado anulado a ${team === 'home' ? TEAM_NAMES.home : TEAM_NAMES.away}`, 3000);
+                _avisaGolAnulado(team, null);   // v789
+                _golAnulado = true;
                 syncScoreFromPlayers(team);
             } else if (scorers.length > 0 || extraGoals > 0) {
                 const listLines = scorers.map((p, i) =>
@@ -301,10 +337,14 @@ function changeScore(team, delta) {
                         if (typeof logEvent === 'function') {
                             logEvent(scorer, `GOL ANULADO (Quedan: ${scorer.goals})`);
                         }
+                        _avisaGolAnulado(team, scorer.name);   // v789
+                        _golAnulado = true;
                         renderPlayers();
                     } else if ((answer.trim() === '0' || idx === -1) && extraGoals > 0) {
                         window._cronosExtraGoals[team]--;
                         if (typeof showToast === 'function') showToast(`⚽ Gol no asignado anulado a ${team === 'home' ? TEAM_NAMES.home : TEAM_NAMES.away}`, 3000);
+                        _avisaGolAnulado(team, null);   // v789
+                        _golAnulado = true;
                     }
                     syncScoreFromPlayers(team);
                 }
@@ -314,6 +354,8 @@ function changeScore(team, delta) {
         } else {
             if (window._cronosExtraGoals && window._cronosExtraGoals[team] > 0) {
                 window._cronosExtraGoals[team]--;
+                _avisaGolAnulado(team, null);   // v789 · equipo sin plantilla
+                _golAnulado = true;
                 syncScoreFromPlayers(team);
             } else {
                 el.textContent = next;
@@ -325,7 +367,9 @@ function changeScore(team, delta) {
     // decisión que ya tenía la ficha del jugador desde v225: el marcador del
     // panel en vivo no puede ir medio segundo por detrás del campo. El resto de
     // ajustes (quitar un gol) siguen agrupándose, que no corre prisa.
-    if (_golAnotado && typeof window.liveSyncFlushNow === 'function') {
+    // v789 · …salvo ANULAR un gol: su aviso tiene que llegar tan rápido como
+    // llegó el del gol, o la familia ve bajar el marcador sin saber por qué.
+    if ((_golAnotado || _golAnulado) && typeof window.liveSyncFlushNow === 'function') {
         window.liveSyncFlushNow();
     } else if (typeof liveSyncOnAction === 'function') {
         liveSyncOnAction();
@@ -374,12 +418,23 @@ async function exportData() {
         }
         // Extraer eventos del historial (goles, tarjetas, lesión) con minuto
         const events = [];
-        p.history.forEach(h => {
+        // ⚽❌ v789 · «GOL ANULADO» contenía la palabra GOL y se contaba como
+        // OTRO gol. Ahora cada anulación se empareja con su gol (regla única de
+        // js/core/utils.js): ese gol sale como GOL ANULADO y la fila de la
+        // anulación no se repite.
+        const _anul = (typeof window !== 'undefined' && typeof window.cronosGolesAnulados === 'function')
+            ? window.cronosGolesAnulados(p.history) : null;
+        p.history.forEach((h, _i) => {
             const timeMatch = h.match(/(\d{2}:\d{2})/);
             const halfMatch = h.match(/\(([^)]+)\)/);
             const t = timeMatch ? timeMatch[1] : '';
             const half = halfMatch ? halfMatch[1] : '';
-            if (h.includes('GOL'))             events.push({ type: 'GOL',      time: t, half });
+            if (h.includes('GOL')) {
+                if (_anul && _anul.anulaciones.has(_i)) { /* ya dicha en su gol */ }
+                else if ((_anul && _anul.anulados.has(_i)) || /ANULAD/i.test(h))
+                    events.push({ type: 'GOL ANULADO', time: t, half });
+                else events.push({ type: 'GOL', time: t, half });
+            }
             if (h.includes('AMARILLA'))        events.push({ type: 'AMARILLA', time: t, half });
             if (h.includes('ROJA'))            events.push({ type: 'ROJA',     time: t, half });
             if (h.includes('LESIÓN'))          events.push({ type: 'LESIÓN',   time: t, half });
@@ -547,7 +602,7 @@ async function exportData() {
                 ${(p.events||[]).map(e =>
                     e.time + '(' + e.half + ') ' +
                     // v218: etiqueta en MAYÚSCULAS junto al emoji.
-                    (e.type==='GOL' ? '⚽ GOL' : e.type==='AMARILLA' ? '🟨 TARJETA' : e.type==='ROJA' ? '🟥 TARJETA' : '🚑 LESIÓN')
+                    (e.type==='GOL' ? '⚽ GOL' : e.type==='GOL ANULADO' ? '❌ GOL ANULADO (no computa)' : e.type==='AMARILLA' ? '🟨 TARJETA' : e.type==='ROJA' ? '🟥 TARJETA' : '🚑 LESIÓN')
                 ).join('  ')}
             </td>
             ${makeShiftCells(p.shiftsH1.concat(Array(maxH1 - p.shiftsH1.length).fill(null)))}

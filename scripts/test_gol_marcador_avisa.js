@@ -192,9 +192,15 @@ console.log('\n── PARTE 4 · ⚠️ lo que NO puede avisar ──');
     const e3 = montar({ players: [jugador(7, 'home')] });
     e3.sb.window._cronosExtraGoals.home = 1;
     e3.sb.changeScore('home', -1);
-    ok('4d · quitar un gol no emite suceso de gol', e3.eventos.length === 0, JSON.stringify(e3.eventos));
-    ok('4e · y ése sí puede ir por el throttle (no corre prisa)',
-       e3.flushes() === 0 && e3.throttles() === 1,
+    // ⚽❌ v789 · decisión del autor (implementar.txt 2026-10-08): al quitar
+    // un gol se AVISA de que se anuló —antes no salía nada y la familia veía
+    // bajar el marcador sin explicación—, y ese aviso va inmediato como el
+    // del gol. Lo que sigue prohibido es emitirlo como GOL.
+    ok('4d · quitar un gol NO emite un suceso de gol, sino UNO de gol anulado',
+       e3.eventos.length === 1 && e3.eventos[0].type === 'goal_cancelled' &&
+       !e3.eventos.some(e => e.type === 'goal'), JSON.stringify(e3.eventos));
+    ok('4e · y su aviso va inmediato, como el del gol',
+       e3.flushes() === 1 && e3.throttles() === 0,
        'flush=' + e3.flushes() + ' throttle=' + e3.throttles());
 
     // Con el cronómetro parado no se suma nada.

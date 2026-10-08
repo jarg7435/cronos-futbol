@@ -946,7 +946,12 @@
         subs.forEach(function (e) {
             if (_rxEntraSegundaParte(e) && tDescanso.has(_rxClaveT(e))) fuera.add(e);
         });
-        return evs.filter(function (e) { return !fuera.has(e); });
+        const reales = evs.filter(function (e) { return !fuera.has(e); });
+        // ⚽❌ v789 · cada «GOL ANULADO» se lleva su gol: el gol queda marcado
+        // `anulado` y la fila de la anulación desaparece (regla única de
+        // js/core/utils.js; el motor de pantalla lleva su espejo).
+        return (typeof window !== 'undefined' && typeof window.cronosMarcaGolesAnulados === 'function')
+            ? window.cronosMarcaGolesAnulados(reales) : reales;
     }
 
     // rxEtiquetaSuceso(e) → el nombre en español, con el matiz que corresponda.
@@ -962,7 +967,8 @@
             ? window.cronosEsRetro(e)
             : (e.retro === true || e.isRetroactive === true || /\(RETRO\)|\(RETROACTIVO\)/i.test(nota));
         const _sello = (t) => _retro ? (t + ' (retroactivo)') : t;
-        if (e.type === 'goal'   && /ANULAD/i.test(nota))            return _sello('Gol anulado');
+        if (e.type === 'goal'   && (e.anulado === true || /ANULAD/i.test(nota)))
+            return _sello('Gol anulado');
         if (e.type === 'red'    && /REVERTID|RECTIFIC/i.test(nota)) return _sello('Roja revertida');
         if (e.type === 'yellow' && /DOBLE\s+AMARILLA/i.test(nota))  return _sello('Doble amarilla (expulsión)');
         return _sello(RX_SUCESO[e.type] || String(e.type));

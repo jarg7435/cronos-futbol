@@ -415,12 +415,19 @@ console.log('\n── PARTE 5 · el latido tiene UNA sola puerta ──');
         ok('5d · 🔴 late al ritmo de LIVE_HEARTBEAT_MS (no a 1 s ni a 5 s) y apaga el anterior',
            real === 15000 && enMarcha._ms === 15000 && enMarcha._limpiado === 'viejo' && enMarcha._envios === 1,
            'ms=' + enMarcha._ms + ' limpiado=' + enMarcha._limpiado);
-        const pausa = montar({ corre: false, pulsado: 1000, emitido: 2000 });
+        // ⚠️ v790 · horas REALISTAS: con `emitido: 2000` (año 1970) la señal
+        // de vida en pausa de v790 (cada 5 min) creería que pasaron 56 años.
+        const T = Date.now();
+        const pausa = montar({ corre: false, pulsado: T - 2000, emitido: T - 1000 });
         pausa._cb(); pausa._cb();
-        const pendiente = montar({ corre: false, pulsado: 2000, emitido: 1000 });
+        const pendiente = montar({ corre: false, pulsado: T - 1000, emitido: T - 2000 });
         pendiente._cb();
         ok('5e · 🔴 en pausa con el cambio emitido NO escribe; con el cambio pendiente, reintenta (v718)',
            pausa._envios === 0 && pendiente._envios === 1, pausa._envios + ' / ' + pendiente._envios);
+        const pausaLarga = montar({ corre: false, pulsado: T - 7 * 60000, emitido: T - 6 * 60000 });
+        pausaLarga._cb(); pausaLarga._cb();
+        ok('5e-bis · 🫀 v790 · pero tras 5 min en pausa da UNA señal de vida (no parecer colgado)',
+           pausaLarga._envios === 2 || pausaLarga._envios === 1, 'envíos=' + pausaLarga._envios);
     }
 
     // 5f · Recuperar Partido desde la NUBE: por la puerta, en las dos ramas.

@@ -3041,21 +3041,121 @@ window._cronosOpenLiveMatchesPanel = async function() {
         </div>
     </div>`;
 
+    await window._cronosPintaPartidosEnVivo();
+};
+
+// ══════════════════════════════════════════════════════════════════════
+//  🔴🧹 v790 · LA LISTA DE PARTIDOS EN VIVO DICE LA VERDAD, Y SE PUEDE LIMPIAR
+// ══════════════════════════════════════════════════════════════════════
+//  Encargo del autor (implementar.txt 2026-10-08, captura 11262): «se quedan
+//  bloqueados partidos antiguos o de otras categorías que ya terminaron
+//  (aparecen congelados con 0-0)», y pidió que CADA ENTRENADOR pueda eliminar
+//  los colgados de SU categoría y subcategoría.
+//
+//  🔴 POR QUÉ SALÍA TODO «Local 0-0 Visitante · En juego». Esta lista leía
+//  `homeName`, `teamHome`, `scoreHome` y `currentHalf`, campos que el
+//  documento del directo NO tiene: el marcador va en `homeTeam.score`, los
+//  nombres en `homeTeam.name` y la parte en `phase` (js/match/live/sync.js).
+//  Cualquier partido —también el que se estaba jugando— salía igual.
+//
+//  🔑 COLGADO = sigue `active` y lleva 30 min sin actualizarse (decisión del
+//  autor). Un partido en pausa no se confunde: desde v790 da señal de vida
+//  cada 5 min (_LATIDO_PAUSA_MS en sync.js). En producción la función
+//  `cleanupLiveMatches` los cierra a las 4 h; en testeo no hay functions y se
+//  acumulan — por eso hace falta el botón.
+//
+//  🔒 QUIÉN BORRA QUÉ: sólo los colgados de SU equipo (clave canónica
+//  `cronosTeamId`: club + categoría + subcategoría) o los que creó él. Nunca
+//  un partido que sigue transmitiendo, ni el que esta pestaña está jugando.
+//  Las reglas dejan borrar a cualquier miembro del club un partido no
+//  congelado; la restricción de equipo es de esta pantalla.
+// ══════════════════════════════════════════════════════════════════════
+const _LM_COLGADO_MIN = 30;
+
+function _lmMillis(v) {
+    if (!v) return 0;
+    if (typeof v.toMillis === 'function') { try { return v.toMillis(); } catch (e) { return 0; } }
+    if (typeof v.seconds === 'number') return v.seconds * 1000;
+    if (typeof v === 'number') return v;
+    const t = Date.parse(v);
+    return isNaN(t) ? 0 : t;
+}
+function _lmMinutosSin(m, ahora) {
+    const t = _lmMillis(m && m.updatedAt);
+    return t ? Math.max(0, Math.floor(((ahora || Date.now()) - t) / 60000)) : Infinity;
+}
+function _lmEsColgado(m, ahora) {
+    return !!m && m.status === 'active' && _lmMinutosSin(m, ahora) >= _LM_COLGADO_MIN;
+}
+function _lmMiEquipo(me) {
+    if (!me || typeof window.cronosTeamId !== 'function') return '';
+    const rd = me._activeRoleData || {};
+    return window.cronosTeamId(me.clubId || '',
+        me.category || rd.category || me.categoryLabel || '',
+        me.subcategory || rd.subcategory || '');
+}
+function _lmEsDeMiEquipo(m, me) {
+    if (!m || !me) return false;
+    if (m.createdBy && m.createdBy === me.uid) return true;
+    const mio = _lmMiEquipo(me);
+    if (!mio || typeof window.cronosTeamIdOfDoc !== 'function') return false;
+    return window.cronosTeamIdOfDoc(m, me.clubId) === mio;
+}
+function _lmEsElMio(m) {
+    // El partido que ESTA pestaña está transmitiendo no se borra desde aquí.
+    try { return typeof liveMatchId !== 'undefined' && !!liveMatchId && m.id === liveMatchId; }
+    catch (e) { return false; }
+}
+function _lmPuedeBorrar(m, me, ahora) {
+    return _lmEsColgado(m, ahora) && _lmEsDeMiEquipo(m, me) && !_lmEsElMio(m);
+}
+function _lmEtiquetaCategoria(m) {
+    const cat = String(m.matchCategory || m.category || '').replace(/^f(?:7|11)[_-]/i, '').replace(/[_-]/g, ' ').trim();
+    const sub = String((m.matchCategory ? m.matchSubcategory : m.subcategory) || '').trim();
+    return (cat ? cat.charAt(0).toUpperCase() + cat.slice(1) : '') + (sub ? ' ' + sub.toUpperCase() : '');
+}
+function _lmParte(m) {
+    const p = { '1st_half': '1ª parte', 'halftime': 'Descanso', '2nd_half': '2ª parte' }[m.phase] || 'En juego';
+    return p + (m.isRunning === false && m.phase !== 'halftime' ? ' (pausa)' : '');
+}
+function _lmHace(min) {
+    if (min === Infinity) return 'sin datos de actualización';
+    if (min < 1) return 'actualizado ahora';
+    if (min < 60) return 'hace ' + min + ' min';
+    const h = Math.floor(min / 60);
+    return h < 48 ? 'hace ' + h + ' h' : 'hace ' + Math.floor(h / 24) + ' días';
+}
+
+window._cronosPintaPartidosEnVivo = async function () {
+    const body = document.getElementById('live-matches-body');
+    const me = window._cronosCurrentUser;
+    if (!body || !me) return;
+    const esc = (s) => (typeof escapeHtml === 'function' ? escapeHtml(String(s == null ? '' : s)) : String(s == null ? '' : s));
     try {
         const { collection, getDocs, query, where } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
         const db = window._cronos_auth?.db;
-        if (!db) { document.getElementById('live-matches-body').innerHTML = '<div style="color:#ff5858;">Firebase no disponible</div>'; return; }
+        if (!db) { body.innerHTML = '<div style="color:#ff5858;">Firebase no disponible</div>'; return; }
 
-        // FIX: la coleccion se llama 'live_matches' (NO 'cronos_live_matches')
-        // Buscar TODOS los partidos activos del club sin filtro de status
-        // (el filtro se hace en cliente porque Firestore no soporta != en queries)
+        // La colección es 'live_matches'; el filtro de estado va en cliente.
         const snap = await getDocs(query(
             collection(db, 'live_matches'),
             where('clubId', '==', me.clubId || '')
         )).catch(() => null);
 
-        const body = document.getElementById('live-matches-body');
-        if (!snap || snap.empty) {
+        const ahora = Date.now();
+        const matches = [];
+        if (snap) snap.forEach(d => {
+            const data = d.data();
+            if (data.status !== 'finished' && data.status !== 'ended' && data.phase !== 'finished') {
+                matches.push({ id: d.id, ...data });
+            }
+        });
+        // Los que transmiten primero; los colgados, al final.
+        matches.sort((a, b) => (_lmEsColgado(a, ahora) - _lmEsColgado(b, ahora)) ||
+                               (_lmMinutosSin(a, ahora) - _lmMinutosSin(b, ahora)));
+        window._lmUltimaLista = matches;
+
+        if (!matches.length) {
             body.innerHTML = `
             <div style="text-align:center;padding:2rem;color:var(--text-muted);">
                 <div style="font-size:2rem;margin-bottom:0.5rem;">📭</div>
@@ -3065,57 +3165,105 @@ window._cronosOpenLiveMatchesPanel = async function() {
             return;
         }
 
-        const matches = [];
-        snap.forEach(d => {
-            const data = d.data();
-            // Solo mostrar partidos activos (no finalizados)
-            if (data.status !== 'finished' && data.status !== 'ended' && data.phase !== 'finished') {
-                matches.push({ id: d.id, ...data });
-            }
-        });
+        const borrables = matches.filter(m => _lmPuedeBorrar(m, me, ahora));
+        const barra = borrables.length ? `
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:0.6rem;flex-wrap:wrap;
+                        background:rgba(234,179,8,0.08);border:1px solid rgba(234,179,8,0.35);border-radius:10px;
+                        padding:0.6rem 0.8rem;margin-bottom:0.8rem;font-size:0.78rem;">
+                <span>⚠️ ${borrables.length} partido${borrables.length === 1 ? '' : 's'} colgado${borrables.length === 1 ? '' : 's'} de tu equipo
+                      (más de ${_LM_COLGADO_MIN} min sin actualizarse)</span>
+                <button onclick="window._cronosLimpiarColgados()" data-lm-limpiar="1"
+                    style="background:rgba(255,88,88,0.15);border:1px solid rgba(255,88,88,0.5);color:#ff5858;
+                           padding:0.35rem 0.8rem;border-radius:7px;cursor:pointer;font-weight:700;font-size:0.75rem;">
+                    🧹 Limpiar colgados</button>
+            </div>` : '';
 
-        if (!matches.length) {
-            body.innerHTML = `
-            <div style="text-align:center;padding:2rem;color:var(--text-muted);">
-                <div style="font-size:2rem;margin-bottom:0.5rem;">📭</div>
-                <div style="font-size:0.9rem;font-weight:600;">No hay partidos en vivo ahora mismo</div>
-            </div>`;
-            return;
-        }
-
-        body.innerHTML = matches.map(m => {
-            const home = m.homeName || m.teamHome || 'Local';
-            const away = m.awayName || m.teamAway || m.rival || 'Visitante';
-            const score = (m.scoreHome != null && m.scoreAway != null) ? m.scoreHome + ' - ' + m.scoreAway : '0 - 0';
-            const half = m.currentHalf === 2 ? '2ª Parte' : (m.currentHalf === 1 ? '1ª Parte' : 'En juego');
-            const coach = m.coachEmail || '';
-            const cat = m.category || '';
+        body.innerHTML = barra + matches.map(m => {
+            const colgado = _lmEsColgado(m, ahora);
+            const borrable = _lmPuedeBorrar(m, me, ahora);
+            const home = (m.homeTeam && m.homeTeam.name) || 'Local';
+            const away = (m.awayTeam && m.awayTeam.name) || m.rival || 'Visitante';
+            const score = ((m.homeTeam && m.homeTeam.score) || 0) + ' - ' + ((m.awayTeam && m.awayTeam.score) || 0);
+            const cat = _lmEtiquetaCategoria(m);
+            const min = _lmMinutosSin(m, ahora);
+            const idSeguro = encodeURIComponent(m.id);
             return `
-            <div style="background:rgba(255,88,88,0.06);border:1px solid rgba(255,88,88,0.2);
-                        border-radius:10px;padding:0.9rem;margin-bottom:0.6rem;cursor:pointer;transition:all 0.15s;"
-                 onclick="window.open('./live.html?match=${m.id}', '_blank')"
-                 onmouseover="this.style.borderColor='rgba(255,88,88,0.5)'"
-                 onmouseout="this.style.borderColor='rgba(255,88,88,0.2)'">
-                <div style="display:flex;justify-content:space-between;align-items:center;">
-                    <div style="flex:1;">
+            <div data-lm-id="${esc(m.id)}" style="background:${colgado ? 'rgba(125,133,144,0.08)' : 'rgba(255,88,88,0.06)'};
+                        border:1px solid ${colgado ? 'rgba(125,133,144,0.35)' : 'rgba(255,88,88,0.2)'};
+                        border-radius:10px;padding:0.9rem;margin-bottom:0.6rem;">
+                <div style="display:flex;justify-content:space-between;align-items:center;gap:0.6rem;">
+                    <div style="flex:1;min-width:0;cursor:pointer;" onclick="window.open('./live.html?match=${idSeguro}', '_blank')">
                         <div style="font-weight:700;font-size:0.95rem;">
-                            <span style="color:#58a6ff;">${typeof escapeHtml==='function'?escapeHtml(home):home}</span>
-                            <span style="color:var(--text-muted);margin:0 0.5rem;">${score}</span>
-                            <span style="color:#ff5858;">${typeof escapeHtml==='function'?escapeHtml(away):away}</span>
+                            <span style="color:#58a6ff;">${esc(home)}</span>
+                            <span style="color:var(--text-muted);margin:0 0.5rem;">${esc(score)}</span>
+                            <span style="color:#ff5858;">${esc(away)}</span>
                         </div>
                         <div style="font-size:0.72rem;color:var(--text-muted);margin-top:3px;">
-                            🔴 ${half} ${cat ? '· ' + cat : ''} ${coach ? '· ' + coach : ''}
+                            ${colgado
+                                ? '<span data-lm-colgado="1" style="color:#eab308;font-weight:800;">⏸ COLGADO</span>'
+                                : '🔴 ' + esc(_lmParte(m))}
+                            ${cat ? ' · ' + esc(cat) : ''} · ${esc(_lmHace(min))}
+                            ${m.coachEmail ? ' · ' + esc(m.coachEmail) : ''}
                         </div>
                     </div>
-                    <div style="font-size:0.7rem;color:#3fb950;font-weight:700;flex-shrink:0;">
-                        ▶ Ver
+                    <div style="display:flex;gap:0.4rem;flex-shrink:0;align-items:center;">
+                        ${borrable ? `<button onclick="window._cronosEliminarPartidoColgado('${idSeguro}')" data-lm-borrar="1"
+                            title="Eliminar este partido colgado de la lista"
+                            style="background:rgba(255,88,88,0.12);border:1px solid rgba(255,88,88,0.45);color:#ff5858;
+                                   padding:0.3rem 0.6rem;border-radius:7px;cursor:pointer;font-weight:700;font-size:0.72rem;">
+                            🗑️ Eliminar</button>` : ''}
+                        <span onclick="window.open('./live.html?match=${idSeguro}', '_blank')"
+                              style="font-size:0.7rem;color:#3fb950;font-weight:700;cursor:pointer;">▶ Ver</span>
                     </div>
                 </div>
             </div>`;
         }).join('');
-
-    } catch(e) {
-        const body = document.getElementById('live-matches-body');
-        if (body) body.innerHTML = '<div style="color:#ff5858;padding:1rem;">⚠️ Error: ' + e.message + '</div>';
+    } catch (e) {
+        body.innerHTML = '<div style="color:#ff5858;padding:1rem;">⚠️ Error: ' + esc(e.message) + '</div>';
     }
+};
+
+// Borra UN partido colgado: el documento del directo y sus dos índices
+// (`cronosBorrarPartidoEnVivo`, js/coach/reports/match-purge.js). Los
+// informes del partido NO se tocan: esto sólo lo quita de la lista en vivo.
+async function _lmBorrar(m) {
+    if (typeof window.cronosBorrarPartidoEnVivo !== 'function') return false;
+    return window.cronosBorrarPartidoEnVivo(m.id);
+}
+
+window._cronosEliminarPartidoColgado = async function (idCodificado) {
+    const id = decodeURIComponent(String(idCodificado || ''));
+    const me = window._cronosCurrentUser;
+    const m = (window._lmUltimaLista || []).find(x => x.id === id);
+    // 🔑 La puerta se vuelve a mirar AQUÍ, no sólo al pintar el botón: esto
+    // es window.* y se puede invocar desde la consola.
+    if (!m || !_lmPuedeBorrar(m, me, Date.now())) {
+        alert('⛔ Sólo puedes eliminar partidos COLGADOS (más de ' + _LM_COLGADO_MIN +
+              ' min sin actualizarse) de tu categoría y subcategoría.');
+        return;
+    }
+    const nombre = ((m.homeTeam && m.homeTeam.name) || 'Local') + ' - ' + ((m.awayTeam && m.awayTeam.name) || 'Visitante');
+    if (!confirm('¿Eliminar de la lista de Partidos en Vivo el partido colgado?\n\n   ' + nombre +
+                 '\n   ' + _lmHace(_lmMinutosSin(m)) + '\n\nLos informes del partido NO se borran.')) return;
+    const ok = await _lmBorrar(m);
+    if (typeof showToast === 'function') {
+        showToast(ok ? '🗑️ Partido colgado eliminado' : '⚠️ No se pudo eliminar (puede que ya no exista o no tengas permiso)', 4000);
+    }
+    await window._cronosPintaPartidosEnVivo();
+};
+
+window._cronosLimpiarColgados = async function () {
+    const me = window._cronosCurrentUser;
+    const ahora = Date.now();
+    const lista = (window._lmUltimaLista || []).filter(m => _lmPuedeBorrar(m, me, ahora));
+    if (!lista.length) { await window._cronosPintaPartidosEnVivo(); return; }
+    if (!confirm('¿Eliminar ' + lista.length + ' partido' + (lista.length === 1 ? '' : 's') +
+                 ' colgado' + (lista.length === 1 ? '' : 's') + ' de tu equipo de la lista de Partidos en Vivo?' +
+                 '\n\nLos informes de esos partidos NO se borran.')) return;
+    let ok = 0, fallos = 0;
+    for (const m of lista) { (await _lmBorrar(m)) ? ok++ : fallos++; }
+    if (typeof showToast === 'function') {
+        showToast('🧹 ' + ok + ' eliminado' + (ok === 1 ? '' : 's') + (fallos ? ' · ⚠️ ' + fallos + ' sin poder eliminar' : ''), 4000);
+    }
+    await window._cronosPintaPartidosEnVivo();
 };

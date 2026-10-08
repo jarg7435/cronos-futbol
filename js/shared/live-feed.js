@@ -55,7 +55,8 @@
         sub:     '🔄',
         sub_in:  '🔄',
         sub_out: '🔄',
-        injury:  '🚑'
+        injury:  '🚑',
+        goal_cancelled: '❌'   // v789
     };
 
     function _esc(s) {
@@ -93,6 +94,10 @@
         if (ev.type === 'sub_out') return 'Sale '  + (ev.playerName || trasSeparador(ev.text));
         if (ev.type === 'goal' || ev.type === 'yellow' || ev.type === 'red' || ev.type === 'injury') {
             return trasSeparador(ev.text) || String(ev.text || '');
+        }
+        // ⚽❌ v789 · el icono solo (❌) no dice QUÉ se anuló: se nombra.
+        if (ev.type === 'goal_cancelled') {
+            return 'Gol anulado · ' + (trasSeparador(ev.text) || '');
         }
         return String(ev.text || '');
     }

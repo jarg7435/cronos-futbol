@@ -254,6 +254,7 @@ console.log('\n── PARTE 1 · [A] el equipo ocupado se BLOQUEA, EJECUTADO ─
                                     _cronosUltimoLatidoOk:    (est && est.emitido) || 0,
                                 };
                                 ctx3.LIVE_HEARTBEAT_MS = 15000;
+                                ctx3._LATIDO_PAUSA_MS = 5 * 60 * 1000;   // v790 · vive en cronosArrancaLatido
                                 vm.createContext(ctx3);
                                 vm.runInContext(lat[0], ctx3);
                                 return ctx3;
@@ -263,13 +264,15 @@ console.log('\n── PARTE 1 · [A] el equipo ocupado se BLOQUEA, EJECUTADO ─
                             corriendo._cb();
                             ok('4b · con el reloj en marcha, late como siempre', corriendo._envios === 1);
 
-                            const pausaLimpia = montarL({ isRunning: false, pulsado: 1000, emitido: 2000 });
+                            // ⚠️ v790 · horas REALISTAS (ver test_una_cuenta_por_cache 5e).
+                            const T = Date.now();
+                            const pausaLimpia = montarL({ isRunning: false, pulsado: T - 2000, emitido: T - 1000 });
                             pausaLimpia._cb(); pausaLimpia._cb(); pausaLimpia._cb();
                             ok('4c · 🔑🔑 [D] en pausa CON el cambio ya emitido: CERO escrituras ' +
                                '(el ahorro de v572 intacto)',
                                pausaLimpia._envios === 0, 'envíos=' + pausaLimpia._envios);
 
-                            const pausaPerdida = montarL({ isRunning: false, pulsado: 2000, emitido: 1000 });
+                            const pausaPerdida = montarL({ isRunning: false, pulsado: T - 1000, emitido: T - 2000 });
                             pausaPerdida._cb();
                             ok('4d · 🔑🔑 [D] pero si la pausa NO llegó, se reintenta: el panel ' +
                                'en vivo no puede quedarse con el reloj corriendo',

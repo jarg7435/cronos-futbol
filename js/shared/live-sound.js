@@ -43,7 +43,9 @@
         yellow: [[520,0,0.18]],                                     // pitido medio
         red:    [[400,0,0.18],[300,0.20,0.30]],                    // doble grave
         sub:    [[700,0,0.10],[900,0.12,0.12]],                    // dos notas suaves
-        injury: [[300,0,0.25],[260,0.27,0.35]]                     // tono descendente
+        injury: [[300,0,0.25],[260,0.27,0.35]],                    // tono descendente
+        // v789 · gol anulado: la fanfarria del gol al REVÉS (descendente).
+        goal_cancelled: [[1175,0,0.12],[880,0.12,0.12],[660,0.24,0.22]]
     };
     const REPS = 3;      // repeticiones fijas
     const GAP  = 0.06;   // pausa entre repeticiones

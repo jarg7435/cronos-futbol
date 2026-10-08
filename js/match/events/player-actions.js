@@ -571,11 +571,18 @@ function _confirmarEventosModal() {
     var cambioTarjeta = p.cards !== base.cards;
     var lesionNueva   = p.injured === true && base.injured !== true;
     var golesEmitidos = 0;
+    var anuladosEmitidos = 0;
 
     buffer.forEach(function (ev) {
         var type = ev[0];
         if (type === 'goal') {
             if (golesEmitidos < netGoles) { golesEmitidos++; _registerMatchEvent.apply(null, ev); }
+            return;
+        }
+        // ⚽❌ v789 · los avisos de GOL ANULADO, sólo por lo que de verdad se
+        // quitó respecto a lo que había al abrir (el mismo neto, en negativo).
+        if (type === 'goal_cancelled') {
+            if (anuladosEmitidos < -netGoles) { anuladosEmitidos++; _registerMatchEvent.apply(null, ev); }
             return;
         }
         if (type === 'yellow' || type === 'red') {
@@ -1071,7 +1078,12 @@ function changeGoals(amount) {
             }
         } else if (amount < 0 && p.goals < prevGoals) {
             logEvent(p, `GOL ANULADO (Quedan: ${p.goals})`);
-            
+            // ⚽❌ v789 · el aviso de GOL ANULADO para el visor y las familias.
+            // Con el modal abierto queda APARCADO y _confirmarEventosModal lo
+            // suelta sólo si al pulsar HECHO el jugador tiene MENOS goles que
+            // al abrir: un +1 −1 dentro del modal no avisa de nada.
+            _registerMatchEvent('goal_cancelled', 'GOL ANULADO · ' + p.name, '❌', undefined, _datosEquipoDe(p));
+
             // 📊 SOLUCIÓN #7: Auditar gol anulado
             if (window.auditLogger && liveMatchId) {
                 window.auditLogger.logPlayerAction(
@@ -1097,7 +1109,8 @@ function changeGoals(amount) {
         // para que el panel en vivo reciba el gol sin delay. Antes usábamos
         // liveSyncOnAction() que esperaba 2s (ahora 500ms) y el gol podía
         // llegar retrasado o perderse en race conditions.
-        if (amount > 0 && typeof window.liveSyncFlushNow === 'function') {
+        // v789 · y también al ANULAR: su aviso no puede llegar tarde.
+        if (amount !== 0 && p.goals !== prevGoals && typeof window.liveSyncFlushNow === 'function') {
             window.liveSyncFlushNow();
         } else {
             liveSyncOnAction();
