@@ -287,9 +287,9 @@ parte('\n2) 🔑🔑 LA CUENTA, EJECUTADA', async () => {
 parte('\n3) EL CANAL DEL CLUB TAMBIÉN CUENTA', async () => {
     const YO = { uid: 'yo', clubId: 'clubA', role: 'director' };
     const canal = [
-        d('m1', { clubId: 'clubA', senderUid: 'otro', createdAt: '2026-09-19T10:00:00.000Z' }),
-        d('m2', { clubId: 'clubA', senderUid: 'yo',   createdAt: '2026-09-19T10:05:00.000Z' }),
-        d('m3', { clubId: 'clubA', senderUid: 'otro', createdAt: '2026-09-19T10:09:00.000Z' }),
+        d('m1', { clubId: 'clubA', text: 'msg', senderUid: 'otro', createdAt: '2026-09-19T10:00:00.000Z' }),
+        d('m2', { clubId: 'clubA', text: 'msg', senderUid: 'yo',   createdAt: '2026-09-19T10:05:00.000Z' }),
+        d('m3', { clubId: 'clubA', text: 'msg', senderUid: 'otro', createdAt: '2026-09-19T10:09:00.000Z' }),
     ];
 
     let w = cargar({ yo: YO, veCanal: true, hilos: [], canal,
@@ -362,7 +362,7 @@ parte('\n4) LAS MARCAS SE ESCRIBEN Y AGRUPAN', async () => {
         d('h2', { participants: ['yo', 'b'], lastMessageAt: '2026-09-19T10:30:00.000Z',
                   messages: [{ senderUid: 'b', text: 'eh',   timestamp: '2026-09-19T10:30:00.000Z' }] }),
     ];
-    const canalPend = [d('c1', { clubId: 'clubA', senderUid: 'otro',
+    const canalPend = [d('c1', { clubId: 'clubA', text: 'msg', senderUid: 'otro',
                                  createdAt: '2026-09-19T11:00:00.000Z' })];
     const marcasViejas = {
         threads: { h1: '2026-09-19T08:00:00.000Z', h2: '2026-09-19T08:00:00.000Z' },
@@ -523,7 +523,7 @@ parte('\n8) 🔴 v745 · CADA PLAZA, SU BANDEJA', async () => {
     };
     //  Una sola cuenta con cuatro sombreros: es el club del autor.
     const COMO = (plaza) => ({ uid: 'yo', clubId: 'clubA', role: 'club_admin', _activeRole: plaza });
-    const canalPropio = [d('c1', { clubId: 'clubA', senderUid: 'yo', senderRole: 'club_admin',
+    const canalPropio = [d('c1', { clubId: 'clubA', text: 'msg', senderUid: 'yo', senderRole: 'club_admin',
                                    createdAt: '2026-09-19T10:00:00.000Z' })];
     const MARCAS = () => ({ threads: {}, staffChannel: '2026-09-19T09:00:00.000Z',
                             staffChannelByPlaza: { club_admin: '2026-09-19T09:00:00.000Z' } });
@@ -543,8 +543,8 @@ parte('\n8) 🔴 v745 · CADA PLAZA, SU BANDEJA', async () => {
 
     // ── Una plaza estrenada hereda lo que ya había leído la persona ───
     const canalViejo = [
-        d('v1', { clubId: 'clubA', senderUid: 'otro', createdAt: '2026-09-01T10:00:00.000Z' }),
-        d('v2', { clubId: 'clubA', senderUid: 'otro', createdAt: '2026-09-19T11:00:00.000Z' }),
+        d('v1', { clubId: 'clubA', text: 'msg', senderUid: 'otro', createdAt: '2026-09-01T10:00:00.000Z' }),
+        d('v2', { clubId: 'clubA', text: 'msg', senderUid: 'otro', createdAt: '2026-09-19T11:00:00.000Z' }),
     ];
     w = cargar({ yo: COMO('coordinator'), rolFirma, veCanal: true, hilos: [], canal: canalViejo,
                  marcas: { threads: {}, staffChannel: '2026-09-19T09:00:00.000Z',
@@ -666,7 +666,7 @@ parte('\n9) 🔴🔴 v746 · UN MENSAJE NUEVO ENCIENDE LAS DEMÁS PLAZAS', async
     };
     const COMO = (plaza) => ({ uid: 'yo', clubId: 'clubA', role: 'club_admin', _activeRole: plaza });
     //  El mensaje que el autor manda «desde el Director».
-    const canal = [d('m1', { clubId: 'clubA', senderUid: 'yo', senderRole: 'director',
+    const canal = [d('m1', { clubId: 'clubA', text: 'msg', senderUid: 'yo', senderRole: 'director',
                              createdAt: '2026-09-20T10:05:00.000Z' })];
     //  Estado normal: el suelo quieto y la plaza que leyó, al día.
     const MARCAS = () => ({ threads: {}, staffChannel: '2026-09-20T10:00:00.000Z',

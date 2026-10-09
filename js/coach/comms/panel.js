@@ -778,6 +778,53 @@ function _cThreadId(senderUid, recipientUid, tabContext) {
     return `${sorted[0]}_${sorted[1]}_${tabContext || 'gen'}`;
 }
 
+// ════════════════════════════════════════════════════════════════════
+//  🔔 v796 · LAS PESTAÑAS DE CHAT DE CADA PLAZA, EN UN SOLO SITIO
+//
+//  Encargo del autor (implementar.txt 2026-10-09, capturas 11292-11294): la
+//  tarjeta «Mensajes» del Director marcaba 7 y en la bandeja todos los
+//  contactos decían «— Sin mensajes —».
+//
+//  🔑 La tarjeta contaba TODOS los hilos donde participa la cuenta y la
+//  bandeja sólo abre los de SUS pestañas: cada contacto se busca por
+//  `_cThreadId(yo, él, contexto de la pestaña)` o por el id antiguo de pareja.
+//  Lo que no casa con eso no se puede ver nunca — por ejemplo el hilo
+//  `{clubId}_{director}` donde los entrenadores dejan los AVISOS de informes
+//  (`_cStaffThreadId`), o los de otra plaza de la misma cuenta.
+//
+//  Esta tabla es la que usan la bandeja (repintar el subrayado) y el contador
+//  (unread-badge.js). ⚠️ Tiene que decir lo mismo que la lista con etiquetas
+//  de `_renderUnifiedMessagingView`.
+// ════════════════════════════════════════════════════════════════════
+const _UM_PESTANAS_POR_ROL = {
+    coach:            ['parents', 'director', 'coordinator', 'club'],
+    director:         ['coordinators', 'coaches', 'clubadmin', 'club'],
+    coordinator:      ['director', 'coaches', 'club'],
+    parent:           ['coach'],
+    club_admin:       ['director', 'superadmin', 'club'],
+    admin_individual: ['coaches', 'superadmin'],
+};
+
+// ¿La bandeja de esta plaza puede ABRIR este hilo? Mismo criterio con el que
+// la bandeja lo busca (lista de contactos y `_loadUnifiedThreadMessages`).
+function cronosHiloVisibleEnBandeja(role, threadId, participants) {
+    const id = String(threadId || '');
+    const p = Array.isArray(participants) ? participants.filter(Boolean) : [];
+    if (!id || !p.length || p.length > 2) return false;   // hilos de club (3+), nunca
+    const a = String(p[0]), b = String(p[1] || p[0]);
+    if (id === `${a}_${b}` || id === `${b}_${a}`) return true;   // id antiguo de pareja
+    const pestanas = _UM_PESTANAS_POR_ROL[role] || [];
+    for (const t of pestanas) {
+        if (t === 'club') continue;                       // el canal va aparte
+        if (id === _cThreadId(a, b, _getCanonicalContext(role, t))) return true;
+    }
+    return false;
+}
+if (typeof window !== 'undefined') {
+    window.cronosHiloVisibleEnBandeja = cronosHiloVisibleEnBandeja;
+    window._UM_PESTANAS_POR_ROL = _UM_PESTANAS_POR_ROL;
+}
+
 // Búsqueda inteligente de hilos existentes (canónicos, legacy y por participantes)
 async function _resolveThreadDoc(db, myUid, contactUid, role, tabId, clubId, contactEmail) {
     const canonicalCtx = _getCanonicalContext(role, tabId);
@@ -1312,12 +1359,9 @@ async function _switchUnifiedTab(tabId) {
     // entrenador se añade siempre aquí aunque arriba dependa de que no sea un
     // ente: esta lista sólo sirve para repintar el subrayado de una pestaña que
     // ya existe, y en un ente ese botón no se ha pintado.
-    if (role === 'coach') tabs = ['parents', 'director', 'coordinator', 'club'];
-    else if (role === 'director') tabs = ['coordinators', 'coaches', 'clubadmin', 'club'];
-    else if (role === 'coordinator') tabs = ['director', 'coaches', 'club'];
-    else if (role === 'parent') tabs = ['coach'];
-    else if (role === 'club_admin') tabs = ['director', 'superadmin', 'club'];
-    else if (role === 'admin_individual') tabs = ['coaches', 'superadmin'];
+    // 🔔 v796 · de la tabla única (`_UM_PESTANAS_POR_ROL`), la misma que mira
+    // el contador de no leídos.
+    tabs = (_UM_PESTANAS_POR_ROL[role] || []).slice();
 
     tabs.forEach(t => {
         const btn = document.getElementById(`um-tab-${t}`);

@@ -101,8 +101,18 @@ console.log('── PARTE 1 · pestañas por rol ──');
         const trozo = tabsBlock.slice(i, tabsBlock.indexOf('];', i));
         return (trozo.match(/id: '(\w+)'/g) || []).map(s => s.replace(/id: '|'/g, '')).sort();
     };
+    // 🔔 v796 · la segunda lista vive ahora en la tabla `_UM_PESTANAS_POR_ROL`
+    // (la comparten _switchUnifiedTab y el contador de no leídos). Se lee de
+    // ahí, y sólo si _switchUnifiedTab la usa de verdad.
+    const tabla = SRC.slice(SRC.indexOf('const _UM_PESTANAS_POR_ROL = {'),
+                            SRC.indexOf('};', SRC.indexOf('const _UM_PESTANAS_POR_ROL = {')));
+    const switchUsaTabla = /tabs = \(_UM_PESTANAS_POR_ROL\[role\] \|\| \[\]\)\.slice\(\);/.test(switchBlock || SRC);
     const delSwitch = (rol) => {
-        const m = switchBlock.match(new RegExp(`role === '${rol}'\\) tabs = \\[([^\\]]*)\\]`));
+        if (!switchUsaTabla) {
+            const m = switchBlock.match(new RegExp(`role === '${rol}'\\) tabs = \\[([^\\]]*)\\]`));
+            return m ? m[1].split(',').map(s => s.trim().replace(/'/g, '')).filter(Boolean).sort() : [];
+        }
+        const m = tabla.match(new RegExp(`\\b${rol}:\\s*\\[([^\\]]*)\\]`));
         return m ? m[1].split(',').map(s => s.trim().replace(/'/g, '')).filter(Boolean).sort() : [];
     };
     const rolesConPestanas = ['coach', 'director', 'coordinator', 'parent', 'club_admin', 'admin_individual'];

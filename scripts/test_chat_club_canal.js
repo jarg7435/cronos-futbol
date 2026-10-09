@@ -196,8 +196,13 @@ parte(() => {
        'el encargo dice que el canal aplica exclusivamente a clubes');
 
     // Lista 2: la de los ids, la que subraya la pestaña activa.
+    // 🔔 v796 · desde la tabla única `_UM_PESTANAS_POR_ROL` (la usan
+    // _switchUnifiedTab y el contador de no leídos).
+    const _tabla = PANEL.slice(PANEL.indexOf('const _UM_PESTANAS_POR_ROL = {'),
+                               PANEL.indexOf('};', PANEL.indexOf('const _UM_PESTANAS_POR_ROL = {')));
     const l2 = (rol) => {
-        const m = PANEL.match(new RegExp(`role === '${rol}'\\) tabs = \\[([^\\]]*)\\]`));
+        const m = _tabla.match(new RegExp(`\\b${rol}:\\s*\\[([^\\]]*)\\]`)) ||
+                  PANEL.match(new RegExp(`role === '${rol}'\\) tabs = \\[([^\\]]*)\\]`));
         return m ? m[1] : '';
     };
     ok('2e · 🔑🔑 y la SEGUNDA lista dice lo mismo para los cuatro',

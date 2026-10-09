@@ -243,6 +243,34 @@ function _ubEsDeOtro(m, yo, plazaMia) {
     return _ubClase(firma) !== _ubClase(mia);
 }
 
+// ════════════════════════════════════════════════════════════════════
+//  🔔 v796 · SÓLO CUENTA LO QUE LA BANDEJA PUEDE ENSEÑAR
+// ════════════════════════════════════════════════════════════════════
+//  Encargo del autor (implementar.txt 2026-10-09, capturas 11292-11294):
+//  «Mensajes» del Director marcaba 7 y en la bandeja todos los contactos
+//  decían «— Sin mensajes —». La regla del encargo: la insignia sólo cuenta
+//  MENSAJES DE TEXTO REALES de OTROS usuarios, pendientes de leer.
+//
+//  🔑 MEDIDO EN EL CÓDIGO: esta cuenta recorría TODOS los hilos donde
+//  participa la cuenta, y la bandeja sólo abre los de las pestañas de su
+//  plaza. El caso grande es el hilo `{clubId}_{uid}` (`_cStaffThreadId`)
+//  donde cada entrenador deja el AVISO de su informe (`type:'report'`, sin
+//  `senderUid`, firmado 'coach' → «de otro»): sube con cada informe y no lo
+//  abre ninguna pestaña. Igual con los hilos de otra plaza de la misma cuenta.
+//  Ahora un hilo cuenta sólo si `cronosHiloVisibleEnBandeja` (comms/panel.js,
+//  la tabla de pestañas de la bandeja) dice que esta plaza lo puede abrir.
+function _ubHiloVisible(threadId, t, plaza) {
+    if (typeof window.cronosHiloVisibleEnBandeja !== 'function') return true;   // sin bandeja cargada: como antes
+    return window.cronosHiloVisibleEnBandeja(plaza, threadId, t && t.participants);
+}
+// Un mensaje de texto de verdad: con `text` no vacío. Las entradas sin texto
+// (sellos, metadatos) no son un mensaje que se pueda leer.
+function _ubEsTexto(m) {
+    return !!(m && typeof m.text === 'string' && m.text.trim());
+}
+window._ubHiloVisible = _ubHiloVisible;
+window._ubEsTexto = _ubEsTexto;
+
 // La hora del último mensaje de un hilo. Se mira el array Y `lastMessageAt`,
 // porque no siempre coinciden: los módulos de informes escriben el sello del
 // hilo con `arrayUnion`, y un hilo migrado puede traer uno y no el otro. Se
@@ -270,8 +298,10 @@ function ubNoLeidosDeHilo(threadId, t) {
     if (!marca) return 0;                       // hilo sin marca = hilo sembrado
     const msgs = Array.isArray(t.messages) ? t.messages : [];
     const plaza = _ubPlazaHilo(yo);
+    if (!_ubHiloVisible(threadId, t, plaza)) return 0;   // v796
     let n = 0;
     for (const m of msgs) {
+        if (!_ubEsTexto(m)) continue;                     // v796 · sólo texto
         if (!_ubEsDeOtro(m, yo, plaza)) continue;
         if (String((m && m.timestamp) || '') > marca) n++;
     }
@@ -544,8 +574,12 @@ async function ubContarNoLeidos(forzar) {
                     siembra.push([d.id, _ubUltimoDe(t)]);
                     return;
                 }
+                //  🔔 v796 · Un hilo que la bandeja de esta plaza no puede
+                //  abrir NO cuenta: sería un número sin nada detrás.
+                if (!_ubHiloVisible(d.id, t, plazaHilo)) return;
                 const msgs = Array.isArray(t.messages) ? t.messages : [];
                 for (const m of msgs) {
+                    if (!_ubEsTexto(m)) continue;          // v796 · sólo texto real
                     //  🔑 La plaza de los CHATS PARTICULARES, que no es la del
                     //  canal: aquí firma `_umState.role` (ver `_ubPlazaHilo`).
                     if (!_ubEsDeOtro(m, yo, plazaHilo)) continue;
@@ -598,6 +632,7 @@ async function ubContarNoLeidos(forzar) {
                         //  mandé como administrador del club sí está sin leer
                         //  para mi plaza de director. Es la misma unidad con
                         //  la que v740 firma los mensajes del canal.
+                        if (!_ubEsTexto(m)) return;            // v796 · sólo texto real
                         if (!_ubEsDeOtro(m, yo, plazaCanal)) return;
                         if (String(m.createdAt || '') > marcaCanal) canal++;
                     });
