@@ -225,8 +225,10 @@ console.log('\n── PARTE 5 · el panel usa la fusión ──');
        /_grupos\.dudosas\.map\(_pintaEntrada\)/.test(SMC) &&
        /<details/.test(SMC),
        'ocultarlas del todo cambiaría una confusión por una pérdida');
-    ok('5a2 · v465 · y los candidatos locales salen de TODAS las ranuras',
-       /_cronosMatchSlots\.listar\(\)/.test(SMC) && /const localMatches = \[\]/.test(SMC),
+    // 🔄 v793 · de TODAS las ranuras DEL EQUIPO SELECCIONADO (encargo del
+    // autor 2026-10-09): sigue siendo el registro de ranuras, no una sola.
+    ok('5a2 · v465/v793 · y los candidatos locales salen del registro de ranuras, por equipo',
+       /_S\.listar\(_eqSel \|\| undefined\)/.test(SMC) && /const localMatches = \[\]/.test(SMC),
        'con una sola ranura, el segundo partido del entrenador no aparecia');
     ok('5b · y ya NO existe el descarte por id suelto que había',
        !/isSameId/.test(SMC),

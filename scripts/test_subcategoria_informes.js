@@ -196,7 +196,9 @@ console.log('\n── PARTE 3 · la pareja viaja en la ranura del partido ──
     // El autoguardado escribía la categoría sola: al retomar un partido, la
     // letra se perdía y los informes volvían a salir sin ella.
     ok('3a · 🔑 la ranura guarda la subcategoría junto a la categoría',
-       /subcategory:  document\.getElementById\('match-subcategory'\)\?\.value \|\|/.test(APP),
+       // v793 · ahora sale de la FICHA del partido (con el desplegable de
+       // respaldo); el comportamiento lo ejecuta test_ficha_partido_por_equipo.js
+       /subcategory:  _ficha\.category \? \(_ficha\.subcategory \|\| ''\)[\s\S]{0,160}?document\.getElementById\('match-subcategory'\)/.test(APP),
        'es la lección de v562 aplicada al guardado');
 
     ok('3b · y al retomar se restaura en la global y en el desplegable',

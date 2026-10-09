@@ -1918,10 +1918,77 @@ async function openLiveMatchRecovery() {
     const localMatches = [];
     const now = Date.now();
 
-    const _ranuras = window._cronosMatchSlots ? window._cronosMatchSlots.listar() : [];
+    // ══════════════════════════════════════════════════════════════════
+    //  🪪 v793 · SÓLO LOS PARTIDOS DEL EQUIPO SELECCIONADO
+    //
+    //  Encargo del autor (implementar.txt 2026-10-09, capturas 11277-11280):
+    //  con «Alevín C» seleccionado, «Recuperar Partido» tiene que enseñar y
+    //  cargar ÚNICAMENTE lo del Alevín C. Hasta aquí se listaban los de los
+    //  dos equipos a propósito (v557, «si no, el del otro sería
+    //  irrecuperable»); ya no hace falta: el partido del otro equipo se
+    //  recupera eligiendo ESE equipo en «Mis equipos», que es justo lo que
+    //  él espera.
+    //
+    //  🔑 La pertenencia es el sello `teamId` (club + categoría + letra), el
+    //  mismo de las pestañas. Sólo se filtra con DOS equipos o más: con uno
+    //  no hay nada que separar, y un formato de sello distinto (entes) no
+    //  puede esconderle su único partido. Lo que no lleva sello ni categoría
+    //  (ranuras de antes de v557) no se puede atribuir y se sigue enseñando.
+    // ══════════════════════════════════════════════════════════════════
+    const _S = window._cronosMatchSlots;
+    let _eqSel = '', _eqSelNombre = '';
+    try {
+        const _misEq = (typeof window.cronosEquiposDeEntrenador === 'function')
+            ? (window.cronosEquiposDeEntrenador(me.allRoles, null) || []) : [];
+        const _act = (_S && typeof _S.equipoActual === 'function') ? _S.equipoActual() : '';
+        const _fichaEq = _misEq.filter(e => e.teamId === _act)[0];
+        if (_misEq.length > 1 && _fichaEq) {
+            _eqSel = _act;
+            _eqSelNombre = (typeof window.cronosNombreCategoria === 'function')
+                ? window.cronosNombreCategoria(_fichaEq.category, _fichaEq.subcategory || '')
+                : String(_fichaEq.category || '');
+        }
+    } catch (e) { _eqSel = ''; }
+    // El equipo de un documento de la nube: su sello, o el que dicta su
+    // categoría DEL PARTIDO. '' si no se puede saber.
+    const _equipoDeDoc = (d) => {
+        if (d && d.teamId) return String(d.teamId);
+        try {
+            if (d && d.matchCategory && typeof window.cronosTeamId === 'function') {
+                const _sm = (typeof window.cronosSinModalidad === 'function')
+                    ? window.cronosSinModalidad(d.matchCategory) : d.matchCategory;
+                return window.cronosTeamId(d.clubId || me.clubId || '', _sm, d.matchSubcategory || '') || '';
+            }
+        } catch (e) { /* sin equipo resoluble */ }
+        return '';
+    };
+    if (_eqSel && _eqSelNombre) {
+        const _p = modal.querySelector('.modal-content > p');
+        if (_p) _p.insertAdjacentHTML('afterend',
+            `<div style="font-size:0.78rem;margin:-0.4rem 0 0.9rem;padding:0.45rem 0.7rem;flex-shrink:0;
+                         background:rgba(88,166,255,0.1);border:1px solid rgba(88,166,255,0.3);border-radius:8px;
+                         color:var(--text-muted);">
+                ⚽ Partidos de <strong style="color:#58a6ff;">${typeof escapeHtml==='function'?escapeHtml(_eqSelNombre):_eqSelNombre}</strong>.
+                Para recuperar uno de tu otro equipo, elígelo antes en «Mis equipos».
+             </div>`);
+    }
+
+    // `listar(teamId)` ya filtra por sello (y deja pasar las ranuras sin él).
+    const _ranuras = _S ? _S.listar(_eqSel || undefined) : [];
     for (const _ranura of _ranuras) {
         try {
-            const parsed = _ranura.state;
+            let parsed = _ranura.state;
+            // 🪪 v793 · Una ranura escrita antes de v793 puede traer la
+            // categoría y la modalidad del OTRO equipo: se pinta (y se mide su
+            // caducidad) con su ficha validada contra el sello `teamId`.
+            if (parsed && parsed.teamId && typeof window.cronosFichaPartido === 'function') {
+                const _f = window.cronosFichaPartido(
+                    [{ category: parsed.category, subcategory: parsed.subcategory, mode: parsed.currentMode }],
+                    parsed.teamId);
+                parsed = Object.assign({}, parsed,
+                    _f.category ? { category: _f.category, subcategory: _f.subcategory } : {},
+                    _f.mode ? { currentMode: _f.mode } : {});
+            }
             if (parsed && parsed.savedAt && parsed.matchPhase !== 'finished') {
                 const mode = parsed.currentMode || 'f7';
                 const cat = (parsed.category || '').toLowerCase();
@@ -2032,6 +2099,9 @@ async function openLiveMatchRecovery() {
 
             if (isExpired) {
                 _doDeleteLiveMatch(d.id, null, true);
+            } else if (_eqSel && _equipoDeDoc(data) && _equipoDeDoc(data) !== _eqSel) {
+                // 🪪 v793 · Partido de OTRO equipo del entrenador: no se enseña
+                // aquí (se recupera eligiendo ese equipo). No se borra nada.
             } else {
                 // v441: ya NO se descarta aquí el documento que coincide con el
                 // local. La fusión se hace después, en un solo sitio y con una
@@ -2049,9 +2119,10 @@ async function openLiveMatchRecovery() {
             list.innerHTML = `
             <div style="text-align:center;padding:3rem 1rem;color:var(--text-muted);">
                 <div style="font-size:2.5rem;margin-bottom:0.8rem;">✅</div>
-                <div style="font-size:0.9rem;font-weight:600;">No hay partidos en curso</div>
+                <div style="font-size:0.9rem;font-weight:600;">No hay partidos en curso${_eqSelNombre ? ' de ' + (typeof escapeHtml==='function'?escapeHtml(_eqSelNombre):_eqSelNombre) : ''}</div>
                 <div style="font-size:0.78rem;margin-top:0.4rem;">
-                    Todos tus partidos han sido finalizados correctamente.
+                    ${_eqSelNombre ? 'Si tienes uno a medias con tu otro equipo, elígelo en «Mis equipos» y vuelve a pulsar Recuperar.'
+                                   : 'Todos tus partidos han sido finalizados correctamente.'}
                 </div>
             </div>`;
             return;
@@ -2475,6 +2546,20 @@ async function _doResumeMatch(matchId) {
             deltaSecs = Math.max(0, Math.floor((Date.now() - savedTimeMs) / 1000));
         }
 
+        // 🪪 v793 · LA FICHA DEL PARTIDO, validada contra su sello `teamId`.
+        // `m.category` es la del PERFIL del entrenador (sync.js) y `m.mode`
+        // pudo escribirse con el panel en el otro equipo: ninguno de los dos
+        // basta solo. Manda la categoría DEL PARTIDO si casa con su equipo.
+        if (typeof window.cronosFichaPartido === 'function') {
+            const _f = window.cronosFichaPartido([
+                { category: m.matchCategory, subcategory: m.matchSubcategory, mode: m.mode },
+                { category: m.category,      subcategory: m.subcategory,      mode: m.mode },
+            ], m.teamId || '');
+            if (_f.mode) m.mode = _f.mode;
+            if (_f.category) { m.category = _f.category; m.subcategory = _f.subcategory; }
+            window._cronosFichaEnMemoria = _f;
+        }
+
         // ── Restaurar configuración global del partido ──
         if (m.mode)  { currentMode = m.mode; }
         if (m.phase) { matchPhase  = m.phase; }
@@ -2486,6 +2571,18 @@ async function _doResumeMatch(matchId) {
             window._currentMatchCategory = m.category;
             const catSelect = document.getElementById('match-category');
             if (catSelect) catSelect.value = m.category;
+            // 🪪 v793 · y su letra, como hace el retomar local (v711).
+            window._currentMatchSubcategory = m.subcategory || '';
+        }
+        // 🪪 v793 · RETOMAR ES VOLVER A SU EQUIPO, también desde la nube. El
+        // retomar local ya lo hacía (v557): sin esto, el dueño del partido en
+        // memoria seguía siendo el del equipo anterior y el autoguardado
+        // escribía este partido en la ranura del OTRO equipo.
+        if (m.teamId) {
+            window._cronosMatchTeamId = String(m.teamId);
+            if (typeof window._cronosAplicarEquipoActivo === 'function') {
+                try { window._cronosAplicarEquipoActivo(String(m.teamId)); } catch (e) { /* nunca impide retomar */ }
+            }
         }
         // FIX: Siempre usar los tiempos del snapshot (no recalcular desde categoría).
         // La categoría puede dar valores erróneos si el partido usó tiempos personalizados.

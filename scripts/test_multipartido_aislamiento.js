@@ -380,10 +380,13 @@ ok('7e · ⚠️ _guardAgainstMatchReset mira SÓLO el partido de esta pestaña'
    /getTabMatchId\(\)/.test(bloqueGuard) && /S\.leer\(propio\)/.test(bloqueGuard),
    'si mira "el partido activo" a secas, abrir el segundo avisa del primero');
 
-// El panel de recuperación tiene que poder enseñar los dos.
-ok('7f · el panel de recuperación parte de TODAS las ranuras',
+// 🔄 v793 · REVOCADO A PROPÓSITO (encargo del autor 2026-10-09): el panel
+// ya NO enseña los partidos de los dos equipos, sólo los del seleccionado;
+// el del otro se recupera eligiendo ese equipo. Sigue partiendo del
+// registro de ranuras (v465), ahora filtrado por el sello `teamId`.
+ok('7f · el panel de recuperación parte de las ranuras DEL EQUIPO SELECCIONADO (v793)',
    /const localMatches = \[\]/.test(SETUP) &&
-   /_cronosMatchSlots \? window\._cronosMatchSlots\.listar\(\)/.test(SETUP) &&
+   /_S \? _S\.listar\(_eqSel \|\| undefined\)/.test(SETUP) &&
    /_fusionaCandidatosRecuperacion\(localMatches, docsNube\)/.test(SETUP));
 
 // El refresco por sincronización remota reemplaza players y marcador: si lee

@@ -432,9 +432,15 @@ ok('6f · retomar un partido lleva de vuelta a SU equipo (pantalla y datos, lo m
    /_cronosAplicarEquipoActivo\(_eqPartido\)/.test(APPINIT) &&
    /window\._cronosAplicarEquipoActivo = function/.test(SETUP));
 
-ok('6g · el panel de recuperación sigue partiendo de TODAS las ranuras',
-   /_cronosMatchSlots \? window\._cronosMatchSlots\.listar\(\)/.test(SETUP),
-   'filtrarlo por equipo dejaría el partido del otro irrecuperable');
+// 🔄 v793 · REVOCADO A PROPÓSITO (encargo del autor 2026-10-09, capturas
+// 11277-11280): con «Alevín C» seleccionado, «Recuperar» sólo enseña lo del
+// Alevín C. El del otro equipo NO queda irrecuperable: se ve eligiendo ese
+// equipo en «Mis equipos», y aquí no se borra nada suyo.
+ok('6g · v793 · el panel de recuperación filtra por el equipo seleccionado (con 2+ equipos)',
+   /_S \? _S\.listar\(_eqSel \|\| undefined\)/.test(SETUP) &&
+   /_misEq\.length > 1 && _fichaEq/.test(SETUP) &&
+   /_equipoDeDoc\(data\) !== _eqSel\) \{\s*\/\/[^\n]*\n\s*\/\/[^\n]*\n\s*\} else \{/.test(SETUP),
+   'y el documento del otro equipo se salta SIN borrarlo');
 
 // ═══════════ Resultado ═══════════
 console.log('\n────────────────────────────────');

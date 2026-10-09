@@ -1079,11 +1079,24 @@ async function _emiteLatido(status = 'active') {
         window._cronosIdPartido = window._cronosIdPartido || {};
         const _sello = liveMatchId ? window._cronosIdPartido[liveMatchId] : null;
 
+        // 🪪 v793 · La ficha del partido en memoria (app-init.js): identidad
+        // congelada al nacer/retomar el partido y validada contra su `teamId`.
+        // Va DETRÁS del sello y DELANTE de las globales y del desplegable,
+        // que el panel mueve al cambiar de pestaña con el partido corriendo.
+        let _ficha = null;
+        try {
+            _ficha = (typeof window.cronosFichaDelPartidoEnMemoria === 'function')
+                ? window.cronosFichaDelPartidoEnMemoria() : null;
+        } catch (e) { _ficha = null; }
+
         let _matchCat = '', _matchSub = '';
         if (_sello && _sello.cat) {
             // Ya sellada para ESTE partido: no se vuelve a mirar ninguna global.
             _matchCat = _sello.cat;
             _matchSub = _sello.sub || '';
+        } else if (_ficha && _ficha.category) {
+            _matchCat = _ficha.category;
+            _matchSub = _ficha.subcategory || '';
         } else if (window._currentMatchCategory) {
             _matchCat = window._currentMatchCategory;
             _matchSub = window._currentMatchSubcategory || '';
@@ -1268,7 +1281,9 @@ async function _emiteLatido(status = 'active') {
                                         : (_perfilUnico ? (snapSub || null) : null),
 
             // Partido
-            mode:        currentMode,
+            // 🪪 v793 · La modalidad DEL PARTIDO, no la global: el panel la
+            // pasaba a 'f7' al abrir la pestaña Alevín con un Regional en juego.
+            mode:        (_ficha && _ficha.mode) || currentMode,
             phase:       matchPhase,
             isRunning:   isRunning,
             timeH1:      masterTimeH1,

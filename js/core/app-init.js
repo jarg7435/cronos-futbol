@@ -416,6 +416,112 @@ function _miSlotId() {
                           _equipoDelPartidoEnMemoria());
 }
 
+// ════════════════════════════════════════════════════════════════════
+//  🪪 v793 · LA FICHA DEL PARTIDO: MODALIDAD, CATEGORÍA Y LETRA, CONGELADAS
+//
+//  Encargo del autor (implementar.txt 2026-10-09, capturas 11277-11280): con
+//  un Regional B en juego, volvió al panel con la pestaña «Alevín C» activa y
+//  «Recuperar Partido» le ofreció «REGIONAL B · F-7 · Alevín · 18 jugadores
+//  · ⚠️ Datos cruzados».
+//
+//  🔑 NO ERA UNA CLAVE GLOBAL: la ranura ya es por partido y el puntero por
+//  equipo (v465/v557), y el sello `teamId` salía bien (Regional B). Lo que
+//  se cruzaba era lo que el autoguardado de 5 s escribía DENTRO: la
+//  categoría y la letra las leía del DESPLEGABLE DEL PANEL (#match-category)
+//  y la modalidad de la global `currentMode`, que el panel reescribe al
+//  elegir la pestaña del otro equipo (patches.js, syncSetupMode). Con el
+//  reloj corriendo de fondo, cada 5 s el Regional B se reescribía como
+//  «Alevín C, F-7». El latido a la nube mandaba igual `mode: currentMode`.
+//
+//  🔑 LA CURA: la identidad del partido se resuelve UNA VEZ y queda atada a
+//  su `teamId`; el panel ya no puede moverla. Y se VALIDA contra el sello:
+//  una categoría que no casa con el `teamId` del partido es de otro equipo y
+//  se descarta — así se reparan solas las ranuras que ya nacieron cruzadas.
+//  La letra sale del propio `teamId`, y la modalidad, de la categoría (la
+//  regla canónica de v537), no de una global compartida.
+//
+//  cronosFichaPartido(candidatos, teamId) → { teamId, category, subcategory, mode }
+//   · candidatos: [{category, subcategory, mode}] por orden de preferencia.
+//   · Función pura: los guards la ejecutan suelta.
+// ════════════════════════════════════════════════════════════════════
+function cronosFichaPartido(candidatos, teamId) {
+    const _slug = (typeof window.cronosTeamSlug === 'function')
+        ? window.cronosTeamSlug
+        : (v) => String(v == null ? '' : v).trim().toLowerCase();
+    const _sinMod = (typeof window.cronosSinModalidad === 'function')
+        ? window.cronosSinModalidad
+        : (v) => String(v == null ? '' : v).replace(/^\s*f(?:7|8|11)[_\-\s]+/i, '');
+    const _modDe = (c) => (typeof window._cronosMatchModality === 'function')
+        ? (window._cronosMatchModality(_sinMod(c)) || '') : '';
+
+    const eq = String(teamId || '');
+    const partes = eq.split('__');
+    const catEq = partes.length >= 3 ? partes[1] : '';
+    const subEq = partes.length >= 3 ? String(partes[2] || '').toUpperCase() : '';
+    const casa = (c) => !catEq || _slug(_sinMod(c)) === catEq;
+
+    const lista = (Array.isArray(candidatos) ? candidatos : []).filter(Boolean);
+    let elegido = null;
+    for (let i = 0; i < lista.length; i++) {
+        if (lista[i].category && casa(lista[i].category)) { elegido = lista[i]; break; }
+    }
+
+    let category = elegido ? String(elegido.category) : '';
+    let subcategory = elegido ? String(elegido.subcategory || '') : '';
+    let mode = '';
+    if (!category && catEq) {
+        // Ningún candidato casa con el sello: se reconstruye DESDE el sello,
+        // con la forma del desplegable (`f11_regional`).
+        const m = _modDe(catEq) || '';
+        category = m ? (m + '_' + catEq.replace(/-/g, '_')) : catEq;
+    }
+    // Con sello, la letra es la del equipo, no la de quien escribiera.
+    if (catEq) subcategory = subEq || subcategory;
+
+    mode = _modDe(category);
+    if (!mode) {
+        // Sin categoría reconocible, la modalidad declarada por el primer
+        // candidato que la traiga (el comportamiento de antes).
+        for (let i = 0; i < lista.length; i++) {
+            if (lista[i].mode) { mode = String(lista[i].mode); break; }
+        }
+    }
+    return { teamId: eq, category: category, subcategory: subcategory, mode: mode };
+}
+window.cronosFichaPartido = cronosFichaPartido;
+
+// La ficha del partido EN MEMORIA. Se calcula la primera vez que hace falta
+// y se queda fija hasta que nace o se retoma otro partido
+// (`_cronosNuevoPartidoDeEquipo`, `_restoreActiveMatch`, `_doResumeMatch`).
+// Orden: lo que ya tenía su ranura → lo fijado al confirmar el partido
+// (`_currentMatchCategory`, que el panel no toca) → el desplegable.
+function _fichaEnMemoria(previo, teamId) {
+    const eq = String(teamId || '');
+    const f = window._cronosFichaEnMemoria;
+    if (f && f.teamId === eq && f.category) return f;
+    const _dom = (id) => { try { return document.getElementById(id)?.value || ''; } catch (e) { return ''; } };
+    const _modo = (typeof currentMode !== 'undefined') ? currentMode : '';
+    const nueva = cronosFichaPartido([
+        previo ? { category: previo.category, subcategory: previo.subcategory, mode: previo.currentMode } : null,
+        { category: window._currentMatchCategory, subcategory: window._currentMatchSubcategory, mode: _modo },
+        { category: _dom('match-category'), subcategory: _dom('match-subcategory'), mode: _modo },
+    ], eq);
+    window._cronosFichaEnMemoria = nueva;
+    return nueva;
+}
+
+// Para el latido a la nube (sync.js): la ficha del partido que se está
+// retransmitiendo, que es siempre el que hay en memoria.
+window.cronosFichaDelPartidoEnMemoria = function () {
+    try {
+        const S = _slots();
+        const eq = _equipoDelPartidoEnMemoria();
+        const id = (typeof liveMatchId !== 'undefined' && liveMatchId) ? liveMatchId
+                 : (S ? S.getTabMatchId(eq) : '');
+        return _fichaEnMemoria((S && id) ? S.leer(id) : null, eq);
+    } catch (e) { return null; }
+};
+
 function _saveMatchStateToStorage() {
     if (matchPhase === 'finished' || matchPhase === 'idle') return;
     try {
@@ -426,6 +532,12 @@ function _saveMatchStateToStorage() {
         const previo = S.leer(slotId);
         let createdAt = new Date().toISOString();
         if (previo && previo.createdAt) createdAt = previo.createdAt;
+        // v793 · La identidad sale de la FICHA del partido, no del panel.
+        // ⚠️ Blindado: si la ficha fallara, se guarda igual con las fuentes de
+        // siempre — perder el autoguardado sería peor que una etiqueta.
+        let _ficha = {};
+        try { _ficha = (typeof _fichaEnMemoria === 'function' && _fichaEnMemoria(previo, _teamId)) || {}; }
+        catch (e) { _ficha = {}; }
 
         const state = {
             savedAt:      new Date().toISOString(),
@@ -439,11 +551,17 @@ function _saveMatchStateToStorage() {
             scoreHome:    document.getElementById('score-home')?.textContent || '0',
             scoreAway:    document.getElementById('score-away')?.textContent || '0',
             teamNames:    typeof TEAM_NAMES !== 'undefined' ? TEAM_NAMES : {},
-            currentMode:  typeof currentMode !== 'undefined' ? currentMode : 'f7',
+            // 🪪 v793 · De la ficha: `currentMode` es global y la reescribe el
+            // panel al cambiar de pestaña con el partido corriendo de fondo.
+            currentMode:  _ficha.mode || (typeof currentMode !== 'undefined' ? currentMode : 'f7'),
             liveMatchId:  typeof liveMatchId !== 'undefined' ? liveMatchId : null,
             players:      JSON.parse(JSON.stringify(window.players || [])),
             COLORS:       typeof COLORS !== 'undefined' ? COLORS : {},
-            category:     document.getElementById('match-category')?.value || window._currentMatchCategory || '',
+            // 🪪 v793 · De la ficha, NO del desplegable del panel: era la
+            // primera fuente y, con la pestaña del otro equipo abierta,
+            // sellaba el Regional B como «Alevín» (capturas 11277-11280).
+            category:     _ficha.category ||
+                          document.getElementById('match-category')?.value || window._currentMatchCategory || '',
             // 🔑 v711 · LA PAREJA VIAJA ENTERA. La categoría se guardaba sola y
             // la letra no, así que al retomar un partido la subcategoría se
             // perdía y los informes salían sellados con la clave de equipo a
@@ -451,8 +569,9 @@ function _saveMatchStateToStorage() {
             // ella se iban del resumen acumulado todos los datos de ese
             // partido. Es la misma lección de v562: la pareja se toma —y se
             // guarda— de UNA sola fuente.
-            subcategory:  document.getElementById('match-subcategory')?.value ||
-                          window._currentMatchSubcategory || '',
+            subcategory:  _ficha.category ? (_ficha.subcategory || '')
+                          : (document.getElementById('match-subcategory')?.value ||
+                             window._currentMatchSubcategory || ''),
             extraGoals:   window._cronosExtraGoals || { home: 0, away: 0 },
             // v557 · EL SELLO DE EQUIPO. Es lo que permite que el Alevín y el
             // Regional del mismo entrenador sean dos partidos separados
@@ -727,6 +846,21 @@ window._restoreActiveMatch = function() {
         if (_eqPartido && typeof window._cronosAplicarEquipoActivo === 'function') {
             window._cronosAplicarEquipoActivo(_eqPartido);
         }
+
+        // 🪪 v793 · LA FICHA DEL PARTIDO MANDA SOBRE LO GUARDADO. Una ranura
+        // escrita antes de v793 con el panel en el otro equipo trae «Alevín ·
+        // F-7» dentro de un Regional B: se valida contra su sello `teamId` y
+        // se corrige AQUÍ, antes de que nada de lo de abajo lo lea (tiempos,
+        // añadido, categoría, modalidad del motor).
+        const _fichaR = cronosFichaPartido(
+            [{ category: state.category, subcategory: state.subcategory, mode: state.currentMode }],
+            _eqPartido);
+        if (_fichaR.category) {
+            state.category    = _fichaR.category;
+            state.subcategory = _fichaR.subcategory;
+        }
+        if (_fichaR.mode) state.currentMode = _fichaR.mode;
+        window._cronosFichaEnMemoria = _fichaR;
 
         if (state.liveMatchId) S.setTabMatchId(state.liveMatchId, _eqPartido);
         else if (slotId) S.setTabMatchId(slotId, _eqPartido);
@@ -2027,6 +2161,9 @@ function _cronosNuevoPartidoDeEquipo() {
         // Es lo que hace que su autoguardado caiga en la ranura de ESE equipo
         // aunque el entrenador cambie de equipo en el panel a mitad de partido.
         window._cronosMatchTeamId = eq || '';
+        // 🪪 v793 · Partido nuevo, ficha nueva: se recalcula en el primer
+        // guardado con lo que acaba de fijar `confirmSetup`.
+        window._cronosFichaEnMemoria = null;
     } catch (e) { /* silencioso */ }
 }
 window._cronosNuevoPartidoDeEquipo = _cronosNuevoPartidoDeEquipo;
