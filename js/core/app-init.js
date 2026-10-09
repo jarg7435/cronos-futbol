@@ -522,12 +522,45 @@ window.cronosFichaDelPartidoEnMemoria = function () {
     } catch (e) { return null; }
 };
 
+// ════════════════════════════════════════════════════════════════════
+//  🔒 v794 · EL PARTIDO EN MEMORIA SABE DE QUÉ CUENTA ES
+//
+//  Encargo del autor (implementar.txt 2026-10-09, capturas 11282-11287): la
+//  cuenta del Nacional A veía en «Recuperar» un partido de Alevín C de OTRA
+//  cuenta. El autoguardado y el latido firmaban con la cuenta que estuviera
+//  en sesión AL ESCRIBIR, no con la del partido; y al «Cerrar Sesión», la
+//  recarga dispara `pagehide`/`beforeunload` con el usuario ya borrado, y la
+//  ranura se escribía SIN DUEÑO (sin `@uid`), visible para quien entrara.
+//
+//  🔑 El dueño se fija al nacer o retomar el partido y, a partir de ahí, sólo
+//  esa cuenta puede escribirlo — en el dispositivo y en la nube.
+// ════════════════════════════════════════════════════════════════════
+function _cronosUidActual() {
+    const S = _slots();
+    if (S && typeof S.uidActual === 'function') return S.uidActual();
+    try { return (window._cronosCurrentUser && window._cronosCurrentUser.uid) || ''; } catch (e) { return ''; }
+}
+// ¿Puede la sesión actual escribir el partido que hay en memoria?
+window.cronosPuedeEscribirPartido = function () {
+    const uid = _cronosUidActual();
+    if (!uid) return false;                                  // sin cuenta: nunca
+    const dueño = window._cronosMatchOwnerUid || '';
+    return !dueño || dueño === uid;
+};
+
 function _saveMatchStateToStorage() {
     if (matchPhase === 'finished' || matchPhase === 'idle') return;
     try {
         const S = _slots();
         const slotId = _miSlotId();
         if (!S || !slotId) return;
+        // 🔒 v794 · Sin cuenta, o con otra cuenta que no es la del partido, no
+        // se escribe nada: esa ranura acabaría a nombre de quien no es.
+        if (typeof window.cronosPuedeEscribirPartido === 'function' &&
+            !window.cronosPuedeEscribirPartido()) return;
+        const _uidDueño = window._cronosMatchOwnerUid ||
+                          (typeof _cronosUidActual === 'function' ? _cronosUidActual() : '');
+        if (!window._cronosMatchOwnerUid) window._cronosMatchOwnerUid = _uidDueño;
         const _teamId = _equipoDelPartidoEnMemoria();
         const previo = S.leer(slotId);
         let createdAt = new Date().toISOString();
@@ -577,6 +610,9 @@ function _saveMatchStateToStorage() {
             // Regional del mismo entrenador sean dos partidos separados
             // aunque compartan pestaña.
             teamId:       _teamId || '',
+            // 🔒 v794 · LA CUENTA DUEÑA, dentro de la propia ranura. Es lo
+            // que mira «Recuperar Partido» para no enseñársela a otra cuenta.
+            ownerUid:     _uidDueño,
             // ══════════════════════════════════════════════════════════════
             //  🏠✈️ v707 · LA LOCALÍA VIAJA CON EL PARTIDO
             // ══════════════════════════════════════════════════════════════
@@ -861,6 +897,9 @@ window._restoreActiveMatch = function() {
         }
         if (_fichaR.mode) state.currentMode = _fichaR.mode;
         window._cronosFichaEnMemoria = _fichaR;
+        // 🔒 v794 · Retomar lo hace la cuenta en sesión (el panel ya sólo le
+        // ofrece las suyas): pasa a ser la dueña del partido en memoria.
+        window._cronosMatchOwnerUid = _cronosUidActual() || state.ownerUid || null;
 
         if (state.liveMatchId) S.setTabMatchId(state.liveMatchId, _eqPartido);
         else if (slotId) S.setTabMatchId(slotId, _eqPartido);
@@ -2164,6 +2203,8 @@ function _cronosNuevoPartidoDeEquipo() {
         // 🪪 v793 · Partido nuevo, ficha nueva: se recalcula en el primer
         // guardado con lo que acaba de fijar `confirmSetup`.
         window._cronosFichaEnMemoria = null;
+        // 🔒 v794 · y su dueño es la cuenta que lo empieza.
+        window._cronosMatchOwnerUid = _cronosUidActual() || null;
     } catch (e) { /* silencioso */ }
 }
 window._cronosNuevoPartidoDeEquipo = _cronosNuevoPartidoDeEquipo;

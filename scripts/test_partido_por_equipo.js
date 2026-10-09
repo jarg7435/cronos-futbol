@@ -82,6 +82,9 @@ function abrirPestana(lsCompartido, equipoInicial) {
         console: { warn() {}, log() {}, error() {} },
         Object, JSON, Date, Math, String, Number, Array, parseInt, isNaN,
         setInterval, clearInterval,
+        // v794 · como en la app: hay una cuenta en sesión (sin ella el
+        // autoguardado, con razón, no escribe nada).
+        _cronosCurrentUser: { uid: 'u-entrenador' },
     };
     sandbox.window = sandbox;
     // Así es como el panel publica el equipo abierto (utils.js, v540).
@@ -436,11 +439,13 @@ ok('6f · retomar un partido lleva de vuelta a SU equipo (pantalla y datos, lo m
 // 11277-11280): con «Alevín C» seleccionado, «Recuperar» sólo enseña lo del
 // Alevín C. El del otro equipo NO queda irrecuperable: se ve eligiendo ese
 // equipo en «Mis equipos», y aquí no se borra nada suyo.
-ok('6g · v793 · el panel de recuperación filtra por el equipo seleccionado (con 2+ equipos)',
-   /_S \? _S\.listar\(_eqSel \|\| undefined\)/.test(SETUP) &&
-   /_misEq\.length > 1 && _fichaEq/.test(SETUP) &&
-   /_equipoDeDoc\(data\) !== _eqSel\) \{\s*\/\/[^\n]*\n\s*\/\/[^\n]*\n\s*\} else \{/.test(SETUP),
-   'y el documento del otro equipo se salta SIN borrarlo');
+// 🔄 v794 · y SIEMPRE (también con un equipo), con cuenta y equipo exactos
+// (encargo del autor 2026-10-09, capturas 11282-11287).
+ok('6g · v793/v794 · el panel de recuperación filtra por cuenta y equipo seleccionado, siempre',
+   /_S \? _S\.listar\(_eqSel \|\| undefined, \{ estricto: true \}\)/.test(SETUP) &&
+   /if \(_act\) \{\s*_eqSel = _act;/.test(SETUP) &&
+   /\} else if \(!_docEsMio\(data\)\) \{\s*\/\/[^\n]*\n\s*\/\/[^\n]*\n\s*\} else \{/.test(SETUP),
+   'y el documento de otra cuenta u otro equipo se salta SIN borrarlo');
 
 // ═══════════ Resultado ═══════════
 console.log('\n────────────────────────────────');

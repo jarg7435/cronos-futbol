@@ -95,6 +95,9 @@ function abrirPestana(lsCompartido) {
         localStorage:   comoStorage(lsCompartido),
         sessionStorage: comoStorage(crearAlmacen()),
         console: { warn() {}, log() {} },
+        // v794 · como en la app: el panel sólo existe con una cuenta en sesión
+        // (el inventario estricto de «Recuperar» la necesita).
+        _cronosCurrentUser: { uid: 'u-entrenador' },
     };
     sandbox.window = sandbox;
     vm.createContext(sandbox);
@@ -310,6 +313,9 @@ console.log('\n── PARTE 6 · barrido y robustez ──');
                         removeItem() { throw new Error('denegado'); } },
         sessionStorage: comoStorage(crearAlmacen()),
         console: { warn() {}, log() {} },
+        // v794 · como en la app: el panel sólo existe con una cuenta en sesión
+        // (el inventario estricto de «Recuperar» la necesita).
+        _cronosCurrentUser: { uid: 'u-entrenador' },
     };
     sandboxDuro.window = sandboxDuro;
     vm.createContext(sandboxDuro);
@@ -384,9 +390,10 @@ ok('7e · ⚠️ _guardAgainstMatchReset mira SÓLO el partido de esta pestaña'
 // ya NO enseña los partidos de los dos equipos, sólo los del seleccionado;
 // el del otro se recupera eligiendo ese equipo. Sigue partiendo del
 // registro de ranuras (v465), ahora filtrado por el sello `teamId`.
-ok('7f · el panel de recuperación parte de las ranuras DEL EQUIPO SELECCIONADO (v793)',
+// v794 · y en modo ESTRICTO: sólo de esta cuenta y de este equipo exacto.
+ok('7f · el panel de recuperación parte de las ranuras DE ESTA CUENTA Y EQUIPO (v793/v794)',
    /const localMatches = \[\]/.test(SETUP) &&
-   /_S \? _S\.listar\(_eqSel \|\| undefined\)/.test(SETUP) &&
+   /_S \? _S\.listar\(_eqSel \|\| undefined, \{ estricto: true \}\)/.test(SETUP) &&
    /_fusionaCandidatosRecuperacion\(localMatches, docsNube\)/.test(SETUP));
 
 // El refresco por sincronización remota reemplaza players y marcador: si lee

@@ -1936,17 +1936,25 @@ async function openLiveMatchRecovery() {
     //  (ranuras de antes de v557) no se puede atribuir y se sigue enseñando.
     // ══════════════════════════════════════════════════════════════════
     const _S = window._cronosMatchSlots;
-    let _eqSel = '', _eqSelNombre = '';
+    let _eqSel = '', _eqSelNombre = '', _variosEq = false;
     try {
         const _misEq = (typeof window.cronosEquiposDeEntrenador === 'function')
             ? (window.cronosEquiposDeEntrenador(me.allRoles, null) || []) : [];
+        _variosEq = _misEq.length > 1;
         const _act = (_S && typeof _S.equipoActual === 'function') ? _S.equipoActual() : '';
         const _fichaEq = _misEq.filter(e => e.teamId === _act)[0];
-        if (_misEq.length > 1 && _fichaEq) {
+        // 🔒 v794 · SIEMPRE, también con un solo equipo (encargo del autor
+        // 2026-10-09: «de manera absoluta e intransigente»). v793 sólo
+        // filtraba con dos o más, y la cuenta del Nacional A —un equipo—
+        // veía un Alevín C (captura 11286).
+        if (_act) {
             _eqSel = _act;
-            _eqSelNombre = (typeof window.cronosNombreCategoria === 'function')
-                ? window.cronosNombreCategoria(_fichaEq.category, _fichaEq.subcategory || '')
-                : String(_fichaEq.category || '');
+            _eqSelNombre = _fichaEq
+                ? ((typeof window.cronosNombreCategoria === 'function')
+                    ? window.cronosNombreCategoria(_fichaEq.category, _fichaEq.subcategory || '')
+                    : String(_fichaEq.category || ''))
+                : ((typeof window.cronosNombreCategoria === 'function')
+                    ? window.cronosNombreCategoria(me.category || '', me.subcategory || '') : '');
         }
     } catch (e) { _eqSel = ''; }
     // El equipo de un documento de la nube: su sello, o el que dicta su
@@ -1957,10 +1965,23 @@ async function openLiveMatchRecovery() {
             if (d && d.matchCategory && typeof window.cronosTeamId === 'function') {
                 const _sm = (typeof window.cronosSinModalidad === 'function')
                     ? window.cronosSinModalidad(d.matchCategory) : d.matchCategory;
-                return window.cronosTeamId(d.clubId || me.clubId || '', _sm, d.matchSubcategory || '') || '';
+                return window.cronosTeamId(d.clubId || me.clubId || me.individualEntityId || '',
+                                           _sm, d.matchSubcategory || '') || '';
             }
         } catch (e) { /* sin equipo resoluble */ }
         return '';
+    };
+    // 🔒 v794 · ¿Este documento de la nube es de ESTA cuenta y de ESTE equipo?
+    // La consulta ya pide `createdBy == uid`; además el correo, si lo trae, tiene
+    // que ser el mío, y con equipo seleccionado el sello tiene que ser EXACTO:
+    // lo que no se puede atribuir no se enseña.
+    const _miCorreo = String(me.email || '').trim().toLowerCase();
+    const _docEsMio = (d) => {
+        if (!d || d.createdBy !== me.uid) return false;
+        const _c = String(d.coachEmail || '').trim().toLowerCase();
+        if (_c && _miCorreo && _c !== _miCorreo) return false;
+        if (_eqSel && _equipoDeDoc(d) !== _eqSel) return false;
+        return true;
     };
     if (_eqSel && _eqSelNombre) {
         const _p = modal.querySelector('.modal-content > p');
@@ -1969,12 +1990,13 @@ async function openLiveMatchRecovery() {
                          background:rgba(88,166,255,0.1);border:1px solid rgba(88,166,255,0.3);border-radius:8px;
                          color:var(--text-muted);">
                 ⚽ Partidos de <strong style="color:#58a6ff;">${typeof escapeHtml==='function'?escapeHtml(_eqSelNombre):_eqSelNombre}</strong>.
-                Para recuperar uno de tu otro equipo, elígelo antes en «Mis equipos».
+                ${_variosEq ? 'Para recuperar uno de tu otro equipo, elígelo antes en «Mis equipos».' : ''}
              </div>`);
     }
 
-    // `listar(teamId)` ya filtra por sello (y deja pasar las ranuras sin él).
-    const _ranuras = _S ? _S.listar(_eqSel || undefined) : [];
+    // 🔒 v794 · Modo ESTRICTO: sólo ranuras de esta cuenta y de este equipo
+    // exacto; las que no llevan sello o dueño ya no pasan.
+    const _ranuras = _S ? _S.listar(_eqSel || undefined, { estricto: true }) : [];
     for (const _ranura of _ranuras) {
         try {
             let parsed = _ranura.state;
@@ -2099,9 +2121,9 @@ async function openLiveMatchRecovery() {
 
             if (isExpired) {
                 _doDeleteLiveMatch(d.id, null, true);
-            } else if (_eqSel && _equipoDeDoc(data) && _equipoDeDoc(data) !== _eqSel) {
-                // 🪪 v793 · Partido de OTRO equipo del entrenador: no se enseña
-                // aquí (se recupera eligiendo ese equipo). No se borra nada.
+            } else if (!_docEsMio(data)) {
+                // 🔒 v794 · De OTRA cuenta, de OTRO equipo o sin equipo
+                // atribuible: no se enseña aquí. No se borra nada.
             } else {
                 // v441: ya NO se descarta aquí el documento que coincide con el
                 // local. La fusión se hace después, en un solo sitio y con una
@@ -2121,7 +2143,7 @@ async function openLiveMatchRecovery() {
                 <div style="font-size:2.5rem;margin-bottom:0.8rem;">✅</div>
                 <div style="font-size:0.9rem;font-weight:600;">No hay partidos en curso${_eqSelNombre ? ' de ' + (typeof escapeHtml==='function'?escapeHtml(_eqSelNombre):_eqSelNombre) : ''}</div>
                 <div style="font-size:0.78rem;margin-top:0.4rem;">
-                    ${_eqSelNombre ? 'Si tienes uno a medias con tu otro equipo, elígelo en «Mis equipos» y vuelve a pulsar Recuperar.'
+                    ${(_eqSelNombre && _variosEq) ? 'Si tienes uno a medias con tu otro equipo, elígelo en «Mis equipos» y vuelve a pulsar Recuperar.'
                                    : 'Todos tus partidos han sido finalizados correctamente.'}
                 </div>
             </div>`;
@@ -2558,6 +2580,13 @@ async function _doResumeMatch(matchId) {
             if (_f.mode) m.mode = _f.mode;
             if (_f.category) { m.category = _f.category; m.subcategory = _f.subcategory; }
             window._cronosFichaEnMemoria = _f;
+        }
+        // 🔒 v794 · La cuenta que retoma pasa a ser la dueña del partido en
+        // memoria (el panel sólo le ofrece documentos con su `createdBy`).
+        {
+            const _uidR = (window._cronosMatchSlots && typeof window._cronosMatchSlots.uidActual === 'function')
+                ? window._cronosMatchSlots.uidActual() : ((window._cronosCurrentUser || {}).uid || '');
+            window._cronosMatchOwnerUid = _uidR || m.createdBy || null;
         }
 
         // ── Restaurar configuración global del partido ──

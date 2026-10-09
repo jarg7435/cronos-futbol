@@ -327,14 +327,51 @@
         if (marcarFin) lsSet(claveFinDe(matchId), String(Date.now()));
     }
 
+    // ── v794 · ¿DE QUÉ CUENTA ES ESTA RANURA? ─────────────────────────────
+    // El uid en sesión, con la misma regla que local-uid.js (perfil cargado
+    // o, antes de que lo esté, el usuario de Firebase Auth).
+    function uidActual() {
+        try {
+            var u = window._cronosCurrentUser;
+            if (u && u.uid) return String(u.uid);
+            var fa = window._cronos_auth;
+            if (fa && fa.auth && fa.auth.currentUser && fa.auth.currentUser.uid) {
+                return String(fa.auth.currentUser.uid);
+            }
+        } catch (e) {}
+        return '';
+    }
+    // 🔒 Una ranura es MÍA sólo si lo dice ella (`ownerUid`, desde v794) o, en
+    // las anteriores, si su clave real lleva MI sufijo (`…@<uid>`, v720). Una
+    // clave heredada SIN dueño no es de nadie: puede haberla escrito la cuenta
+    // anterior en el instante de cerrar sesión, y enseñarla sería darle a una
+    // cuenta el partido de otra.
+    function esDeLaCuenta(id, st, uid) {
+        if (!uid) return false;
+        if (st && st.ownerUid) return String(st.ownerUid) === uid;
+        try {
+            if (typeof window.cronosClavesDeUsuario === 'function') {
+                return window.cronosClavesDeUsuario(uid).indexOf(claveDe(id) + '@' + uid) >= 0;
+            }
+        } catch (e) {}
+        // Sin el módulo de aislamiento (guards sueltos) no hay sufijos que mirar.
+        return typeof window.cronosClaveLocal !== 'function';
+    }
+
     // ── Inventario ───────────────────────────────────────────────────────
     // v557 · `teamId` es OPCIONAL y FILTRA. Sin él se devuelven TODAS las
-    // ranuras, que es lo que necesita el panel "🔄 Recuperar Partido": el
-    // entrenador tiene que poder rescatar desde ahí el partido del otro equipo.
-    // Con él se devuelven las de ese equipo — y las que no llevan sello,
-    // escritas antes de v557, que no son de nadie en concreto.
-    function listar(teamId) {
+    // ranuras. Con él se devuelven las de ese equipo — y las que no llevan
+    // sello, escritas antes de v557, que no son de nadie en concreto.
+    //
+    // 🔒 v794 · `opc.estricto` (encargo del autor 2026-10-09, capturas
+    // 11282-11287: «filtrar de manera absoluta e intransigente»): sólo las
+    // ranuras de LA CUENTA en sesión y, si se pide equipo, de ESE equipo
+    // exacto. Lo que no lleva sello o dueño NO pasa: v793 lo dejaba pasar y
+    // así se coló un «REGIONAL B · Alevín» en la pestaña del Alevín C.
+    function listar(teamId, opc) {
         var filtro = teamId ? String(teamId) : '';
+        var estricto = !!(opc && opc.estricto);
+        var uid = estricto ? uidActual() : '';
         var out = [];
         var claves = clavesLocales(BASE + SEP);   // v720 · sólo las de esta cuenta
         for (var i = 0; i < claves.length; i++) {
@@ -343,7 +380,10 @@
             var id = k.slice((BASE + SEP).length);
             var st = leer(id);
             if (!st) continue;
-            if (filtro && st.teamId && String(st.teamId) !== filtro) continue;
+            if (estricto) {
+                if (!esDeLaCuenta(id, st, uid)) continue;
+                if (filtro && String(st.teamId || '') !== filtro) continue;
+            } else if (filtro && st.teamId && String(st.teamId) !== filtro) continue;
             out.push({ id: id, state: st });
         }
         // Más reciente primero: es el criterio del banner de retomar cuando
@@ -366,7 +406,9 @@
             var mio = leer(propio);
             if (mio) return { id: propio, state: mio, esDeEstaPestana: true };
         }
-        var todas = listar(eq);
+        // 🔒 v794 · el banner de retomar, con la misma regla estricta que el
+        // panel: sólo de esta cuenta y, con equipo, de ESE equipo.
+        var todas = listar(eq, { estricto: true });
         if (!todas.length) return null;
         return { id: todas[0].id, state: todas[0].state, esDeEstaPestana: false };
     }
@@ -442,6 +484,8 @@
         claveFinDe:     claveFinDe,
         claveTab:       claveTab,
         equipoActual:   equipoActual,
+        uidActual:      uidActual,
+        esDeLaCuenta:   esDeLaCuenta,
         equipoDe:       equipoDe,
         tabId:          tabId,
         getTabMatchId:  getTabMatchId,

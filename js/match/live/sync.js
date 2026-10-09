@@ -962,6 +962,12 @@ async function pushLiveSnapshot(status = 'active') {
 async function _emiteLatido(status = 'active') {
     const fa = window._cronos_auth;
     if (!fa || !fa.db || !liveMatchId) return;
+    // 🔒 v794 · SÓLO LA CUENTA DUEÑA DEL PARTIDO LO ESCRIBE EN LA NUBE. El
+    // documento se firma con `createdBy` = la sesión actual: si fuera otra
+    // cuenta (o ninguna, al cerrar sesión), el partido aparecería en el
+    // «Recuperar» de quien no es (capturas 11285-11287).
+    if (typeof window.cronosPuedeEscribirPartido === 'function' &&
+        !window.cronosPuedeEscribirPartido()) return;
 
     try {
         // ⚠️ v724 · `arrayUnion` YA NO SE IMPORTA AQUÍ. Entró en v576 para

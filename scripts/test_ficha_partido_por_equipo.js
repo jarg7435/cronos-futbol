@@ -180,12 +180,14 @@ ok('3e · y la categoría de la ficha va antes que la global y el desplegable',
    })());
 
 console.log('\n── PARTE 4 · «Recuperar Partido» sólo enseña el equipo seleccionado ──');
-ok('4a · las ranuras del dispositivo se listan filtradas por el equipo seleccionado',
-   /_S \? _S\.listar\(_eqSel \|\| undefined\)/.test(SETUP));
-ok('4b · ⚠️ sólo se filtra con DOS equipos o más (con uno no hay nada que separar)',
-   /_misEq\.length > 1 && _fichaEq/.test(SETUP));
-ok('4c · los documentos de la nube de OTRO equipo se saltan, sin borrarlos',
-   /else if \(_eqSel && _equipoDeDoc\(data\) && _equipoDeDoc\(data\) !== _eqSel\) \{\s*\/\/[^\n]*\n\s*\/\/[^\n]*\n\s*\} else \{/.test(SETUP));
+// 🔄 v794 · la regla se endureció (cuenta + equipo exactos, siempre): el
+// comportamiento lo EJECUTA test_aislamiento_cuenta_y_equipo.js.
+ok('4a · las ranuras del dispositivo se listan filtradas por el equipo seleccionado (estricto, v794)',
+   /_S \? _S\.listar\(_eqSel \|\| undefined, \{ estricto: true \}\)/.test(SETUP));
+ok('4b · v794 · se filtra SIEMPRE que haya equipo, también con uno solo',
+   /if \(_act\) \{\s*_eqSel = _act;/.test(SETUP) && !/_misEq\.length > 1 && _fichaEq/.test(SETUP));
+ok('4c · los documentos de la nube de otra cuenta u otro equipo se saltan, sin borrarlos',
+   /\} else if \(!_docEsMio\(data\)\) \{\s*\/\/[^\n]*\n\s*\/\/[^\n]*\n\s*\} else \{/.test(SETUP));
 ok('4d · el panel dice de qué equipo son los partidos y cómo ver los del otro',
    /Partidos de <strong/.test(SETUP) && /elígelo antes en «Mis equipos»/.test(SETUP));
 ok('4e · las tarjetas de ranuras viejas se pintan con su ficha corregida',
