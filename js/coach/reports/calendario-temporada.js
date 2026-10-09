@@ -170,13 +170,43 @@ async function _calLeerMes(clubId, mes) {
     }
 }
 
+// ════════════════════════════════════════════════════════════════════
+//  📡 v795 · EL ÍNDICE TAMBIÉN SE ESCUCHA
+// ════════════════════════════════════════════════════════════════════
+//  Encargo del autor (implementar.txt 2026-10-09, capturas 11289-11290): el
+//  director borra el calendario del Alevín C en el cuadrante y el entrenador
+//  sigue viendo las jornadas en su panel.
+//
+//  El índice se leía UNA vez por sesión y no se escuchaba: para el entrenador
+//  con la app abierta, el equipo seguía «teniendo» calendario y sus meses. Se
+//  escucha igual que los meses (una escucha por club, v719) y avisa con el
+//  mismo evento, para que cada pantalla vuelva a leer.
+function _calEscuchaIndice(clubId) {
+    if (typeof window.cronosEscuchaDocClub !== 'function') return;
+    const clave = clubId + '|INDICE';
+    if (window._calState.escuchas && window._calState.escuchas[clave]) return;
+    if (!window._calState.escuchas) window._calState.escuchas = {};
+    let primero = true;
+    window._calState.escuchas[clave] = window.cronosEscuchaDocClub(
+        ['trainingPlans', clubId, 'weeks', CAL_INDICE],
+        (datos) => {
+            if (primero) { primero = false; return; }   // la foto que ya se leyó
+            const d = datos || {};
+            window._calState.indice = { v: 1, equipos: d.equipos || {}, perfiles: d.perfiles || {} };
+            try {
+                document.dispatchEvent(new CustomEvent('cronos:calendario-cambiado', { detail: { clubId, indice: true } }));
+            } catch (e) { /* sin CustomEvent no se tumba nada */ }
+        });
+}
+
 async function _calLeerIndice(clubId) {
-    if (window._calState.indice) return window._calState.indice;
+    if (window._calState.indice) { _calEscuchaIndice(clubId); return window._calState.indice; }
     try {
         const fs = await _calFS();
         const snap = await fs.getDoc(fs.doc(fs.db, 'trainingPlans', clubId, 'weeks', CAL_INDICE));
         const d = snap.exists() ? (snap.data() || {}) : {};
         window._calState.indice = { v: 1, equipos: d.equipos || {}, perfiles: d.perfiles || {} };
+        _calEscuchaIndice(clubId);
     } catch (e) {
         console.warn('[Calendario] no se pudo leer el índice:', e && e.message ? e.message : e);
         window._calState.indice = { v: 1, equipos: {}, perfiles: {} };

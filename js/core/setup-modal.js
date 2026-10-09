@@ -1014,6 +1014,32 @@ function _setupDatosPartidoInit() {
         });
 }
 
+// ════════════════════════════════════════════════════════════════════
+//  📡 v795 · SI EL CLUB CAMBIA EL CALENDARIO, EL PANEL VUELVE A LEERLO
+//
+//  Encargo del autor (implementar.txt 2026-10-09, capturas 11289-11290): el
+//  director borró el calendario del Alevín C desde el Panel de Dirección y el
+//  entrenador seguía viendo J9…J27 en «Jornada · calendario oficial».
+//
+//  🔑 `_setupCal` en estado 'ok' se daba por bueno TODA LA SESIÓN («ya leído
+//  en esta sesión»), y este panel no escuchaba `cronos:calendario-cambiado`
+//  —la convocatoria y la parrilla del club sí (v728)—. El aviso llegaba y
+//  nadie lo atendía. Ahora se tira la lista y, si el panel está abierto, se
+//  relee: sin calendario, el selector queda en «Sin calendario oficial
+//  importado» y la localía se libera (lo que ya hace el pintado con la lista
+//  vacía). Una sola suscripción para toda la vida de la página (v719).
+// ════════════════════════════════════════════════════════════════════
+if (!window._setupCalOyenteListo && typeof document !== 'undefined' &&
+    typeof document.addEventListener === 'function') {
+    window._setupCalOyenteListo = true;
+    document.addEventListener('cronos:calendario-cambiado', function () {
+        window._setupCal = null;                       // lo leído ya no vale
+        if (document.getElementById('setup-cal-box') || document.getElementById('setup-cal')) {
+            try { _setupDatosPartidoInit(); } catch (e) { /* nunca tumba el panel */ }
+        }
+    });
+}
+
 function _setupPintarDatosPartido() {
     const d = _setupEstadoDatos();
     const c = window._setupCal || { estado: 'sin-calendario', lista: [] };
