@@ -128,6 +128,109 @@
         }
     }
 
+    // ════════════════════════════════════════════════════════════════════
+    //  🎤 v803 · DICTADO POR VOZ DEL COMENTARIO
+    //
+    //  Encargo del autor (implementar.txt 2026-10-11, captura 11319): un
+    //  micrófono junto al comentario que transcriba la voz al cuadro en tiempo
+    //  real, con la API de reconocimiento de voz del navegador.
+    //
+    //  🔑 TRES CONDICIONES, y si falta una el botón NO APARECE:
+    //    · el navegador la tiene (`SpeechRecognition`, o el prefijado de
+    //      Chrome/Safari). Firefox no: ahí no se ofrece un botón que falle;
+    //    · el micrófono no está prohibido por la cabecera Permissions-Policy:
+    //      era `microphone=()` en toda la web y pasa a `microphone=(self)`
+    //      (firebase.json, decisión del autor);
+    //    · el usuario da permiso al micrófono (lo pregunta el navegador).
+    //
+    //  ⚠️ PRIVACIDAD (decisión del autor): esa API NO transcribe en el aparato.
+    //  Chrome manda el audio a Google y Safari a Apple. El comentario va a un
+    //  informe sobre MENORES, así que el aviso está junto al micrófono. Y lo
+    //  dictado pasa por el MISMO filtro de datos de salud que lo escrito
+    //  (`_leeFormulario`), porque acaba en el mismo cuadro.
+    //
+    //  Lo dictado se AÑADE a lo que ya hubiera, con el tope de 500. Mientras se
+    //  habla sale el texto provisional; se fija al reconocerse. Para al volver
+    //  a pulsar, al callarse un rato, al cerrar el modal o al cambiar de tipo.
+    // ════════════════════════════════════════════════════════════════════
+    let _dictado = null;          // el reconocedor en marcha, o null
+    function _ReconocedorVoz() {
+        return window.SpeechRecognition || window.webkitSpeechRecognition || null;
+    }
+    function _hayDictado() { return !!_ReconocedorVoz(); }
+    function _pintaMic(activo, texto) {
+        const b = document.getElementById('retro-mic-btn');
+        const t = document.getElementById('retro-mic-txt');
+        if (b) {
+            b.style.background  = activo ? 'rgba(255,88,88,0.25)' : 'rgba(210,168,255,0.12)';
+            b.style.borderColor = activo ? '#ff5858' : 'rgba(210,168,255,0.45)';
+            b.style.color       = activo ? '#ff5858' : '#d2a8ff';
+            b.title = activo ? 'Pulsa para dejar de dictar' : 'Dictar el comentario por voz';
+        }
+        if (t) t.textContent = texto || (activo ? 'PARAR' : 'DICTAR');
+    }
+    // ⚠️ Se DESCONECTA antes de parar: el fin del reconocimiento llega un
+    // instante después y, si siguiera enganchado, reescribiría el cuadro —
+    // por ejemplo, el que «Añadir a la lista» acaba de vaciar. Lo que ya
+    // está en el cuadro (también lo provisional) se queda tal cual.
+    function _paraDictado() {
+        const r = _dictado;
+        _dictado = null;
+        if (r) {
+            r.onresult = null; r.onend = null; r.onerror = null;
+            try { r.stop(); } catch (e) {}
+        }
+        _pintaMic(false);
+    }
+    window._retroDictar = function () {
+        if (_dictado) { _paraDictado(); return; }
+        const SR = _ReconocedorVoz();
+        const ta = document.getElementById('retro-comment-input');
+        if (!SR || !ta) return;
+        let rec;
+        try { rec = new SR(); } catch (e) { return; }
+        rec.lang = 'es-ES';
+        rec.continuous = true;
+        rec.interimResults = true;
+        const base = String(ta.value || '').replace(/\s+$/, '');
+        let fijo = '';
+        const vuelca = (provisional) => {
+            const txt = [base, (fijo + ' ' + (provisional || '')).trim()].filter(Boolean).join(' ')
+                .replace(/\s+/g, ' ').slice(0, 500);
+            ta.value = txt;
+            const c = document.getElementById('retro-comment-count');
+            if (c) c.textContent = txt.length + ' / 500';
+        };
+        rec.onresult = (e) => {
+            let prov = '';
+            for (let i = e.resultIndex; i < e.results.length; i++) {
+                const r = e.results[i];
+                if (r.isFinal) fijo = (fijo + ' ' + r[0].transcript).trim();
+                else prov += r[0].transcript;
+            }
+            vuelca(prov);
+        };
+        rec.onerror = (e) => {
+            const motivo = {
+                'not-allowed':         '🎤 El navegador no tiene permiso para usar el micrófono. Actívalo en los ajustes del sitio.',
+                'service-not-allowed': '🎤 El dictado no está disponible en este navegador o modo.',
+                'audio-capture':       '🎤 No se encuentra ningún micrófono.',
+                'network':             '🎤 El dictado necesita conexión a internet.',
+                'no-speech':           '🎤 No se ha oído nada. Vuelve a pulsar y habla cerca del micrófono.',
+            }[e && e.error] || '';
+            if (motivo && typeof showToast === 'function') showToast(motivo, 4500);
+        };
+        rec.onend = () => {
+            if (_dictado === rec) _dictado = null;
+            vuelca('');
+            _pintaMic(false);
+        };
+        try { rec.start(); } catch (e) { return; }
+        _dictado = rec;
+        _pintaMic(true, 'PARAR');
+        try { ta.focus(); } catch (_) {}
+    };
+
     // El candado completo (js/match/immutability.js), o null. Se pide la
     // forma ENTERA: con un candado a medias se apaga la parte nueva y manda
     // `canAddEvent`, que es lo que miraba el modal antes de v797.
@@ -518,6 +621,7 @@
         // cambio. Con "Comentario" habría guardado una nota con el campo de
         // texto escondido.
         _selectedEventType = 'goal';
+        _paraDictado();   // 🎤 v803 · un dictado de la vez anterior no sigue escuchando
         _jugadoresModal = _targetMatchId ? _jugadoresDestino() : [];
         const playerOptions    = _opcionesJugadores(_jugadoresModal, 'todos');
         const playerOptionsIn  = _opcionesJugadores(_jugadoresModal, 'banquillo');
@@ -587,14 +691,27 @@
                 <!-- 💬 v690 · Comentario del partido: texto libre, sin jugador -->
                 <div id="retro-comment-container" style="display:none;">
                     <label for="retro-comment-input" style="font-size:0.75rem; font-weight:700; color:#d2a8ff; display:block; margin-bottom:0.3rem;">Comentario del partido:</label>
+                    <!-- 🎤 v803 · el micrófono va PEGADO al cuadro (a su derecha) y sólo
+                         si el navegador sabe dictar: ver _retroDictar. -->
+                    <div style="display:flex; gap:0.45rem; align-items:stretch;">
                     <textarea id="retro-comment-input" maxlength="500" rows="4"
                         placeholder="Observaciones tácticas o generales sobre el partido (de los dos equipos)…"
                         oninput="var c=document.getElementById('retro-comment-count'); if (c) c.textContent = this.value.length + ' / 500';"
-                        style="width:100%; box-sizing:border-box; resize:vertical; background:rgba(255,255,255,0.05); border:1px solid rgba(210,168,255,0.35); color:white; padding:0.55rem; border-radius:8px; font-size:0.85rem; font-family:inherit; line-height:1.4;"></textarea>
+                        style="flex:1; min-width:0; width:100%; box-sizing:border-box; resize:vertical; background:rgba(255,255,255,0.05); border:1px solid rgba(210,168,255,0.35); color:white; padding:0.55rem; border-radius:8px; font-size:0.85rem; font-family:inherit; line-height:1.4;"></textarea>
+                    ${_hayDictado() ? `
+                    <button type="button" id="retro-mic-btn" onclick="window._retroDictar()" title="Dictar el comentario por voz" aria-label="Dictar el comentario por voz"
+                        style="flex-shrink:0; width:3rem; border-radius:8px; cursor:pointer; font-size:1.25rem; background:rgba(210,168,255,0.12); border:1px solid rgba(210,168,255,0.45); color:#d2a8ff; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:0.15rem;">
+                        🎤<span id="retro-mic-txt" style="font-size:0.52rem; font-weight:800; letter-spacing:0.3px;">DICTAR</span>
+                    </button>` : ''}
+                    </div>
                     <div style="display:flex; justify-content:space-between; gap:0.5rem; margin-top:0.25rem; font-size:0.68rem; color:#7d8590;">
                         <span>🔒 Sólo lo ve el cuerpo técnico: historial del partido e informe.</span>
                         <span id="retro-comment-count" style="flex-shrink:0;">0 / 500</span>
                     </div>
+                    ${_hayDictado() ? `
+                    <div style="margin-top:0.3rem; font-size:0.64rem; color:#8b949e; line-height:1.35;">
+                        🎤 El dictado lo transcribe el servicio de voz de tu navegador (Google o Apple), fuera de la app: no dictes nombres completos ni datos de salud.
+                    </div>` : ''}
                     <!-- ══════════════════════════════════════════════════════
                          🛡️ Fase 4 (2026-09-22) · EL AVISO DE DATOS DE SALUD
 
@@ -801,6 +918,8 @@
     }
 
     window._setRetroEventType = function(type) {
+        // 🎤 v803 · el dictado es del comentario: fuera de él, se para.
+        if (type !== 'comment') _paraDictado();
         _selectedEventType = type;
         const types = ['goal', 'sub', 'yellow', 'red', 'injury', 'comment'];
         types.forEach(t => {
@@ -877,6 +996,7 @@
 
     // ── El formulario, convertido en un suceso (o null si no vale) ─────────
     function _leeFormulario() {
+        _paraDictado();   // 🎤 v803 · se lee lo que hay, y el micrófono se cierra
         const half = document.getElementById('retro-half-select')?.value || '1T';
         const minute = parseInt(document.getElementById('retro-minute-input')?.value || '30');
         const playerId = document.getElementById('retro-player-select')?.value;
@@ -987,6 +1107,7 @@
     };
 
     window.closeRetroactiveEventModal = function(forzar) {
+        _paraDictado();   // 🎤 v803 · cerrar nunca deja el micrófono abierto
         if (forzar !== true && _lote.length &&
             !_confirma('Tienes ' + _lote.length + ' suceso(s) en la lista SIN GUARDAR.\n\n¿Cerrar y descartarlos?')) return;
         _lote = [];
