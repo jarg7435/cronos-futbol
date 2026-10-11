@@ -1337,6 +1337,12 @@ async function openIndividualAdminPanel(mantenerSeccion = false) {
         // 🔓 v798 · Encargo del autor (2026-10-11): en el ente no hay Director
         // ni Coordinador, así que el desbloqueo de un partido cerrado (más de
         // 2 h) lo concede su ADMINISTRADOR. Mismo módulo que Dirección.
+        // 🎬 v804 · Vídeos de jugadas (extra modulo_videos, ausente = apagado).
+        { icono: '🎬', titulo: 'Vídeos', color: '#d2a8ff',
+          desc: 'Clips de los sucesos: una vista por cuenta; se borran a las 24 h.',
+          onclick: 'window.CronosClips && window.CronosClips.abrirLista()',
+          bloqueado: (window.CronosClips && window.CronosClips.activo()) ? ''
+              : 'Extra no activado para tu entidad. Habla con el administrador.' },
         { icono: '🔓', titulo: 'Desbloqueos', color: '#f0883e',
           desc: 'Permisos para añadir sucesos a un partido ya cerrado (más de 2 h).',
           badgeId: 'ind-badge-desbloqueos',

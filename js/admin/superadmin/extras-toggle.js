@@ -43,6 +43,11 @@ window._CRONOS_EXTRAS_DEF = [
     // (`!== false`) se habría estrenado sola en todos los clubes reales.
     // La lectura está en js/shared/advanced-stats-report.js (`=== true`).
     { key: 'modulo_stats_avanzadas', icon: '📈', label: 'Estadísticas Avanzadas', desc: 'Córners, faltas, centros y ocasiones de gol en el directo, en los informes y en el acumulado de la temporada. Sólo Juvenil, Regional y Nacional; sólo lo ven los roles técnicos', porDefecto: false },
+    // v804 · Vídeos cortos de jugadas (js/match/events/match-clips.js).
+    // ⚠️ `porDefecto: false` (AUSENTE = APAGADO), decisión del autor: son
+    // imágenes de jugadores y el club tiene que confirmar antes que cuenta con
+    // la autorización de las familias. Las reglas de Storage también lo miran.
+    { key: 'modulo_videos', icon: '🎬', label: 'Vídeos de Jugadas', desc: 'Clips cortos (gol, penalti, jugada) adjuntos a los sucesos. Se ven UNA vez por cuenta, con marca de agua, y se borran solos a las 24 h. En categorías de menores, sólo el cuerpo técnico', porDefecto: false },
     // v429: 'mensajeria' es INDEPENDIENTE de 'comunicaciones'. Antes la
     // descripción de comunicaciones prometía "Mensajes", pero esa clave no la
     // leía nadie (censo de v429: era el único extra del panel sin un solo

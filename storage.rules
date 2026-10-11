@@ -1,0 +1,104 @@
+rules_version = '2';
+
+// ══════════════════════════════════════════════════════════════════════
+//  🎬 v804 · REGLAS DE STORAGE — VÍDEOS CORTOS DE JUGADAS
+//
+//  Lo ÚNICO que hay en el almacenamiento son los clips de
+//  js/match/events/match-clips.js, en clips/{clubId}/{clipId}. Todo lo
+//  demás está cerrado.
+//
+//  🚨 LÍMITE MEDIDO EN TESTEO (11-10): una petición a Storage sólo puede
+//  consultar DOS documentos de Firestore. La primera versión miraba ficha
+//  + vista + usuario (3) y Storage denegaba TODA descarga sin más detalle
+//  («Permission denied»), mientras la subida (usuario + club = 2) pasaba.
+//  Por eso la audiencia, la categoría y la caducidad viajan en los
+//  METADATOS del propio fichero (fijados al subir; `update` está cerrado,
+//  así que nadie los cambia después) y no en la ficha de Firestore.
+//
+//  🔑 DESCARGAR (= reproducir): la app NUNCA pide un enlace de descarga
+//  público (getDownloadURL); baja los bytes con getBlob, que pasa por
+//  ESTAS reglas. Se permite sólo si:
+//    · no han pasado 24 h desde que se subió (timeCreated del servidor);
+//    · el usuario NO lo ha visto ya (no existe cronos_clips/{clipId}/
+//      vistas/{uid}): la vista única, comprobada en el servidor;  [doc 1]
+//    · es del cuerpo técnico del club, o es familia del club y el fichero
+//      dice audiencia 'familias' (que sólo se admite en adultos). [doc 2]
+//  🔑 SUBIR: sólo el cuerpo técnico del club [doc 1], con el extra
+//  `modulo_videos` activo en el club [doc 2], un vídeo de menos de 50 MB,
+//  firmado con su uid; 'familias' sólo con categoría de adultos.
+//
+//  Quién es quién, por el rol RAÍZ y el club del documento del usuario
+//  (el `allow update` de users los protege); nunca por `allRoles`.
+//
+//  🗑️ El bucket borra todo lo que hay bajo clips/ al cumplir 1 día (regla
+//  de caducidad del bucket, puesta aparte) y Firestore borra la ficha y sus
+//  vistas por TTL sobre `expiresAt`.
+// ══════════════════════════════════════════════════════════════════════
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    match /clips/{clubId}/{clipId} {
+      function usuario() {
+        return firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data;
+      }
+      function delClub() {
+        return usuario().get('clubId', '') == clubId
+               && usuario().get('isAuthorized', false) == true;
+      }
+      function esStaff() {
+        return delClub() && usuario().get('role', '') in
+          ['user', 'coach', 'director', 'coordinator', 'club_admin',
+           'individual', 'admin_individual', 'individual_admin', 'entrenador_individual'];
+      }
+      function esFamilia() {
+        return delClub() && usuario().get('role', '') in
+          ['parent', 'padre_individual', 'parent_individual'];
+      }
+      function extraActivo() {
+        return firestore.get(/databases/(default)/documents/clubs/$(clubId)).data
+                 .get('extras', {}).get('modulo_videos', false) == true;
+      }
+      function adultos(categoria) {
+        return categoria is string
+               && categoria.matches('^(regional|regional-fem|nacional|senior)(-[a-z0-9-]*)?$');
+      }
+
+      allow read: if request.auth != null
+        && request.time < resource.timeCreated + duration.value(24, 'h')
+        && !firestore.exists(/databases/(default)/documents/cronos_clips/$(clipId)/vistas/$(request.auth.uid))
+        && (esStaff()
+            || (resource.metadata.get('audiencia', '') == 'familias' && esFamilia()));
+
+      allow create: if request.auth != null
+        && request.resource.size < 50 * 1024 * 1024
+        && request.resource.contentType.matches('video/.*')
+        && request.resource.metadata.get('uploader', '') == request.auth.uid
+        && request.resource.metadata.get('clipId', '') == clipId
+        && request.resource.metadata.get('audiencia', '') in ['staff', 'familias']
+        && (request.resource.metadata.get('audiencia', '') == 'staff'
+            || adultos(request.resource.metadata.get('categoria', '')))
+        && esStaff()
+        && extraActivo();
+
+      // 🗑️ v807 · Borrar: quien lo subió (sin consultas) o Dirección del club
+      // por su rol RAÍZ [doc 1] o por las listas del club [doc 2].
+      function esDireccion() {
+        return delClub() && (
+          usuario().get('role', '') in ['director', 'coordinator', 'club_admin',
+                                        'individual', 'admin_individual', 'individual_admin']
+          || request.auth.uid in firestore.get(/databases/(default)/documents/clubs/$(clubId)).data.get('directorUids', [])
+          || request.auth.uid in firestore.get(/databases/(default)/documents/clubs/$(clubId)).data.get('coordinatorUids', [])
+          || firestore.get(/databases/(default)/documents/clubs/$(clubId)).data.get('adminUid', '') == request.auth.uid);
+      }
+
+      allow update: if false;
+      allow delete: if request.auth != null
+        && (resource.metadata.get('uploader', '') == request.auth.uid || esDireccion());
+    }
+
+    // Todo lo demás, cerrado.
+    match /{todo=**} {
+      allow read, write: if false;
+    }
+  }
+}

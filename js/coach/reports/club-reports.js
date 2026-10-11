@@ -500,6 +500,12 @@ window.switchStaffTab = async (tab) => {
             // 🔓 v797 · Pasadas las 2 h, un partido sólo admite sucesos con
             // permiso de Dirección/Coordinación. Aquí se conceden. El aviso de
             // pendientes llega tarde, como el de Mensajes (ver abajo).
+            // 🎬 v804 · Vídeos de jugadas (extra modulo_videos, ausente = apagado).
+            { icono: '🎬', titulo: 'Vídeos', color: '#d2a8ff',
+              desc: 'Clips de los sucesos: una vista por cuenta, con marca de agua; se borran a las 24 h.',
+              onclick: 'window.CronosClips && window.CronosClips.abrirLista()',
+              bloqueado: (window.CronosClips && window.CronosClips.activo(_me)) ? ''
+                  : 'Extra no activado para tu club. Habla con el administrador.' },
             { icono: '🔓', titulo: 'Desbloqueos', color: '#f0883e',
               desc: 'Permisos para que un entrenador añada sucesos a un partido ya cerrado.',
               badgeId: 'sd-badge-desbloqueos',

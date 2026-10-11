@@ -530,6 +530,7 @@
         _jugadoresModal = _jugadoresDestino();
         _repintaSelectores(_selectedEventType);
         _pintaEstadoYFormulario();
+        _pintaOpcionClip();   // 🎬 v804 · «también familias» sólo en adultos
     };
 
     // ── 🔓 v797 · El entrenador pide el desbloqueo ─────────────────────────
@@ -753,6 +754,33 @@
                     </select>
                 </div>
 
+                <!-- 🎬 v804 · vídeo de la jugada (sólo con el extra modulo_videos) -->
+                ${(window.CronosClips && window.CronosClips.activo()) ? `
+                <div id="retro-clip-box" style="background:rgba(255,255,255,0.03); border:1px dashed rgba(88,166,255,0.35); border-radius:8px; padding:0.55rem;">
+                    <div style="font-size:0.75rem; font-weight:700; color:#58a6ff; margin-bottom:0.35rem;">🎬 Vídeo de la jugada (opcional):</div>
+                    <!-- 🎬 v806 · DOS entradas: con capture el sistema abre SÓLO la cámara
+                         (Android no deja ir a la galería), así que grabar y elegir van por
+                         separado. accept="video/*" sin códecs: cualquier vídeo del aparato. -->
+                    <div style="display:flex; gap:0.4rem; flex-wrap:wrap;">
+                        <label id="retro-clip-grabar" style="flex:1 1 130px; display:${(window.matchMedia && window.matchMedia('(pointer: coarse)').matches) ? 'flex' : 'none'}; align-items:center; justify-content:center; gap:0.3rem; min-height:44px; background:rgba(248,81,73,0.12); border:1px solid rgba(248,81,73,0.5); color:#ff7b72; border-radius:8px; font-size:0.78rem; font-weight:800; cursor:pointer; position:relative; overflow:hidden;">
+                            📹 Grabar ahora
+                            <input type="file" id="retro-clip-camara" accept="video/*" capture="environment" onchange="window._retroClipElegido(this)"
+                                style="position:absolute; inset:0; opacity:0; width:100%; height:100%; cursor:pointer;">
+                        </label>
+                        <label id="retro-clip-elegir" style="flex:1 1 130px; display:flex; align-items:center; justify-content:center; gap:0.3rem; min-height:44px; background:rgba(88,166,255,0.12); border:1px solid rgba(88,166,255,0.5); color:#58a6ff; border-radius:8px; font-size:0.78rem; font-weight:800; cursor:pointer; position:relative; overflow:hidden;">
+                            🖼️ ${(window.matchMedia && window.matchMedia('(pointer: coarse)').matches) ? 'Elegir de la galería' : 'Elegir vídeo'}
+                            <input type="file" id="retro-clip-input" accept="video/*" onchange="window._retroClipElegido(this)"
+                                style="position:absolute; inset:0; opacity:0; width:100%; height:100%; cursor:pointer;">
+                        </label>
+                    </div>
+                    <div id="retro-clip-info" style="font-size:0.66rem; color:#8b949e; margin-top:0.3rem; line-height:1.35;">
+                        Máx. ${window.CronosClips.MAX_SEG} s y 50 MB. Se verá UNA vez por cuenta, con marca de agua, y se borra solo a las 24 h.
+                    </div>
+                    <label id="retro-clip-familias-box" style="display:none; margin-top:0.35rem; font-size:0.72rem; color:#c9d1d9; gap:0.4rem; align-items:center;">
+                        <input type="checkbox" id="retro-clip-familias"> 👪 Que también lo vean los jugadores y sus familias (categoría de adultos)
+                    </label>
+                </div>` : ''}
+
                 <!-- 📋 v799 · apuntar sin guardar: el suceso va a la lista de abajo -->
                 <button type="button" id="retro-add-btn" onclick="window._retroAnadirALista()" style="width:100%; background:rgba(63,185,80,0.12); border:1px dashed rgba(63,185,80,0.55); color:#3fb950; padding:0.55rem; border-radius:8px; font-weight:800; cursor:pointer;">
                     ➕ Añadir a la lista
@@ -780,6 +808,8 @@
         _informePendiente = null;
         _pintaLote();
         _pintaEstadoYFormulario();
+        _limpiaClip();       // 🎬 v804
+        _pintaOpcionClip();
         _rellenaSelector();
     };
 
@@ -1049,7 +1079,95 @@
         item.resumen = tipo === 'comment' ? '«' + item.nota.slice(0, 60) + (item.nota.length > 60 ? '…' : '') + '»'
                      : tipo === 'sub' ? 'Sale ' + (nom(playerId) || '—') + ' · Entra ' + (nom(subPlayerId) || '—')
                      : (nom(playerId) || 'Equipo');
+        // 🎬 v804 · El vídeo elegido viaja CON su suceso (ya comprobado al elegirlo).
+        if (_clipElegido) {
+            item.clip = _clipElegido.file;
+            item.clipDuracion = _clipElegido.duracion;
+            const fam = document.getElementById('retro-clip-familias');
+            item.clipFamilias = !!(fam && fam.checked && _partidoDeAdultos());
+        }
         return item;
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  🎬 v804 · EL VÍDEO DE LA JUGADA (js/match/events/match-clips.js)
+    //  Se elige aquí, se comprueba al momento (peso y duración) y se SUBE al
+    //  guardar, después de registrar los sucesos. La opción «también
+    //  familias» sólo aparece en categorías de adultos (decisión del autor);
+    //  el servidor lo vuelve a exigir.
+    // ══════════════════════════════════════════════════════════════════
+    let _clipElegido = null;   // { file, duracion }
+    function _equipoDelPartido() {
+        const d = _targetMatchData || {};
+        const enCurso = !_targetMatchData;
+        const cat = d.category || d.matchCategory || (enCurso ? (window._currentMatchCategory || '') : '') || '';
+        const sub = d.subcategory || d.matchSubcategory || '';
+        let teamId = d.teamId || '';
+        if (!teamId && enCurso) {
+            try { const S = window._cronosMatchSlots; teamId = (S && S.equipoActual && S.equipoActual()) || ''; } catch (e) {}
+        }
+        return { category: cat, subcategory: sub, teamId };
+    }
+    function _partidoDeAdultos() {
+        return !!(window.CronosClips && window.CronosClips.esAdultos(_equipoDelPartido().category));
+    }
+    function _pintaOpcionClip() {
+        const box = document.getElementById('retro-clip-familias-box');
+        if (box) box.style.display = _partidoDeAdultos() ? 'flex' : 'none';
+        const fam = document.getElementById('retro-clip-familias');
+        if (fam && !_partidoDeAdultos()) fam.checked = false;
+    }
+    function _limpiaClip() {
+        _clipElegido = null;
+        ['retro-clip-input', 'retro-clip-camara'].forEach((id) => {
+            const inp = document.getElementById(id);
+            if (inp) { try { inp.value = ''; } catch (e) {} }
+        });
+        const info = document.getElementById('retro-clip-info');
+        if (info && window.CronosClips) info.textContent = 'Máx. ' + window.CronosClips.MAX_SEG + ' s y 50 MB. Se verá UNA vez por cuenta, con marca de agua, y se borra solo a las 24 h.';
+    }
+    window._retroClipElegido = async function (input) {
+        _clipElegido = null;
+        const file = input && input.files && input.files[0];
+        const info = document.getElementById('retro-clip-info');
+        if (!file || !window.CronosClips) return;
+        // 🎬 v806 · Grabar y Galería son dos entradas: vale la última usada.
+        ['retro-clip-input', 'retro-clip-camara'].forEach((id) => {
+            const otra = document.getElementById(id);
+            if (otra && otra !== input) { try { otra.value = ''; } catch (e) {} }
+        });
+        if (info) info.textContent = '⏳ Comprobando el vídeo…';
+        const r = await window.CronosClips.compruebaFichero(file);
+        if (!r.ok) {
+            try { input.value = ''; } catch (e) {}
+            if (info) info.textContent = '⚠️ ' + r.motivo;
+            _toast('🎬 ' + r.motivo, 5000);
+            return;
+        }
+        _clipElegido = { file, duracion: r.duracion };
+        if (info) info.textContent = '✅ ' + file.name + ' · ' + (file.size / 1048576).toFixed(1) + ' MB' +
+            (r.duracion ? ' · ' + Math.round(r.duracion) + ' s' : '') + '. Se subirá al guardar.';
+    };
+
+    // Sube los vídeos de los sucesos guardados. Devuelve cuántos y cuántos fallaron.
+    async function _subeClips(items) {
+        const conClip = items.filter(it => it.clip);
+        if (!conClip.length || !window.CronosClips) return { ok: 0, mal: 0 };
+        const eq = _equipoDelPartido();
+        let ok = 0, mal = 0;
+        for (let i = 0; i < conClip.length; i++) {
+            const it = conClip[i];
+            _toast('🎬 Subiendo vídeo ' + (i + 1) + ' de ' + conClip.length + '…', 2500);
+            const r = await window.CronosClips.subir({
+                file: it.clip, duracion: it.clipDuracion, matchId: _targetMatchId,
+                teamId: eq.teamId, category: eq.category, subcategory: eq.subcategory,
+                tipo: it.tipo, half: it.half, minute: it.minute,
+                rotulo: (_NOMBRE_TIPO[it.tipo] || 'Jugada') + ' · ' + (it.resumen || '') + ' · ' + it.half + ' ' + it.minute + "'",
+                paraFamilias: it.clipFamilias,
+            });
+            if (r.ok) ok++; else mal++;
+        }
+        return { ok, mal };
     }
 
     // Orden cronológico: parte, minuto y, a igualdad, el orden en que se apuntó.
@@ -1074,7 +1192,7 @@
                 '<div style="display:flex; align-items:center; gap:0.5rem; padding:0.35rem 0.5rem; border-bottom:1px solid rgba(255,255,255,0.06); font-size:0.78rem;">' +
                     '<span style="min-width:52px; font-weight:800; color:#f0883e; font-variant-numeric:tabular-nums;">' + it.half + ' ' + String(it.minute).padStart(2, '0') + '\'</span>' +
                     '<span style="flex-shrink:0;">' + (_ICONO_TIPO[it.tipo] || '•') + '</span>' +
-                    '<span style="flex:1; min-width:0; color:#c9d1d9; word-break:break-word;"><strong>' + escapeHtml(_NOMBRE_TIPO[it.tipo] || it.tipo) + '</strong> · ' + escapeHtml(it.resumen || '') + '</span>' +
+                    '<span style="flex:1; min-width:0; color:#c9d1d9; word-break:break-word;"><strong>' + escapeHtml(_NOMBRE_TIPO[it.tipo] || it.tipo) + '</strong> · ' + escapeHtml(it.resumen || '') + (it.clip ? ' <span title="Con vídeo">🎬</span>' : '') + '</span>' +
                     '<button type="button" onclick="window._retroQuitarDeLista(\'' + it.uid + '\')" title="Quitar de la lista" style="flex-shrink:0; background:rgba(255,88,88,0.12); border:1px solid rgba(255,88,88,0.4); color:#ff5858; border-radius:6px; padding:0.15rem 0.45rem; cursor:pointer; font-weight:800;">✕</button>' +
                 '</div>').join('');
         }
@@ -1093,6 +1211,7 @@
         const item = _leeFormulario();
         if (!item) return;
         _lote.push(item);
+        _limpiaClip();   // 🎬 v804 · el vídeo ya va con su suceso
         // Lo que se repite de un suceso a otro (parte y minuto) se queda; el
         // texto del comentario no, o se duplicaría la nota sin querer.
         const ta = document.getElementById('retro-comment-input');
@@ -1366,6 +1485,9 @@
 
         _lote = [];
         _informePendiente = _informes ? null : cambios;
+        // 🎬 v804 · los vídeos, DESPUÉS de los sucesos (si un vídeo falla, el suceso ya está).
+        const _vid = await _subeClips(items);
+        _limpiaClip();
 
         // Los avisos de siempre cuando es UN suceso; un resumen cuando son varios.
         const _enCurso = (typeof liveMatchId !== 'undefined') ? liveMatchId : null;
@@ -1397,6 +1519,8 @@
                     : '✅ ' + items.length + ' sucesos guardados en orden: historial, marcador e informe actualizados');
             ms = (_corregido && _informes) ? 4500 : 7000;
         }
+        if (_vid.ok)  aviso += ' · 🎬 ' + _vid.ok + (_vid.ok === 1 ? ' vídeo subido' : ' vídeos subidos');
+        if (_vid.mal) { aviso += ' · ⚠️ ' + _vid.mal + (_vid.mal === 1 ? ' vídeo no se pudo subir' : ' vídeos no se pudieron subir'); ms = 7000; }
         _toast(aviso, ms);
 
         // Si el informe falló, el modal se queda con el botón de reintentar.

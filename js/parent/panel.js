@@ -317,6 +317,18 @@ async function openParentPanel(initialTab) {
             _op('💬', 'Mensajes',      'Habla directamente con el entrenador.',                   'chat',   'mensajeria',       '#b478c8'),
             _op('🔴', 'En Vivo',       'Sigue el partido mientras se está jugando.',              'live',   'partidos_en_vivo', '#ff5858'),
         ];
+        // 🎬 v804 · Vídeos de jugadas: SÓLO en categorías de ADULTOS (decisión
+        // del autor: en menores, exclusivo del cuerpo técnico) y con el extra
+        // del club. Si no, la tarjeta ni aparece. El servidor lo vuelve a exigir.
+        try {
+            const _yo = window._cronosCurrentUser || {};
+            const _cat = (_yo._activeRoleData && _yo._activeRoleData.category) || _yo.category || '';
+            if (window.CronosClips && window.CronosClips.activo(_yo) && window.CronosClips.esAdultos(_cat)) {
+                opciones.push({ icono: '🎬', titulo: 'Vídeos', color: '#d2a8ff',
+                    desc: 'Clips de las jugadas: se ven una vez y se borran a las 24 h.',
+                    onclick: 'window.CronosClips.abrirLista()', bloqueado: '' });
+            }
+        } catch (e) { /* sin módulo de vídeos: el tablero de siempre */ }
         body.innerHTML = (typeof window.cronosTableroHtml === 'function')
             ? window.cronosTableroHtml({
                 titulo: '👨‍👩‍👧 Área de Familias',

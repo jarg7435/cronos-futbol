@@ -2026,6 +2026,105 @@ service cloud.firestore {
     }
 
     // ══════════════════════════════════════════════════════════════════
+    //  🎬 v804 · COLECCIÓN: cronos_clips/{clipId}  (+ vistas/{uid})
+    //  VÍDEOS CORTOS DE JUGADAS
+    // ══════════════════════════════════════════════════════════════════
+    //  Encargo del autor (implementar.txt 2026-10-11 + decisiones): clips
+    //  adjuntos a sucesos; UNA reproducción por cuenta; marca de agua; se
+    //  borran a las 24 h (caducidad del bucket + TTL de Firestore sobre
+    //  `expiresAt`). El fichero vive en Storage (storage.rules), que consulta
+    //  ESTOS documentos para decidir quién lo descarga.
+    //
+    //  🔑 QUIÉN LO VE (decisión del autor, por edad):
+    //    · categorías de MENORES (todo lo que no sea Regional, Regional FEM,
+    //      Nacional o Senior): SÓLO el cuerpo técnico → `audiencia:'staff'`;
+    //    · categorías de ADULTOS: cuerpo técnico y, si quien lo sube lo
+    //      habilita, jugadores y familias del club → `audiencia:'familias'`.
+    //  La regla EXIGE que `familias` sólo exista con categoría de adultos:
+    //  un cliente trucado no puede abrir el vídeo de un Alevín a las familias.
+    //
+    //  🔑 Cuerpo técnico / familia por el rol RAÍZ (protegido por el
+    //  `allow update` de users) y el club del documento del usuario; nunca
+    //  `allRoles` (autoescribible, SEC-R01).
+    //  🔑 Y el club tiene que tener el extra `modulo_videos` (ausente =
+    //  APAGADO): sin él no se puede crear nada.
+    //
+    //  vistas/{uid}: el «ya lo he visto». Lo escribe el propio usuario UNA
+    //  vez y no se puede borrar ni cambiar: es lo que bloquea su descarga.
+    //
+    //  Guard: scripts/test_clips_video.js
+    // ══════════════════════════════════════════════════════════════════
+    match /cronos_clips/{clipId} {
+      function clUsuario() {
+        return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+      }
+      function clDelClub(clubId) {
+        return clubId != null && clubId != ''
+               && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+               && clUsuario().get('clubId', '') == clubId
+               && clUsuario().get('isAuthorized', false) == true;
+      }
+      function clStaff(clubId) {
+        return clDelClub(clubId) && clUsuario().get('role', '') in
+          ['user', 'coach', 'director', 'coordinator', 'club_admin',
+           'individual', 'admin_individual', 'individual_admin', 'entrenador_individual'];
+      }
+      function clFamilia(clubId) {
+        return clDelClub(clubId) && clUsuario().get('role', '') in
+          ['parent', 'padre_individual', 'parent_individual'];
+      }
+      function clAdultos(categoria) {
+        return categoria is string && categoria.matches('^(regional|regional-fem|nacional|senior)(-[a-z0-9-]*)?$');
+      }
+      function clExtraActivo(clubId) {
+        return exists(/databases/$(database)/documents/clubs/$(clubId))
+               && get(/databases/$(database)/documents/clubs/$(clubId)).data.get('extras', {})
+                    .get('modulo_videos', false) == true;
+      }
+
+      allow get, list: if isAuth() && (
+        isSuperAdmin() ||
+        clStaff(resource.data.get('clubId', null)) ||
+        (resource.data.get('audiencia', '') == 'familias' && clFamilia(resource.data.get('clubId', null)))
+      );
+      allow create: if isAuth()
+        && request.resource.data.get('clipId', '') == clipId
+        && request.resource.data.get('uploaderUid', '') == request.auth.uid
+        && clStaff(request.resource.data.get('clubId', null))
+        && clExtraActivo(request.resource.data.get('clubId', null))
+        && request.resource.data.get('audiencia', '') in ['staff', 'familias']
+        && (request.resource.data.get('audiencia', '') == 'staff'
+            || clAdultos(request.resource.data.get('categoria', null)))
+        && request.resource.data.get('expiresAt', null) is timestamp
+        && request.resource.data.get('expiresAt', null) > request.time
+        && request.resource.data.get('expiresAt', null) < request.time + duration.value(25, 'h');
+      // 🗑️ v807 · Dirección del club (rol RAÍZ o listas del club, que el
+      // usuario no puede escribirse; nunca `allRoles`) borra cualquier clip.
+      function clDireccion(clubId) {
+        return clDelClub(clubId) && (
+          clUsuario().get('role', '') in ['director', 'coordinator', 'club_admin',
+                                          'individual', 'admin_individual', 'individual_admin']
+          || (exists(/databases/$(database)/documents/clubs/$(clubId)) && (
+                request.auth.uid in get(/databases/$(database)/documents/clubs/$(clubId)).data.get('directorUids', [])
+                || request.auth.uid in get(/databases/$(database)/documents/clubs/$(clubId)).data.get('coordinatorUids', [])
+                || get(/databases/$(database)/documents/clubs/$(clubId)).data.get('adminUid', '') == request.auth.uid)));
+      }
+
+      allow update: if false;
+      allow delete: if isAuth() && (isSuperAdmin()
+        || resource.data.get('uploaderUid', '') == request.auth.uid
+        || clDireccion(resource.data.get('clubId', null)));
+
+      match /vistas/{uid} {
+        allow get: if isAuth() && request.auth.uid == uid;
+        allow create: if isAuth() && request.auth.uid == uid
+          && request.resource.data.get('uid', '') == uid
+          && request.resource.data.keys().hasOnly(['uid', 'at', 'completo', 'expiresAt']);
+        allow list, update, delete: if false;
+      }
+    }
+
+    // ══════════════════════════════════════════════════════════════════
     //  🔓 v797 · COLECCIÓN: cronos_match_unlocks/{matchId}
     //  PERMISO DE DESBLOQUEO DE UN PARTIDO CERRADO
     // ══════════════════════════════════════════════════════════════════

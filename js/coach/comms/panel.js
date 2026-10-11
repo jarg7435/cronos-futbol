@@ -3056,6 +3056,16 @@ async function openUnifiedCommsMenu() {
                 </div>
             </button>
 
+            <!-- 🎬 v804 · VÍDEOS DE JUGADAS (sólo con el extra modulo_videos) -->
+            ${(window.CronosClips && window.CronosClips.activo()) ? `
+            <button onclick="window.CronosClips.abrirLista()" class="btn-comms-card" style="--color:#d2a8ff;--bg:rgba(210,168,255,0.08);">
+                <span class="icon">🎬</span>
+                <div class="content">
+                    <div class="title" style="color:#d2a8ff;">Vídeos de jugadas</div>
+                    <div class="desc">Clips de los sucesos · una vista por cuenta · 24 h</div>
+                </div>
+            </button>` : ''}
+
             <!-- 4. PARTIDOS EN VIVO -->
             <button onclick="if(typeof window._cronosExtraGate==='function' && !window._cronosExtraGate('partidos_en_vivo','Partidos en Vivo'))return; if(typeof showLiveShareModal==='function') showLiveShareModal(); else window.open('./live.html','_blank');" class="btn-comms-card" ${_umCardLock('partidos_en_vivo')} style="--color:#ff5858;--bg:rgba(255,88,88,0.12);">
                 <span class="icon">${_umCardIcon('partidos_en_vivo', '🔴')}</span>

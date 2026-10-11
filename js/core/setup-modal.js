@@ -3097,6 +3097,20 @@ window._openCoachCommsMenu = function() {
                     </div>
                 </button>
 
+                <!-- 🎬 v804 · VÍDEOS DE JUGADAS (sólo con el extra modulo_videos) -->
+                ${(window.CronosClips && window.CronosClips.activo()) ? `
+                <button onclick="window.CronosClips.abrirLista()"
+                    title="Clips de los sucesos: se ven una vez por cuenta y se borran a las 24 h"
+                    style="display:flex;align-items:center;gap:0.8rem;padding:0.9rem 1rem;
+                           background:rgba(210,168,255,0.08);border:1px solid rgba(210,168,255,0.3);
+                           border-radius:10px;cursor:pointer;color:var(--text);text-align:left;transition:all 0.15s;">
+                    <span style="font-size:1.5rem;">🎬</span>
+                    <div>
+                        <div style="font-weight:700;font-size:0.9rem;">Vídeos de jugadas</div>
+                        <div style="font-size:0.72rem;color:var(--text-muted);">Una vista por cuenta · se borran a las 24 h</div>
+                    </div>
+                </button>` : ''}
+
                 <!-- PARTIDOS EN VIVO · v596 · Mismo trato: el candado se VE.
                      La comprobación de _cronosOpenLiveMatchesPanel sigue viva
                      (es la puerta de verdad), pero llegaba tarde: el usuario ya
