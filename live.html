@@ -709,6 +709,19 @@
             font-size: 0.7rem; color: var(--muted); font-style: italic;
             padding: 0.15rem 0;
         }
+        /* 🔴 v797 · LO AÑADIDO DESPUÉS DEL PARTIDO (offline / retroactivo):
+           texto en CURSIVA e icono en ROJO (encargo 2026-10-11, punto 3).
+           Los iconos son emojis, que no obedecen a `color`: se tiñen con el
+           MISMO filtro que CRONOS_FILTRO_RETRO de js/core/utils.js. */
+        .cronos-retro-ico {
+            display: inline-block;
+            filter: grayscale(1) brightness(0.55) sepia(1) saturate(50) hue-rotate(-12deg);
+        }
+        .cronos-retro-txt { font-style: italic; }
+        .live-feed-fila.lf-retro .lf-ico {
+            filter: grayscale(1) brightness(0.55) sepia(1) saturate(50) hue-rotate(-12deg);
+        }
+        .live-feed-fila.lf-retro .lf-txt { font-style: italic; }
         /* En movil se aprieta un poco: la tarjeta ya va justa de alto. */
         @media (max-width: 600px) {
             .live-feed { padding: 0.42rem 0.5rem; max-height: 104px; }
@@ -1822,18 +1835,18 @@
      así los envoltorios lo resuelven en cada llamada y no al cargar, para que
      un cambio de orden no los deje mirando a `undefined` para siempre.
      ══════════════════════════════════════════════════════════════════ -->
-<script src="js/shared/live-feed.js?v=v796"></script>
+<script src="js/shared/live-feed.js?v=v799"></script>
 <!-- 🔊 v709 · Las melodías de cada suceso (gol, amarilla, roja, cambio,
      lesión), compartidas con el panel en vivo del Área de Familias. Este visor
      le presta su AudioContext, que es el que lleva el keep-alive de iOS. -->
-<script src="js/shared/live-sound.js?v=v796"></script>
+<script src="js/shared/live-sound.js?v=v799"></script>
 <!-- 🔴🔴🔴 v721 · El caché en disco de Firestore es de UNA sola cuenta (ver
      js/shared/fs-cache-mode.js). El visor lo comparte con la app, así que
      tiene que decidir con la MISMA regla y antes de crear su instancia. -->
-<script src="js/shared/fs-cache-mode.js?v=v796"></script>
+<script src="js/shared/fs-cache-mode.js?v=v799"></script>
 <!-- 📈 v778 · Las reglas de categoría de las estadísticas avanzadas, las
      MISMAS que usa el panel del entrenador (una lista, no dos). -->
-<script src="js/shared/advanced-stats-report.js?v=v796"></script>
+<script src="js/shared/advanced-stats-report.js?v=v799"></script>
 
 <!-- ══ FIREBASE ══════════════════════════════════════════════════ -->
 <script type="module">
@@ -3167,7 +3180,9 @@ function _puedeAvisarme(matchId) {
 //     de un segundo partido en curso no llegaran nunca.
 // Si no se pasa, se asume el partido visible: así las llamadas antiguas siguen
 // comportándose igual que siempre.
-function showEventToast(type, line, sub, matchTime, equipo, matchId) {
+// 🔴 v797 · `retro`: el suceso se añadió a posteriori → icono rojo y cursiva,
+// en el aviso y en la fila del historial.
+function showEventToast(type, line, sub, matchTime, equipo, matchId, retro) {
     // 🚨 v558 · LA PUERTA, ANTES DE NADA. Se sale sin pintar, sin sonar y sin
     // vibrar: el destello, el sonido y la vibración están al final de esta
     // misma función, así que filtrar aquí es lo único que los corta de verdad.
@@ -3222,12 +3237,12 @@ function showEventToast(type, line, sub, matchTime, equipo, matchId) {
         // Ahora encabeza el aviso y se lee antes que el suceso.
         const _partido = sub || (_esDelPartidoVisible ? _etiquetaPartidoDe(lastSnapshot) : '');
         el.innerHTML =
-            '<div class="et-icon">' + meta.icon + '</div>' +
+            '<div class="et-icon">' + (retro ? '<span class="cronos-retro-ico">' + meta.icon + '</span>' : meta.icon) + '</div>' +
             '<div class="et-body">' +
                 (_partido ? '<div class="et-match">' + escapeHtml(_partido) + '</div>' : "") +
                 // v445 · la etiqueta del equipo, delante del suceso: un gol ya
                 // no es "GOL · Pedro" a secas.
-                '<div class="et-title">' + _chipEquipoHtml(_eq) +
+                '<div class="et-title' + (retro ? ' cronos-retro-txt' : '') + '">' + _chipEquipoHtml(_eq) +
                     _sinPrefijoEquipo(titleHTML, _eq) + '</div>' +
             '</div>';
         const quitar = () => {
@@ -3287,7 +3302,7 @@ function showEventToast(type, line, sub, matchTime, equipo, matchId) {
     // lleva el nombre del encuentro) pero NO se cuela en el historial ajeno:
     // ése era el defecto real que v274 vino a tapar.
     if (_esDelPartidoVisible) {
-        const _metaExt = Object.assign({}, meta, { matchTime: matchTime || '', equipo: _eq });
+        const _metaExt = Object.assign({}, meta, { matchTime: matchTime || '', equipo: _eq, retro: !!retro });
         _appendEventToHistoryPanel(type, line, sub, _metaExt);
     }
 
@@ -3322,7 +3337,9 @@ window._matchEventsLog = window._matchEventsLog || [];
 // Al agrandar la letra para que se lea, se unifican.
 const _FILA_SUCESO_CSS = 'display:flex; align-items:center; gap:8px; padding:4px 0;' +
                          'border-bottom:1px solid rgba(255,255,255,0.05);';
-function _filaSucesoHtml(realTime, matchTime, evIcon, titleHTML, equipo) {
+// 🔴 v797 · `retro` = suceso añadido a posteriori (offline / retroactivo):
+// el icono va en ROJO y el texto en CURSIVA (clases de la hoja de arriba).
+function _filaSucesoHtml(realTime, matchTime, evIcon, titleHTML, equipo, retro) {
     // Hora real en gris y minuto de partido en NARANJA (v230). El minuto del
     // partido es lo que de verdad se busca al leer, así que va destacado.
     const hora = '<span style="font-size:0.72rem; color:#7d8590; font-weight:700;' +
@@ -3332,12 +3349,14 @@ function _filaSucesoHtml(realTime, matchTime, evIcon, titleHTML, equipo) {
           'min-width:50px; flex-shrink:0;">' + matchTime + '</span>'
         : '';
     return hora + minuto +
-           '<span style="font-size:1.05rem; flex-shrink:0;">' + (evIcon || '•') + '</span>' +
+           '<span' + (retro ? ' class="cronos-retro-ico" title="Añadido después del partido"' : '') +
+           ' style="font-size:1.05rem; flex-shrink:0;">' + (evIcon || '•') + '</span>' +
            _chipEquipoHtml(equipo) +
            // Sin `white-space:nowrap`: si un nombre largo no cabe, que salte de
            // línea. Recortarlo con puntos suspensivos aquí sería justo el
            // defecto que el autor reportó de la columna lateral.
-           '<span style="flex:1; min-width:0;">' + titleHTML + '</span>';
+           '<span' + (retro ? ' class="cronos-retro-txt"' : '') +
+           ' style="flex:1; min-width:0;">' + titleHTML + '</span>';
 }
 
 // ════════════════════════════════════════════════════════════════════
@@ -3435,7 +3454,8 @@ function _appendEventToHistoryPanel(type, line, sub, meta) {
         const row = document.createElement('div');
         row.style.cssText = _FILA_SUCESO_CSS;
         row.innerHTML = _filaSucesoHtml(realTime, matchTime, evIcon,
-                                        _sinPrefijoEquipo(titleHTML, _eq), _eq);
+                                        _sinPrefijoEquipo(titleHTML, _eq), _eq,
+                                        !!(meta && meta.retro));
         listEl.appendChild(row);
 
         // Auto-scroll al final para ver el evento más reciente.
@@ -3535,7 +3555,8 @@ window._loadMatchEventsFromSnapshot = function(events) {
         const row = document.createElement('div');
         row.style.cssText = _FILA_SUCESO_CSS;
         row.innerHTML = _filaSucesoHtml(realTime, matchTime, evIcon,
-                                        _sinPrefijoEquipo(titleHTML, _eq), _eq);
+                                        _sinPrefijoEquipo(titleHTML, _eq), _eq,
+                                        ev.isRetroactive === true || ev.retro === true);
         listEl.appendChild(row);
     });
 
@@ -4582,7 +4603,8 @@ function detectAndAlert(matchId, matchData, fromCache) {
                 // es la fuente fiable; showEventToast sólo lo deduce cuando no se
                 // le pasa.
                 showEventToast(_t, _linea, matchLabel, ev.matchTime || _matchTime,
-                               _equipoDeSuceso(matchData, ev), matchId);
+                               _equipoDeSuceso(matchData, ev), matchId,
+                               ev.isRetroactive === true || ev.retro === true);
             });
         }
         // v567 · El estado por jugador se mantiene al día aunque esta rama no lo
@@ -7916,9 +7938,9 @@ setInterval(function() {
 }
 </style>
 <!-- v434 · Inmutabilidad: antes de retroactive-modal.js, que la consulta. -->
-<script src="js/match/immutability.js?v=v796"></script>
-<script src="js/match/replay/replay-player.js?v=v796"></script>
-<script src="js/match/events/retroactive-modal.js?v=v796"></script>
+<script src="js/match/immutability.js?v=v799"></script>
+<script src="js/match/replay/replay-player.js?v=v799"></script>
+<script src="js/match/events/retroactive-modal.js?v=v799"></script>
 
 <!-- ══════════════════════════════════════════════════════════════════
      🟩 v577 · FRANJA DE VERSIÓN TAMBIÉN EN EL VISOR
@@ -7931,7 +7953,7 @@ setInterval(function() {
      El sello lo escribe `scripts/cache-bust.js` a partir del CACHE_NAME de
      sw.js, nunca a mano: un número puesto a mano miente en cuanto alguien
      olvida cambiarlo (v527 lo encontró mintiendo 185 versiones seguidas). -->
-<div id="cronos-version-badge" data-version="v796" style="position:fixed;bottom:calc(4px + env(safe-area-inset-bottom, 0px));right:6px;z-index:2147483000;pointer-events:none;background:rgba(0,0,0,0.55);color:#2ea043;font-family:monospace;font-size:0.6rem;font-weight:700;letter-spacing:0.5px;padding:2px 6px;border-radius:4px;">CHRONOS v796</div>
+<div id="cronos-version-badge" data-version="v799" style="position:fixed;bottom:calc(4px + env(safe-area-inset-bottom, 0px));right:6px;z-index:2147483000;pointer-events:none;background:rgba(0,0,0,0.55);color:#2ea043;font-family:monospace;font-size:0.6rem;font-weight:700;letter-spacing:0.5px;padding:2px 6px;border-radius:4px;">CHRONOS v799</div>
 <script>
 /* 🧪 v577 · Y DE QUÉ ENTORNO ES ESA VERSIÓN.
    El problema real del autor no era no ver la versión: era no saber si la

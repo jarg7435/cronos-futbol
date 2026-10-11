@@ -70,7 +70,8 @@ console.log('── AUDITORÍA · ningún suceso se cuela en otro partido (v559)
 // ═══════════════════════════════════════════════════════════════════════
 console.log('── PARTE A · el censo de emisores ──');
 
-const CUERPO_TOAST = cuerpo(L, 'function showEventToast(type, line, sub, matchTime, equipo, matchId) {');
+// 🔴 v797 · 7º parámetro `retro` (suceso añadido a posteriori: icono rojo).
+const CUERPO_TOAST = cuerpo(L, 'function showEventToast(type, line, sub, matchTime, equipo, matchId, retro) {');
 const CUERPO_FASE  = cuerpo(L, 'function _handlePhaseTransition(matchId, matchData) {');
 
 ok('A0 · se han localizado las dos funciones que pueden interrumpir',
@@ -206,7 +207,9 @@ console.log('\n── PARTE C · la identidad del partido, de punta a punta ─�
 
 ok('C1 · cada suceso se escribe CON su partido dentro (`matchId` en el evento)',
    /matchId: _evMatchId,/.test(PACTION) &&
-   /var _evMatchId = \(typeof liveMatchId !== 'undefined' && liveMatchId\)/.test(PACTION));
+   // 🔓 v797 · el del partido DESTINO si lo hay (suceso a posteriori), y si no
+   // el que se juega: sigue llevando SIEMPRE su partido dentro.
+   /var _evMatchId = \(target && target\.matchId\) \? String\(target\.matchId\)\s*:\s*\(\(typeof liveMatchId !== 'undefined' && liveMatchId\)/.test(PACTION));
 
 ok('C2 · 🔒 el emisor se niega a escribir un suceso en un partido que no es el de su pestaña (v469)',
    /Suceso BLOQUEADO/.test(PACTION) && /_propio !== _id/.test(PACTION));

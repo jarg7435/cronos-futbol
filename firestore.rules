@@ -2025,6 +2025,140 @@ service cloud.firestore {
       allow delete: if isSuperAdmin();
     }
 
+    // ══════════════════════════════════════════════════════════════════
+    //  🔓 v797 · COLECCIÓN: cronos_match_unlocks/{matchId}
+    //  PERMISO DE DESBLOQUEO DE UN PARTIDO CERRADO
+    // ══════════════════════════════════════════════════════════════════
+    //  Encargo del autor (implementar.txt 2026-10-11): pasadas las 2 h de un
+    //  partido, el entrenador sólo puede añadir sucesos si el Director
+    //  Deportivo o el Coordinador le conceden permiso PARA ESE PARTIDO.
+    //
+    //  Un documento por partido (id = matchId):
+    //    · el ENTRENADOR lo crea o lo reabre como SOLICITUD ('pending'), y
+    //      nada más: no puede escribir 'granted', ni `expiresAt`, ni quién
+    //      decidió;
+    //    · la AUTORIDAD del club lo concede ('granted', con caducidad de
+    //      24 h como mucho), lo deniega ('denied') o lo revoca ('revoked').
+    //  Lo consume `lmDesbloqueado()` en live_matches.
+    //
+    //  🔑 QUIÉN ES AUTORIDAD, sin nada autoafirmable (lección SEC-R01:
+    //  `allRoles` lo escribe el propio usuario y NO sirve aquí):
+    //    · el rol RAÍZ director / coordinator / club_admin, que el
+    //      `allow update` de users protege, con su mismo club y autorizado;
+    //    · o figurar en clubs/{club}.directorUids / coordinatorUids /
+    //      adminUid, que sólo escriben el SA, el admin y el Admin SDK (es la
+    //      corroboración de SEC-F05; el backfill las sembró 10/10).
+    //  ⚠️ EL CLUB SE TOMA DEL DOCUMENTO DEL USUARIO, no del permiso: así la
+    //  ruta del get() no depende de `resource.data` y la consulta del panel
+    //  (`where clubId ==`) se puede demostrar.
+    //  ⚠️ El alcance por modalidad del coordinador (F7/F11, v593) lo aplica
+    //  la pantalla; las reglas ponen el techo: su club.
+    //
+    //  Guard: scripts/test_desbloqueo_partido.js (lógica y reglas)
+    // ══════════════════════════════════════════════════════════════════
+    match /cronos_match_unlocks/{matchId} {
+      function muClubDelUsuario() {
+        return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('clubId', '');
+      }
+      // 🔓 v798 · EL ADMINISTRADOR DEL ENTE INDIVIDUAL TAMBIÉN DECIDE (encargo
+      // del autor 2026-10-11: en el ente no hay Director ni Coordinador). Se le
+      // reconoce por lo que él NO puede escribirse: su claim de administrador
+      // individual de ESE ente, el `adminUid` del documento del ente (lo
+      // escriben el SA y el Admin SDK) o su rol RAÍZ individual con su ente en
+      // `clubId`. ⚠️ `individualEntityId` del usuario NO cuenta: es
+      // autoescribible (ver la nota del `allow update` de users).
+      function muAdminDelEnte(clubId) {
+        return clubId != null && clubId != '' && (isIndividualAdmin(clubId)
+               || (exists(/databases/$(database)/documents/clubs/$(clubId))
+                   && get(/databases/$(database)/documents/clubs/$(clubId)).data.get('type', '') == 'individual'
+                   && get(/databases/$(database)/documents/clubs/$(clubId)).data.get('adminUid', '') == request.auth.uid));
+      }
+      function muAutoridad(clubId) {
+        return isSuperAdmin() || muAdminDelEnte(clubId) || (
+          clubId != null && clubId != ''
+          && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+          && muClubDelUsuario() == clubId
+          && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('isAuthorized', false) == true
+          && (
+               get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('role', '')
+                 in ['director', 'coordinator', 'club_admin',
+                     'individual', 'admin_individual', 'individual_admin']
+               || (exists(/databases/$(database)/documents/clubs/$(muClubDelUsuario())) && (
+                     request.auth.uid in get(/databases/$(database)/documents/clubs/$(muClubDelUsuario())).data.get('directorUids', [])
+                     || request.auth.uid in get(/databases/$(database)/documents/clubs/$(muClubDelUsuario())).data.get('coordinatorUids', [])
+                     || get(/databases/$(database)/documents/clubs/$(muClubDelUsuario())).data.get('adminUid', '') == request.auth.uid
+                  ))
+             )
+        );
+      }
+      // Lo que el entrenador puede escribir al PEDIR. Ni estado concedido,
+      // ni caducidad, ni quién decidió.
+      function muCamposSolicitud() {
+        return ['matchId', 'clubId', 'coachUid', 'coachName', 'teamId', 'category',
+                'subcategory', 'matchLabel', 'matchDate', 'status', 'requestedAt', 'reason'];
+      }
+      // Lo que la autoridad puede escribir al DECIDIR.
+      function muDecisionValida() {
+        return request.resource.data.get('status', '') in ['granted', 'denied', 'revoked']
+               && request.resource.data.get('decidedBy', '') == request.auth.uid
+               && (request.resource.data.get('status', '') != 'granted' || (
+                     request.resource.data.get('expiresAt', null) is timestamp
+                     && request.resource.data.get('expiresAt', null) > request.time
+                     && request.resource.data.get('expiresAt', null) < request.time + duration.value(25, 'h')
+                  ));
+      }
+
+      // `resource == null`: leer un permiso que no existe NO es un error. Sin
+      // esto el entrenador recibiría permission-denied en vez de «no hay»
+      // (la trampa de v773). No revela nada: no hay documento.
+      allow get: if isAuth() && (
+        resource == null ||
+        resource.data.get('coachUid', null) == request.auth.uid ||
+        muAutoridad(resource.data.get('clubId', null))
+      );
+      allow list: if isAuth() && (
+        resource.data.get('coachUid', null) == request.auth.uid ||
+        muAutoridad(resource.data.get('clubId', null))
+      );
+
+      allow create: if isAuth() && request.resource.data.get('matchId', '') == matchId && (
+        // El entrenador PIDE, para sí mismo y en su club.
+        (request.resource.data.get('coachUid', '') == request.auth.uid
+         && request.resource.data.get('status', '') == 'pending'
+         && request.resource.data.keys().hasOnly(muCamposSolicitud())
+         && (userDocClubId(request.resource.data.get('clubId', null))
+             // 🔓 v798 · cuentas del ENTE, que pueden llevar su ente en
+             // `individualEntityId` y no en `clubId`. Pedir no concede nada
+             // (decide la autoridad), así que aquí basta la pertenencia.
+             || muAdminDelEnte(request.resource.data.get('clubId', null))
+             || (exists(/databases/$(database)/documents/users/$(request.auth.uid))
+                 && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('isAuthorized', false) == true
+                 && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('individualEntityId', '')
+                      == request.resource.data.get('clubId', null)))) ||
+        // La autoridad CONCEDE o DENIEGA sin que nadie lo haya pedido.
+        (muAutoridad(request.resource.data.get('clubId', null)) && muDecisionValida())
+      );
+
+      allow update: if isAuth()
+        // Nadie mueve un permiso a otro partido, otro club u otro entrenador.
+        && request.resource.data.get('matchId', '') == resource.data.get('matchId', '')
+        && request.resource.data.get('clubId', '') == resource.data.get('clubId', '')
+        && request.resource.data.get('coachUid', '') == resource.data.get('coachUid', '')
+        && (
+          // El entrenador REABRE la solicitud (denegada, revocada o caducada).
+          // Un permiso vigente no se toca: no hay nada que pedir.
+          (resource.data.get('coachUid', '') == request.auth.uid
+           && request.resource.data.get('status', '') == 'pending'
+           && (resource.data.get('status', '') != 'granted'
+               || request.time >= resource.data.get('expiresAt', request.time))
+           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(muCamposSolicitud())) ||
+          // La autoridad decide.
+          (muAutoridad(resource.data.get('clubId', null)) && muDecisionValida())
+        );
+
+      allow delete: if isAuth() && muAutoridad(resource.data.get('clubId', null));
+    }
+
     // ============================================================
     // COLECCIÓN: live_matches
     // SEC-014: Restrict writes to same-club
@@ -2122,6 +2256,24 @@ service cloud.firestore {
       }
       function lmFrozen() {
         return !lmIsLive() && !lmInGrace();
+      }
+      // 🔓 v797 · PERMISO DE DESBLOQUEO de Dirección/Coordinación para ESTE
+      // partido (cronos_match_unlocks/{matchId}). Concedido, sin caducar y a
+      // nombre de quien escribe: el permiso es para un entrenador concreto, no
+      // para cualquier miembro del club. `exists()` PRIMERO: un get() sobre un
+      // documento ausente LANZA, y aquí el caso normal es que no exista.
+      // 🔑 Y EL PARTIDO TIENE QUE SER SUYO (creador o correo del entrenador):
+      // la solicitud la escribe el propio entrenador con el matchId que
+      // quiera, así que sin esto otro entrenador del club podría pedir —y
+      // obtener por despiste— permiso sobre un partido ajeno.
+      function lmDesbloqueado() {
+        return (resource.data.get('createdBy', '') == request.auth.uid
+                || (('email' in request.auth.token) && request.auth.token.email != null
+                    && resource.data.get('coachEmail', '') == request.auth.token.email))
+               && exists(/databases/$(database)/documents/cronos_match_unlocks/$(matchId))
+               && get(/databases/$(database)/documents/cronos_match_unlocks/$(matchId)).data.get('status', '') == 'granted'
+               && get(/databases/$(database)/documents/cronos_match_unlocks/$(matchId)).data.get('coachUid', '') == request.auth.uid
+               && request.time < get(/databases/$(database)/documents/cronos_match_unlocks/$(matchId)).data.get('expiresAt', request.time);
       }
       // En la ventana de gracia solo puede cambiar lo que hace falta para
       // registrar un EVENTO PERDIDO (perdida de bateria o cobertura). Sin este
@@ -2224,7 +2376,12 @@ service cloud.firestore {
                        // mira es el ANTERIOR (resource.data), no el entrante.
                        lmIsLive() ||
                        // Ventana de 2 h: solo anadir sucesos, nada mas.
-                       (lmInGrace() && lmOnlyEvents())
+                       (lmInGrace() && lmOnlyEvents()) ||
+                       // 🔓 v797 · Pasadas las 2 h, lo MISMO que en la ventana
+                       // (mismo hasOnly) y sólo con permiso vigente de
+                       // Dirección/Coordinación para este partido y este
+                       // entrenador. Sin permiso, sigue congelado para todos.
+                       (lmFrozen() && lmOnlyEvents() && lmDesbloqueado())
                     );
       // v274: Borrado ampliado para permitir limpiar partidos en vivo
       // huerfanos / descoordinados / abandonados. Puede borrar:

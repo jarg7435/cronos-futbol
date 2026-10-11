@@ -349,7 +349,9 @@ console.log('\n── PARTE 7 · el emisor escribe el equipo ──');
     ok('7f · y la media sustitucion suelta (sub_in / sub_out) tambien',
        /action === 'Entra' \? 'sub_in' : 'sub_out'[\s\S]{0,400}playerName: nombre, team: datosEq\.team/.test(PACT));
     ok('7g · el evento RETROACTIVO tambien lleva equipo cuando hay jugador',
-       /_datosEquipoDe\(p\) : null;[\s\S]{0,200}_registerMatchEvent\(eventType, text, icon, matchTime, extraEq/.test(RETRO));
+       // 🔓 v797 · el equipo viaja dentro de `extraEv`, junto a las marcas de
+       // «añadido después» (Object.assign sobre extraEq).
+       /_datosEquipoDe\(p\) : null;[\s\S]{0,500}const extraEv = Object\.assign\(\{\}, extraEq \|\| \{\}[\s\S]{0,300}_registerMatchEvent\(eventType, text, icon, matchTime, extraEv/.test(RETRO));
 
     ok('7h · 🔑 el TEXTO de los eventos NO ha cambiado (hay guards y un replay que dependen de el)',
        /'GOL · ' \+ p\.name/.test(PACT) &&

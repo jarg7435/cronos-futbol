@@ -129,10 +129,15 @@ let ES_RETRO = null, ES_RETRO_MOTOR = null;
     }
 
     // El naranja es el mismo número en los dos ficheros.
-    const cu = (UTILS.match(/const CRONOS_COLOR_RETRO = '([^']+)'/)  || [])[1];
-    const cm = (ENGINE.match(/const RETRO_COLOR = '([^']+)'/)        || [])[1];
-    ok('1f · 🔑 el naranja es EL MISMO en utils.js y en el motor',
-       !!cu && cu === cm, 'utils=' + cu + ' motor=' + cm);
+    // 🔴 v797 · ya no es naranja: ROJO, y además el FILTRO que tiñe los
+    // iconos (encargo 2026-10-11). Color y filtro, iguales en los dos.
+    const cu = (UTILS.match(/const CRONOS_COLOR_RETRO\s*=\s*'([^']+)'/)  || [])[1];
+    const cm = (ENGINE.match(/const RETRO_COLOR\s*=\s*'([^']+)'/)        || [])[1];
+    const fu = (UTILS.match(/const CRONOS_FILTRO_RETRO\s*=\s*'([^']+)'/) || [])[1];
+    const fm = (ENGINE.match(/const RETRO_FILTRO\s*=\s*'([^']+)'/)       || [])[1];
+    ok('1f · 🔑 el rojo y el filtro del icono son LOS MISMOS en utils.js y en el motor',
+       !!cu && cu === cm && cu === '#ff4d4f' && !!fu && fu === fm && /hue-rotate/.test(fu),
+       'utils=' + cu + '/' + fu + ' motor=' + cm + '/' + fm);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -177,7 +182,11 @@ console.log('\n── PARTE 2 · [B][C] el informe colectivo, EJECUTADO ──')
         ok('2b · el informe se genera', typeof html === 'string' && html.length > 1000);
 
         // Las filas del registro cronológico llevan data-suceso; las retro, marca.
-        const filas = html.split('data-suceso="').slice(1).map(t => t.slice(0, 900));
+        // 🔴 v797 · se corta por la ETIQUETA de la fila (`<div style="…"
+        // data-suceso=…>`), no por `data-suceso`: la cursiva va en el `style`,
+        // que está DELANTE, y cortando por detrás se quedaba fuera.
+        const filas = html.split('<div style="').slice(1)
+            .filter(t => /^[^>]*data-suceso="/.test(t)).map(t => t.slice(0, 1100));
         const retros  = filas.filter(f => /data-retro="1"/.test(f));
         const normales = filas.filter(f => !/data-retro="1"/.test(f));
         ok('2c · 🔑🔑 [B] los sucesos retroactivos quedan marcados en el registro',
@@ -188,16 +197,24 @@ console.log('\n── PARTE 2 · [B][C] el informe colectivo, EJECUTADO ──')
         // dejara el TEXTO del suceso con su color de siempre pasaba
         // desapercibida (verde falso cazado en el red-check). Lo que se exige
         // es que el suceso retroactivo NO se pinte con el color de su tipo.
-        const COLORES_NORMALES = ['#3fb950', '#eab308', '#ff5858', '#ef4444', '#58a6ff', '#d2a8ff'];
-        ok('2d · 🔑🔑 [B] y el TEXTO del suceso va en NARANJA, no en el color de su tipo',
+        // 🔴 v797 · LA REGLA NUEVA (encargo 2026-10-11, punto 3): texto en
+        // CURSIVA e ICONO EN ROJO. El texto conserva el color de su tipo.
+        // ⚠️ Se mira la CABECERA de la fila (la cursiva va en el contenedor) y
+        // que el icono vaya DENTRO del tinte: una mutación que pintara la
+        // etiqueta pero dejara el icono sin teñir tiene que salir roja.
+        const FILTRO = (ENGINE.match(/const RETRO_FILTRO\s*=\s*'([^']+)'/) || [])[1] || '§';
+        const cabecera = (f) => f.slice(0, f.indexOf('>'));
+        ok('2d · 🔑🔑 [B] el suceso posterior va en CURSIVA y con el ICONO teñido de ROJO',
            retros.length > 0 &&
-           retros.every(f => (f.match(/#f5a623/g) || []).length >= 3) &&
-           retros.every(f => !COLORES_NORMALES.some(c => f.indexOf('color:' + c + ';">') >= 0)),
-           retros.map(f => (f.match(/color:[^;"]+/g) || []).join(',')).join(' || '));
+           retros.every(f => /font-style:italic/.test(cabecera(f))) &&
+           retros.every(f => /class="cronos-retro-ico"[^>]*filter:/.test(f) && f.indexOf(FILTRO) >= 0) &&
+           retros.every(f => !/#f5a623/.test(f)),
+           retros.map(f => cabecera(f)).join(' || '));
         ok('2e · 🔑 y lo dicen con palabras (un informe se imprime sin color)',
            retros.every(f => /RETROACTIVO/.test(f)));
-        ok('2f · ⚠️ y un suceso normal NO se pinta de naranja',
-           normales.length > 0 && !normales.some(f => /#f5a623/.test(f)),
+        ok('2f · ⚠️ y un suceso normal NO va en cursiva ni con el icono teñido',
+           normales.length > 0 &&
+           !normales.some(f => /font-style:italic/.test(cabecera(f)) || /cronos-retro-ico/.test(f)),
            'normales=' + normales.length);
         ok('2g · 🔑 [C] el comentario retroactivo también (el autor los nombra primeros)',
            retros.some(f => /comment/.test(f) && /Nota apuntada despues/.test(f)),
@@ -363,7 +380,8 @@ console.log('\n── PARTE 4 · [E][F] el gol retroactivo corrige el INFORME �
             // Y el enganche: el submit lo llama y avisa del resultado.
             const SUB = sinComentarios(RETRO);
             ok('4l · el guardado llama a la corrección de informes',
-               /_corrigeInformesDelPartido\(\{/.test(SUB) &&
+               // 📋 v799 · con el lote recibe la LISTA de correcciones.
+               /_corrigeInformesDelPartido\(cambios\)/.test(SUB) &&
                /marcador e informe actualizados/.test(RETRO));
             ok('4m · 🔑 el lado del gol se calcula con la MISMA cuenta que el marcador del documento',
                /esRival \? \(miRol === 'away' \? 'home' : 'away'\)/.test(SUB) &&

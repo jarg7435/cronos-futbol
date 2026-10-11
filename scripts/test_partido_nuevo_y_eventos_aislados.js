@@ -311,7 +311,8 @@ console.log('\n── PARTE 2 · ⚠️ un partido no interrumpe la pantalla de 
 
 // El cableado: la puerta tiene que estar en la PRIMERA línea de showEventToast,
 // porque el destello, el sonido y la vibración están AL FINAL de esa función.
-const iToast = LIVE.indexOf('function showEventToast(type, line, sub, matchTime, equipo, matchId) {');
+// 🔴 v797 · 7º parámetro `retro` (suceso añadido a posteriori: icono rojo).
+const iToast = LIVE.indexOf('function showEventToast(type, line, sub, matchTime, equipo, matchId, retro) {');
 const cabezaToast = iToast < 0 ? '' : LIVE.slice(iToast, iToast + 420);
 ok('2n · ⚠️ la puerta va ANTES de todo en showEventToast (el sonido está al final)',
    /if \(!_puedeAvisarme\(matchId\)\) return;/.test(cabezaToast),

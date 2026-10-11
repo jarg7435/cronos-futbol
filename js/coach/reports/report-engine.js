@@ -957,11 +957,21 @@ const _RP = (() => {
         return html;
     };
 
-    // v531 · Color de los EVENTOS PERDIDOS (registrados a posteriori). Naranja
-    // por petición expresa del autor: el director deportivo y el coordinador
-    // tienen que saber de un vistazo qué se anotó durante el partido y qué se
-    // añadió después por pérdida de batería o cobertura.
-    const RETRO_COLOR = '#f5a623';
+    // v531 · Color de los EVENTOS PERDIDOS (registrados a posteriori): el
+    // director deportivo y el coordinador tienen que saber de un vistazo qué se
+    // anotó durante el partido y qué se añadió después.
+    // 🔴 v797 · ROJO, ya no naranja, con el texto en CURSIVA (encargo
+    // 2026-10-11). Copia de CRONOS_COLOR_RETRO / CRONOS_FILTRO_RETRO de
+    // utils.js: este motor es autocontenido y el guard exige que coincidan.
+    const RETRO_COLOR  = '#ff4d4f';
+    const RETRO_FILTRO = 'grayscale(1) brightness(0.55) sepia(1) saturate(50) hue-rotate(-12deg)';
+    // El icono, sea emoji o figura CSS, teñido de rojo con el mismo filtro.
+    const iconoRetro = (html) =>
+        `<span class="cronos-retro-ico" style="display:inline-flex;align-items:center;flex-shrink:0;filter:${RETRO_FILTRO};">${html}</span>`;
+    // Y con palabras: un informe se imprime en blanco y negro (v715).
+    const etiquetaRetro = () =>
+        `<span style="font-size:0.58rem;font-weight:800;font-style:normal;letter-spacing:0.5px;color:${RETRO_COLOR};` +
+        `border:1px dashed ${RETRO_COLOR};border-radius:4px;padding:0 3px;flex-shrink:0;">RETROACTIVO</span>`;
 
     // ══════════════════════════════════════════════════════════════════
     //  🟠 v715 · ¿ES UN SUCESO REGISTRADO A POSTERIORI?
@@ -996,7 +1006,7 @@ const _RP = (() => {
         `<span style="display:flex;align-items:center;gap:3px;"><span style="width:7px;height:10px;background:#eab308;border-radius:1px;display:inline-block;"></span>Amarilla</span>` +
         `<span style="display:flex;align-items:center;gap:3px;"><span style="width:7px;height:10px;background:#ef4444;border-radius:1px;display:inline-block;"></span>Roja</span>` +
         `<span style="display:flex;align-items:center;gap:3px;"><span style="width:0;height:0;border-left:5px solid transparent;border-right:5px solid transparent;border-bottom:9px solid #f97316;display:inline-block;"></span>Lesión</span>` +
-        `<span style="display:flex;align-items:center;gap:3px;"><span style="width:11px;height:11px;border-radius:50%;border:1.2px dashed ${RETRO_COLOR};display:inline-block;"></span><span style="color:${RETRO_COLOR};font-weight:700;">Evento perdido</span> (retroactivo)</span>` +
+        `<span style="display:flex;align-items:center;gap:3px;"><span style="width:11px;height:11px;border-radius:50%;border:1.2px dashed ${RETRO_COLOR};display:inline-block;"></span><span style="color:${RETRO_COLOR};font-weight:700;font-style:italic;">Añadido después</span> (cursiva, icono rojo)</span>` +
         `</div>`;
 
     // ════════════════════════════════════════════════════════════════
@@ -1348,16 +1358,14 @@ const _RP = (() => {
     // que no se pudo registrar en su momento.
     const filaComentario = (c) => {
         const _retro = esRetroEv(c);
-        return `<div style="display:flex;align-items:flex-start;gap:8px;padding:5px 0;font-size:0.76rem;" data-suceso="comment"${_retro ? ' data-retro="1"' : ''}>` +
-        `<span style="min-width:35px;font-size:0.69rem;font-weight:700;color:${_retro ? RETRO_COLOR : 'var(--text-muted)'};flex-shrink:0;">${formatTot(c.minute)}</span>` +
+        const _ico = `<span style="font-size:0.8rem;line-height:1.2;flex-shrink:0;">💬</span>`;
+        return `<div style="display:flex;align-items:flex-start;gap:8px;padding:5px 0;font-size:0.76rem;${_retro ? 'font-style:italic;' : ''}" data-suceso="comment"${_retro ? ' data-retro="1" title="Añadido después del partido"' : ''}>` +
+        `<span style="min-width:35px;font-size:0.69rem;font-weight:700;color:var(--text-muted);flex-shrink:0;">${formatTot(c.minute)}</span>` +
         horaRealPill(c.realTime) +
-        `<span style="font-size:0.8rem;line-height:1.2;flex-shrink:0;">💬</span>` +
-        `<span style="color:${_retro ? RETRO_COLOR : '#d2a8ff'};min-width:0;"><strong style="letter-spacing:0.5px;">COMENTARIO</strong> &middot; ` +
-        `<span style="color:${_retro ? RETRO_COLOR : 'var(--text,#c9d1d9)'};white-space:pre-wrap;word-break:break-word;">${esc(c.text)}</span></span>` +
-        (_retro
-            ? `<span style="font-size:0.58rem;font-weight:800;letter-spacing:0.5px;color:${RETRO_COLOR};` +
-              `border:1px dashed ${RETRO_COLOR};border-radius:4px;padding:0 3px;flex-shrink:0;">RETROACTIVO</span>`
-            : '') +
+        (_retro ? iconoRetro(_ico) : _ico) +
+        `<span style="color:#d2a8ff;min-width:0;"><strong style="letter-spacing:0.5px;">COMENTARIO</strong> &middot; ` +
+        `<span style="color:var(--text,#c9d1d9);white-space:pre-wrap;word-break:break-word;">${esc(c.text)}</span></span>` +
+        (_retro ? etiquetaRetro() : '') +
         `</div>`;
     };
 
@@ -1454,19 +1462,20 @@ const _RP = (() => {
             //  ⚠️ `esRetroEv` es la copia local de `cronosEsRetro` (utils.js):
             //  este motor es autocontenido y no puede nombrarla. El guard
             //  ejecuta las dos y exige el mismo veredicto.
+            // 🔴 v797 · Y AHORA EN CURSIVA CON EL ICONO EN ROJO (encargo
+            //  2026-10-11, punto 3). El texto CONSERVA el color de su tipo —
+            //  GOL verde, TARJETA amarilla—: lo que dice «posterior al
+            //  partido» es la cursiva, el icono rojo y la etiqueta, no un
+            //  color que tape el tipo de suceso.
             const _retro = esRetroEv(ev);
-            const _col   = _retro ? RETRO_COLOR : col;
             return (
                 `<div style="display:flex;align-items:center;gap:8px;padding:5px 0;` +
-                `font-size:0.76rem;" data-suceso="${esc(ev.type)}"${_retro ? ' data-retro="1"' : ''}>` +
-                `<span style="min-width:35px;font-size:0.69rem;font-weight:700;color:${_retro ? RETRO_COLOR : 'var(--text-muted)'};flex-shrink:0;">${ev.timeStr || formatTot((ev.minute||0) + (ev.second||0)/60)}</span>` +
+                `font-size:0.76rem;${_retro ? 'font-style:italic;' : ''}" data-suceso="${esc(ev.type)}"${_retro ? ' data-retro="1" title="Añadido después del partido"' : ''}>` +
+                `<span style="min-width:35px;font-size:0.69rem;font-weight:700;color:var(--text-muted);flex-shrink:0;">${ev.timeStr || formatTot((ev.minute||0) + (ev.second||0)/60)}</span>` +
                 horaRealPill(ev.realTime) +
-                icon +
-                `<span style="color:${_col};">${txt}</span>` +
-                (_retro
-                    ? `<span style="font-size:0.58rem;font-weight:800;letter-spacing:0.5px;color:${RETRO_COLOR};` +
-                      `border:1px dashed ${RETRO_COLOR};border-radius:4px;padding:0 3px;flex-shrink:0;">RETROACTIVO</span>`
-                    : '') +
+                (_retro ? iconoRetro(icon) : icon) +
+                `<span style="color:${col};">${txt}</span>` +
+                (_retro ? etiquetaRetro() : '') +
                 `</div>`
             );
         });

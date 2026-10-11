@@ -1265,6 +1265,8 @@ async function openIndividualAdminPanel(mantenerSeccion = false) {
         // ✉️ v781 · Sólo el HUECO; lo pinta saSecretary desde indTab (mismo
         // módulo que el Director, el Admin de Club y el SuperAdmin).
         secretaria:  { titulo: '✉️ Secretaría',      html: '<div id="ind-secretaria-body"></div>' },
+        // 🔓 v798 · Sólo el HUECO; lo pinta CronosUnlocks.renderPanel desde indTab.
+        desbloqueos: { titulo: '🔓 Desbloqueos',     html: '<div id="ind-desbloqueos-body"></div>' },
     };
 
     // ✉️ v781 · El ente invita SÓLO a familias: bajo un ente el alta no admite
@@ -1332,6 +1334,13 @@ async function openIndividualAdminPanel(mantenerSeccion = false) {
         //    contenido no se ha perdido: abre "⚽ Mi Equipo", donde el cuadro de
         //    cifras es lo primero que se ve y las familias están dentro de su
         //    equipo. Se retiran del TABLERO, no del panel.
+        // 🔓 v798 · Encargo del autor (2026-10-11): en el ente no hay Director
+        // ni Coordinador, así que el desbloqueo de un partido cerrado (más de
+        // 2 h) lo concede su ADMINISTRADOR. Mismo módulo que Dirección.
+        { icono: '🔓', titulo: 'Desbloqueos', color: '#f0883e',
+          desc: 'Permisos para añadir sucesos a un partido ya cerrado (más de 2 h).',
+          badgeId: 'ind-badge-desbloqueos',
+          onclick: "indTab('desbloqueos')" },
         { icono: '💳', titulo: 'Mi Plan', color: '#ffd700',
           desc: 'Suscripción, facturas y forma de pago.',
           onclick: "indTab('plan')" },
@@ -1374,6 +1383,10 @@ async function openIndividualAdminPanel(mantenerSeccion = false) {
             window._indSeccionActual = 'menu';
             if (barra) { barra.style.display = 'none'; barra.innerHTML = ''; }
             cuerpo.innerHTML = _indMenuHtml;
+            // 🔓 v798 · solicitudes de desbloqueo pendientes, sin esperarlas.
+            if (window.CronosUnlocks && typeof window.CronosUnlocks.pintarBadge === 'function') {
+                window.CronosUnlocks.pintarBadge('ind-badge-desbloqueos', individualEntityId);
+            }
             return;
         }
         if (barra) {
@@ -1390,6 +1403,21 @@ async function openIndividualAdminPanel(mantenerSeccion = false) {
         }
         cuerpo.innerHTML = _IND_SECCIONES[sec].html;
         cuerpo.scrollTop = 0;
+
+        // 🔓 v798 · Desbloqueos del ENTE: se le pasa SU id, que en esta cuenta
+        // puede no estar en `clubId` (lo resuelve `individualEntityId`, arriba).
+        if (sec === 'desbloqueos') {
+            const _db = document.getElementById('ind-desbloqueos-body');
+            if (!_db) return;
+            if (!window.CronosUnlocks || typeof window.CronosUnlocks.renderPanel !== 'function') {
+                _db.innerHTML = '<div style="text-align:center;padding:3rem;color:#ff5858;">' +
+                    '⚠️ El módulo de desbloqueos no está disponible. Recarga el panel.</div>';
+                return;
+            }
+            Promise.resolve(window.CronosUnlocks.renderPanel('ind-desbloqueos-body', individualEntityId))
+                .catch(e => console.warn('[IndPanel] Desbloqueos:', e && e.message ? e.message : e));
+            return;
+        }
 
         // ✉️ v781 · Secretaría: después del innerHTML (busca su contenedor).
         // ⚠️ SEGUNDA PUERTA: la tarjeta bloqueada no impide llegar aquí por

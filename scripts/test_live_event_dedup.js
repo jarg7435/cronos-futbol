@@ -275,7 +275,8 @@ console.log('\n── PARTE 4 · el delta sólo para partidos sin eventId ──
        /_linea = _formateaLineaEvento\(_t, ev\.text \|\| ''\)/.test(l),
        (l.match(/showEventToast\(_t[^\n]*/) || ['(no aparece)'])[0]);
     ok('4d2 · v445 · y le pasa el EQUIPO del propio evento (+ el matchId, v455)',
-       /showEventToast\(_t, _linea, matchLabel, ev\.matchTime \|\| _matchTime,\s*_equipoDeSuceso\(matchData, ev\), matchId\)/.test(l),
+       // 🔴 v797 · + la marca de «añadido después» como 7º argumento.
+       /showEventToast\(_t, _linea, matchLabel, ev\.matchTime \|\| _matchTime,\s*_equipoDeSuceso\(matchData, ev\), matchId(?:,[^)]*)?\)/.test(l),
        'el campo `team` del evento es la fuente fiable; deducirlo es el respaldo');
     ok('4e · 🔑 y las sustituciones se colorean: verde ENTRA, rojo SALE',
        /ENTRA:\[\^\|\]\*\)/.test(l.replace(/\\/g, '')) || /_coloreaSustitucion/.test(l));

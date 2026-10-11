@@ -3043,8 +3043,12 @@ async function openUnifiedCommsMenu() {
                 </div>
             </button>
 
-            <!-- 3. REGISTRAR SUCESOS OFFLINE -->
-            <button onclick="if(typeof openOfflineSyncModal==='function') openOfflineSyncModal(); else if(typeof window._cronosOffline !== 'undefined' && typeof window._cronosOffline.showModal === 'function') window._cronosOffline.showModal(); else if(typeof showToast==='function') showToast('ℹ️ No hay sucesos offline pendientes.', 3000);" class="btn-comms-card" style="--color:#58a6ff;--bg:rgba(88,166,255,0.08);">
+            <!-- 3. REGISTRAR SUCESOS OFFLINE
+                 🔓 v797 · Llamaba a openOfflineSyncModal / _cronosOffline, que
+                 NO EXISTEN en el proyecto: la tarjeta sólo decía «No hay
+                 sucesos offline pendientes». Abre el mismo modal que la tarjeta
+                 gemela del menú (setup-modal.js), con su selector de partido. -->
+            <button onclick="if(typeof openRetroactiveEventModal==='function') openRetroactiveEventModal(); else if(typeof showToast==='function') showToast('⚠️ Módulo no disponible. Recarga la página.', 3000);" class="btn-comms-card" style="--color:#58a6ff;--bg:rgba(88,166,255,0.08);">
                 <span class="icon">⏱️</span>
                 <div class="content">
                     <div class="title" style="color:#58a6ff;">Registrar sucesos offline</div>

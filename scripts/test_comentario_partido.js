@@ -71,6 +71,17 @@ console.log('\n── PARTE 1 · el modal "Registrar Evento Perdido" ──');
 
     await w.openRetroactiveEventModal();
     const html = (els['cronos-retroactive-modal'] || {}).innerHTML || '';
+    // 🔓 v797 · Sin partido elegido NO se guarda nada (encargo 2026-10-11):
+    // antes el modal caía solo en `liveMatchId`. Se elige el partido en curso.
+    w._setRetroEventType('comment');
+    el('retro-minute-input').value = '67';
+    el('retro-comment-input').value = 'sin partido elegido';
+    await w.submitRetroactiveEvent();
+    ok('1z · 🔓 v797 · sin elegir partido no se registra nada y se avisa',
+       registrados.length === 0 && /Elige primero el partido/.test(toasts.join('|')));
+    toasts.length = 0;
+    w._setRetroEventType('goal');
+    await w._retroElegirPartido('m_live');
     ok('1a · 🔑 existe el botón "💬 Comentario" en Tipo de Suceso',
        /id="btn-retro-comment"[^>]*>💬 Comentario</.test(html));
     ok('1b · y un campo de texto libre (textarea) con tope de 500', /<textarea id="retro-comment-input"[^>]*maxlength="500"/.test(html));
@@ -112,6 +123,7 @@ console.log('\n── PARTE 1 · el modal "Registrar Evento Perdido" ──');
     registrados.length = 0;
     w._setRetroEventType('comment');
     await w.openRetroactiveEventModal();
+    await w._retroElegirPartido('m_live');   // 🔓 v797 · elección explícita
     el('retro-half-select').value = '1T';
     el('retro-minute-input').value = '10';
     el('retro-player-select').value = '3';

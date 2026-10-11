@@ -1680,7 +1680,11 @@ async function openParentPanel(initialTab) {
             // tres formas en que viaja la marca; el respaldo local mantiene la
             // pantalla viva si utils.js no estuviera cargado.
             const _COLOR_RETRO_PP = (typeof window.CRONOS_COLOR_RETRO === 'string')
-                ? window.CRONOS_COLOR_RETRO : '#f5a623';
+                ? window.CRONOS_COLOR_RETRO : '#ff4d4f';
+            // v797 · el icono del suceso, en rojo (cronosIconoRetro, utils.js).
+            const _iconoRetroPP = (html) => (typeof window.cronosIconoRetro === 'function')
+                ? window.cronosIconoRetro(html)
+                : '<span style="color:' + _COLOR_RETRO_PP + ';">' + html + '</span>';
             const _esRetroPP = (ev) => {
                 if (typeof window.cronosEsRetro === 'function') return window.cronosEsRetro(ev);
                 if (!ev) return false;
@@ -2136,13 +2140,16 @@ async function openParentPanel(initialTab) {
                     // apuntado a posteriori, y con la palabra al lado: la
                     // familia tambien tiene derecho a saber que ese gol se
                     // registro mas tarde. Se conserva el icono del suceso.
+                    // v797 · y ahora EN CURSIVA con el ICONO EN ROJO (encargo
+                    // 2026-10-11, punto 3); el texto conserva el color de su tipo.
                     const _r = ev.retro === true;
+                    const _icoPP = `<span style="font-size:1rem;line-height:1;">${info.icon}</span>`;
                     return `<div style="display:flex;align-items:center;gap:8px;font-size:0.75rem;
-                                padding:5px 0;border-bottom:1px solid rgba(255,255,255,0.04);">
-                        <span style="min-width:38px;color:${_r ? _COLOR_RETRO_PP : 'rgba(255,255,255,0.4)'};font-weight:700;
+                                padding:5px 0;border-bottom:1px solid rgba(255,255,255,0.04);${_r ? 'font-style:italic;' : ''}"${_r ? ' title="Añadido después del partido"' : ''}>
+                        <span style="min-width:38px;color:rgba(255,255,255,0.4);font-weight:700;
                                      font-variant-numeric:tabular-nums;">${_secToLabel(ev.timeSec)}</span>
-                        <span style="font-size:1rem;line-height:1;">${info.icon}</span>
-                        <span style="color:${_r ? _COLOR_RETRO_PP : info.col};font-weight:600;">${info.txt}</span>
+                        ${_r ? _iconoRetroPP(_icoPP) : _icoPP}
+                        <span style="color:${info.col};font-weight:600;">${info.txt}</span>
                         ${_r ? `<span style="font-size:0.56rem;font-weight:800;letter-spacing:0.5px;color:${_COLOR_RETRO_PP};
                                      border:1px dashed ${_COLOR_RETRO_PP};border-radius:4px;padding:0 3px;">RETROACTIVO</span>` : ''}
                         ${ev.note ? `<span style="color:rgba(255,255,255,0.25);font-size:0.7rem;">${_esc(ev.note)}</span>` : ''}

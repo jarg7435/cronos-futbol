@@ -748,6 +748,9 @@ function _recortaSuceso(ev, matchIdPorDefecto) {
     ['subInName', 'subOutName', 'playerName'].forEach(function (k) {
         if (ev[k] !== undefined && ev[k] !== null) out[k] = ev[k];
     });
+    // 🔓 v797 · La marca de «añadido a posteriori» viaja también al índice:
+    // el mini-feed de la tarjeta lo pinta en cursiva y con el icono en rojo.
+    if (ev.isRetroactive === true) out.isRetroactive = true;
     return out;
 }
 if (typeof window !== 'undefined') window._cronosRecortaSuceso = _recortaSuceso;

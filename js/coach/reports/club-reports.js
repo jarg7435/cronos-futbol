@@ -409,6 +409,7 @@ window.switchStaffTab = async (tab) => {
         informes:            '📊 Informes',
         mensajes:            '💬 Mensajes',
         partidos_terminados: '🎬 Partidos Terminados',
+        desbloqueos:         '🔓 Desbloqueos',
         config:              '⚙️ Configuración',
         secretaria:          '✉️ Secretaría',
     };
@@ -496,6 +497,13 @@ window.switchStaffTab = async (tab) => {
             { icono: '🔴', titulo: 'En Vivo', color: '#ff5858',
               desc: 'Los partidos que se están jugando ahora mismo.',
               onclick: 'openLiveMatchesView()' },
+            // 🔓 v797 · Pasadas las 2 h, un partido sólo admite sucesos con
+            // permiso de Dirección/Coordinación. Aquí se conceden. El aviso de
+            // pendientes llega tarde, como el de Mensajes (ver abajo).
+            { icono: '🔓', titulo: 'Desbloqueos', color: '#f0883e',
+              desc: 'Permisos para que un entrenador añada sucesos a un partido ya cerrado.',
+              badgeId: 'sd-badge-desbloqueos',
+              onclick: "switchStaffTab('desbloqueos')" },
         ];
         // v596 · Secretaría es SUB-OPCIÓN de Dirección y se contrata aparte: un
         // club puede querer al Director sin darle la capacidad de invitar.
@@ -542,6 +550,20 @@ window.switchStaffTab = async (tab) => {
         // para aparecer. Si el módulo no está cargado, la píldora se queda
         // oculta y no pasa nada más.
         if (typeof window.ubPintarBadge === 'function') window.ubPintarBadge('sd-badge-mensajes');
+        if (window.CronosUnlocks && typeof window.CronosUnlocks.pintarBadge === 'function') {
+            window.CronosUnlocks.pintarBadge('sd-badge-desbloqueos');
+        }
+        return;
+    }
+
+    // 🔓 v797 · Permisos de desbloqueo de partidos cerrados.
+    if (tab === 'desbloqueos') {
+        if (!window.CronosUnlocks || typeof window.CronosUnlocks.renderPanel !== 'function') {
+            container.innerHTML = '<div style="text-align:center;padding:3rem;color:#ff5858;">' +
+                '⚠️ El módulo de desbloqueos no está disponible. Recarga el panel.</div>';
+            return;
+        }
+        await window.CronosUnlocks.renderPanel('staff-dashboard-content');
         return;
     }
 

@@ -146,10 +146,14 @@ console.log('\n── PARTE 2 · puertas en el navegador (interfaz) ──');
        /_modalBuffer\.push\(\[type, text, icon, matchTimeOverride, extra, target\]\)/.test(PACT),
        '_confirmarEventosModal reenvia la tupla con apply: sin target volveria a liveMatchId');
 
+    // 🔓 v797 · Al abrir ya no se cierra con un toast: se abre con el
+    // formulario APAGADO y el botón de pedir permiso. El candado se consulta
+    // en `_calculaListo`, que la apertura llama antes de pintar.
     ok('2e · el modal comprueba el candado al ABRIR',
-       /openRetroactiveEventModal = async function[\s\S]{0,1200}canAddEvent\(_targetMatchData\)/.test(RETRO));
+       /function _calculaListo\(\)[\s\S]{0,300}canAddEvent\(_targetMatchData\)/.test(RETRO) &&
+       /openRetroactiveEventModal = async function[\s\S]{0,3000}_calculaListo\(\);[\s\S]{0,200}let modal/.test(RETRO));
     ok('2f · y REVALIDA al guardar',
-       /submitRetroactiveEvent = async function[\s\S]{0,400}canAddEvent\(_targetMatchData\)/.test(RETRO),
+       /submitRetroactiveEvent = async function[\s\S]{0,900}canAddEvent\(_targetMatchData\)/.test(RETRO),
        'dejar el modal abierto seria la forma de saltarse la congelacion');
     ok('2g · lee el partido del SERVIDOR y no de la pantalla',
        /async function _cargarPartido[\s\S]{0,500}getDoc\(/.test(RETRO));

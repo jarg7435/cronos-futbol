@@ -3526,7 +3526,31 @@ window.cronosPRDelInforme = cronosPRDelInforme;
 //  nombrar nada de aquí, así que conserva su propia constante: que las dos no
 //  se separen lo vigila scripts/test_retroactivo_naranja.js.
 // ════════════════════════════════════════════════════════════════════
-const CRONOS_COLOR_RETRO = '#f5a623';
+// ════════════════════════════════════════════════════════════════════
+//  🔴 v797 · DEL NARANJA AL ROJO, Y EN CURSIVA
+//
+//  Encargo del autor (implementar.txt 2026-10-11, punto 3): lo introducido a
+//  posteriori (offline o retroactivo) tiene que destacar frente a lo del
+//  directo con el TEXTO EN CURSIVA y los ICONOS (goles, cambios, lesiones…)
+//  EN ROJO. Sustituye al naranja de v715.
+//
+//  🔑 LOS ICONOS SON EMOJIS y un emoji no obedece a `color`. Se tiñen con
+//  `filter`: gris → sepia → saturar → girar el tono hasta el rojo. Medido en
+//  Chrome sobre fondo oscuro y blanco: ⚽ 🟨 🟥 🔄 🚑 💬 quedan rojos y
+//  conservan su forma (con `text-shadow` se quedaban en siluetas planas y
+//  la amarilla no se distinguía de la roja). Los iconos dibujados con CSS
+//  del motor de informes se tiñen con el MISMO filtro.
+//  ⚠️ El motor de informes es autocontenido y lleva su copia de las dos
+//  constantes; scripts/test_retroactivo_naranja.js exige que coincidan.
+// ════════════════════════════════════════════════════════════════════
+const CRONOS_COLOR_RETRO  = '#ff4d4f';
+const CRONOS_FILTRO_RETRO = 'grayscale(1) brightness(0.55) sepia(1) saturate(50) hue-rotate(-12deg)';
+// El icono de un suceso, teñido de rojo. `html` ya viene escapado o es un
+// emoji fijo del propio código.
+function cronosIconoRetro(html) {
+    return '<span class="cronos-retro-ico" style="display:inline-block;filter:' +
+           CRONOS_FILTRO_RETRO + ';" title="Añadido después del partido">' + html + '</span>';
+}
 function cronosEsRetro(ev) {
     if (!ev) return false;
     if (ev.retro === true || ev.isRetroactive === true) return true;
@@ -3536,6 +3560,8 @@ function cronosEsRetro(ev) {
 }
 window.cronosEsRetro       = cronosEsRetro;
 window.CRONOS_COLOR_RETRO  = CRONOS_COLOR_RETRO;
+window.CRONOS_FILTRO_RETRO = CRONOS_FILTRO_RETRO;
+window.cronosIconoRetro    = cronosIconoRetro;
 
 // ════════════════════════════════════════════════════════════════════
 //  ⚽❌ v789 · UN GOL ANULADO SE LLEVA SU GOL

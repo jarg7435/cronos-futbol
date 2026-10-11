@@ -79,10 +79,38 @@
         return (ahora - fin) <= GRACE_MS ? 'grace' : 'frozen';
     }
 
+    // ════════════════════════════════════════════════════════════════
+    //  🔓 v797 · EL DESBLOQUEO DE DIRECCIÓN / COORDINACIÓN
+    //
+    //  Encargo del autor (implementar.txt 2026-10-11): pasadas las 2 h, el
+    //  entrenador sólo puede añadir sucesos a un partido si el Director
+    //  Deportivo o el Coordinador le conceden permiso PARA ESE PARTIDO.
+    //
+    //  El permiso es un documento `cronos_match_unlocks/{matchId}` (lo
+    //  gestiona js/match/events/match-unlocks.js). Aquí sólo se decide si
+    //  está VIGENTE: concedido y sin caducar. Quien lo trae al partido es el
+    //  modal, que lo cuelga en `m._cronosUnlock` antes de preguntar.
+    //
+    //  ⚠️ Igual que el resto del fichero, ESTO ES INTERFAZ. La barrera es la
+    //  rama `lmDesbloqueado()` de firestore.rules, que lee el mismo documento
+    //  con `request.time`. Si cambia la duración, cambia también allí.
+    // ════════════════════════════════════════════════════════════════
+    var UNLOCK_MS = 24 * 60 * 60 * 1000;      // vigencia de un permiso
+
+    function unlockValid(u, ahoraMs) {
+        if (!u || u.status !== 'granted') return false;
+        var hasta = _toMs(u.expiresAt);
+        if (!hasta) return false;              // sin caducidad legible: no vale
+        var ahora = typeof ahoraMs === 'number' ? ahoraMs : Date.now();
+        return ahora < hasta;
+    }
+
     // ¿Se admite AÑADIR un suceso retroactivo?
+    // 🔓 v797 · Congelado + permiso vigente de Dirección/Coordinación = sí.
     function canAddEvent(m, ahoraMs) {
         var s = state(m, ahoraMs);
-        return s === 'live' || s === 'grace';
+        if (s === 'live' || s === 'grace') return true;
+        return !!(m && unlockValid(m._cronosUnlock, ahoraMs));
     }
 
     // ¿Se admite borrar a mano? El SuperAdmin conserva la válvula de escape;
@@ -113,15 +141,21 @@
     // para que los cinco puntos de llamada digan exactamente lo mismo.
     function lockReason(m, ahoraMs) {
         if (state(m, ahoraMs) !== 'frozen') return '';
-        return 'Este partido está cerrado definitivamente. Solo se admiten '
-             + 'incidencias durante las 2 horas siguientes a su finalización.';
+        if (m && unlockValid(m._cronosUnlock, ahoraMs)) return '';
+        return 'Este partido está cerrado: solo se admiten incidencias durante '
+             + 'las 2 horas siguientes a su finalización. Para añadir más, '
+             + 'pide el desbloqueo al Director Deportivo o al Coordinador '
+             + '(en un ente individual, a su administrador) '
+             + 'desde «Registrar sucesos offline».';
     }
 
     window.CronosMatchLock = {
         GRACE_MS: GRACE_MS,
         RETENTION_MS: RETENTION_MS,
+        UNLOCK_MS: UNLOCK_MS,
         finishedAtMs: finishedAtMs,
         state: state,
+        unlockValid: unlockValid,
         canAddEvent: canAddEvent,
         canDelete: canDelete,
         graceRemainingMs: graceRemainingMs,

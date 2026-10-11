@@ -85,8 +85,12 @@ ok('1d · tolera null/undefined', detecta(null).length === 0 && detecta(undefine
 // ════════════════════════════════════════════════════════════════════
 console.log('\n2) El guardado lo consulta, y ANTES de escribir');
 {
-    const iC = RETRO.indexOf("if (_selectedEventType === 'comment') {");
-    const tramo = iC === -1 ? '' : RETRO.slice(iC, iC + 6000);
+    // 📋 v799 · Con el LOTE la comprobación vive en `_leeFormulario`, que es
+    // por donde pasa TODO suceso (al añadirlo a la lista o al guardar uno
+    // suelto) antes de que exista ninguna escritura. Lo que se exige es lo
+    // mismo: detector y confirmación ANTES del registro y de los informes.
+    const iC = RETRO.indexOf('function _leeFormulario() {');
+    const tramo = iC === -1 ? '' : RETRO.slice(iC);
     const iDet = tramo.indexOf('cronosPosiblesDatosSalud(nota)');
     const iConf = tramo.indexOf('confirm(', iDet);
     const iReg = tramo.indexOf("_registerMatchEvent('comment'");
@@ -97,7 +101,8 @@ console.log('\n2) El guardado lo consulta, y ANTES de escribir');
        iDet !== -1 && iReg !== -1 && iInf !== -1 && iConf < iReg && iConf < iInf,
        { iDet, iConf, iReg, iInf });
     ok('2d · cancelar sale sin escribir (return dentro del if)',
-       /confirm\([\s\S]{0,700}?\)\)\s*\{[\s\S]{0,120}?return;/.test(tramo));
+       // 📋 v799 · `return null`: _leeFormulario devuelve «sin suceso».
+       /confirm\([\s\S]{0,700}?\)\)\s*\{[\s\S]{0,120}?return(?: null)?;/.test(tramo));
 }
 
 // ════════════════════════════════════════════════════════════════════

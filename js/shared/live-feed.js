@@ -252,7 +252,9 @@
                 ? '<span class="lf-eq lf-eq-' + cual + '">' +
                   _esc(nombreEquipo(m, cual, ev)) + '</span>'
                 : '';
-            return '<div class="live-feed-fila">' +
+            // 🔴 v797 · lo añadido a posteriori: icono rojo y texto en cursiva.
+            const retro = ev.isRetroactive === true || ev.retro === true;
+            return '<div class="live-feed-fila' + (retro ? ' lf-retro" title="Añadido después del partido' : '') + '">' +
                    '<span class="lf-min">' + _esc(min) + '</span>' +
                    '<span class="lf-ico">' + icono + '</span>' +
                    eq +
@@ -303,6 +305,9 @@
         '.live-feed-fila .lf-txt{color:#cdd9e5;overflow:hidden;text-overflow:ellipsis;' +
         'white-space:nowrap;min-width:0;}' +
         '.live-feed-vacio{font-size:0.7rem;color:#7d8590;font-style:italic;padding:0.15rem 0;}' +
+        // 🔴 v797 · mismo filtro que CRONOS_FILTRO_RETRO (utils.js) y live.html.
+        '.live-feed-fila.lf-retro .lf-ico{filter:grayscale(1) brightness(0.55) sepia(1) saturate(50) hue-rotate(-12deg);}' +
+        '.live-feed-fila.lf-retro .lf-txt{font-style:italic;}' +
         '@media (max-width: 600px){' +
         '.live-feed{padding:0.42rem 0.5rem;max-height:104px;}' +
         '.live-feed-fila{font-size:0.68rem;line-height:1.45;}' +

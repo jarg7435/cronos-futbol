@@ -138,20 +138,20 @@ console.log('\n── PARTE 2 · las dos vías la pintan ──');
 {
     const L = sinCom(LIVE);
     ok('2a · 🔑 el aviso flotante lleva la etiqueta del equipo',
-       /'<div class="et-title">' \+ _chipEquipoHtml\(_eq\)/.test(L));
+       /'<div class="et-title' \+ \(retro \? ' cronos-retro-txt' : ''\) \+ '">' \+ _chipEquipoHtml\(_eq\)/.test(L));
     // ⚠️ LAS DOS LLAMADAS, CONTADAS. Hay DOS escritores de la lista y ambos
     // llaman a _filaSucesoHtml; con un `.test()` suelto, quitarle el equipo a
     // UNO pasaba desapercibido porque la regex encontraba el otro (lo destapó
     // la mutación M2 del red-check, verde con el defecto puesto).
     ok('2b · 🔑 y las DOS vías del historial la pintan también',
-       (L.match(/_filaSucesoHtml\(realTime, matchTime, evIcon,\s*_sinPrefijoEquipo\(titleHTML, _eq\), _eq\)/g) || []).length === 2,
+       (L.match(/_filaSucesoHtml\(realTime, matchTime, evIcon,\s*_sinPrefijoEquipo\(titleHTML, _eq\), _eq[,)]/g) || []).length === 2,
        (L.match(/_filaSucesoHtml\([^\n]*/g) || []).join(' || '));
     ok('2c · la fila la pinta _chipEquipoHtml, no HTML suelto',
-       /function _filaSucesoHtml\([^)]*equipo\)[\s\S]{0,900}?_chipEquipoHtml\(equipo\)/.test(L));
+       /function _filaSucesoHtml\([^)]*equipo, retro\)[\s\S]{0,900}?_chipEquipoHtml\(equipo\)/.test(L));
     ok('2d · el equipo viaja al historial por el meta, calculado UNA vez',
-       /const _metaExt = Object\.assign\(\{\}, meta, \{ matchTime: matchTime \|\| '', equipo: _eq \}\)/.test(L));
+       /const _metaExt = Object\.assign\(\{\}, meta, \{ matchTime: matchTime \|\| '', equipo: _eq, retro: !!retro \}\)/.test(L));
     ok('2e · 🔑 la vía por evento le pasa el equipo del PROPIO evento (+ matchId, v455)',
-       /showEventToast\(_t, _linea, matchLabel, ev\.matchTime \|\| _matchTime,\s*_equipoDeSuceso\(matchData, ev\), matchId\)/.test(L));
+       /showEventToast\(_t, _linea, matchLabel, ev\.matchTime \|\| _matchTime,\s*_equipoDeSuceso\(matchData, ev\), matchId(?:,[^)]*)?\)/.test(L));
     // v455 · El respaldo sigue existiendo, pero SÓLO para el partido visible: en
     // uno de fondo, `lastSnapshot` es el de OTRO partido y atribuiría el gol al
     // equipo equivocado. Ahí se prefiere no decir nada (lección de v439).

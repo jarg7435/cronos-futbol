@@ -236,7 +236,12 @@ function _registerMatchEvent(type, text, icon, matchTimeOverride, extra, target)
         // evento se escribe UNA vez con su id y nunca se vuelve a derivar.
         // Tambi\u00e9n lleva el matchId, para que el visor pueda descartar de ra\u00edz
         // cualquier evento que no sea del partido que est\u00e1 mostrando.
-        var _evMatchId = (typeof liveMatchId !== 'undefined' && liveMatchId) ? liveMatchId : '';
+        // 🔓 v797 · …el del partido DESTINO cuando lo hay. Un suceso apuntado a
+        // posteriori sobre un partido terminado se escribe en ESE documento
+        // (ver `_id` más abajo) y llevaba dentro el id del partido en curso, o
+        // vacío: el visor lo descartaba como «de otro partido».
+        var _evMatchId = (target && target.matchId) ? String(target.matchId)
+                       : ((typeof liveMatchId !== 'undefined' && liveMatchId) ? liveMatchId : '');
         var eventEntry = {
             eventId: 'ev_' + now.getTime().toString(36) + '_' +
                      Math.random().toString(36).slice(2, 8),
