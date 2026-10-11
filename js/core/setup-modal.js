@@ -88,6 +88,9 @@ window.CRONOS_ROL_EXTRA = {
     parent:               'rol_padres',
     parent_individual:    'rol_padres',
     padre_individual:     'rol_padres',
+    // v810 · el Directivo / Empleado existe sólo para ver los partidos en
+    // vivo: sin ese extra su tarjeta sale bloqueada y diciendo por qué.
+    directivo:            'partidos_en_vivo',
 };
 
 // El motivo que se ENSEÑA. La política del autor desde v429: un extra no
@@ -98,6 +101,7 @@ window.CRONOS_ROL_EXTRA_MOTIVO = {
     rol_coordinador: 'El acceso de Coordinador no está contratado en el plan de tu club.',
     rol_padres:      'El acceso de Familias no está contratado en el plan de tu club.',
     secretaria:      'Secretaría no está contratada en el plan de tu club. Habla con el administrador.',
+    partidos_en_vivo: 'Partidos en Vivo no está contratado en el plan de tu club.',
 };
 
 // v679 · El motivo del extra `cuadrante`, en UN solo sitio. Lo leen los dos

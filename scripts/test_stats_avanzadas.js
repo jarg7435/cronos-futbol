@@ -498,9 +498,17 @@ parte('8 · el visor en vivo: sólo roles técnicos, y con R/P', () => {
     const deReglas = (listaReglas.match(/'([^']+)'/g) || []).map(s => s.slice(1, -1));
     const ctxL = {}; vm.createContext(ctxL);
     vm.runInContext(live.slice(ini, live.indexOf('];', ini) + 2) + ';this.__l = _LIVE_SAV_ROLES_TECNICOS;', ctxL);
-    const dePantalla = ctxL.__l.filter(r => r !== 'superadmin');
-    ok('los roles técnicos del visor = los de las reglas de live_stats (salvo el SA, que va aparte)',
+    // 🏢 v810 · El Directivo / Empleado ve el panel «como Dirección» pero SÓLO
+    // LEE: no está en la lista técnica (la que también escribe), sino en su
+    // propia rama de lectura `lsEsDirectivoDe`, dentro de lsPuedeLeer.
+    const dePantalla = ctxL.__l.filter(r => r !== 'superadmin' && r !== 'directivo');
+    ok('los roles técnicos del visor = los de las reglas de live_stats (salvo el SA y el directivo, que van aparte)',
        deReglas.length > 0 && dePantalla.every(r => deReglas.includes(r)) && deReglas.every(r => dePantalla.includes(r)));
+    ok('🏢 v810 · el directivo del visor tiene en las reglas una rama SÓLO DE LECTURA',
+       ctxL.__l.includes('directivo') && !deReglas.includes('directivo') &&
+       /function lsEsDirectivoDe\(clubId\)[\s\S]{0,700}\.get\('role', ''\) == 'directivo'/.test(bloque) &&
+       /function lsPuedeLeer\(d\) \{[\s\S]{0,200}lsEsDirectivoDe\(d\.get\('clubId', null\)\)/.test(bloque) &&
+       !/function lsPuedeEscribir\(d\) \{[^}]*lsEsDirectivoDe/.test(bloque));
 
     ok('renderMatch llama al pintor con guarda y try (no puede tumbar el partido)',
        /if \(typeof _liveSAvPinta === 'function'\) \{\s*try \{ _liveSAvPinta\(data\); \}/.test(live));

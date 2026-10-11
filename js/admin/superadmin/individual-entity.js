@@ -178,6 +178,14 @@ window.saEditIndividualEntity = async function(entityId) {
                                    border:1px solid rgba(255,255,255,0.15);border-radius:8px;
                                    color:white;font-size:0.9rem;box-sizing:border-box;">
                     </div>
+                    <!-- 🏢 v810 -->
+                    <div>
+                        <label style="font-size:0.78rem;color:#8b949e;display:block;margin-bottom:4px;">Slots Directivos / Empleados</label>
+                        <input id="eie-directivos" type="number" value="${c.slots?.directivos ?? 10}" min="0"
+                            style="width:100%;padding:0.7rem;background:rgba(255,255,255,0.05);
+                                   border:1px solid rgba(255,255,255,0.15);border-radius:8px;
+                                   color:white;font-size:0.9rem;box-sizing:border-box;">
+                    </div>
                 </div>
                 <div>
                     <label style="font-size:0.78rem;color:#8b949e;display:block;margin-bottom:4px;">Plan</label>
@@ -205,6 +213,8 @@ window.saEditIndividualEntityConfirm = async function(entityId) {
     const adminS   = parseInt(document.getElementById('eie-admins')?.value)   || 5;
     const coachS   = parseInt(document.getElementById('eie-coaches')?.value)  || 50;
     const parS     = parseInt(document.getElementById('eie-parents')?.value)  || 100;
+    const _dvEl    = document.getElementById('eie-directivos');   // 🏢 v810
+    const dirvS    = _dvEl ? (parseInt(_dvEl.value) || 0) : 10;
     const plan     = document.getElementById('eie-plan')?.value || 'free';
 
     if (!name) { _saToast('⚠️ El nombre es obligatorio', 3000); return; }
@@ -215,7 +225,7 @@ window.saEditIndividualEntityConfirm = async function(entityId) {
         await updateDoc(doc(db, 'clubs', entityId), {
             name,
             plan,
-            slots: { admins: adminS, coaches: coachS, parents: parS },
+            slots: { admins: adminS, coaches: coachS, parents: parS, directivos: dirvS },
         });
         _saHideSpinner();
         _saToast('✅ Ente individual actualizado.', 4000);

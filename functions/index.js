@@ -454,7 +454,8 @@ exports.setCustomClaims = functions.https.onCall(async (data, context) => {
     );
   }
 
-  const validRoles = ['superadmin', 'club_admin', 'individual_admin', 'individual', 'director', 'coordinator', 'user', 'parent', 'spectator'];
+  const validRoles = ['superadmin', 'club_admin', 'individual_admin', 'individual', 'director', 'coordinator', 'user', 'parent', 'spectator',
+                      'directivo'];   // 🏢 v810 · Directivo / Empleado
   if (!validRoles.includes(role)) {
     // SEC-H02: Do not expose valid roles in error response
     throw new functions.https.HttpsError('invalid-argument', 'Rol invalido');
@@ -1294,9 +1295,12 @@ exports.syncUserChanges = functions.firestore
         const clubRef = admin.firestore().collection('clubs').doc(after.clubId);
 
         // SEC-H04: Use atomic FieldValue.increment instead of read-modify-write to avoid race condition
+        // 🏢 v810 · el Directivo / Empleado tiene cupo propio: sin esta rama
+        // su baja descontaba una plaza de ENTRENADOR.
         const roleKey = after.role === 'director' ? 'directors'
                     : after.role === 'coordinator' ? 'coordinators'
                     : after.role === 'parent' ? 'parents'
+                    : after.role === 'directivo' ? 'directivos'
                     : 'users';
 
         if (after.status === 'removed' || after.status === 'blocked') {

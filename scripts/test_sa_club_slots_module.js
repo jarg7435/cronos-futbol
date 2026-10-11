@@ -35,7 +35,8 @@ function buildSandbox({ clubDoc = null, updateDocThrows = null } = {}) {
     const spinners = [];
     const saTabCalls = [];
     let bodyHtml = '';
-    const formValues = { 'es-plan': 'free', 'es-dir': '1', 'es-coord': '2', 'es-coach': '10', 'es-parents': '50' };
+    const formValues = { 'es-plan': 'free', 'es-dir': '1', 'es-coord': '2', 'es-coach': '10', 'es-parents': '50',
+                         'es-directivos': '10' };   // 🏢 v810
 
     const fns = {
         db: {},
@@ -147,11 +148,14 @@ function buildSandbox({ clubDoc = null, updateDocThrows = null } = {}) {
         setFormValue('es-coord', '6');
         setFormValue('es-coach', '25');
         setFormValue('es-parents', '90');
+        setFormValue('es-directivos', '7');   // 🏢 v810 · cupo de Directivos / Empleados
         await sandbox.window.saEditClubSlotsConfirm('club-1');
         ok('3a · exactamente 1 updateDoc sobre clubs/club-1', updateDocCalls.length === 1 && updateDocCalls[0].col === 'clubs' && updateDocCalls[0].id === 'club-1');
         const data = updateDocCalls[0].data;
         ok('3b · guarda el plan elegido', data.plan === 'basic');
-        ok('3c · guarda los 4 slots numéricos del formulario', JSON.stringify(data.slots) === JSON.stringify({ directors: 5, coordinators: 6, users: 25, parents: 90 }));
+        // 🏢 v810 · el objeto `slots` se reescribe ENTERO: si faltara el de
+        // directivos, cada guardado lo borraría.
+        ok('3c · guarda los 5 slots numéricos del formulario (con el de directivos)', JSON.stringify(data.slots) === JSON.stringify({ directors: 5, coordinators: 6, users: 25, parents: 90, directivos: 7 }), data.slots);
         ok('3d · registra updatedBy con el email del SuperAdmin', data.updatedBy === 'superadmin@cronos.test');
         ok('3e · muestra toast de éxito', toasts.some(t => /actualizado correctamente/.test(t)));
         ok('3f · vuelve a la pestaña clubs tras guardar', saTabCalls.includes('clubs'));

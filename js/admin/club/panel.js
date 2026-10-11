@@ -370,7 +370,8 @@ async function openClubAdminPanel(preClubId = null) {
         return r.isAuthorized === true || r.authorized === true;
     };
     const slotOf = (role) => {
-        const max = (club.slots || {})[role === 'director' ? 'directors' : role === 'coordinator' ? 'coordinators' : role === 'parent' ? 'parents' : 'users'] ?? -1;
+        // 🏢 v810 · el Directivo / Empleado tiene cupo propio (`slots.directivos`, 10 por defecto).
+        const max = (club.slots || {})[role === 'director' ? 'directors' : role === 'coordinator' ? 'coordinators' : role === 'parent' ? 'parents' : role === 'directivo' ? 'directivos' : 'users'] ?? (role === 'directivo' ? 10 : -1);
         // ══════════════════════════════════════════════════════════════
         //  🔑🔑 v553 · SE CUENTAN PLAZAS, NO PERSONAS
         //
@@ -766,7 +767,7 @@ async function openClubAdminPanel(preClubId = null) {
             eUsers.forEach(u => {
                 const r = u._activeRoleData || {};
                 const role = r.role || u.role;
-                if (role === 'director') {
+                if (role === 'director' || role === 'directivo') {   // 🏢 v810
                     staff.push({ u, role, coordType: '' });
                     return;
                 }
@@ -855,8 +856,9 @@ async function openClubAdminPanel(preClubId = null) {
         // ── Bloque Staff (siempre visible, sin plegar) ───────────────
         const _staffBlockHtml = (staff) => {
             // Orden: Director primero, luego Coordinadores.
-            const ordered = staff.slice().sort((a, b) =>
-                (a.role === 'director' ? 0 : 1) - (b.role === 'director' ? 0 : 1));
+            // 🏢 v810 · Director, Coordinadores y después Directivos / Empleados.
+            const _ordenStaff = (r) => r === 'director' ? 0 : r === 'coordinator' ? 1 : 2;
+            const ordered = staff.slice().sort((a, b) => _ordenStaff(a.role) - _ordenStaff(b.role));
             const items = ordered.map(({ u, role, coordType }) => {
                 const roleMeta = (window.ROLE_META || {})[role] || { icon: '👤', color: '#8b949e', label: role };
                 let name = window.cronosNombreUsuario(u)   /* v534 · el correo NO es un nombre */;
@@ -889,7 +891,7 @@ async function openClubAdminPanel(preClubId = null) {
                         border-radius:10px; padding:0.8rem 0.9rem; margin-bottom:1rem;">
                 <div style="font-size:0.78rem; font-weight:700; color:#f0883e; text-transform:uppercase;
                             letter-spacing:1px; margin-bottom:0.5rem;">📋 Staff del Club</div>
-                ${items || '<div style="font-size:0.78rem; color:#8b949e; padding:0.4rem 0;">Sin staff (Director / Coordinadores) registrado.</div>'}
+                ${items || '<div style="font-size:0.78rem; color:#8b949e; padding:0.4rem 0;">Sin staff (Director / Coordinadores / Directivos) registrado.</div>'}
             </div>`;
         };
 
@@ -1202,9 +1204,9 @@ async function openClubAdminPanel(preClubId = null) {
                 ocupadas / contratadas por rol</span>
         </h3>
         <div class="sa-stats" style="margin-bottom:1.4rem;">
-          ${['director','coordinator','user','parent'].map(role => {
+          ${['director','coordinator','user','parent','directivo'].map(role => {
               const si    = slotOf(role);
-              const label = role==='director'?'Directores':role==='coordinator'?'Coordinadores':role==='parent'?'Familiares / Jugadores':'Entrenadores';
+              const label = role==='director'?'Directores':role==='coordinator'?'Coordinadores':role==='parent'?'Familiares / Jugadores':role==='directivo'?'Directivos / Empleados':'Entrenadores';
               return `<div class="sa-stat">
                 <div class="sa-stat-n" style="color:${si.full?'#ff5858':'#3fb950'};">
                   ${si.used}${si.unlimited ? '' : '/' + si.max}</div>
@@ -1681,7 +1683,7 @@ async function openClubAdminPanel(preClubId = null) {
             showToast(`⛔ No hay slots libres para ${role}. Solicita ampliación al SuperAdmin.`, 4000);
             return;
         }
-        if (!confirm(`¿Confirmar acceso definitivo a ${email} como ${role}?`)) return;
+        if (!confirm(`¿Confirmar acceso definitivo a ${email} como ${((window.ROLE_META || {})[role] || {}).label || role}?`)) return;
         try {
             const targetDocRef = doc(db, 'users', uid);
             const targetSnap   = await getDoc(targetDocRef);
@@ -1949,7 +1951,7 @@ async function openClubAdminPanel(preClubId = null) {
 
     // ── Rechazar rol pendiente de un usuario multi-rol ─────────────
     window.caRejectMultiRole = async (uid, role, email) => {
-        const ROLE_LABELS = { user:'Entrenador', parent:'Familiar / Jugador', coordinator:'Coordinador', director:'Director Deportivo' };
+        const ROLE_LABELS = { user:'Entrenador', parent:'Familiar / Jugador', coordinator:'Coordinador', director:'Director Deportivo', directivo:'Directivo / Empleado' };
         if (!confirm('¿Rechazar rol de ' + (ROLE_LABELS[role]||role) + ' para ' + email + '?')) return;
         try {
             const { db: fDb, doc: fDoc, updateDoc: fUpdateDoc, getDoc: fGetDoc } = await saFS();
@@ -1991,7 +1993,7 @@ async function openClubAdminPanel(preClubId = null) {
     // ⚠️ v540 · `cat`/`sub` opcionales: identifican QUÉ equipo se reenvía
     // cuando el entrenador tiene dos en el mismo club.
     window.caForwardToSA = async (uid, role, email, cid, cat, sub) => {
-        const ROLE_LABELS = { user:'Entrenador', parent:'Familiar / Jugador', coordinator:'Coordinador', director:'Director Deportivo' };
+        const ROLE_LABELS = { user:'Entrenador', parent:'Familiar / Jugador', coordinator:'Coordinador', director:'Director Deportivo', directivo:'Directivo / Empleado' };
         if (!confirm(`¿Reenviar solicitud de ${email} como ${ROLE_LABELS[role]||role} al SuperAdmin?`)) return;
         try {
             const { db: fDb, doc: fDoc, updateDoc: fUpdateDoc, setDoc: fSetDoc, getDoc: fGetDoc, deleteDoc: fDeleteDoc } = await saFS();
@@ -2171,7 +2173,8 @@ async function openClubAdminPanel(preClubId = null) {
         } catch (_) { /* si falla, se avisa en genérico y decide el servidor */ }
 
         const _rotulo = { user: 'Entrenador', parent: 'Familiar / Jugador', director: 'Director Deportivo',
-                          coordinator: 'Coordinador', club_admin: 'Administrador' }[targetRole] || targetRole;
+                          coordinator: 'Coordinador', club_admin: 'Administrador',
+                          directivo: 'Directivo / Empleado' }[targetRole] || targetRole;
         const esUltimo = (quedanOtros === 0);
 
         if (!confirm(
@@ -2402,7 +2405,8 @@ async function openClubAdminPanel(preClubId = null) {
             // quien lo lee no puede saber si va a perder una plaza o todas, y
             // ése es exactamente el susto que se llevó el autor.
             var _rl = { user:'Entrenador', parent:'Familiar / Jugador', coordinator:'Coordinador',
-                        director:'Director Deportivo', club_admin:'Administrador de Club' };
+                        director:'Director Deportivo', club_admin:'Administrador de Club',
+                        directivo:'Directivo / Empleado' };
             var _eq = (plaza && plaza.category)
                 ? ((typeof window.cronosNombreCategoria === 'function')
                     ? window.cronosNombreCategoria(plaza.category, plaza.subcategory)
@@ -2426,6 +2430,7 @@ async function openClubAdminPanel(preClubId = null) {
             if (role === 'director') return 'usedSlots.directors';
             if (role === 'coordinator') return 'usedSlots.coordinators';
             if (role === 'parent') return 'usedSlots.parents';
+            if (role === 'directivo') return 'usedSlots.directivos';   // 🏢 v810
             return 'usedSlots.users';
         }
 

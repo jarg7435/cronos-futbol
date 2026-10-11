@@ -110,6 +110,15 @@ window.saEditClubSlots = async function(clubId, clubName) {
                                    color:white;font-size:0.9rem;box-sizing:border-box;">
                         <div style="font-size:0.68rem;color:#8b949e;margin-top:2px;">Usados: ${_usadas('parent','parents')}</div>
                     </div>
+                    <!-- 🏢 v810 · Directivos / Empleados: sólo ven Partidos en Vivo. -->
+                    <div>
+                        <label style="font-size:0.78rem;color:#8b949e;display:block;margin-bottom:4px;">🏢 Directivos / Empleados</label>
+                        <input id="es-directivos" type="number" value="${c.slots?.directivos??10}" min="0"
+                            style="width:100%;padding:0.7rem;background:rgba(255,255,255,0.05);
+                                   border:1px solid rgba(255,255,255,0.15);border-radius:8px;
+                                   color:white;font-size:0.9rem;box-sizing:border-box;">
+                        <div style="font-size:0.68rem;color:#8b949e;margin-top:2px;">Usados: ${_usadas('directivo','directivos')}</div>
+                    </div>
                 </div>
                 <button onclick="saEditClubSlotsConfirm('${clubId}')"
                     style="margin-top:0.5rem;padding:0.8rem;background:#58a6ff;border:none;
@@ -127,13 +136,16 @@ window.saEditClubSlotsConfirm = async function(clubId) {
     const coS   = parseInt(document.getElementById('es-coord')?.value)   || 0;
     const coachS= parseInt(document.getElementById('es-coach')?.value)   || 0;
     const parS  = parseInt(document.getElementById('es-parents')?.value) || 0;
+    // 🏢 v810 · se reescribe el objeto `slots` entero: sin esto se perdería el cupo.
+    const _dvEl = document.getElementById('es-directivos');
+    const dirvS = _dvEl ? (parseInt(_dvEl.value) || 0) : 10;
 
     _saShowSpinner('Guardando...');
     try {
         const { db, doc, updateDoc } = await saFS();
         await updateDoc(doc(db,'clubs',clubId), {
             plan,
-            slots: { directors: dirS, coordinators: coS, users: coachS, parents: parS },
+            slots: { directors: dirS, coordinators: coS, users: coachS, parents: parS, directivos: dirvS },
             updatedAt: new Date().toISOString(),
             updatedBy: window._cronosCurrentUser?.email || 'superadmin',
         });

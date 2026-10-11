@@ -90,7 +90,7 @@ window.setupUserSyncListener = setupUserSyncListener;
  * Admin del Club solicita una nueva plaza al SuperAdmin
  */
 async function requestUserSlot(clubId, role, quantity = 1, notes = '') {
-    if (!['director', 'coordinator', 'user', 'parent'].includes(role)) {
+    if (!['director', 'coordinator', 'user', 'parent', 'directivo'].includes(role)) {   // v810
         showToast('❌ Rol inválido', 2000);
         return false;
     }

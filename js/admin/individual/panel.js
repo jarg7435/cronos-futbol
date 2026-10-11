@@ -629,8 +629,8 @@ async function openIndividualAdminPanel(mantenerSeccion = false) {
                 <div style="font-size:0.72rem; color:#8b949e; white-space:nowrap;">${regDate}</div>
                 <div style="display:flex; gap:0.4rem; flex-shrink:0; justify-content:flex-end;">
                     ${_esElDueno ? '<span style="font-size:0.66rem;color:#6e7681;white-space:nowrap;">tú</span>' : `
-                    <button class="sa-btn" onclick="indEditCategory('${euid}','${email}')"
-                        title="Cambiar categoria" style="padding:0.25rem 0.5rem; color:#79c0ff; border-color:rgba(121,192,255,0.2);">✏️</button>
+                    ${r.role === 'directivo' ? '' : `<button class="sa-btn" onclick="indEditCategory('${euid}','${email}')"
+                        title="Cambiar categoria" style="padding:0.25rem 0.5rem; color:#79c0ff; border-color:rgba(121,192,255,0.2);">✏️</button>`}
                     <button class="sa-btn" onclick="indDeleteParent('${euid}','${email}')"
                         title="Eliminar usuario completamente" style="padding:0.25rem 0.5rem; color:#ff5858; border-color:rgba(255,88,88,0.2);">🗑️</button>`}
                 </div>
@@ -705,7 +705,7 @@ async function openIndividualAdminPanel(mantenerSeccion = false) {
                 const role = u.requestedRole || 'parent';
                 // Use requestedRoleLabel if available (from auth.js ind_sub_registration), fallback to ROLE_META
                 const roleLabel = u.requestedRoleLabel || (window.ROLE_META[role] || {}).label || (role === 'user' ? 'Entrenador' : 'Familiar / Jugador');
-                const roleIcon = role === 'user' ? '⚽' : '👨‍👩‍👧';
+                const roleIcon = role === 'user' ? '⚽' : role === 'directivo' ? '🏢' : '👨‍👩‍👧';   // v810
                 const catBadge = u.categoryLabel || u.requestedCategoryLabel
                     ? `<span style="font-size:0.68rem;color:#d2a8ff;background:rgba(210,168,255,0.1);border:1px solid rgba(210,168,255,0.2);border-radius:4px;padding:1px 6px;margin-left:0.3rem;">${_eH(u.categoryLabel || u.requestedCategoryLabel || '')}</span>`
                     : '';
@@ -1046,9 +1046,13 @@ async function openIndividualAdminPanel(mantenerSeccion = false) {
     // ⚠️ Y los que el índice descartó por no tener categoría válida: para el
     //    árbol no existían. Aquí sí, porque son personas del ente — y son
     //    precisamente las que hay que poder reasignar.
+    // 🏢 v810 · El Directivo / Empleado no lleva equipo: no es un huérfano
+    //    al que reasignar, tiene su propio bloque (más abajo).
+    const _filasDirectivos = [];
     sortedUsers.forEach(u => {
         if ((u._id || u.uid) === uid) return;      // sus propias plazas no son huérfanas
         if (_enElArbol.has(_claveFila(u))) return;
+        if (((u._activeRoleData || {}).role || u.role) === 'directivo') { _filasDirectivos.push(u); return; }
         _filasHuerfanas.push(u);
     });
 
@@ -1193,7 +1197,25 @@ async function openIndividualAdminPanel(mantenerSeccion = false) {
         (_misEquiposPendNorm.length
             ? '<div style="margin-top:0.7rem;">' + _misEquiposPendNorm.map(_fichaEquipoPendiente).join('') + '</div>'
             : '') +
-        (_secOtros ? '<div style="margin-top:0.6rem;">' + _secOtros + '</div>' : '');
+        (_secOtros ? '<div style="margin-top:0.6rem;">' + _secOtros + '</div>' : '') +
+        // 🏢 v810 · Directivos / Empleados: ven los partidos en vivo de toda la entidad.
+        (_filasDirectivos.length ? `
+        <div class="sa-card" style="margin-top:0.6rem;border-color:rgba(255,88,88,0.25);">
+          <div class="sa-card-head" onclick="this.closest('.sa-card').classList.toggle('expanded')">
+            <div class="sa-card-title" style="font-size:0.84rem;">
+              <span class="sa-chevron">▼</span>
+              <span>🏢 Directivos / Empleados</span>
+              <span class="sa-badge" style="background:rgba(255,88,88,0.15);color:#ff5858;">${_filasDirectivos.length}</span>
+            </div>
+          </div>
+          <div class="sa-card-body">
+            <div style="font-size:0.72rem;color:var(--text-muted);padding:0.5rem 0.6rem 0.7rem;line-height:1.5;">
+              Sólo ven <strong>Partidos en Vivo</strong>, de todos tus equipos. No tocan nada.
+            </div>
+            ${_indRowHeaderHtml()}
+            ${_filasDirectivos.map(_indUserRowHtml).join('')}
+          </div>
+        </div>` : '');
 
     // ════════════════════════════════════════════════════════════════
     //  🎛️ v597 · TABLERO DE ENTRADA, IGUAL QUE EL DEL ADMIN DE CLUB

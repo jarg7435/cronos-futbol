@@ -391,7 +391,7 @@ window.saApproveRequest = async function saApproveRequest(id, type, approve) {
                     await setDoc(doc(db,'clubs',clubId), {
                         name:u.requestedClubName, adminEmail:u.email, adminUid:id,
                         plan:'free', status:'active',
-                        slots:{ directors:q.directors||1, coordinators:q.coordinators||2, users:q.coaches||10, parents:q.parents||20 },
+                        slots:{ directors:q.directors||1, coordinators:q.coordinators||2, users:q.coaches||10, parents:q.parents||20, directivos:10 },
                         usedSlots:{ directors:0, coordinators:0, users:0, parents:0 },
                         createdAt:new Date().toISOString(), approvedBy:me,
                     });
@@ -622,7 +622,7 @@ window.saApproveRequest = async function saApproveRequest(id, type, approve) {
                     await setDoc(doc(db,'clubs',newClubId), {
                         name: r.requestedClubName, adminEmail: r.requestedEmail, adminUid: r.userUid,
                         plan:'free', status:'active',
-                        slots:{ directors:q.directors||1, coordinators:q.coordinators||2, users:q.coaches||10, parents:q.parents||20 },
+                        slots:{ directors:q.directors||1, coordinators:q.coordinators||2, users:q.coaches||10, parents:q.parents||20, directivos:10 },
                         usedSlots:{ directors:0, coordinators:0, users:0, parents:0 },
                         createdAt:new Date().toISOString(), approvedBy:me,
                     });
@@ -892,7 +892,8 @@ window.saApproveRequest = async function saApproveRequest(id, type, approve) {
                     _saHideSpinner();
                     const roleLabels = {
                         user:'Entrenador', coordinator:'Coordinador',
-                        director:'Director Deportivo', parent:'Familiar / Jugador'
+                        director:'Director Deportivo', parent:'Familiar / Jugador',
+                        directivo:'Directivo / Empleado'   // v810
                     };
                     _saToast(`✅ ${r.requestedEmail} activado como ${roleLabels[r.requestedRole]||r.requestedRole}.`, 5000);
 

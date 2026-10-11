@@ -364,6 +364,7 @@ const _TARJETA_DE_OPCION = {
     parent:             'card-opt-parent',
     individual:         'card-opt-individual',
     parent_individual:  'card-opt-parent-individual',
+    directivo:          'card-opt-directivo',   // v810 · Directivo / Empleado
     // ⚠️ v602 · 'coach_individual' YA NO TIENE TARJETA. No se deja apuntando a
     // un id inexistente: `_optionOf` ya no devuelve esa opción nunca. Se conserva
     // en `_ROL_DE_OPCION` y en el mapa de `selectOption` porque son OTRA cosa
@@ -380,6 +381,7 @@ const _ROL_DE_OPCION = {
     parent:             'parent',
     parent_individual:  'parent_individual',
     individual:         'individual',
+    directivo:          'directivo',            // v810
 };
 
 // Pinta (o quita) el candado sobre una tarjeta del selector.
@@ -474,6 +476,7 @@ export function showRoleSelection() {
         'card-opt-director',   'card-opt-coordinator',
         'card-opt-coach',      'card-opt-parent',
         'card-opt-individual',   'card-opt-parent-individual',
+        'card-opt-directivo',    // v810
     ];
 
     allCards.forEach(id => {
@@ -587,12 +590,13 @@ export function selectOption(option) {
         'admin_individual': 'individual',
         'coach_individual': 'user',
         'parent_individual': 'parent',
+        'directivo':   'directivo',   // v810
     };
 
     me._activeRole = map[option] || me.role;
 
     const isSA         = ['superadmin','admin'].includes(me.role);
-    const needsClub    = ['club_admin','director','coordinator','user','parent','individual'].includes(me._activeRole);
+    const needsClub    = ['club_admin','director','coordinator','user','parent','individual','directivo'].includes(me._activeRole);
     const alreadyHasClub = !!me.clubId;
 
     if (isSA && needsClub && !alreadyHasClub) {
@@ -729,6 +733,7 @@ function _launchWithRole(role) {
             'admin_individual': ['admin_individual', 'individual'],
             'entrenador_individual': ['entrenador_individual', 'user', 'coach'],
             'parent_individual': ['parent_individual', 'parent', 'padre_individual'],
+            'directivo': ['directivo'],   // v810
         };
         const _matchRoles = _roleAliases[role] || [role];
 
@@ -1036,7 +1041,8 @@ function _launchWithRole(role) {
     const isFieldRole = ['user', 'coach', 'individual', 'admin_individual'].includes(activeRole);
     const isParent    = (activeRole === 'parent' || activeRole === 'parent_individual');
     const isSA        = (activeRole === 'superadmin');
-    const isAdminJob  = ['director', 'coordinator', 'club_admin'].includes(activeRole);
+    // v810 · el Directivo / Empleado aterriza en su panel, no en el campo.
+    const isAdminJob  = ['director', 'coordinator', 'club_admin', 'directivo'].includes(activeRole);
     // ⚠️ v601 · El ente unificado ES un rol de campo (cronometra), pero NO
     // aterriza en el campo. Ver el bloque del terreno de juego, más abajo.
     const isEnteAdmin = ['individual', 'admin_individual'].includes(activeRole);
@@ -1123,6 +1129,9 @@ function _launchWithRole(role) {
 
     if (activeRole === 'parent' || activeRole === 'parent_individual') {
         if (typeof openParentPanel === 'function') openParentPanel();
+    } else if (activeRole === 'directivo') {
+        // v810 · Directivo / Empleado: sólo «Partidos en Vivo» (js/directivo/panel.js).
+        if (typeof window.openDirectivoPanel === 'function') window.openDirectivoPanel();
     } else if (activeRole === 'superadmin') {
         if (typeof openSuperAdminPanel === 'function') openSuperAdminPanel();
     } else if (activeRole === 'club_admin') {

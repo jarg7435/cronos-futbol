@@ -608,7 +608,7 @@
                                 await setDoc(doc(db, 'clubs', newClubId), {
                                     name: targetClubName, adminEmail: email, adminUid: r.userUid || null,
                                     plan: 'free', status: 'active',
-                                    slots: { directors: q.directors || 1, coordinators: q.coordinators || 2, users: q.coaches || 10, parents: q.parents || 50 },
+                                    slots: { directors: q.directors || 1, coordinators: q.coordinators || 2, users: q.coaches || 10, parents: q.parents || 50, directivos: 10 },
                                     usedSlots: { directors: 0, coordinators: 0, users: 0, parents: 0 },
                                     createdAt: new Date().toISOString(), approvedBy: me,
                                 });

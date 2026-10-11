@@ -92,12 +92,12 @@ window.saIndividuals = async function saIndividuals() {
             const hasIndivRole = u.role === 'individual' || u.role === 'admin_individual' || u.role === 'parent_individual';
             const hasIndivInAllRoles = (u.allRoles||[]).some(r =>
                 ['individual','admin_individual','parent_individual','entrenador_individual','padre_individual'].includes(r.role)
-                || (r.individualEntityId && ['user','parent'].includes(r.role))
+                || (r.individualEntityId && ['user','parent','directivo'].includes(r.role))   // v810
             );
             const hasIndivFields = !!(u.individualEntityId || u.individualOwnerId || u.isIndividual);
             // FIX: Also check if clubId matches an individual entity (auth.js sets clubId = entityId)
             const clubIdMatchesIndivEntity = u.clubId && _indivEntityIds.has(u.clubId);
-            const isUserOrParentInIndivEntity = (u.role === 'user' || u.role === 'parent') && (hasIndivFields || clubIdMatchesIndivEntity);
+            const isUserOrParentInIndivEntity = (u.role === 'user' || u.role === 'parent' || u.role === 'directivo') && (hasIndivFields || clubIdMatchesIndivEntity);
             if (hasIndivRole || hasIndivInAllRoles || isUserOrParentInIndivEntity || clubIdMatchesIndivEntity) {
                 individualUsers.push(u);
             }
@@ -146,6 +146,7 @@ window.saIndividuals = async function saIndividuals() {
                     entrenador_individual: { icon:'🕰️', label:'Entrenadores Individuales (legado)', slot:'coaches' },
                     parent_individual:{ icon:'👨‍👩‍👧', label:'Familiares / Jugadores Individuales',   slot:'parents' },
                     parent:           { icon:'👨‍👩‍👧', label:'Familiares / Jugadores Individuales',   slot:'parents' },
+                    directivo:        { icon:'🏢', label:'Directivos / Empleados',                 slot:'directivos' },   // v810
                 };
                 // ══════════════════════════════════════════════════════════
                 //  🔴🔴🔴 v583 · ESTOS CONTADORES CRUZABAN CLUB Y ENTE

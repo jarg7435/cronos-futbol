@@ -2729,8 +2729,8 @@
 //        LIBERADA (no la borra), permission-denied = «no hay marca» y se
 //        escribe la propia, y el oyente sólo desaloja con datos del SERVIDOR
 //        y ante una marca ajena VIVA.
-const VERSION = 'v809';
-const CACHE_NAME = 'cronos-cache-v809';
+const VERSION = 'v810';
+const CACHE_NAME = 'cronos-cache-v810';
 
 const ASSETS = [
     './',
@@ -2881,6 +2881,7 @@ const ASSETS = [
     './js/coach/attendance/attendance-store.js',
     './js/coach/attendance/panel.js',
     './js/parent/panel.js',
+    './js/directivo/panel.js',   // 🏢 v810 · Directivo / Empleado
     // SPRINT 4: Iconos locales para PWA
     './public/assets/icons/chronos-192.svg',
     './public/assets/icons/chronos-512.svg',

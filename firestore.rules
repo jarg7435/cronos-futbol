@@ -346,8 +346,13 @@ service cloud.firestore {
     }
 
     // Mismo club por campo del documento
+    // 🏢 v810 · El Directivo / Empleado es un rol de SÓLO MIRAR: la pertenencia
+    // al club NO le concede nada por esta vía (aquí se concede escribir
+    // informes, mensajes, avisos, partidos…). Lo poco que lee se le da
+    // EXPRESAMENTE con esDirectivoDe(), más abajo.
     function sameClubAsDoc(docClubId) {
-      return isAuth() && ('clubId' in request.auth.token) && request.auth.token.clubId == docClubId;
+      return isAuth() && ('clubId' in request.auth.token) && request.auth.token.clubId == docClubId
+             && !(('role' in request.auth.token) && request.auth.token.role == 'directivo');
     }
 
     // FIX (club_admin sin claim): permite que el administrador real de un club
@@ -512,7 +517,21 @@ service cloud.firestore {
       return isAuth() && docClubId != null
              && exists(/databases/$(database)/documents/users/$(request.auth.uid))
              && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('clubId', '') == docClubId
-             && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('isAuthorized', false) == true;
+             && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('isAuthorized', false) == true
+             // 🏢 v810 · ver sameClubAsDoc: el directivo no hereda la pertenencia.
+             && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('role', '') != 'directivo';
+    }
+
+    // 🏢 v810 · LO ÚNICO QUE EL DIRECTIVO / EMPLEADO LEE de su entidad: el
+    // documento del club (sus extras) y los partidos EN VIVO (live_matches,
+    // live_index; live_stats tiene su propia rama). Rol RAÍZ y autorizado,
+    // nunca `allRoles` (autoescribible). No concede ninguna escritura.
+    function esDirectivoDe(docClubId) {
+      return isAuth() && docClubId != null
+             && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+             && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('clubId', '') == docClubId
+             && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('isAuthorized', false) == true
+             && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('role', '') == 'directivo';
     }
 
     // El usuario tiene acceso al club de este enlace
@@ -854,6 +873,7 @@ service cloud.firestore {
                    sameClub(clubId) ||
                    sameClubAsDoc(clubId) ||
                    userDocClubId(clubId) ||
+                   esDirectivoDe(clubId) ||   // 🏢 v810 · sus extras
                    resource.data.get('adminUid', '') == request.auth.uid ||
                    (('email' in request.auth.token) &&
                     resource.data.get('adminEmail', '') == request.auth.token.email) ||
@@ -2310,6 +2330,7 @@ service cloud.firestore {
         sameClub(resource.data.get('clubId', null)) ||
         sameClubAsDoc(resource.data.get('clubId', null)) ||
         userDocClubId(resource.data.get('clubId', null)) ||
+        esDirectivoDe(resource.data.get('clubId', null)) ||   // 🏢 v810 · todos los partidos en vivo de su entidad
         resource.data.get('createdBy', null) == request.auth.uid ||
         (('email' in request.auth.token) && resource.data.get('coachEmail', null) == request.auth.token.email)
       );
@@ -2584,6 +2605,7 @@ service cloud.firestore {
         sameClub(resource.data.get('clubId', null)) ||
         sameClubAsDoc(resource.data.get('clubId', null)) ||
         userDocClubId(resource.data.get('clubId', null)) ||
+        esDirectivoDe(resource.data.get('clubId', null)) ||   // 🏢 v810 · todos los partidos en vivo de su entidad
         resource.data.get('createdBy', null) == request.auth.uid ||
         (('email' in request.auth.token) && resource.data.get('coachEmail', null) == request.auth.token.email)
       );
@@ -2702,8 +2724,19 @@ service cloud.firestore {
       function lsPuedeEscribir(d) {
         return isSuperAdmin() || sameClub(d.get('clubId', null)) || lsEsTecnicoDe(d.get('clubId', null));
       }
+      // 🏢 v810 · El Directivo / Empleado de la entidad LEE el panel del
+      // directo «como Dirección» (decisión del autor), pero NUNCA escribe: por
+      // eso va aquí y no en lsEsTecnicoDe. Rol RAÍZ, nunca `allRoles`.
+      function lsEsDirectivoDe(clubId) {
+        return isAuth() && clubId != null
+               && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+               && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('clubId', '') == clubId
+               && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('isAuthorized', false) == true
+               && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('role', '') == 'directivo';
+      }
       function lsPuedeLeer(d) {
-        return lsPuedeEscribir(d) || isClubAdminOf(d.get('clubId', null)) || lsEsAutor(d);
+        return lsPuedeEscribir(d) || isClubAdminOf(d.get('clubId', null)) || lsEsAutor(d)
+               || lsEsDirectivoDe(d.get('clubId', null));
       }
       // Forma cerrada: sin campos libres y con techo de tamano (un partido
       // real no pasa de unos cientos de apuntes; el limite de un documento

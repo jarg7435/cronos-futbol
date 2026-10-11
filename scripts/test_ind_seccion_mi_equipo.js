@@ -31,8 +31,10 @@ const ok = (nombre, cond, extra) => {
 //    la normalización se extrajo a su propia función para que la compartan los
 //    equipos activos y los que esperan al SuperAdmin.
 const ini = SRC.indexOf('    const _normalizaEquipo = (r) => {');
-const finMarca = '        (_secOtros ? \'<div style="margin-top:0.6rem;">\' + _secOtros + \'</div>\' : \'\');';
-const fin = SRC.indexOf(finMarca);
+// 🏢 v810 · Tras «Otros usuarios» va ahora el bloque de Directivos / Empleados,
+//    y la sentencia termina en él: el recorte acaba al final de ese bloque.
+const finMarca = '        </div>` : \'\');';
+const fin = SRC.indexOf(finMarca, SRC.indexOf('(_secOtros ? \'<div style="margin-top:0.6rem;">\' + _secOtros'));
 if (ini < 0 || fin < 0) {
     console.error('ERROR FATAL: no se localiza el bloque de la sección "Mi Equipo" en panel.js');
     process.exit(1);
