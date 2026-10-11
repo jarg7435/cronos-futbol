@@ -135,9 +135,29 @@ window.openMisInformes = async function openMisInformes() {
         //    histórico ya escrito—, lo deduce de category+subcategory, que sí
         //    llevan desde siempre. Por eso no hace falta reescribir ni un solo
         //    documento de producción para que el histórico aparezca.
-        const equipoAsignado = (typeof window.cronosTeamId === 'function')
+        // ══════════════════════════════════════════════════════════════
+        //  🔴🔴 v809 · EL EQUIPO ES EL QUE ESTÁ SELECCIONADO ARRIBA, NO EL PERFIL
+        //  (implementar.txt 2026-10-11, capturas 11371-11373, PRODUCCIÓN): con
+        //  «Alevín C» elegido en «Mis equipos», esta pantalla listaba y SUMABA
+        //  partidos de su Regional B. Dos causas que se tapaban:
+        //   1. el equipo salía de la categoría del PERFIL (`me.category`), no
+        //      del botón de «Mis equipos» (`cronosEquipoAbierto`, el mismo que
+        //      usan las ranuras de partido, la plantilla y Recuperar);
+        //   2. la regla v507 «lo que él firmó no se le oculta nunca» dejaba
+        //      pasar TODO lo suyo aunque su clave dijera claramente OTRO equipo
+        //      suyo — y un entrenador firma todos sus partidos.
+        //  Ahora el equipo seleccionado manda; lo suyo sólo entra si su clave
+        //  NO se puede resolver o le falta la subcategoría y es de la MISMA
+        //  categoría sin ambigüedad (ver `_miEsDelEquipo`).
+        // ══════════════════════════════════════════════════════════════
+        const _miNorm = (t) => (t && typeof window.cronosTeamIdNorm === 'function') ? window.cronosTeamIdNorm(t) : (t || '');
+        const _miAbierto = (() => {
+            try { return _miNorm(typeof window.cronosEquipoAbierto === 'function' ? window.cronosEquipoAbierto() : ''); }
+            catch (e) { return ''; }
+        })();
+        const equipoAsignado = _miAbierto || ((typeof window.cronosTeamId === 'function')
             ? window.cronosTeamId(me.clubId || '', me.category || me.categoryLabel || '', me.subcategory || '')
-            : '';
+            : '');
 
         // ⚠️ Sin club o sin categoría asignada NO se ensancha la vista al club
         //    entero: se conserva el comportamiento anterior (solo lo suyo).
@@ -256,25 +276,45 @@ window.openMisInformes = async function openMisInformes() {
         //
         //  ⚠️ SI ALGO FALLA, se vuelve a la lectura completa de antes: más
         //  lenta, mismo resultado. Nunca «Sin informes» por un atajo.
-        const _miEquipos = (() => {
-            const ids = new Set();
-            const cats = [];
-            const anade = (clubId, cat, sub) => {
-                if (typeof window.cronosTeamId !== 'function' || !cat) return;
-                const t = window.cronosTeamId(clubId || me.clubId || '', cat, sub || '');
-                if (!t || ids.has(t)) return;
-                ids.add(t);
-                cats.push({ teamId: t, partes: t.split('__') });
-            };
-            anade(me.clubId, me.category || me.categoryLabel, me.subcategory);
+        // 🔴 v809 · SÓLO el equipo seleccionado: antes se pedían TODOS los
+        // equipos del entrenador y la pantalla los mezclaba.
+        const _miEquipos = equipoAsignado
+            ? [{ teamId: equipoAsignado, partes: equipoAsignado.split('__') }]
+            : [];
+        // Sus equipos (todos), sólo para saber si una clave a medias es ambigua.
+        const _miTodosMisEquipos = (() => {
+            const out = new Set(equipoAsignado ? [equipoAsignado] : []);
             try {
-                if (typeof window.cronosEquiposDeEntrenador === 'function') {
-                    (window.cronosEquiposDeEntrenador(me.allRoles, me.clubId) || [])
-                        .forEach(e => anade(e.clubId, e.category, e.subcategory));
+                if (typeof window.cronosEquiposDeEntrenador === 'function' && typeof window.cronosTeamId === 'function') {
+                    (window.cronosEquiposDeEntrenador(me.allRoles, me.clubId) || []).forEach(e => {
+                        const t = window.cronosTeamId(e.clubId || me.clubId || '', e.category || '', e.subcategory || '');
+                        if (t) out.add(t);
+                    });
                 }
-            } catch (e) { /* con el equipo activo basta */ }
-            return cats;
+            } catch (e) { /* con el seleccionado basta */ }
+            return [...out];
         })();
+        // ── LA REGLA ÚNICA: ¿este documento es del equipo seleccionado? ──
+        //  · su clave coincide → sí;
+        //  · su clave es COMPLETA y de otro equipo → NO, aunque lo firmara él;
+        //  · si lo firmó él y la clave no se resuelve → sí (v507: no se le
+        //    esconde lo suyo que no se puede clasificar);
+        //  · si lo firmó él y a la clave le falta la subcategoría (v711) → sí
+        //    sólo si es de la categoría seleccionada y él no lleva OTRO equipo
+        //    de esa misma categoría (si no, no se sabe de cuál es).
+        const _miCatDeClave = (t) => String(t || '').split('__')[1] || '';
+        const _miSubDeClave = (t) => String(t || '').split('__')[2] || '';
+        const _miEsDelEquipo = (datos, esSuyo) => {
+            if (!equipoAsignado) return true;
+            const clave = (typeof window.cronosTeamIdOfDoc === 'function') ? window.cronosTeamIdOfDoc(datos, me.clubId) : '';
+            if (clave === equipoAsignado) return true;
+            if (!esSuyo) return false;
+            if (!clave) return true;
+            if (_miSubDeClave(clave)) return false;
+            const cat = _miCatDeClave(clave);
+            return cat === _miCatDeClave(equipoAsignado) &&
+                   _miTodosMisEquipos.filter(t => _miCatDeClave(t) === cat).length === 1;
+        };
         const _MI_ACENTOS = { prebenjamin: 'prebenjamín', benjamin: 'benjamín', alevin: 'alevín' };
         const _miVariantesSello = () => {
             const o = new Set();
@@ -350,9 +390,7 @@ window.openMisInformes = async function openMisInformes() {
                     // ¿Alguno es de verdad de sus equipos (o suyo)? Mismo criterio que el filtro.
                     const sirven = sinSello.filter(d => {
                         const x = d.data() || {};
-                        if (x.coachUid && x.coachUid === me.uid) return true;
-                        return typeof window.cronosDocEsDeEquipo === 'function' &&
-                               window.cronosDocEsDeEquipo(x, [equipoAsignado], me.clubId);
+                        return _miEsDelEquipo(x, !!(x.coachUid && x.coachUid === me.uid));   // v809
                     });
                     window._miLegadoCache = window._miLegadoCache || {};
                     window._miLegadoCache[_miClaveLegado] = sirven;
@@ -386,10 +424,9 @@ window.openMisInformes = async function openMisInformes() {
             // El propio autor ve siempre lo suyo; el filtro por equipo sigue
             // rigiendo para lo que firmaron OTROS (el histórico heredado del
             // equipo), que es para lo que se puso.
+            // 🔴 v809 · …salvo que su clave diga CLARAMENTE otro equipo suyo.
             const esMio = !!(datos.coachUid && me.uid && datos.coachUid === me.uid);
-            if (!esMio && puedeFiltrarPorEquipo &&
-                typeof window.cronosDocEsDeEquipo === 'function' &&
-                !window.cronosDocEsDeEquipo(datos, [equipoAsignado], me.clubId)) return;
+            if (puedeFiltrarPorEquipo && !_miEsDelEquipo(datos, esMio)) return;
             fn(d);
         }) };
 
@@ -503,13 +540,6 @@ window.openMisInformes = async function openMisInformes() {
         // `ctRenderStatsTable` trae su propio CSS (CT_STATS_CSS), así que la
         // tabla se ve igual sin depender de style.css.
 
-        // El equipo de un partido, leído de sus documentos (doble lectura:
-        // `teamId` en los nuevos, category+subcategory en el histórico).
-        const _miEquipoDe = (m) => {
-            const p = (m.players && m.players[0]) || null;
-            return (p && typeof window.cronosTeamIdOfDoc === 'function')
-                ? window.cronosTeamIdOfDoc(p, me.clubId) : '';
-        };
         // ══════════════════════════════════════════════════════════════
         //  🔴🔴 v711 · SUS PARTIDOS NO PUEDEN QUEDARSE FUERA DE SU RESUMEN
         // ══════════════════════════════════════════════════════════════
@@ -544,27 +574,22 @@ window.openMisInformes = async function openMisInformes() {
         //  su categoría es la misma.
         // ══════════════════════════════════════════════════════════════
         const _miCatDe = (clave) => String(clave || '').split('__')[1] || '';
-        const _miSubDe = (clave) => String(clave || '').split('__')[2] || '';
         const _catMia  = _miCatDe(equipoAsignado);
         const _esFirmadoPorMi = (m) => (m.players || []).some(p =>
             p && p.coachUid && me.uid && p.coachUid === me.uid);
+        // 🔴 v809 · La MISMA regla que el listado (`_miEsDelEquipo`): el
+        // listado y el resumen no pueden contar partidos distintos.
         const _esDeMiEquipo = (m) => {
-            const clave = _miEquipoDe(m);
-            if (clave === equipoAsignado) return true;
-            if (!_esFirmadoPorMi(m)) return false;
-            // Sin clave resoluble: es suyo y no se puede clasificar (v507).
-            if (!clave) return true;
-            // Clave a medias (sin subcategoría) y de MI categoría.
-            return !_miSubDe(clave) && _miCatDe(clave) === _catMia;
+            const p = (m.players && m.players[0]) || null;
+            return !!p && _miEsDelEquipo(p, _esFirmadoPorMi(m));
         };
 
-        // El acumulado es DE SU EQUIPO. Si el filtro no deja nada (por
-        // ejemplo, informes antiguos sin categoría), se acumula todo lo que
-        // se está listando: mejor un acumulado real que una tabla vacía.
-        const _miDelEquipo = puedeFiltrarPorEquipo
+        // El acumulado es SÓLO del equipo seleccionado. 🔴 v809: ya no se cae
+        // a «todo lo listado» cuando el filtro no deja nada — esa red mezclaba
+        // equipos. El listado ya está filtrado con la misma regla.
+        const _miParaResumen = puedeFiltrarPorEquipo
             ? sorted.filter(_esDeMiEquipo)
             : sorted;
-        const _miParaResumen = _miDelEquipo.length ? _miDelEquipo : sorted;
 
         // Etiqueta del equipo: la del árbol de categorías si se reconoce.
         const _miEtiquetaEquipo = () => {

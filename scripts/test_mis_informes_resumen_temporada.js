@@ -187,6 +187,8 @@ function nuevaCaja({ conModulos = true } = {}) {
 
 async function abrir(docs, me, opts) {
     const caja = nuevaCaja(opts);
+    // 🔴 v809 · el equipo seleccionado en «Mis equipos» (cronosEquipoAbierto).
+    if (opts && opts.abierto) caja.sb.cronosEquipoAbierto = () => opts.abierto;
     caja.sb._cronosCurrentUser = me;
     caja.sb._cronos_auth = { db: {} };
     caja.sb._cFS = async () => Object.assign({ db: {} }, firestoreFalso(docs));
@@ -299,12 +301,52 @@ console.log('\n── PARTE 4 · no se mezclan equipos ──');
     const tablaSola = r.cuerpo.slice(posTabla, posLista);
     ok('4a · 🔑 el jugador del otro equipo NO entra en el acumulado',
        !/Intruso/.test(tablaSola), tablaSola.slice(0, 200));
-    ok('4b · ⚠️ pero el partido de su OTRO equipo SÍ sigue listado',
-       /CD Ajeno/.test(r.cuerpo.slice(posLista)));
+    // 🔴🔴 v809 · INVERTIDA a propósito (implementar.txt 2026-10-11, capturas
+    // 11371-11373, producción): antes se exigía que el partido de su OTRO
+    // equipo siguiera LISTADO, y eso es exactamente la mezcla que el autor
+    // pidió quitar. «Mis Informes» es SÓLO del equipo seleccionado arriba.
+    ok('4b · 🔑🔑 v809 · el partido de su OTRO equipo YA NO se lista',
+       !/CD Ajeno/.test(r.cuerpo.slice(posLista)) && /informes de jugadores/.test(r.cuerpo),
+       r.cuerpo.slice(posLista, posLista + 300));
     // ⚡ v800 · Y lo que firmó para un equipo que NO es suyo ya no se baja.
     const r3 = await abrir(docs, ME);
     ok('4c · ⚡ v800 · un equipo que no es de sus plazas no se descarga ni se lista',
        !/CD Ajeno/.test(r3.cuerpo) && /informes de jugadores/.test(r3.cuerpo));
+}
+
+// ═══ PARTE 6 · 🔴🔴 v809 · EL CASO DE PRODUCCIÓN (capturas 11371-11373) ═══
+//  Entrenador con Alevín C (F7) y Regional B (F11), TODO firmado por él, el
+//  PERFIL apunta a Regional B y arriba tiene seleccionado «Alevín C».
+//  Antes: listaba y sumaba los dos equipos.
+console.log('\n── PARTE 6 · v809 · manda el equipo SELECCIONADO arriba, sin mezclar ──');
+{
+    const AL = CLUB + '__f7_alevin__C', RG = CLUB + '__f11_regional__B';
+    const docs = [].concat(
+        partido('2026-10-10', 'Rival Alevin', '1x0', [{ n: 1, alias: 'Juanito', min: '50:00', goles: 1 }],
+                { category: 'f7_alevin', subcategory: 'C', teamId: AL }),
+        partido('2026-10-09', 'Rival Regional', '4x0', [{ n: 9, alias: 'Goleador', min: '90:00', goles: 4 }],
+                { category: 'f11_regional', subcategory: 'B', teamId: RG }),
+    ).map((d, i) => ({ id: d.matchId + '_coach_p' + d.playerNumber + '_' + i, data: d }));
+    const YO = { uid: UID, clubId: CLUB, clubName: 'CD Prueba', category: 'f11_regional', subcategory: 'B',
+        allRoles: [
+            { role: 'user', clubId: CLUB, category: 'f7_alevin', subcategory: 'C', isAuthorized: true, status: 'active' },
+            { role: 'user', clubId: CLUB, category: 'f11_regional', subcategory: 'B', isAuthorized: true, status: 'active' },
+        ] };
+    const trozos = (r) => {
+        const posLista = r.cuerpo.indexOf('informes de jugadores');
+        const posTabla = r.cuerpo.indexOf('Resumen acumulado de la temporada');
+        return { lista: r.cuerpo.slice(posLista), tabla: r.cuerpo.slice(posTabla, posLista) };
+    };
+    const a = trozos(await abrir(docs, YO, { abierto: AL }));
+    ok('6a · 🔑🔑 con «Alevín C» seleccionado se lista SU partido…', /Rival Alevin/.test(a.lista));
+    ok('6b · 🔑🔑 …y NO el de Regional B (aunque el perfil sea Regional y lo firmara él)',
+       !/Rival Regional/.test(a.lista), a.lista.slice(0, 300));
+    ok('6c · 🔑🔑 el resumen acumulado sólo suma Alevín C',
+       /Juanito/.test(a.tabla) && !/Goleador/.test(a.tabla), a.tabla.slice(0, 300));
+    const b = trozos(await abrir(docs, YO, { abierto: RG }));
+    ok('6d · 🔑 al cambiar a «Regional B», justo al revés',
+       /Rival Regional/.test(b.lista) && !/Rival Alevin/.test(b.lista) &&
+       /Goleador/.test(b.tabla) && !/Juanito/.test(b.tabla));
 }
 
 // ═══ PARTE 5 · contraprueba de robustez ═══

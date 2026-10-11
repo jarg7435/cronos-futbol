@@ -266,13 +266,17 @@ console.log('\n── PARTE 3 · a su autor no se le oculta su informe ──');
     // Se ejecuta el PREDICADO REAL, recortado de individual-reports.js.
     const ini = MIS_SRC.indexOf('const snap = { forEach:');
     const fin = MIS_SRC.indexOf('}) };', ini);
-    ok('3a · se puede recortar el filtro real', ini !== -1 && fin > ini);
-    if (ini !== -1 && fin > ini) {
-        const trozo = MIS_SRC.slice(ini, fin + 5);
+    // 🔴 v809 · el filtro llama a la regla única `_miEsDelEquipo`: se recorta también.
+    const rIni = MIS_SRC.indexOf('const _miCatDeClave');
+    const rDef = MIS_SRC.indexOf('const _miEsDelEquipo', rIni);
+    const rFin = rDef > 0 ? MIS_SRC.indexOf('\n        };', rDef) : -1;
+    ok('3a · se puede recortar el filtro real', ini !== -1 && fin > ini && rIni > 0 && rFin > rDef);
+    if (ini !== -1 && fin > ini && rFin > rDef) {
+        const trozo = MIS_SRC.slice(rIni, rFin + 11) + '\n' + MIS_SRC.slice(ini, fin + 5);
         // El nombre del snapshot de origen ha cambiado con los refactores
         // (`rawCoachSnap` → `rawSnap`): se lee del propio trozo en vez de
         // fijarlo, para que el guard mida el FILTRO y no el nombre.
-        const mSnap = /(\w+)\.forEach\(/.exec(trozo);
+        const mSnap = /(\w+)\.forEach\(/.exec(MIS_SRC.slice(ini, fin + 5));
         const nombreSnap = mSnap ? mSnap[1] : 'rawSnap';
 
         const pasa = (datos, opts) => {
@@ -281,7 +285,10 @@ console.log('\n── PARTE 3 · a su autor no se le oculta su informe ──');
                 me: { uid: 'coach1', clubId: 'club1' },
                 puedeFiltrarPorEquipo: true,
                 equipoAsignado: 'club1__Alevin__A',
+                _miTodosMisEquipos: ['club1__Alevin__A'],
                 window: {
+                    cronosTeamIdOfDoc: (d) => d.teamId ||
+                        (d.clubId && d.category ? d.clubId + '__' + d.category + '__' + (d.subcategory || '') : ''),
                     cronosDocEsDeEquipo: (d, equipos) => {
                         const propio = d.teamId ||
                             (d.clubId && d.category ? d.clubId + '__' + d.category + '__' + (d.subcategory || '') : '');
@@ -306,6 +313,17 @@ console.log('\n── PARTE 3 · a su autor no se le oculta su informe ──');
            !pasa({ _forCoach: true, coachUid: 'otro', clubId: 'club1', category: 'Cadete', subcategory: 'B' }));
         ok('3e · ⚠️ y lo que no es del entrenador (sin _forCoach) sigue fuera',
            !pasa({ _forCoach: false, coachUid: 'coach1', clubId: 'club1', category: 'Alevin', subcategory: 'A' }));
+        // 🔴🔴 v809 · EL FALLO DE PRODUCCIÓN (capturas 11371-11373): lo firmado
+        // por él para su OTRO equipo (clave completa) ya no se cuela.
+        ok('3f · 🔑🔑 v809 · SU informe de su OTRO equipo (Regional B) NO sale con Alevín A seleccionado',
+           !pasa({ _forCoach: true, coachUid: 'coach1', clubId: 'club1', category: 'Regional', subcategory: 'B' },
+                 { _miTodosMisEquipos: ['club1__Alevin__A', 'club1__Regional__B'] }));
+        // 🔴 v809 · el Informe Colectivo sin directo tomaba el último partido del CLUB.
+        const COLR = fs.readFileSync(path.join(__dirname, '..', 'js', 'coach', 'comms', 'collective-report.js'), 'utf8');
+        ok('3g · 🔑 v809 · el Informe Colectivo de respaldo es del EQUIPO seleccionado, por matchId y sin copias',
+           /cronosEquipoAbierto\(\)/.test(COLR) && /where\('teamId','in',variantes\)/.test(COLR) &&
+           /cronosDocEsDeEquipo\(x, \[_eqN\]/.test(COLR) && /r\.matchId === latest\.matchId/.test(COLR) &&
+           /x\._forCoach === false/.test(COLR));
     }
 }
 

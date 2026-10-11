@@ -144,10 +144,19 @@ console.log('\n── PARTE 2 · [DEFECTO D] los partidos ya escritos vuelven al
     // Se corta ANTES del `_miDelEquipo`, que necesita el resto de la pantalla
     // (la bandera de si puede filtrar por equipo y la lista de partidos): lo
     // que se mide aquí es la REGLA, que es lo que decide quién entra.
-    const ini = IND.indexOf('const _miCatDe = (clave)');
-    const fin = IND.indexOf('// El acumulado es DE SU EQUIPO', ini);
+    // 🔴 v809 · La regla vive ahora en `_miEsDelEquipo` (la comparten el
+    // listado y el resumen) y `_esDeMiEquipo` la aplica al partido: se
+    // recortan las DOS piezas reales.
+    const corta = (desde, def) => {
+        const a = IND.indexOf(desde), d = IND.indexOf(def, a);
+        const b = d > 0 ? IND.indexOf('\n        };', d) : -1;
+        return (a > 0 && b > a) ? IND.slice(a, b + 11) : '';
+    };
+    const R1 = corta('const _miCatDeClave', 'const _miEsDelEquipo');
+    const R2 = corta('const _esFirmadoPorMi', 'const _esDeMiEquipo');
+    const ini = R1 && R2 ? 1 : -1, fin = 2;
     ok('2a · se encuentra la regla de «este partido es de mi equipo»',
-       ini > 0 && fin > ini && /_esDeMiEquipo/.test(IND.slice(ini, fin)));
+       ini > 0 && /_miEsDelEquipo/.test(R1) && /_esDeMiEquipo/.test(R2));
 
     ok('2a2 · …y es la que usa el filtro del resumen',
        /sorted\.filter\(_esDeMiEquipo\)/.test(IND));
@@ -158,12 +167,13 @@ console.log('\n── PARTE 2 · [DEFECTO D] los partidos ya escritos vuelven al
             console, String, Array, Object,
             me: { uid: 'yo', clubId: 'club_mqvr9m11_g9kj' },
             equipoAsignado: MIO,
-            // `_miEquipoDe` devuelve la clave del primer documento del partido.
-            _miEquipoDe: () => clave,
-            window: {},
+            // Sus equipos: el Regional B y un Alevín C (otra categoría).
+            _miTodosMisEquipos: [MIO, 'club-mqvr9m11-g9kj__alevin__c'],
+            // La clave del primer documento del partido.
+            window: { cronosTeamIdOfDoc: () => clave },
         };
         vm.createContext(ctx);
-        vm.runInContext(IND.slice(ini, fin) + '\n;globalThis.esMio = _esDeMiEquipo;', ctx);
+        vm.runInContext(R1 + '\n' + R2 + '\n;globalThis.esMio = _esDeMiEquipo;', ctx);
         return ctx.esMio({ players: [{ coachUid: coachUid }] });
     };
 
@@ -187,6 +197,16 @@ console.log('\n── PARTE 2 · [DEFECTO D] los partidos ya escritos vuelven al
     ok('2g · ni el partido de OTRO entrenador, aunque venga a medias',
        correr('club-mqvr9m11-g9kj__regional__', 'otro') === false,
        'la excepción es «lo que él firmó», no «todo lo que no se sabe clasificar»');
+
+    // 🔴 v809 · Con DOS equipos de la MISMA categoría, la clave a medias no
+    // dice de cuál es: no entra en ninguno (antes caía en los dos).
+    const ctx2 = { console, String, Array, Object, me: { uid: 'yo', clubId: 'c' },
+        equipoAsignado: MIO, _miTodosMisEquipos: [MIO, 'club-mqvr9m11-g9kj__regional__a'],
+        window: { cronosTeamIdOfDoc: () => 'club-mqvr9m11-g9kj__regional__' } };
+    vm.createContext(ctx2);
+    vm.runInContext(R1 + '\n' + R2 + '\n;globalThis.esMio = _esDeMiEquipo;', ctx2);
+    ok('2h · 🔑 v809 · con Regional A y B, el partido «regional» a medias no se cuela en ninguno',
+       ctx2.esMio({ players: [{ coachUid: 'yo' }] }) === false);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

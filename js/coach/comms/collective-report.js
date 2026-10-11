@@ -92,18 +92,51 @@ window.openCollectiveReport = async function openCollectiveReport() {
     } else {
         try {
             const { db, collection, getDocs, query, where, orderBy, limit } = await _cFS();
-            const snap = await getDocs(query(
-                collection(db,'cronos_player_reports'),
-                where('clubId','==',me.clubId||''),
-                orderBy('createdAt','desc'),
-                limit(30)
-            ));
-            // Agrupar por el partido más reciente
+            const COL = collection(db,'cronos_player_reports');
+            // 🔴 v809 · EL ÚLTIMO PARTIDO DEL EQUIPO SELECCIONADO en «Mis equipos».
+            // Antes cogía los 30 últimos documentos del CLUB entero (podían ser
+            // de otro equipo suyo o de otro entrenador), los agrupaba por FECHA
+            // (dos partidos del mismo día se fundían) y mezclaba las copias de
+            // entrenador, dirección y familias (jugadores repetidos).
+            // Ahora: se piden los documentos del equipo por su sello `teamId`
+            // (la misma consulta que «Mis Informes», con índice ya existente),
+            // sólo la copia del entrenador, y se agrupa por matchId.
+            const _eq = (typeof window.cronosEquipoAbierto === 'function') ? (window.cronosEquipoAbierto() || '') : '';
+            const _eqN = (_eq && typeof window.cronosTeamIdNorm === 'function') ? window.cronosTeamIdNorm(_eq) : _eq;
+            const crudos = [];
+            if (_eqN) {
+                try {
+                    const [c, cat, sub] = _eqN.split('__');
+                    const variantes = [...new Set([cat, 'f7-' + cat, 'f11-' + cat]
+                        .flatMap(x => [c + '__' + x + '__' + (sub || ''), c + '__' + x + '__']))];
+                    const s = await getDocs(query(COL, where('clubId','==',me.clubId||''),
+                        where('_forCoach','==',true), where('teamId','in',variantes)));
+                    s.forEach(d => crudos.push(d));
+                } catch (e) { console.warn('[collectiveReport] lectura por equipo:', e && (e.code || e.message)); }
+            }
+            if (!crudos.length) {
+                const s = await getDocs(query(COL, where('clubId','==',me.clubId||''), orderBy('createdAt','desc'), limit(30)));
+                s.forEach(d => crudos.push(d));
+            }
             const reports = [];
-            snap.forEach(d => reports.push({ id:d.id, ...d.data() }));
+            crudos.forEach(d => {
+                const x = d.data() || {};
+                if (x._forCoach === false) return;
+                if (_eqN && typeof window.cronosDocEsDeEquipo === 'function' &&
+                    !window.cronosDocEsDeEquipo(x, [_eqN], me.clubId || '')) return;
+                reports.push({ id:d.id, ...x });
+            });
+            const _cuando = (r) => String(r.createdAt && r.createdAt.toDate ? r.createdAt.toDate().toISOString() : (r.createdAt || r.matchDate || ''));
+            reports.sort((a, b) => _cuando(b).localeCompare(_cuando(a)));
             if (reports.length) {
-                const latestMatch = reports[0].matchDate;
-                reports.filter(r => r.matchDate === latestMatch).forEach(r => {
+                const latest = reports[0];
+                const mismo = (r) => latest.matchId ? r.matchId === latest.matchId : r.matchDate === latest.matchDate;
+                const vistos = new Set();
+                reports.filter(mismo).filter(r => {
+                    const k = String(r.playerNumber || r.id);
+                    if (vistos.has(k)) return false;
+                    vistos.add(k); return true;
+                }).forEach(r => {
                     playerData.push({
                         number: r.playerNumber, name: r.playerAlias,
                         time: 0, goals: r.goals||0, cards: r.cards||'ninguna',
