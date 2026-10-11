@@ -217,17 +217,23 @@ console.log('\n── PARTE 5 · la ficha del jugador y el modal ──');
 {
     ok('5a · changeGoals emite goal_cancelled al quitar',
        /_registerMatchEvent\('goal_cancelled', 'GOL ANULADO · ' \+ p\.name/.test(trozo(ACTION, 'function changeGoals(amount)') || ''));
-    const fn = trozo(ACTION, 'function _confirmarEventosModal()');
+    // 📝 v801 · la confirmación usa ya el borrador del modal y sus ayudantes:
+    // se carga el BLOQUE entero (de las variables a openPlayerActionModal).
+    const fn = ACTION.slice(ACTION.indexOf('var _modalStaging  = false;'),
+                            ACTION.indexOf('function openPlayerActionModal'));
     const run = (antes, despues, buffer) => {
         const emit = [];
         const sb = {
-            _modalBuffer: buffer, _modalBaseline: { id: 7, goals: antes }, _modalStaging: true,
+            // ⚠️ Con otros nombres: las `var` del bloque son propiedades de
+            // este mismo objeto y pisarían lo preparado.
+            __buf: buffer, __base: { id: 7, goals: antes },
             players: [{ id: 7, goals: despues }],
             _registerMatchEvent: function () { emit.push(arguments[0]); },
+            activeActionPlayerId: 7, liveMatchId: null, window: {},
         };
         vm.createContext(sb);
-        vm.runInContext('var _modalBuffer=this._modalBuffer,_modalBaseline=this._modalBaseline,_modalStaging=true;\n' +
-                        fn + ';_confirmarEventosModal();', sb);
+        vm.runInContext(fn + ';\n_modalBuffer=__buf;_modalBaseline=__base;_modalStaging=true;' +
+                        '_confirmarEventosModal();', sb);
         return emit;
     };
     const g = ['goal', 'GOL · X'], x = ['goal_cancelled', 'GOL ANULADO · X'];

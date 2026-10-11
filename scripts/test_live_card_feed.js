@@ -337,8 +337,12 @@ console.log('\n── PARTE 7 · el emisor escribe el equipo ──');
 
     // Censo: NINGUNA emision de un suceso de jugador puede quedarse sin equipo.
     const llamadas = PACT.match(/_registerMatchEvent\('(goal|yellow|red|injury|sub)'[\s\S]{0,400}?\);/g) || [];
-    ok('7c · siguen estando las 6 emisiones con tipo literal (gol, amarilla, 2 rojas, lesion, cambio)',
-       llamadas.length === 6, llamadas.length + ' encontradas');
+    // 📝 v801 · la roja directa y la doble amarilla emiten por UNA sola
+    // llamada (`_cierraConExpulsion`): son 5 con tipo literal.
+    ok('7c · siguen estando las emisiones con tipo literal (gol, amarilla, roja, lesion, cambio)',
+       llamadas.length === 5 && ['goal', 'yellow', 'red', 'injury', 'sub'].every(t =>
+           llamadas.some(c => c.indexOf("_registerMatchEvent('" + t + "'") === 0)),
+       llamadas.length + ' encontradas');
     const huerfanas = llamadas.filter(c => !/_datosEquipoDe|team:/.test(c));
     ok('7d · 🔑 y NINGUNA se queda sin el equipo',
        huerfanas.length === 0, huerfanas.join('\n---\n'));

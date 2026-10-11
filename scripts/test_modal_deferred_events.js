@@ -56,7 +56,9 @@ console.log('── PARTE 1 · 🔑 sólo se emite la diferencia neta ──');
     const sb = {
         players: [],
         console: { log() {}, warn() {} },
-        _registerMatchEvent: function (type, text) { emitidos.push(type); }
+        _registerMatchEvent: function (type, text) { emitidos.push(type); },
+        // 📝 v801 · la confirmación resuelve el jugador por el del modal.
+        activeActionPlayerId: 'p1', liveMatchId: null, window: {},
     };
     vm.createContext(sb);
     vm.runInContext(ACT.slice(ini, fin) +
@@ -141,7 +143,9 @@ console.log('\n── PARTE 2 · nada sale del modal hasta HECHO ──');
        /_modalBaseline = \{[\s\S]{0,200}?goals: player\.goals[\s\S]{0,120}?cards: player\.cards/.test(a));
     ok('2c · 🔑 y activa el aparcado', /_modalStaging = true;/.test(a));
     ok('2d · 🔑 HECHO (closePlayerActionModal) es lo que confirma y emite',
-       /function closePlayerActionModal\(\)[\s\S]{0,220}?_confirmarEventosModal\(\);/.test(a));
+       // 🟨 v802 · antes va la tarjeta de la ventana (_aplicaTarjetaVentana):
+       // más texto delante, misma regla.
+       /function closePlayerActionModal\(\)[\s\S]{0,1400}?_confirmarEventosModal\(\);/.test(a));
     ok('2e · el botón HECHO del modal sigue llamando a closePlayerActionModal',
        /onclick="closePlayerActionModal\(\)"[^>]*>HECHO</.test(leer('index.html')) ||
        /HECHO/.test(leer('index.html')) && /onclick="closePlayerActionModal\(\)"/.test(leer('index.html')));

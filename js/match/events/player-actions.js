@@ -554,22 +554,142 @@ var _modalStaging  = false;
 var _modalBuffer   = [];
 var _modalBaseline = null;
 
+// ════════════════════════════════════════════════════════════════════
+//  📝 v801 · EL MODAL TRABAJA SOBRE UN BORRADOR
+//
+//  Encargo del autor (implementar.txt 2026-10-11, capturas 11308-11311):
+//  con la ventana del jugador ABIERTA, el visor ya pintaba «LESIÓN ·
+//  DÁMASO», el marcador 1-0 y «GOL · DÁMASO»; y tras −1 el marcador volvía
+//  a 0-0 pero el GOL se quedaba en el historial del visor.
+//
+//  🔑 EL AVISO YA ESPERABA A HECHO (lo de arriba); LO QUE NO ESPERABA ERA EL
+//  ESTADO. Cada pulsación cambiaba al momento la ficha REAL del jugador
+//  (goles, tarjeta, lesión), su historial y el marcador, y además forzaba un
+//  envío inmediato (`liveSyncOnAction` / `liveSyncFlushNow`). El visor
+//  recibía la ficha cambiada, la comparaba con la anterior y DEDUCÍA el
+//  suceso por su cuenta (su vía «por diferencia»). Por esa puerta lateral se
+//  colaba todo antes de confirmar.
+//
+//  AHORA, con el modal abierto:
+//    · las acciones cambian una COPIA del jugador (`_modalBorrador`), no la
+//      ficha real: ni el latido de 5 s, ni el autoguardado, ni el marcador
+//      ven nada;
+//    · los envíos al directo, los «eventos críticos» durables y la
+//      auditoría se APARCAN como los avisos;
+//    · HECHO (`_confirmarEventosModal`) aplica el borrador a la ficha real,
+//      emite la diferencia neta, guarda lo aparcado y envía UNA vez;
+//    · LIMPIAR (`clearPlayerActions`, decisión del autor: «descartar») tira
+//      el borrador y cierra SIN tocar ni enviar nada; lo registrado antes de
+//      abrir se queda intacto.
+//
+//  ⚠️ SE COPIAN DE VUELTA SÓLO LOS CAMPOS DEL MODAL (goles, tarjeta,
+//  amarillas, lesión) y lo AÑADIDO al historial. El reloj sigue sumando
+//  `time` a la ficha real mientras el modal está abierto: copiar el
+//  borrador entero le devolvería los segundos de cuando se abrió.
+//
+//  ⚠️ La roja, la doble amarilla y la rectificación CIERRAN el modal: son
+//  su propia confirmación. Esas ramas pasan el borrador a la ficha real
+//  (`_borradorAlReal`) ANTES de mover al jugador al banquillo y contar
+//  expulsiones, que se cuentan sobre `players`.
+// ════════════════════════════════════════════════════════════════════
+var _modalBorrador     = null;
+var _modalHistBase     = 0;      // longitud del historial al abrir
+var _modalSyncPend     = null;   // null | 'normal' | 'ya'
+var _modalCriticos     = [];     // commitCriticalEvent aplazados
+var _modalAuditoria    = [];     // auditLogger.logPlayerAction aplazados
+var _CAMPOS_MODAL      = ['goals', 'cards', 'yellowCards', 'injured'];
+
+// El jugador sobre el que actúa el modal: el BORRADOR mientras está abierto.
+function _jugadorDelModal() {
+    if (!activeActionPlayerId) return null;
+    if (_modalStaging && _modalBorrador && _modalBorrador.id === activeActionPlayerId) return _modalBorrador;
+    try { return players.find(function (x) { return x.id === activeActionPlayerId; }) || null; } catch (e) { return null; }
+}
+
+// Lo apuntado en el historial DURANTE el modal, por la diferencia NETA (la
+// misma criba que los avisos): un +1 −1 no deja «GOL» + «GOL ANULADO», y una
+// lesión marcada y desmarcada no deja «LESIÓN». Lo que no es del modal (el
+// movimiento al banquillo de una roja) pasa tal cual.
+function _historialNeto(nuevas, base, b) {
+    var net = (b.goals || 0) - (base.goals || 0);
+    var esGol = function (h) { return /^GOL \(/.test(h); };
+    var esAnulado = function (h) { return /^GOL ANULADO/.test(h); };
+    var esLesion = function (h) { return /^LESIÓN /.test(h); };
+    var goles = nuevas.filter(esGol), anulados = nuevas.filter(esAnulado);
+    var quedanGoles = net > 0 ? goles.slice(-net) : [];
+    var quedanAnul  = net < 0 ? anulados.slice(net) : [];
+    var lesionNueva = b.injured === true && base.injured !== true;
+    var lesionHecha = false;
+    return nuevas.filter(function (h) {
+        if (esGol(h))     return quedanGoles.indexOf(h) >= 0;
+        if (esAnulado(h)) return quedanAnul.indexOf(h) >= 0;
+        if (esLesion(h)) { if (!lesionNueva || lesionHecha) return false; lesionHecha = true; return true; }
+        return true;
+    });
+}
+
+// Vuelca el borrador en la ficha real y devuelve la ficha real.
+function _borradorAlReal() {
+    var b = _modalBorrador;
+    if (!b) return _jugadorDelModal();
+    var real = null;
+    try { real = players.find(function (x) { return x.id === b.id; }) || null; } catch (e) {}
+    _modalBorrador = null;
+    if (!real) return null;
+    _CAMPOS_MODAL.forEach(function (k) { if (k in b) real[k] = b[k]; });
+    var nuevas = _historialNeto((Array.isArray(b.history) ? b.history : []).slice(_modalHistBase),
+                                _modalBaseline || {}, b);
+    if (nuevas.length) {
+        if (!Array.isArray(real.history)) real.history = [];
+        nuevas.forEach(function (h) { real.history.push(h); });
+    }
+    return real;
+}
+
+// Los tres efectos que salen del aparato, aplazados mientras hay modal.
+function _syncAccion(inmediato) {
+    if (_modalStaging) { _modalSyncPend = (inmediato || _modalSyncPend === 'ya') ? 'ya' : 'normal'; return; }
+    if (inmediato && typeof window.liveSyncFlushNow === 'function') window.liveSyncFlushNow();
+    else if (typeof liveSyncOnAction === 'function') liveSyncOnAction();
+}
+function _criticoAccion(tipo, datos) {
+    if (_modalStaging) { _modalCriticos.push([tipo, datos]); return; }
+    if (typeof commitCriticalEvent === 'function') commitCriticalEvent(tipo, datos);
+}
+function _auditaAccion() {
+    var args = Array.prototype.slice.call(arguments);
+    if (_modalStaging) { _modalAuditoria.push(args); return; }
+    if (window.auditLogger && liveMatchId) window.auditLogger.logPlayerAction.apply(window.auditLogger, args);
+}
+
 function _descartarEventosModal() {
     _modalStaging = false;
     _modalBuffer = [];
     _modalBaseline = null;
+    // 📝 v801 · y con ellos el borrador y todo lo aparcado: nada sale.
+    _modalBorrador = null;
+    _tarjetaVentana = null;     // 🟨 v802 · la tarjeta marcada, también
+    _modalSyncPend = null;
+    _modalCriticos = [];
+    _modalAuditoria = [];
 }
 
 // Emite del buffer SÓLO lo que sobrevive al diff contra el estado inicial.
 function _confirmarEventosModal() {
     var buffer = _modalBuffer;
     var base = _modalBaseline || {};
+    // 📝 v801 · El borrador pasa a la ficha real AQUÍ, en HECHO.
+    var pReal = _borradorAlReal();
+    var criticos = _modalCriticos, auditoria = _modalAuditoria, syncPend = _modalSyncPend;
     _modalStaging = false;          // desde aquí, _registerMatchEvent vuelve a emitir
     _modalBuffer = [];
     _modalBaseline = null;
+    _modalCriticos = [];
+    _modalAuditoria = [];
+    _modalSyncPend = null;
 
-    var p = null;
-    try { p = players.find(function (x) { return x.id === base.id; }) || null; } catch (e) {}
+    var p = pReal;
+    if (!p) { try { p = players.find(function (x) { return x.id === base.id; }) || null; } catch (e) {} }
     if (!p) return;
 
     var netGoles     = (p.goals || 0) - (base.goals || 0);
@@ -600,6 +720,30 @@ function _confirmarEventosModal() {
         }
         _registerMatchEvent.apply(null, ev);
     });
+
+    // 📝 v801 · LO APARCADO, AHORA. Los «eventos críticos» durables, con la
+    // misma criba neta que los avisos (un +1 −1 no deja un gol guardado); la
+    // auditoría, entera (es el rastro de lo que se pulsó y se confirmó).
+    var golesGuardados = 0;
+    criticos.forEach(function (c) {
+        var t = c[0];
+        if (t === 'goal') { if (golesGuardados < netGoles) { golesGuardados++; } else return; }
+        if (t === 'injury' && !(c[1] && c[1].value === true && lesionNueva)) return;
+        if ((t === 'card_yellow' || t === 'card_red' || t === 'red_card_reversed') && !cambioTarjeta) return;
+        if (typeof commitCriticalEvent === 'function') commitCriticalEvent(t, c[1]);
+    });
+    if (window.auditLogger && liveMatchId) {
+        auditoria.forEach(function (a) { window.auditLogger.logPlayerAction.apply(window.auditLogger, a); });
+    }
+
+    // El marcador se mueve AHORA (durante el modal no lo hizo: los goles
+    // estaban en el borrador), y el directo recibe UN envío con el resultado.
+    var huboCambio = netGoles !== 0 || cambioTarjeta || ((p.injured === true) !== (base.injured === true));
+    if (netGoles !== 0 && typeof syncScoreFromPlayers === 'function') {
+        try { syncScoreFromPlayers(p.team); } catch (e) {}
+    }
+    // Sin diferencia neta (un +1 −1) no hay nada que enviar.
+    if (huboCambio) _syncAccion(syncPend === 'ya' || netGoles !== 0);
 }
 
 function openPlayerActionModal(player) {
@@ -609,9 +753,20 @@ function openPlayerActionModal(player) {
         id: player.id,
         goals: player.goals || 0,
         cards: player.cards,
+        // 🟨 v802 · las amarillas que ya tenía: deciden si lo que se marca
+        // es la 1ª o la 2ª (ver _ponTarjetaEnBorrador).
+        yellowCards: (typeof player.yellowCards === 'number') ? player.yellowCards : 0,
         injured: player.injured === true
     };
+    _tarjetaVentana = null;
     _modalStaging = true;
+    // 📝 v801 · El borrador: una copia con SU historial (logEvent escribe ahí).
+    _modalBorrador = Object.assign({}, player,
+        { history: Array.isArray(player.history) ? player.history.slice() : [] });
+    _modalHistBase = _modalBorrador.history.length;
+    _modalSyncPend = null;
+    _modalCriticos = [];
+    _modalAuditoria = [];
     activeActionPlayerId = player.id;
     document.getElementById('action-player-name').innerHTML =
         `${escapeHtml(player.name)} <span style="font-size:0.8rem">✏️</span>`;
@@ -619,36 +774,8 @@ function openPlayerActionModal(player) {
         `Dorsal ${escapeHtml(String(player.number))} <span style="font-size:0.8rem">✏️</span>`;
     document.getElementById('action-player-goals').textContent = `${player.goals || 0} ⚽`;
 
-    // ── Resaltar botón de tarjeta activa ──
-    const btnAmarilla = document.querySelector('#player-action-modal .btn[onclick*="amarilla"]');
-    const btnRoja     = document.querySelector('#player-action-modal .btn[onclick*="roja"]');
-
-    if (btnAmarilla) {
-        // Limpiar badge previo
-        const oldBadge = btnAmarilla.querySelector('.cronos-ycard-badge');
-        if (oldBadge) oldBadge.remove();
-        btnAmarilla.style.outline   = '';
-        btnAmarilla.style.boxShadow = '';
-
-        // Si tiene 1ª amarilla → mostrar badge "1ª" y aviso visual
-        const yellows = (typeof player.yellowCards === 'number') ? player.yellowCards : 0;
-        if (player.cards === 'amarilla' && yellows >= 1) {
-            btnAmarilla.style.outline   = '3px solid #f1c40f';
-            btnAmarilla.style.boxShadow = '0 0 10px rgba(241,196,15,0.9)';
-            const badge = document.createElement('span');
-            badge.className   = 'cronos-ycard-badge';
-            badge.textContent = '1ª';
-            badge.style.cssText = 'margin-left:5px;background:#f1c40f;color:#000;' +
-                'border-radius:3px;font-size:0.62rem;font-weight:800;' +
-                'padding:1px 4px;vertical-align:middle;';
-            badge.title = 'Ya tiene 1ª amarilla — siguiente pulsación = EXPULSIÓN';
-            btnAmarilla.appendChild(badge);
-        }
-    }
-    if (btnRoja) {
-        btnRoja.style.outline   = player.cards === 'roja' ? '3px solid #fff' : '';
-        btnRoja.style.boxShadow = player.cards === 'roja' ? '0 0 8px rgba(231,76,60,0.8)' : '';
-    }
+    // ── Resaltar botones de tarjeta (🟨 v802 · según el borrador) ──
+    _pintaBotonesTarjeta();
 
     // Reflejar estado de lesión en el botón
     const injBtn = document.getElementById('btn-injury');
@@ -713,32 +840,58 @@ function _syncRevertRedCardButton(player) {
 function closePlayerActionModal() {
     // HECHO: aquí y sólo aquí se emiten los avisos aparcados, ya filtrados por
     // la diferencia neta contra el estado inicial.
+    // 🟨🟥 v802 · Primero la tarjeta marcada en la ventana (se apunta y se
+    // registra AHORA). Si expulsa, al banquillo ANTES de confirmar, para que
+    // el único envío al directo lleve ya al jugador fuera del campo.
+    const _exp = (typeof _aplicaTarjetaVentana === 'function') ? _aplicaTarjetaVentana() : null;
+    let _expulsado = null;
+    if (_exp) {
+        _expulsado = _borradorAlReal();
+        if (_expulsado && _expulsado.status === 'field') {
+            _expulsado.status = 'bench'; _expulsado.x = 0; _expulsado.y = 0;
+            if (isRunning) logMovement(_expulsado, undefined, 'field');   // v425: transicion real campo->banquillo
+        }
+    }
     _confirmarEventosModal();
     activeActionPlayerId = null;
     document.getElementById('player-action-modal').style.display = 'none';
     renderPlayers(); // redibujar para mostrar cambios (lesión, tarjeta, goles)
     renderStaffInBench();
+
+    // La expulsión, ya confirmada: límite del equipo o aviso.
+    if (_exp && _expulsado) {
+        const limit = currentMode === 'f7' ? 3 : 5;
+        const teamReds = players.filter(x => x.team === _expulsado.team && x.cards === 'roja').length;
+        if (teamReds >= limit) {
+            terminateMatch(`LÍMITE DE EXPULSIONES ALCANZADO (${limit} en ${_expulsado.team === 'home' ? TEAM_NAMES.home : TEAM_NAMES.away})`);
+        } else {
+            alert(_exp.doble
+                ? `🟨🟨 DOBLE AMARILLA: ${_exp.nombre} queda EXPULSADO y retirado al banquillo.`
+                : `🟥 TARJETA ROJA: ${_exp.nombre} ha sido expulsado y retirado al banquillo.`);
+        }
+        renderPlayers();
+    }
 }
 
 function toggleInjury() {
     if (!activeActionPlayerId) return;
-    const p = players.find(x => x.id === activeActionPlayerId);
+    // 📝 v801 · el BORRADOR del modal (ver _jugadorDelModal): hasta HECHO no
+    // cambia la ficha real, ni sale nada.
+    const p = _jugadorDelModal();
     if (!p) return;
     const wasInjured = p.injured;
     p.injured = !p.injured;
     if (p.injured) { logEvent(p, 'LESIÓN'); _registerMatchEvent('injury', 'LESIÓN · ' + p.name, '🚑', undefined, _datosEquipoDe(p)); }
 
-    // 📊 SOLUCIÓN #7: Auditar cambio de lesión
-    if (window.auditLogger && liveMatchId) {
-        window.auditLogger.logPlayerAction(
-            p.id,
-            p.name,
-            p.number,
-            'injury',
-            p.injured ? 'marcado' : 'desmarcado',
-            { injured: { before: wasInjured, after: p.injured } }
-        );
-    }
+    // 📊 SOLUCIÓN #7: Auditar cambio de lesión (📝 v801 · aparcado hasta HECHO)
+    _auditaAccion(
+        p.id,
+        p.name,
+        p.number,
+        'injury',
+        p.injured ? 'marcado' : 'desmarcado',
+        { injured: { before: wasInjured, after: p.injured } }
+    );
 
     // Actualizar botón del modal — compatible con ambos estilos de markup
     const btn = document.getElementById('btn-injury');
@@ -758,10 +911,8 @@ function toggleInjury() {
     // Commit síncrono del evento crítico (snapshot localStorage + IndexedDB
     // durable) antes de sincronizar con Firestore. Mecanismo único en
     // commitCriticalEvent() para no perder el evento si el navegador se cierra.
-    if (typeof commitCriticalEvent === 'function') {
-        commitCriticalEvent('injury', { playerId: p.id, playerName: p.name, playerNumber: p.number, value: p.injured });
-    }
-    liveSyncOnAction();
+    _criticoAccion('injury', { playerId: p.id, playerName: p.name, playerNumber: p.number, value: p.injured });
+    _syncAccion(false);
 }
 
 // ════════════════════════════════════════════════════════════════════
@@ -775,163 +926,142 @@ function toggleInjury() {
 //  Al final del partido se distingue claramente si fue doble amarilla
 //  o roja directa gracias al campo yellowCards.
 // ════════════════════════════════════════════════════════════════════
+// ════════════════════════════════════════════════════════════════════
+//  🟨🟥 v802 · LAS TARJETAS SE ALTERNAN EN EL BORRADOR
+//
+//  Encargo del autor (implementar.txt 2026-10-11, capturas 11315-11316):
+//  las tarjetas tienen que poder marcarse, desmarcarse o revertirse con un
+//  nuevo clic antes de HECHO, igual que los goles y la lesión. Un toque de
+//  más en la amarilla saltaba DIRECTAMENTE a la doble amarilla: expulsaba,
+//  cerraba la ventana y mandaba al jugador al banquillo.
+//
+//  AHORA, dentro de la ventana:
+//    · 🟨 un clic marca la amarilla de esta ventana; otro la quita. Si el
+//      jugador ya tenía una de antes, lo que se marca es la 2ª —y se dice
+//      («2ª → EXPULSIÓN»)—, pero NO expulsa hasta HECHO;
+//    · 🟥 un clic marca la roja directa; otro la quita;
+//    · son EXCLUYENTES (decisión del autor): marcar una quita la otra;
+//    · NADA se apunta en el historial, ni se avisa, ni se guarda mientras
+//      tanto: la tarjeta es sólo un estado del borrador (`_tarjetaVentana`).
+//  En HECHO (`_aplicaTarjetaVentana`, desde closePlayerActionModal) se apunta,
+//  se avisa y, si expulsa, se manda al banquillo, se cuenta el límite de
+//  expulsiones y se avisa al usuario. LIMPIAR la descarta con todo lo demás.
+//
+//  ⚠️ Un jugador YA expulsado al abrir no se toca desde aquí: eso está
+//  registrado y se corrige con «Revertir tarjeta roja» (rectificación
+//  arbitral, con su confirmación y su rastro en el informe).
+// ════════════════════════════════════════════════════════════════════
+var _tarjetaVentana = null;   // null | 'amarilla' | 'roja'
+
+function _baseTarjeta() {
+    var b = _modalBaseline || {};
+    return { cards: b.cards || 'ninguna', yellow: (typeof b.yellowCards === 'number') ? b.yellowCards : 0 };
+}
+
+// Pone en el borrador la tarjeta elegida en esta ventana (o la quita).
+function _ponTarjetaEnBorrador(p) {
+    var b = _baseTarjeta();
+    if (_tarjetaVentana === 'amarilla') {
+        if (b.cards === 'amarilla' && b.yellow >= 1) { p.cards = 'roja'; p.yellowCards = 2; }
+        else { p.cards = 'amarilla'; p.yellowCards = 1; }
+    } else if (_tarjetaVentana === 'roja') {
+        p.cards = 'roja'; p.yellowCards = 0;   // roja directa → NO es doble amarilla
+    } else {
+        p.cards = b.cards; p.yellowCards = b.yellow;
+    }
+}
+
+function _badge(btn, texto, fondo, titulo) {
+    var badge = document.createElement('span');
+    badge.className   = 'cronos-ycard-badge';
+    badge.textContent = texto;
+    badge.style.cssText = 'margin-left:5px;background:' + fondo + ';color:#000;' +
+        'border-radius:3px;font-size:0.62rem;font-weight:800;' +
+        'padding:1px 4px;vertical-align:middle;';
+    badge.title = titulo;
+    btn.appendChild(badge);
+}
+
+function _pintaBotonesTarjeta() {
+    var b = _baseTarjeta();
+    var btnAm = document.querySelector('#player-action-modal .btn[onclick*="amarilla"]');
+    var btnRo = document.querySelector('#player-action-modal .btn[onclick*="roja"]');
+    [btnAm, btnRo].forEach(function (btn) {
+        if (!btn) return;
+        var old = btn.querySelectorAll ? btn.querySelectorAll('.cronos-ycard-badge') : [];
+        Array.prototype.forEach.call(old, function (x) { x.remove(); });
+        btn.style.outline = ''; btn.style.boxShadow = '';
+    });
+    if (btnAm) {
+        var tieneUna = b.cards === 'amarilla' && b.yellow >= 1;
+        if (_tarjetaVentana === 'amarilla') {
+            btnAm.style.outline   = tieneUna ? '3px solid #ff5858' : '3px solid #fff';
+            btnAm.style.boxShadow = '0 0 12px rgba(241,196,15,0.95)';
+            _badge(btnAm, tieneUna ? '2ª → EXPULSIÓN' : '✓', tieneUna ? '#ff9b93' : '#fff',
+                   'Marcada en esta ventana. Vuelve a pulsar para quitarla. Se aplica al pulsar HECHO.');
+        } else if (tieneUna) {
+            btnAm.style.outline   = '3px solid #f1c40f';
+            btnAm.style.boxShadow = '0 0 10px rgba(241,196,15,0.9)';
+            _badge(btnAm, '1ª', '#f1c40f', 'Ya tiene 1ª amarilla — marcar otra = EXPULSIÓN al pulsar HECHO');
+        }
+    }
+    if (btnRo) {
+        if (_tarjetaVentana === 'roja') {
+            btnRo.style.outline   = '3px solid #fff';
+            btnRo.style.boxShadow = '0 0 12px rgba(231,76,60,0.95)';
+            _badge(btnRo, '✓', '#fff', 'Marcada en esta ventana. Vuelve a pulsar para quitarla. Se aplica al pulsar HECHO.');
+        } else if (b.cards === 'roja') {
+            btnRo.style.outline   = '3px solid #fff';
+            btnRo.style.boxShadow = '0 0 8px rgba(231,76,60,0.8)';
+        }
+    }
+}
+
 function assignCard(type) {
     if (!activeActionPlayerId) return;
-    const p = players.find(x => x.id === activeActionPlayerId);
+    // 📝 v801 · el BORRADOR del modal (ver _jugadorDelModal).
+    const p = _jugadorDelModal();
     if (!p) return;
+    if (type !== 'amarilla' && type !== 'roja') return;
 
-    // Inicializar contador de amarillas (retrocompatibilidad)
-    if (typeof p.yellowCards !== 'number') p.yellowCards = 0;
-
-    // ── Jugador ya expulsado ──────────────────────────────────────
-    // No se permite reasignar tarjetas sobre un expulsado, pero el modal
-    // muestra el botón "Revertir tarjeta roja (rectificación arbitral)"
-    // (ver openPlayerActionModal → revertRedCard) para deshacer la roja.
-    if (p.cards === 'roja') {
+    // ── Jugador ya expulsado AL ABRIR ─────────────────────────────
+    if (_baseTarjeta().cards === 'roja') {
         alert(`⛔ ${p.name} ya está expulsado.\n\nSi se trata de un error, usa "Revertir tarjeta roja (rectificación arbitral)".`);
         return;
     }
 
-    // ── TARJETA ROJA DIRECTA ──────────────────────────────────────
-    if (type === 'roja') {
-        const wasCards = p.cards;
-        p.cards       = 'roja';
-        p.yellowCards = 0; // Roja directa → NO es doble amarilla
-        logEvent(p, 'TARJETA ROJA'); _registerMatchEvent('red', 'TARJETA ROJA · ' + p.name, '🟥', undefined, _datosEquipoDe(p));
-        // Commit síncrono del evento crítico antes de sincronizar con Firestore.
-        if (typeof commitCriticalEvent === 'function') {
-            commitCriticalEvent('card_red', { playerId: p.id, playerName: p.name, playerNumber: p.number, value: 'roja_directa' });
-        }
-        liveSyncOnAction();
+    // Alternar: la misma tarjeta otra vez la QUITA; la otra la SUSTITUYE.
+    _tarjetaVentana = (_tarjetaVentana === type) ? null : type;
+    _ponTarjetaEnBorrador(p);
+    _pintaBotonesTarjeta();
+}
 
-        // 📊 SOLUCIÓN #7: Auditar tarjeta roja
-        if (window.auditLogger && liveMatchId) {
-            window.auditLogger.logPlayerAction(
-                p.id,
-                p.name,
-                p.number,
-                'card',
-                'roja_directa',
-                { card: { before: wasCards, after: 'roja' }, yellowCards: { before: 0, after: 0 } }
-            );
-        }
-
-        const limit = currentMode === 'f7' ? 3 : 5;
-        if (p.status === 'field') {
-            p.status = 'bench'; p.x = 0; p.y = 0;
-            if (isRunning) logMovement(p, undefined, 'field');   // v425: transicion real campo->banquillo
-        }
-
-        const teamReds = players.filter(x => x.team === p.team && x.cards === 'roja').length;
-        if (teamReds >= limit) {
-            terminateMatch(`LÍMITE DE EXPULSIONES ALCANZADO (${limit} en ${p.team === 'home' ? TEAM_NAMES.home : TEAM_NAMES.away})`);
-        } else {
-            alert(`🟥 TARJETA ROJA: ${p.name} ha sido expulsado y retirado al banquillo automáticamente.`);
-        }
-
-        closePlayerActionModal();
-        renderPlayers();
-        return;
-    }
-
-    // ── TARJETA AMARILLA ──────────────────────────────────────────
-    if (type === 'amarilla') {
-
-        // ── Si ya tiene 1ª amarilla → SEGUNDA AMARILLA = EXPULSIÓN ──
-        if (p.cards === 'amarilla' && p.yellowCards >= 1) {
-            const wasCards = p.cards;
-            const wasYellow = p.yellowCards;
-            p.cards       = 'roja';
-            p.yellowCards = 2; // Doble amarilla → queda registrado
-            logEvent(p, 'DOBLE AMARILLA → EXPULSADO'); _registerMatchEvent('red', 'TARJETA ROJA · ' + p.name + ' (doble amarilla)', '🟥', undefined, _datosEquipoDe(p));
-            // Commit síncrono del evento crítico antes de sincronizar con Firestore.
-            if (typeof commitCriticalEvent === 'function') {
-                commitCriticalEvent('card_red', { playerId: p.id, playerName: p.name, playerNumber: p.number, value: 'doble_amarilla' });
-            }
-            liveSyncOnAction();
-
-            // 📊 SOLUCIÓN #7: Auditar doble amarilla
-            if (window.auditLogger && liveMatchId) {
-                window.auditLogger.logPlayerAction(
-                    p.id,
-                    p.name,
-                    p.number,
-                    'card',
-                    'doble_amarilla',
-                    { card: { before: wasCards, after: 'roja' }, yellowCards: { before: wasYellow, after: 2 } }
-                );
-            }
-
-            if (p.status === 'field') {
-                p.status = 'bench'; p.x = 0; p.y = 0;
-                if (isRunning) logMovement(p, undefined, 'field');   // v425: transicion real campo->banquillo
-            }
-
-            const limit2 = currentMode === 'f7' ? 3 : 5;
-            const teamReds2 = players.filter(x => x.team === p.team && x.cards === 'roja').length;
-            if (teamReds2 >= limit2) {
-                terminateMatch(`LÍMITE DE EXPULSIONES ALCANZADO (${limit2} en ${p.team === 'home' ? TEAM_NAMES.home : TEAM_NAMES.away})`);
-            } else {
-                alert(`🟨🟨 DOBLE AMARILLA: ${p.name} queda EXPULSADO automáticamente.`);
-            }
-
-            closePlayerActionModal();
-            renderPlayers();
-            return;
-        }
-
-        // ── Primera amarilla → mantener modal abierto con aviso ──
-        const wasCards2 = p.cards;
-        p.cards       = 'amarilla';
-        p.yellowCards = 1;
+// ── HECHO · la tarjeta de la ventana se hace REAL ──────────────────
+//  Se llama desde closePlayerActionModal ANTES de _confirmarEventosModal:
+//  apunta en el historial del borrador y registra el suceso (aparcado, sale
+//  en la confirmación). Si expulsa, devuelve los datos para terminar fuera.
+function _aplicaTarjetaVentana() {
+    var t = _tarjetaVentana;
+    _tarjetaVentana = null;
+    var p = _jugadorDelModal();
+    if (!t || !p) return null;
+    var b = _baseTarjeta();
+    var antes = { card: b.cards, yellowCards: b.yellow };
+    if (t === 'amarilla' && p.cards === 'amarilla') {
         logEvent(p, 'TARJETA AMARILLA'); _registerMatchEvent('yellow', 'TARJETA AMARILLA · ' + p.name, '🟨', undefined, _datosEquipoDe(p));
-        // Commit síncrono del evento crítico antes de sincronizar con Firestore.
-        if (typeof commitCriticalEvent === 'function') {
-            commitCriticalEvent('card_yellow', { playerId: p.id, playerName: p.name, playerNumber: p.number, value: 1 });
-        }
-        liveSyncOnAction();
-
-        // 📊 SOLUCIÓN #7: Auditar primera amarilla
-        if (window.auditLogger && liveMatchId) {
-            window.auditLogger.logPlayerAction(
-                p.id,
-                p.name,
-                p.number,
-                'card',
-                'amarilla_1',
-                { card: { before: wasCards2, after: 'amarilla' }, yellowCards: { before: 0, after: 1 } }
-            );
-        }
-
-        renderPlayers();
-
-        // NO cerrar modal — mostrar aviso de que la siguiente = expulsión
-        const btnAm = document.querySelector('#player-action-modal .btn[onclick*="amarilla"]');
-        if (btnAm) {
-            // Limpiar badge previo
-            const oldBadge = btnAm.querySelector('.cronos-ycard-badge');
-            if (oldBadge) oldBadge.remove();
-
-            const badge = document.createElement('span');
-            badge.className   = 'cronos-ycard-badge';
-            badge.textContent = '1ª';
-            badge.style.cssText = 'margin-left:5px;background:#f1c40f;color:#000;' +
-                'border-radius:3px;font-size:0.62rem;font-weight:800;' +
-                'padding:1px 4px;vertical-align:middle;';
-            badge.title = 'Ya tiene 1ª amarilla — siguiente pulsación = EXPULSIÓN';
-            btnAm.appendChild(badge);
-            btnAm.style.outline   = '3px solid #f1c40f';
-            btnAm.style.boxShadow = '0 0 10px rgba(241,196,15,0.9)';
-        }
-        return;
+        _criticoAccion('card_yellow', { playerId: p.id, playerName: p.name, playerNumber: p.number, value: 1 });
+        _auditaAccion(p.id, p.name, p.number, 'card', 'amarilla_1',
+            { card: { before: antes.card, after: 'amarilla' }, yellowCards: { before: antes.yellowCards, after: 1 } });
+        return null;
     }
-
-    // Cualquier otro tipo: flujo original
-    p.cards = type;
-    logEvent(p, type);
-    liveSyncOnAction();
-    closePlayerActionModal();
-    renderPlayers();
+    var doble = (t === 'amarilla');
+    logEvent(p, doble ? 'DOBLE AMARILLA → EXPULSADO' : 'TARJETA ROJA');
+    _registerMatchEvent('red', 'TARJETA ROJA · ' + p.name + (doble ? ' (doble amarilla)' : ''), '🟥', undefined, _datosEquipoDe(p));
+    _criticoAccion('card_red', { playerId: p.id, playerName: p.name, playerNumber: p.number,
+                                 value: doble ? 'doble_amarilla' : 'roja_directa' });
+    _auditaAccion(p.id, p.name, p.number, 'card', doble ? 'doble_amarilla' : 'roja_directa',
+        { card: { before: antes.card, after: 'roja' }, yellowCards: { before: antes.yellowCards, after: doble ? 2 : 0 } });
+    return { doble: doble, nombre: p.name };
 }
 
 // ════════════════════════════════════════════════════════════════════
@@ -944,7 +1074,8 @@ function assignCard(type) {
 // ════════════════════════════════════════════════════════════════════
 function revertRedCard() {
     if (!activeActionPlayerId) return;
-    const p = players.find(x => x.id === activeActionPlayerId);
+    // 📝 v801 · el borrador del modal; la rectificación cierra = confirma.
+    let p = _jugadorDelModal();
     if (!p) return;
 
     // Solo aplica a jugadores realmente expulsados.
@@ -953,6 +1084,7 @@ function revertRedCard() {
     if (!confirm('¿Confirmar rectificación arbitral? Esta acción quedará registrada en el informe.')) {
         return;
     }
+    p = _borradorAlReal() || p;
 
     const wasCards   = p.cards;
     const wasYellow  = (typeof p.yellowCards === 'number') ? p.yellowCards : 0;
@@ -966,20 +1098,18 @@ function revertRedCard() {
     logEvent(p, 'ROJA REVERTIDA (rectificación arbitral)');
 
     // Evento crítico durable (mismo patrón que assignCard).
-    if (typeof commitCriticalEvent === 'function') {
-        commitCriticalEvent('red_card_reversed', {
-            playerId: p.id,
-            playerName: p.name,
-            playerNumber: p.number,
-            value: 'rectificacion_arbitral'
-        });
-    }
+    _criticoAccion('red_card_reversed', {
+        playerId: p.id,
+        playerName: p.name,
+        playerNumber: p.number,
+        value: 'rectificacion_arbitral'
+    });
 
-    liveSyncOnAction();
+    _syncAccion(false);
 
     // Auditoría (antes → después).
-    if (window.auditLogger && liveMatchId) {
-        window.auditLogger.logPlayerAction(
+    {
+        _auditaAccion(
             p.id,
             p.name,
             p.number,
@@ -1053,7 +1183,9 @@ function terminateMatch(reason) {
 
 function changeGoals(amount) {
     if (!activeActionPlayerId) return;
-    const p = players.find(x => x.id === activeActionPlayerId);
+    // 📝 v801 · el BORRADOR del modal: el marcador y el directo no se mueven
+    // hasta HECHO (ver _confirmarEventosModal).
+    const p = _jugadorDelModal();
     if (p) {
         // ── E1: Goles SOLO a jugadores en el campo ──
         if (!_requireOnField(p, 'goles')) { closePlayerActionModal(); return; }
@@ -1070,9 +1202,9 @@ function changeGoals(amount) {
         if (amount > 0 && p.goals > prevGoals) {
             logEvent(p, `GOL (${p.goals}º)`); _registerMatchEvent('goal', 'GOL · ' + p.name, '⚽', undefined, _datosEquipoDe(p));
             
-            // 📊 SOLUCIÓN #7: Auditar gol
-            if (window.auditLogger && liveMatchId) {
-                window.auditLogger.logPlayerAction(
+            // 📊 SOLUCIÓN #7: Auditar gol (aparcado hasta HECHO)
+            {
+                _auditaAccion(
                     p.id,
                     p.name,
                     p.number,
@@ -1089,9 +1221,9 @@ function changeGoals(amount) {
             // al abrir: un +1 −1 dentro del modal no avisa de nada.
             _registerMatchEvent('goal_cancelled', 'GOL ANULADO · ' + p.name, '❌', undefined, _datosEquipoDe(p));
 
-            // 📊 SOLUCIÓN #7: Auditar gol anulado
-            if (window.auditLogger && liveMatchId) {
-                window.auditLogger.logPlayerAction(
+            // 📊 SOLUCIÓN #7: Auditar gol anulado (aparcado hasta HECHO)
+            {
+                _auditaAccion(
                     p.id,
                     p.name,
                     p.number,
@@ -1107,19 +1239,16 @@ function changeGoals(amount) {
         // Commit síncrono del evento crítico antes de sincronizar con Firestore.
         // Solo cuando el gol AUMENTA (amount > 0): los goles anulados no
         // necesitan registrarse como evento crítico de gol.
-        if (amount > 0 && typeof commitCriticalEvent === 'function') {
-            commitCriticalEvent('goal', { playerId: p.id, playerName: p.name, playerNumber: p.number, team: p.team, value: p.goals });
+        if (amount > 0) {
+            _criticoAccion('goal', { playerId: p.id, playerName: p.name, playerNumber: p.number, team: p.team, value: p.goals });
         }
         // v225: flush inmediato en goles (no esperar al throttle de 500ms)
         // para que el panel en vivo reciba el gol sin delay. Antes usábamos
         // liveSyncOnAction() que esperaba 2s (ahora 500ms) y el gol podía
         // llegar retrasado o perderse en race conditions.
         // v789 · y también al ANULAR: su aviso no puede llegar tarde.
-        if (amount !== 0 && p.goals !== prevGoals && typeof window.liveSyncFlushNow === 'function') {
-            window.liveSyncFlushNow();
-        } else {
-            liveSyncOnAction();
-        }
+        // 📝 v801 · con el modal abierto, aparcado: el envío es en HECHO.
+        _syncAccion(amount !== 0 && p.goals !== prevGoals);
     }
 }
 
@@ -1129,45 +1258,29 @@ function syncScoreFromPlayers(team) {
     document.getElementById(`score-${team}`).textContent = total + extra;
 }
 
+// ════════════════════════════════════════════════════════════════════
+//  🧹 v801 · LIMPIAR = DESCARTAR (decisión del autor, 2026-10-11)
+//
+//  Antes ponía a CERO goles, tarjetas y lesión del jugador en TODO el
+//  partido —también lo registrado antes de abrir la ventana— y, al cerrar
+//  con HECHO, lo transmitía como goles anulados.
+//
+//  Ahora deshace SÓLO lo que se tocó en ESTA ventana y la cierra SIN enviar
+//  ni guardar nada: el borrador se tira (la ficha real nunca lo vio) y con
+//  él los avisos, envíos, guardados y auditoría aparcados. Lo registrado
+//  antes de abrir se queda intacto.
+//
+//  ⚠️ Sin la comprobación del reloj parado que tenía: descartar no cambia
+//  nada del partido, así que se puede siempre.
+// ════════════════════════════════════════════════════════════════════
 function clearPlayerActions() {
     if (!activeActionPlayerId) return;
-    const p = players.find(x => x.id === activeActionPlayerId);
-    if (p) {
-        // 🔴 v716 · Tercera y última copia del bloqueo, con la pregunta única.
-        if (typeof window.cronosPartidoEnJuego === 'function'
-            ? !window.cronosPartidoEnJuego() : !isRunning) {
-            alert("⚠️ No se pueden modificar las acciones del jugador con el cronómetro del partido detenido. Debe iniciar o reanudar el partido.");
-            return;
-        }
-        const prevGoals = p.goals || 0;
-        const prevCards = p.cards;
-        const prevInjured = p.injured;
-        const prevYellow = p.yellowCards || 0;
-        
-        p.goals = 0; p.cards = 'ninguna'; p.injured = false; p.yellowCards = 0;
-        
-        // 📊 SOLUCIÓN #7: Auditar limpieza de acciones
-        if (window.auditLogger && liveMatchId) {
-            window.auditLogger.logPlayerAction(
-                p.id,
-                p.name,
-                p.number,
-                'actions_cleared',
-                'todas_las_acciones',
-                {
-                    goals: { before: prevGoals, after: 0 },
-                    cards: { before: prevCards, after: 'ninguna' },
-                    injured: { before: prevInjured, after: false },
-                    yellowCards: { before: prevYellow, after: 0 }
-                }
-            );
-        }
-        
-        document.getElementById('action-player-goals').textContent = `${p.goals} ⚽`;
-        syncScoreFromPlayers(p.team);
-        closePlayerActionModal();
-        renderPlayers();
-    }
+    _descartarEventosModal();
+    activeActionPlayerId = null;
+    const modal = document.getElementById('player-action-modal');
+    if (modal) modal.style.display = 'none';
+    renderPlayers();
+    if (typeof renderStaffInBench === 'function') renderStaffInBench();
 }
 
 function editNameFromModal() {

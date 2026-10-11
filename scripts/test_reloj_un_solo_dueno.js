@@ -322,14 +322,20 @@ console.log('\n── PARTE 4 · [D] la deriva no tira del reloj hacia atrás �
         const tresSitios = [
             ['changeScore (marcador)',            trozo(MOVLOG, 'function changeScore(team, delta)')],
             ['changeGoals (ficha del jugador)',   trozo(ACTION, 'function changeGoals(amount)')],
-            ['clearPlayerActions',                trozo(ACTION, 'function clearPlayerActions()')],
         ];
+        // 🧹 v801 · LIMPIAR pasó a ser DESCARTAR (decisión del autor
+        // 2026-10-11): deshace sólo lo de la ventana y no cambia nada del
+        // partido, así que ya no pregunta por el reloj. Quedan DOS bloqueos.
+        const _limpiar = trozo(ACTION, 'function clearPlayerActions()') || '';
+        ok('5d0 · 🧹 v801 · LIMPIAR descarta (sin bloqueo de reloj) y no transmite',
+           /_descartarEventosModal\(\)/.test(_limpiar) && !/cronosPartidoEnJuego/.test(_limpiar) &&
+           !/liveSync|commitCriticalEvent|_confirmarEventosModal/.test(_limpiar));
         let usan = 0; const sinUsar = [];
         tresSitios.forEach(([nombre, src]) => {
             if (src && /cronosPartidoEnJuego\(\)/.test(src)) usan++; else sinUsar.push(nombre);
         });
-        ok('5d · 🔑🔑 [E] los TRES bloqueos preguntan por la misma puerta',
-           usan === 3, 'sin usarla: ' + sinUsar.join(', '));
+        ok('5d · 🔑🔑 [E] los bloqueos (marcador y ficha) preguntan por la misma puerta',
+           usan === 2, 'sin usarla: ' + sinUsar.join(', '));
         ok('5e · ⚠️ y el aviso sigue existiendo (el bloqueo es correcto: lo que ' +
            'fallaba era la respuesta)',
            /cronómetro del partido detenido/.test(MOVLOG) &&
