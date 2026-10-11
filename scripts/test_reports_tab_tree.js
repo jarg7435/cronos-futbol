@@ -115,6 +115,19 @@ function buildSandbox({ reports = {}, users = {}, me = { uid: 'u1', clubId: 'clu
 }
 
 const marcado = (h) => String(h).replace(/<style>[\s\S]*?<\/style>/g, '');
+
+// ⚡ v800 · LAS RAMAS SON PEREZOSAS (category-tree.js, `lazyBody`): el cuerpo
+// de cada subcategoría se construye al ABRIRLA. Para comprobar lo que el
+// usuario ve al desplegar, se «abren» todas como haría ctToggleNode: se
+// rellena cada cuerpo vacío con su constructor registrado. Se guarda el
+// marcado inicial en t.inicial para vigilar que de verdad nace vacío.
+function abreTodo(t) {
+    const h = String(t.container.innerHTML || '');
+    t.inicial = h;
+    const reg = (t.w && t.w._ctLazy) || {};
+    t.container.innerHTML = h.replace(/(<div class="ct-tree-sub") data-ct-lazy="([^"]+)"(>[\s\S]*?<div class="ct-tree-body">)(<\/div>)/g,
+        (m, x, lid, y, z) => x + y + (typeof reg[lid] === 'function' ? reg[lid]() : '') + z);
+}
 const cuenta = (h, re) => (String(h).match(re) || []).length;
 
 // Un documento de informe de staff, uno por jugador y partido.
@@ -142,7 +155,9 @@ console.log('── PARTE 1 · 🔑 tabla arriba, informes abajo ──');
         m1_p7:  R({ playerNumber: '7',  playerAlias: 'Martín', goals: 2, minutesPlayed: '90:00' }),
         m1_p10: R({ playerNumber: '10', playerAlias: 'Lucas',  goals: 1, minutesPlayed: '60:00' }),
     } });
-    await t.g._sdLoadReports();
+    await t.g._sdLoadReports(); abreTodo(t);
+    ok('1z · ⚡ v800 · las ramas nacen PEREZOSAS: ni tablas ni fichas hasta abrirlas',
+       /data-ct-lazy="/.test(t.inicial) && !/class="ct-stats"/.test(marcado(t.inicial)) && !/class="sd-report-card"/.test(t.inicial));
     const h = t.container.innerHTML;
 
     ok('1a · pinta el árbol', /ct-tree-cat/.test(h));
@@ -177,7 +192,7 @@ console.log('\n── PARTE 2 · 🔑 acumula TODOS los partidos de la rama ─�
         b_p7: R({ rival: 'Dos', matchDate: '2026-03-08', createdAt: '2026-03-08T10:00:00Z',
                   goals: 3, minutesPlayed: '45:00', injured: true }),
     } });
-    await t.g._sdLoadReports();
+    await t.g._sdLoadReports(); abreTodo(t);
     const h = t.container.innerHTML;
 
     // Fila del jugador 7: PJ=2, Min=135, Goles=5, Amarillas=1, Rojas=0, Lesiones=1
@@ -203,7 +218,7 @@ console.log('\n── PARTE 3 · 🔑 no se mezclan los equipos ──');
                    rival: 'Otro', matchDate: '2026-03-09', createdAt: '2026-03-09T10:00:00Z',
                    playerNumber: '9', playerAlias: 'Sergio', goals: 7 }),
     } });
-    await t.g._sdLoadReports();
+    await t.g._sdLoadReports(); abreTodo(t);
     const h = t.container.innerHTML;
 
     ok('3a · dos ramas con datos → dos tablas resumen',
@@ -242,7 +257,7 @@ console.log('\n── PARTE 4 · _sdMatchData y el respaldo por autor ──');
         h_p7: R({ subcategory: '', coachUid: 'c_ana', rival: 'Viejo',
                   matchDate: '2026-02-01', createdAt: '2026-02-01T10:00:00Z' }),
     } });
-    await t.g._sdLoadReports();
+    await t.g._sdLoadReports(); abreTodo(t);
     const h = t.container.innerHTML;
     const md = Object.keys(t.w._sdMatchData || {});
 
@@ -258,7 +273,7 @@ console.log('\n── PARTE 4 · _sdMatchData y el respaldo por autor ──');
     const t2 = buildSandbox({ users: USERS, reports: {
         x_p7: R({ category: '', subcategory: '', coachUid: 'c_desconocido' }),
     } });
-    await t2.g._sdLoadReports();
+    await t2.g._sdLoadReports(); abreTodo(t2);
     ok('4f · 🔑 lo no clasificable va a "Sin clasificar", NO se pierde',
        /ct-tree-none/.test(marcado(t2.container.innerHTML)) &&
        /class="sd-report-card"/.test(t2.container.innerHTML));
@@ -278,7 +293,7 @@ console.log('\n── PARTE 5 · respaldo si el módulo no cargó ──');
         m1_p7: R({ playerAlias: 'Martín' }),
         m2_p7: R({ rival: 'Dos', matchDate: '2026-03-08', createdAt: '2026-03-08T10:00:00Z' }),
     } });
-    await t.g._sdLoadReports();
+    await t.g._sdLoadReports(); abreTodo(t);
     const h = t.container.innerHTML;
 
     // 🔑 Entorno EXACTO de test_reports_tab_module.js: si esto se rompe, aquel
@@ -367,7 +382,7 @@ console.log('\n── PARTE 7 · 🔑 deduplicación de jugadores por partido �
     };
 
     const t = buildSandbox({ users: USERS, reports: dupes });
-    await t.g._sdLoadReports();
+    await t.g._sdLoadReports(); abreTodo(t);
     const h = t.container.innerHTML;
 
     // ⚠️ Se extrae del BADGE concreto, no de un "\d+ jugadores" suelto: la
@@ -408,7 +423,7 @@ console.log('\n── PARTE 7 · 🔑 deduplicación de jugadores por partido �
         b_staff_p7: R({ rival: 'Dos', matchDate: '2026-03-08', createdAt: '2026-03-08T10:00:00Z',
                         goals: 1, minutesPlayed: '90:00' }),
     } });
-    await dosPartidos.g._sdLoadReports();
+    await dosPartidos.g._sdLoadReports(); abreTodo(dosPartidos);
     const hd = dosPartidos.container.innerHTML;
     const td = ((hd.match(/Total equipo<\/td>((?:<td[^>]*>[^<]*<\/td>){7})/) || [])[1] || '')
         .replace(/<td[^>]*>/g, ' ').replace(/<\/td>/g, ' ').trim().replace(/\s+/g, ',');
@@ -428,14 +443,14 @@ console.log('\n── PARTE 7 · 🔑 deduplicación de jugadores por partido �
         x2: R({ playerNumber: '', playerAlias: 'Nico' }),
         x3: R({ playerNumber: '', playerAlias: 'Iván' }),   // duplicado real
     } });
-    await sinDorsal.g._sdLoadReports();
+    await sinDorsal.g._sdLoadReports(); abreTodo(sinDorsal);
     ok('7h · 🔑 sin dorsal se deduplica por alias, sin colapsar a jugadores distintos',
        badge(sinDorsal.container.innerHTML) === '2', badge(sinDorsal.container.innerHTML));
 
     // 🔑 El arreglo va en la agregación, así que tiene que valer TAMBIÉN en el
     // camino plano (sin el módulo cargado).
     const plano = buildSandbox({ withModule: false, users: USERS, reports: dupes });
-    await plano.g._sdLoadReports();
+    await plano.g._sdLoadReports(); abreTodo(plano);
     ok('7i · 🔑 también deduplica en la lista plana, sin el módulo',
        badge(plano.container.innerHTML) === '2', badge(plano.container.innerHTML));
 

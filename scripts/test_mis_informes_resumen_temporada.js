@@ -110,7 +110,8 @@ function baseDocs() {
 function firestoreFalso(docs) {
     return {
         collection: () => ({ __col: 'cronos_player_reports' }),
-        where: (f, o, v) => ({ __t: 'where', f, v }),
+        // ⚡ v800 · con el operador: la pantalla pide por equipo con `in`.
+        where: (f, o, v) => ({ __t: 'where', f, o, v }),
         limit: (n) => ({ __t: 'limit', n }),
         orderBy: (f, dir) => ({ __t: 'orderBy', f, dir: dir || 'asc' }),
         query: (col, ...partes) => ({ partes }),
@@ -118,7 +119,9 @@ function firestoreFalso(docs) {
             const w = q.partes.filter(p => p.__t === 'where');
             const ord = q.partes.find(p => p.__t === 'orderBy');
             const lim = q.partes.find(p => p.__t === 'limit');
-            let r = docs.filter(d => w.every(x => d.data[x.f] === x.v));
+            let r = docs.filter(d => w.every(x => x.o === 'in'
+                ? (Array.isArray(x.v) && x.v.indexOf(d.data[x.f]) !== -1)
+                : d.data[x.f] === x.v));
             r = r.slice().sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
             if (ord && String(ord.dir).toLowerCase() === 'desc') r.reverse();
             if (lim) r = r.slice(0, lim.n);
@@ -155,6 +158,10 @@ function nuevaCaja({ conModulos = true } = {}) {
         cronosTeamIdOfDoc: (d, clubPorDefecto) => d && (d.teamId ||
             ((d.clubId || clubPorDefecto) && d.category
                 ? (d.clubId || clubPorDefecto) + '__' + d.category + '__' + (d.subcategory || '') : '')),
+        // ⚡ v800 · los equipos de sus PLAZAS (mismo contrato que utils.js).
+        cronosEquiposDeEntrenador: (allRoles) => (Array.isArray(allRoles) ? allRoles : [])
+            .filter(r => r && r.role === 'user' && r.category)
+            .map(r => ({ clubId: r.clubId, category: r.category, subcategory: r.subcategory || '' })),
         cronosDocEsDeEquipo: (d, equipos) => {
             const propio = (d && d.teamId) || '';
             return propio ? equipos.indexOf(propio) !== -1 : false;
@@ -272,21 +279,32 @@ console.log('\n── PARTE 3 · el CSV dice lo mismo que la pantalla ──');
 // ═══ PARTE 4 · el acumulado es DE SU EQUIPO ═══
 console.log('\n── PARTE 4 · no se mezclan equipos ──');
 {
-    // Un partido suyo pero de OTRA categoría: aparece en el listado (lo firmó
-    // él) pero NO puede contaminar el acumulado de su equipo.
+    // Un partido suyo de su OTRO equipo (tiene las dos plazas): aparece en el
+    // listado pero NO puede contaminar el acumulado del equipo abierto.
+    // ⚡ v800 · «Mis Informes» pide los equipos de SUS PLAZAS: el segundo
+    // equipo tiene que estar en `allRoles` (antes salía cualquier cosa que
+    // él hubiera firmado, fuera o no su equipo).
     const docs = baseDocs().concat(
         partido('2026-08-02', 'CD Ajeno', '1x0', [{ n: 77, alias: 'Intruso', min: '90:00', goles: 5 }],
                 { category: 'f11_cadete', subcategory: 'B', teamId: CLUB + '__f11_cadete__B' })
         .map((d, i) => ({ id: d.matchId + '_coach_p' + d.playerNumber + '_z' + i, data: d }))
     );
-    const r = await abrir(docs, ME);
+    const ME2 = Object.assign({}, ME, { allRoles: [
+        { role: 'user', clubId: CLUB, category: CAT, subcategory: SUB, isAuthorized: true, status: 'active' },
+        { role: 'user', clubId: CLUB, category: 'f11_cadete', subcategory: 'B', isAuthorized: true, status: 'active' },
+    ] });
+    const r = await abrir(docs, ME2);
     const posTabla = r.cuerpo.indexOf('Resumen acumulado de la temporada');
     const posLista = r.cuerpo.indexOf('informes de jugadores');
     const tablaSola = r.cuerpo.slice(posTabla, posLista);
     ok('4a · 🔑 el jugador del otro equipo NO entra en el acumulado',
        !/Intruso/.test(tablaSola), tablaSola.slice(0, 200));
-    ok('4b · ⚠️ pero el partido SÍ sigue listado (lo firmó él)',
+    ok('4b · ⚠️ pero el partido de su OTRO equipo SÍ sigue listado',
        /CD Ajeno/.test(r.cuerpo.slice(posLista)));
+    // ⚡ v800 · Y lo que firmó para un equipo que NO es suyo ya no se baja.
+    const r3 = await abrir(docs, ME);
+    ok('4c · ⚡ v800 · un equipo que no es de sus plazas no se descarga ni se lista',
+       !/CD Ajeno/.test(r3.cuerpo) && /informes de jugadores/.test(r3.cuerpo));
 }
 
 // ═══ PARTE 5 · contraprueba de robustez ═══

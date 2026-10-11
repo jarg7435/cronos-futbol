@@ -1,3 +1,15 @@
+
+// ⚡ v800 · LAS RAMAS DEL ÁRBOL DE INFORMES SON PEREZOSAS (category-tree.js,
+// lazyBody): cada subcategoría se construye al ABRIRLA. Para medir lo que se
+// ve al desplegar, se «abren» todas igual que ctToggleNode: cada cuerpo vacío
+// se rellena con su constructor registrado.
+function abreTodo(t) {
+    const h = String(t.container.innerHTML || '');
+    t.inicial = h;
+    const reg = (t.w && t.w._ctLazy) || {};
+    t.container.innerHTML = h.replace(/(<div class="ct-tree-sub") data-ct-lazy="([^"]+)"(>[\s\S]*?<div class="ct-tree-body">)(<\/div>)/g,
+        (m, x, lid, y, z) => x + y + (typeof reg[lid] === 'function' ? reg[lid]() : '') + z);
+}
 // ─────────────────────────────────────────────────────────────────────────
 // test_reports_export.js · DESCARGA en PDF y CSV desde la pestaña "Informes"
 // del Panel de Dirección (encargo del autor, 2026-08-08).
@@ -755,7 +767,7 @@ console.log('\n── PARTE 7 · 🔑 de dónde salen los datos al pulsar ──
                     matchDate: '2026-03-09', createdAt: '2026-03-09T10:00:00Z',
                     playerNumber: '9', playerAlias: 'Sergio', goals: 7 }),
     } });
-    await t.g._sdLoadReports();
+    await t.g._sdLoadReports(); abreTodo(t);
     const h = t.container.innerHTML;
 
     ok('7a · el árbol pinta una barra de descarga por equipo y la global',
@@ -820,7 +832,7 @@ console.log('\n── PARTE 7 · 🔑 de dónde salen los datos al pulsar ──
     // 🔑 Sin el módulo de exportación cargado, ni un solo botón: uno que no
     // puede hacer nada es peor que no tenerlo.
     const t = tabSandbox({ users: USERS, withExport: false, reports: { al_p7: R() } });
-    await t.g._sdLoadReports();
+    await t.g._sdLoadReports(); abreTodo(t);
     const h = t.container.innerHTML;
     ok('7m · 🔑 sin el módulo de exportación NO se pinta ningún botón',
         !/sdExportInforme/.test(h) && !/sdExportResumen/.test(h) && /sd-report-card/.test(h));
@@ -829,7 +841,7 @@ console.log('\n── PARTE 7 · 🔑 de dónde salen los datos al pulsar ──
     // La lista plana no tiene tabla resumen en pantalla, así que tampoco se
     // ofrece descargarla; los informes grupales sí se pueden bajar.
     const t = tabSandbox({ withModule: false, users: USERS, reports: { al_p7: R() } });
-    await t.g._sdLoadReports();
+    await t.g._sdLoadReports(); abreTodo(t);
     const h = t.container.innerHTML;
     ok('7n · en la lista plana no se ofrece el resumen (no existe en pantalla)',
         !/sdExportResumen/.test(h) && /sdExportInforme/.test(h));

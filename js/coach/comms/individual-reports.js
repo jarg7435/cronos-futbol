@@ -222,21 +222,149 @@ window.openMisInformes = async function openMisInformes() {
             }
         };
 
-        // Consulta principal: el equipo (o, sin equipo asignado, lo suyo).
-        const consultas = [ puedeFiltrarPorEquipo
-            ? where('clubId', '==', me.clubId)
-            : where('coachUid', '==', me.uid) ];
-
-        // ⚠️ Y SIEMPRE lo que él firmó, con el clubId que lleve cada informe:
-        // la consulta por club sólo alcanza los que llevan el clubId ACTUAL.
-        if (puedeFiltrarPorEquipo) {
-            consultas.push(where('coachUid', '==', me.uid));
-        }
+        // ══════════════════════════════════════════════════════════════
+        //  ⚡ v800 · SÓLO LO DE MIS EQUIPOS, EN PARALELO
+        // ══════════════════════════════════════════════════════════════
+        //  Encargo del autor (implementar.txt 2026-10-11): que los informes
+        //  carguen en menos de un segundo en iPad y móvil.
+        //
+        //  📏 MEDIDO EN PRODUCCIÓN (CD DÍA, sólo lectura): la consulta por club
+        //  bajaba las copias del entrenador de TODO EL CLUB —2.050 documentos,
+        //  8,9 MB, 129 partidos, en 5 páginas EN SERIE— para enseñar después
+        //  sólo las de su equipo (29-178 documentos). En un iPad con datos
+        //  móviles eso son varios segundos de red y de procesado.
+        //
+        //  🔑 Ahora se piden SÓLO los equipos del entrenador, por su sello
+        //  `teamId`, y las consultas van A LA VEZ. Dos detalles medidos:
+        //    · el sello guardado no tiene una sola forma: hay `…__juvenil__b`,
+        //      `…__f11-juvenil__b` (con la modalidad, antiguo) y `…__regional__`
+        //      (sin subcategoría, v711). Se piden las variantes, y el filtro de
+        //      siempre (más abajo) decide cuáles son de verdad de su equipo.
+        //    · 1.295 documentos NO llevan sello: son todos de junio-agosto, de
+        //      antes de que existiera. Se buscan por su categoría cruda, y esa
+        //      búsqueda va EN SEGUNDO PLANO (`_miLegado`): no bloquea la
+        //      pantalla, y si para este equipo no hay nada se recuerda en el
+        //      aparato y no se vuelve a pedir.
+        //  Sin índices nuevos: igualdades + un `in` (comprobado contra
+        //  producción por REST antes de escribir esto).
+        //
+        //  ⚠️ CAMBIA UNA COSA A PROPÓSITO: lo que el entrenador firmó para
+        //  equipos que NO son suyos (una cuenta que probó varios equipos) ya no
+        //  sale aquí. «Mis Informes» son los de sus equipos (la misma regla de
+        //  aislamiento que «Recuperar» desde v794). Lo suyo sin equipo
+        //  resoluble sigue saliendo siempre (v507).
+        //
+        //  ⚠️ SI ALGO FALLA, se vuelve a la lectura completa de antes: más
+        //  lenta, mismo resultado. Nunca «Sin informes» por un atajo.
+        const _miEquipos = (() => {
+            const ids = new Set();
+            const cats = [];
+            const anade = (clubId, cat, sub) => {
+                if (typeof window.cronosTeamId !== 'function' || !cat) return;
+                const t = window.cronosTeamId(clubId || me.clubId || '', cat, sub || '');
+                if (!t || ids.has(t)) return;
+                ids.add(t);
+                cats.push({ teamId: t, partes: t.split('__') });
+            };
+            anade(me.clubId, me.category || me.categoryLabel, me.subcategory);
+            try {
+                if (typeof window.cronosEquiposDeEntrenador === 'function') {
+                    (window.cronosEquiposDeEntrenador(me.allRoles, me.clubId) || [])
+                        .forEach(e => anade(e.clubId, e.category, e.subcategory));
+                }
+            } catch (e) { /* con el equipo activo basta */ }
+            return cats;
+        })();
+        const _MI_ACENTOS = { prebenjamin: 'prebenjamín', benjamin: 'benjamín', alevin: 'alevín' };
+        const _miVariantesSello = () => {
+            const o = new Set();
+            _miEquipos.forEach(e => {
+                const [c, cat, sub] = e.partes;
+                [cat, 'f7-' + cat, 'f11-' + cat].forEach(x => { o.add(c + '__' + x + '__' + (sub || '')); o.add(c + '__' + x + '__'); });
+            });
+            return [...o].slice(0, 30);
+        };
+        const _miVariantesCategoria = () => {
+            const o = new Set(['']);
+            _miEquipos.forEach(e => {
+                const cat = e.partes[1] || '';
+                const bases = [cat, cat.replace(/-/g, '_'), cat.replace(/-/g, ' ')];
+                if (_MI_ACENTOS[cat]) bases.push(_MI_ACENTOS[cat]);
+                bases.forEach(b => ['', 'f7_', 'f11_'].forEach(p => o.add(p + b)));
+            });
+            return [...o].slice(0, 30);
+        };
+        const _miClaveLegado = 'cronos_mi_legado_v800::' + _miEquipos.map(e => e.teamId).sort().join('|');
+        const _miLegadoVacio = (() => { try { return localStorage.getItem(_miClaveLegado) === '0'; } catch (e) { return false; } })();
 
         const porId = new Map();
-        for (const c of consultas) {
-            const docs = await leerSoloEntrenador(c);
-            docs.forEach(d => { if (!porId.has(d.id)) porId.set(d.id, d); });
+        const _miMete = (docs) => docs.forEach(d => { if (!porId.has(d.id)) porId.set(d.id, d); });
+        let _miRapido = false;
+        if (puedeFiltrarPorEquipo && _miEquipos.length) {
+            try {
+                const sellos = _miVariantesSello();
+                const leer = (...f) => getDocs(query(COL(), ...f)).then(s => { const a = []; s.forEach(d => a.push(d)); return a; });
+                const [delEquipo, firmadoPorMi] = await Promise.all([
+                    leer(where('clubId', '==', me.clubId), where('_forCoach', '==', true), where('teamId', 'in', sellos)),
+                    // Lo que él firmó para sus equipos con OTRO clubId (cambio de club).
+                    leer(where('coachUid', '==', me.uid), where('_forCoach', '==', true), where('teamId', 'in', sellos)),
+                ]);
+                _miMete(delEquipo);
+                _miMete(firmadoPorMi);
+                // El histórico SIN sello, desde la caché del aparato si ya se pidió.
+                const cacheLegado = (window._miLegadoCache || {})[_miClaveLegado];
+                if (cacheLegado) _miMete(cacheLegado);
+                _miRapido = true;
+            } catch (e) {
+                console.warn('[MisInformes] consulta por equipo falló, lectura completa:', e && (e.code || e.message));
+                porId.clear();
+            }
+        }
+        if (!_miRapido) {
+            // ── La lectura de siempre (sin equipo asignado, o si lo rápido falla) ──
+            const consultas = [ puedeFiltrarPorEquipo
+                ? where('clubId', '==', me.clubId)
+                : where('coachUid', '==', me.uid) ];
+            // ⚠️ Y SIEMPRE lo que él firmó, con el clubId que lleve cada informe:
+            // la consulta por club sólo alcanza los que llevan el clubId ACTUAL.
+            if (puedeFiltrarPorEquipo) consultas.push(where('coachUid', '==', me.uid));
+            const lotes = await Promise.all(consultas.map(c => leerSoloEntrenador(c)));
+            lotes.forEach(_miMete);
+        }
+
+        // ── El histórico SIN sello, en segundo plano (ver arriba) ─────────
+        //  Sólo si va por el camino rápido, si no está ya en la caché de esta
+        //  sesión y si en este aparato no se comprobó ya que no hay nada.
+        //  Si trae partidos nuevos para su equipo, se repinta la pantalla con
+        //  ellos (desde la caché, sin volver a pedir nada).
+        if (_miRapido && !(window._miLegadoCache || {})[_miClaveLegado] && !_miLegadoVacio) {
+            const yaEstan = new Set(porId.keys());
+            // Sin `setTimeout`: una promesa resuelta corre DESPUÉS de que esta
+            // función termine de pintar, igual de diferida y sin depender del temporizador.
+            Promise.resolve().then(async () => {
+                try {
+                    const s = await getDocs(query(COL(), where('clubId', '==', me.clubId),
+                        where('_forCoach', '==', true), where('category', 'in', _miVariantesCategoria())));
+                    const sinSello = [];
+                    s.forEach(d => { const x = d.data() || {}; if (!x.teamId) sinSello.push(d); });
+                    // ¿Alguno es de verdad de sus equipos (o suyo)? Mismo criterio que el filtro.
+                    const sirven = sinSello.filter(d => {
+                        const x = d.data() || {};
+                        if (x.coachUid && x.coachUid === me.uid) return true;
+                        return typeof window.cronosDocEsDeEquipo === 'function' &&
+                               window.cronosDocEsDeEquipo(x, [equipoAsignado], me.clubId);
+                    });
+                    window._miLegadoCache = window._miLegadoCache || {};
+                    window._miLegadoCache[_miClaveLegado] = sirven;
+                    if (!sirven.length) { try { localStorage.setItem(_miClaveLegado, '0'); } catch (e) {} return; }
+                    const nuevos = sirven.some(d => !yaEstan.has(d.id));
+                    // Repintar sólo si sigue abierta ESTA pantalla.
+                    if (nuevos && document.getElementById('mis-informes-body') &&
+                        typeof window.openMisInformes === 'function') window.openMisInformes();
+                } catch (e) {
+                    console.warn('[MisInformes] histórico sin sello no disponible:', e && (e.code || e.message));
+                }
+            });
         }
         const rawSnap = { forEach: (fn) => porId.forEach(d => fn(d)) };
 

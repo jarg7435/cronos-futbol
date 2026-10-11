@@ -1245,6 +1245,123 @@
         { id: 'cambio',   etiqueta: '🔄 Cambio' },
     ];
 
+    // ════════════════════════════════════════════════════════════════
+    //  📈 v800 · LOS EXTRAS DEL DIRECTO, TAMBIÉN A MANO
+    // ════════════════════════════════════════════════════════════════
+    //  Encargo del autor (implementar.txt 2026-10-11, capturas 11300-11301):
+    //  el desplegable de sucesos tiene que ofrecer TODO lo que dan los extras
+    //  en directo —pérdidas, recuperaciones y las métricas de estadísticas
+    //  avanzadas— «respetando estrictamente las mismas condiciones y
+    //  restricciones que en el partido en directo».
+    //
+    //  🔑 LAS PUERTAS NO SE COPIAN: SE LLAMAN. Son las mismas funciones que
+    //  usa el directo (possession-tracker.js / advanced-stats.js), con la
+    //  categoría DEL EQUIPO del informe en vez de la del partido en curso:
+    //    · R/P → extra `registro_pr` (ausente = activo, como los demás) y
+    //      `cronosCategoriaConRegistroPR` (de Cadete hacia arriba), más
+    //      `cronosPRPermitidoEnCategoria` (la que vigila lo que se GUARDA, v761).
+    //    · Estadísticas avanzadas → `cronosSAvExtraActivo` (ausente = APAGADO)
+    //      y `cronosSAvCategoriaCaptura` (Juvenil, Regional, Nacional).
+    //  Sin la función cargada, la puerta se CIERRA: no se ofrece lo que no se
+    //  puede comprobar.
+    //
+    //  🔑 Y EL DATO SALE CON LOS MISMOS AGREGADORES (`cronosPRDelPartido`,
+    //  `cronosSAvDelPartido`, con lista explícita), así que el informe manual
+    //  lleva `matchPR` / `matchStats` con la forma EXACTA del directo y lo leen
+    //  sin cambios el informe colectivo, el acumulado y el desglose por jugador.
+    //
+    //  ⚠️ El jugador es OPCIONAL en estos sucesos, igual que en directo: una
+    //  pérdida o un córner pueden quedar «del equipo» sin asignar.
+    var _MR_SAV_ICONO = { corners: '🚩', faltas: '🦶', centros: '🎯', ocasiones: '💥' };
+
+    function _mrCategoria() {
+        var S = window._mrState;
+        return (S && S.equipo && S.equipo.category) || '';
+    }
+    function _mrPRActivo() {
+        var cat = _mrCategoria();
+        if (typeof window._cronosExtraEnabled === 'function' && !window._cronosExtraEnabled('registro_pr')) return false;
+        if (typeof window.cronosCategoriaConRegistroPR !== 'function' ||
+            !window.cronosCategoriaConRegistroPR(cat)) return false;
+        if (typeof window.cronosPRPermitidoEnCategoria === 'function' &&
+            !window.cronosPRPermitidoEnCategoria(cat)) return false;
+        return typeof window.cronosPRDelPartido === 'function';
+    }
+    function _mrSAvActivo() {
+        if (typeof window.cronosSAvExtraActivo !== 'function' || !window.cronosSAvExtraActivo()) return false;
+        if (typeof window.cronosSAvCategoriaCaptura !== 'function' ||
+            !window.cronosSAvCategoriaCaptura(_mrCategoria())) return false;
+        return typeof window.cronosSAvDelPartido === 'function';
+    }
+    // Los tipos de estadística, uno por métrica y sentido, desde el catálogo
+    // único (CRONOS_SAV_METRICAS): una métrica nueva aparece aquí sola.
+    function _mrTiposSAv() {
+        var out = [];
+        (window.CRONOS_SAV_METRICAS || []).forEach(function (m) {
+            var ico = _MR_SAV_ICONO[m.id] || '📈';
+            if (m.total) out.push({ id: 'sav_' + m.id, etiqueta: ico + ' ' + m.nombre, metrica: m.id, tipo: null });
+            else {
+                out.push({ id: 'sav_' + m.id + '_favor',  etiqueta: ico + ' ' + m.nombre + ' · ' + m.fav, metrica: m.id, tipo: 'favor' });
+                out.push({ id: 'sav_' + m.id + '_contra', etiqueta: ico + ' ' + m.nombre + ' · ' + m.con, metrica: m.id, tipo: 'contra' });
+            }
+        });
+        return out;
+    }
+    function _mrTiposDisponibles() {
+        var t = _MR_TIPOS.slice();
+        if (_mrPRActivo()) {
+            t.push({ id: 'perdida',      etiqueta: '🔻 Pérdida' });
+            t.push({ id: 'recuperacion', etiqueta: '🔺 Recuperación' });
+        }
+        if (_mrSAvActivo()) t = t.concat(_mrTiposSAv());
+        return t;
+    }
+    function _mrEsExtra(tipo) {
+        return tipo === 'perdida' || tipo === 'recuperacion' || /^sav_/.test(String(tipo || ''));
+    }
+
+    // El minuto, con la forma del directo («1T 12:00»).
+    function _mrTiempoDirecto(S, minuto) {
+        var dur = Math.max(1, _mrNum(S.duracion, 60));
+        var min = Math.min(dur, Math.max(0, _mrNum(minuto, 0)));
+        return (min <= dur / 2 ? '1T ' : '2T ') + String(min).padStart(2, '0') + ':00';
+    }
+    function _mrNombreDe(S, dorsal) {
+        var j = S.jugadores.filter(function (x) { return x.dorsal === String(dorsal); })[0];
+        return j ? (j.alias || j.nombre || '') : '';
+    }
+    // `matchPR` del informe, o null si no aplica o no hay nada.
+    function _mrMatchPR(S) {
+        if (!_mrPRActivo()) return null;
+        var items = [];
+        S.sucesos.forEach(function (s, i) {
+            if (s.tipo !== 'perdida' && s.tipo !== 'recuperacion') return;
+            items.push({ kind: s.tipo === 'perdida' ? 'loss' : 'recovery',
+                         playerId: s.dorsal ? 'd' + s.dorsal : null, number: s.dorsal || '',
+                         name: s.dorsal ? _mrNombreDe(S, s.dorsal) : '',
+                         matchTime: _mrTiempoDirecto(S, s.minuto),
+                         createdAt: _mrNum(s.minuto, 0) * 1000 + i });
+        });
+        return items.length ? window.cronosPRDelPartido(items) : null;
+    }
+    // `matchStats` del informe, o null si no aplica o no hay nada.
+    function _mrMatchStats(S) {
+        if (!_mrSAvActivo()) return null;
+        var porId = {};
+        _mrTiposSAv().forEach(function (t) { porId[t.id] = t; });
+        var items = [];
+        S.sucesos.forEach(function (s, i) {
+            var t = porId[s.tipo];
+            if (!t) return;
+            items.push({ metrica: t.metrica, tipo: t.tipo,
+                         playerId: s.dorsal ? 'd' + s.dorsal : null, number: s.dorsal || '',
+                         name: s.dorsal ? _mrNombreDe(S, s.dorsal) : '',
+                         matchTime: _mrTiempoDirecto(S, s.minuto),
+                         createdAt: _mrNum(s.minuto, 0) * 1000 + i });
+        });
+        return items.length ? window.cronosSAvDelPartido(items) : null;
+    }
+
     function _mrConvocados() {
         var S = window._mrState;
         return S.jugadores.filter(function (j) { return S.conv[j.dorsal]; });
@@ -1302,7 +1419,9 @@
         return (lista && lista.length) ? lista : conv;
     }
 
-    function _mrSelectJugador(valor, accion, lista) {
+    // 📈 v800 · `vacio`: el rótulo de la opción sin jugador. En pérdidas,
+    // recuperaciones y estadísticas es una opción VÁLIDA («del equipo»).
+    function _mrSelectJugador(valor, accion, lista, vacio) {
         var jugadores = lista || _mrConvocados();
         //  🔑 EL VALOR YA ELEGIDO SIEMPRE ESTÁ EN SU LISTA. Si el entrenador
         //  desmarca «De inicio» a alguien que ya figuraba en un cambio, su
@@ -1313,7 +1432,7 @@
             var suelto = _mrConvocados().filter(function (j) { return j.dorsal === String(valor); });
             jugadores = suelto.concat(jugadores);
         }
-        var opts = '<option value="">— jugador —</option>' + jugadores.map(function (j) {
+        var opts = '<option value="">' + (vacio || '— jugador —') + '</option>' + jugadores.map(function (j) {
             return '<option value="' + _mrE(j.dorsal) + '"' + (String(valor) === j.dorsal ? ' selected' : '') +
                    '>#' + _mrE(j.dorsal) + ' ' + _mrE(j.alias) + '</option>';
         }).join('');
@@ -1351,7 +1470,7 @@
         //     ordenan por minuto por su cuenta. El informe sale igual de bien
         //     con las filas del formulario en el orden que sea.
         var filas = S.sucesos.map(function (s) {
-            var tipos = _MR_TIPOS.map(function (t) {
+            var tipos = _mrTiposDisponibles().map(function (t) {
                 return '<option value="' + t.id + '"' + (s.tipo === t.id ? ' selected' : '') + '>' +
                        t.etiqueta + '</option>';
             }).join('');
@@ -1387,7 +1506,8 @@
                               _mrSelectJugador(s.dorsalEntra, "_mrSuceso('" + s.id + "','dorsalEntra',this.value)",
                                                _mrListaOTodos(L.banquillo, L.conv));
                       })()
-                    : _mrSelectJugador(s.dorsal, "_mrSuceso('" + s.id + "','dorsal',this.value)")) +
+                    : _mrSelectJugador(s.dorsal, "_mrSuceso('" + s.id + "','dorsal',this.value)", null,
+                                       _mrEsExtra(s.tipo) ? '— del equipo (sin jugador) —' : null)) +
                 "<button onclick=\"_mrQuitarSuceso('" + s.id + "')\" title=\"Quitar\" style=\"" +
                     'background:rgba(255,88,88,0.1);border:1px solid rgba(255,88,88,0.3);color:#ff5858;' +
                     'border-radius:7px;padding:0.25rem 0.5rem;cursor:pointer;font-size:0.72rem;' +
@@ -1582,6 +1702,8 @@
                         : '. Corrige el marcador o quita los goles que sobren.'));
         }
         S.sucesos.forEach(function (s, i) {
+            // 📈 v800 · R/P y estadísticas pueden quedar «del equipo», como en directo.
+            if (_mrEsExtra(s.tipo)) return;
             if (!s.dorsal) out.push('El suceso ' + (i + 1) + ' no tiene jugador.');
             else if (s.tipo === 'cambio' && !s.dorsalEntra)
                 out.push('El cambio del minuto ' + _mrNum(s.minuto, 0) + " ' no dice quién entra.");
@@ -1738,6 +1860,13 @@
             }
             var historial = _mrHistorialPorDorsal(S);
             var resumen   = _mrResumenPorDorsal(S);
+            // 📈 v800 · Los extras, con los agregadores del directo. Viajan
+            // como en directo: `matchPR`/`matchStats` sólo en las copias del
+            // CUERPO TÉCNICO (staff y entrenador); a la familia, sólo lo de su
+            // hijo (`prPropio`, en _mrGuardarParaFamilias).
+            var matchPR    = _mrMatchPR(S);
+            var matchStats = _mrMatchStats(S);
+            S._mrPR = matchPR;
             var ahora     = new Date().toISOString();
             var teamId = (typeof window.cronosTeamId === 'function')
                 ? window.cronosTeamId(clubId, S.equipo.category, S.equipo.subcategory) : (S.equipo.teamId || '');
@@ -1834,6 +1963,8 @@
                         type: 'collective_match_report',
                         staffReport: true,          // ← el filtro exclusivo del Panel de Dirección
                         staffUids: staffUids,
+                        matchPR: matchPR,
+                        matchStats: matchStats,
                     }));
 
                 // ── 2) La copia del ENTRENADOR («Mis Informes») ──────
@@ -1844,6 +1975,8 @@
                         type: 'collective_match_report',
                         staffReport: false,
                         _forCoach: true,
+                        matchPR: matchPR,
+                        matchStats: matchStats,
                     }));
             }
 
@@ -1953,6 +2086,11 @@
                             type: 'parent_player_report',
                             parentUid: t.parentUid,
                             staffReport: false,
+                            // 📈 v800 · Lo de SU hijo, no el desglose del equipo
+                            // (misma política que el directo, v705).
+                            prPropio: (window._mrState && window._mrState._mrPR &&
+                                       typeof window.cronosPRDeJugador === 'function')
+                                ? window.cronosPRDeJugador(window._mrState._mrPR, j.dorsal) : null,
                         }));
                     enviados++;
 
@@ -2118,6 +2256,11 @@
         aplicarDelCalendario: _mrAplicarDelCalendario,
         preseleccion: _mrPreseleccion,
         congruencia: _mrCongruencia,
+        // 📈 v800 · Los extras del directo a mano: qué tipos se ofrecen según
+        // extras y categoría, y lo que se guarda en matchPR / matchStats.
+        tiposDisponibles: _mrTiposDisponibles,
+        matchPR: _mrMatchPR,
+        matchStats: _mrMatchStats,
         modalidad: _mrModalidad,
         convocados: _mrConvocados,
         matchId: _mrMatchId,

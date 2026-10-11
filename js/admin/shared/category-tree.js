@@ -876,10 +876,29 @@
         '.ct-tree-none .ct-tree-title{color:#f0883e;}' +
         '</style>';
 
+    // ⚡ v800 · contador de ramas perezosas (ids únicos en la página).
+    var _ctLazySeq = 0;
+
     // Lo llaman los onclick del HTML generado, que se evalúan en ámbito global.
     window.ctToggleNode = function (el) {
         var node = el && el.closest ? el.closest('.ct-tree-cat, .ct-tree-sub') : null;
-        if (node) node.classList.toggle('ct-tree-open');
+        if (!node) return;
+        node.classList.toggle('ct-tree-open');
+        // ⚡ v800 · Rama perezosa (`opts.lazyBody`): su cuerpo se construye la
+        // PRIMERA vez que se abre, y ya se queda pintado.
+        var lid = node.getAttribute ? node.getAttribute('data-ct-lazy') : null;
+        if (lid && node.classList.contains('ct-tree-open')) {
+            var fn = (window._ctLazy || {})[lid];
+            var cuerpo = null;
+            for (var i = 0; node.children && i < node.children.length; i++) {
+                if (node.children[i].classList && node.children[i].classList.contains('ct-tree-body')) { cuerpo = node.children[i]; break; }
+            }
+            if (fn && cuerpo) {
+                cuerpo.innerHTML = fn();
+                delete window._ctLazy[lid];
+                node.removeAttribute('data-ct-lazy');
+            }
+        }
     };
 
     // opts = { items, getCat, getSub, renderLeaf(item)->html, emptyText, hideEmpty,
@@ -912,6 +931,11 @@
         var renderCatBadge = typeof opts.renderCatBadge === 'function' ? opts.renderCatBadge : null;
         var emptyText  = opts.emptyText || 'Sin elementos en esta subcategoría.';
         var groups = window.ctGroupByCatSub(opts.items, opts.getCat, opts.getSub);
+        // ⚡ v800 · ramas perezosas (ver `construye`, más abajo). Cada árbol
+        // perezoso empieza con el registro limpio: las ramas del anterior ya
+        // no existen en la pantalla.
+        var lazy = opts.lazyBody === true;
+        if (lazy) window._ctLazy = {};
 
         // ══════════════════════════════════════════════════════════════
         //  🎯 v593 · opts.modalidad — el árbol de UNA modalidad
@@ -956,14 +980,35 @@
                 // colaboraciones y el trabajo de esos chavales no se veía en
                 // ningún sitio. Por defecto va APAGADO y el marcado sale
                 // idéntico al de siempre.
-                var cabecera = (renderSubHeader && (arr.length || opts.alwaysSubHeader))
-                    ? (renderSubHeader(arr, catDef.id, subId) || '') : '';
-                var body = arr.length
-                    ? (cabecera + arr.map(renderLeaf).join(''))
-                    : (cabecera + '<div class="ct-tree-empty">' + _eH(emptyText) + '</div>');
+                var construye = function () {
+                    var cabecera = (renderSubHeader && (arr.length || opts.alwaysSubHeader))
+                        ? (renderSubHeader(arr, catDef.id, subId) || '') : '';
+                    return arr.length
+                        ? (cabecera + arr.map(renderLeaf).join(''))
+                        : (cabecera + '<div class="ct-tree-empty">' + _eH(emptyText) + '</div>');
+                };
+                // ⚡ v800 · opts.lazyBody — EL CUERPO SE CONSTRUYE AL ABRIR.
+                // Todas las ramas nacen plegadas, pero se construía TODO su
+                // contenido: en Informes, la tabla de temporada, la plantilla
+                // y las fichas de cada una de las ~60 subcategorías del
+                // catálogo, miles de nodos que nadie veía. Con la opción, la
+                // rama guarda cómo construirse (`window._ctLazy`) y
+                // `ctToggleNode` la pinta la primera vez que se abre.
+                // ⚠️ APAGADA POR DEFECTO y entonces el marcado es BYTE A BYTE el
+                // de siempre (lo comparten cinco pestañas y sus guards).
+                var lazyAttr = '';
+                var body;
+                if (lazy) {
+                    var lid = 'ctl' + (++_ctLazySeq);
+                    window._ctLazy[lid] = construye;
+                    lazyAttr = ' data-ct-lazy="' + lid + '"';
+                    body = '';
+                } else {
+                    body = construye();
+                }
                 var badge = renderSubBadge ? (renderSubBadge(arr, catDef.id, subId) || '') : '';
                 return '' +
-                '<div class="ct-tree-sub">' +
+                '<div class="ct-tree-sub"' + lazyAttr + '>' +
                     '<div class="ct-tree-head" onclick="ctToggleNode(this)">' +
                         '<div class="ct-tree-title"><span class="ct-tree-chevron">&#9654;</span>' +
                             '<span>Subcategoría ' + _eH(subId) + '</span></div>' +

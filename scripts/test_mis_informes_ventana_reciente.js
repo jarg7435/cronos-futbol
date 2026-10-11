@@ -123,11 +123,13 @@ function corpus({ viejos = 3600, deOtros = false } = {}) {
 
 // Firestore de mentira que se comporta como el de verdad: filtra por las
 // igualdades, ORDENA (por id ascendente si NO se pide orden) y recorta.
-function firestoreFalso(docs, { paginar = false, fallaForCoach = false } = {}) {
+// ⚡ v800 · `fallaIn`: el Firestore de mentira rechaza el `in` (fuerza la
+// lectura completa de respaldo, que es la que pagina).
+function firestoreFalso(docs, { paginar = false, fallaForCoach = false, fallaIn = false } = {}) {
     const consultas = [];
     const api = {
             collection: () => ({ __col: 'cronos_player_reports' }),
-            where: (f, o, v) => ({ __t: 'where', f, v }),
+            where: (f, o, v) => ({ __t: 'where', f, o, v }),
             limit: (n) => ({ __t: 'limit', n }),
             orderBy: (f, dir) => ({ __t: 'orderBy', f, dir: dir || 'asc' }),
             query: (col, ...partes) => ({ __col: col.__col, partes }),
@@ -136,6 +138,10 @@ function firestoreFalso(docs, { paginar = false, fallaForCoach = false } = {}) {
                 const ord    = q.partes.find(p => p.__t === 'orderBy');
                 const lim    = q.partes.find(p => p.__t === 'limit');
                 const sa     = q.partes.find(p => p.__t === 'startAfter');
+                if (fallaIn && wheres.some(w => w.o === 'in')) {
+                    consultas.push({ campos: wheres.map(w => w.f).join('+'), fallo: true, in: true });
+                    throw new Error('failed-precondition');
+                }
                 if (fallaForCoach && wheres.some(w => w.f === '_forCoach')) {
                     consultas.push({ campos: wheres.map(w => w.f).join('+'), fallo: true });
                     throw new Error('failed-precondition');
@@ -144,8 +150,11 @@ function firestoreFalso(docs, { paginar = false, fallaForCoach = false } = {}) {
                     campos: wheres.map(w => w.f).join('+'),
                     orden: ord ? ord.f + ' ' + ord.dir : '(SIN ORDEN)',
                     limite: lim ? lim.n : null,
+                    in: wheres.some(w => w.o === 'in'),
                 });
-                let r = docs.filter(d => wheres.every(w => d.data[w.f] === w.v));
+                let r = docs.filter(d => wheres.every(w => w.o === 'in'
+                    ? (Array.isArray(w.v) && w.v.indexOf(d.data[w.f]) !== -1)
+                    : d.data[w.f] === w.v));
                 // Firestore ordena por __name__ ASC cuando no se pide nada.
                 const desc = ord && String(ord.dir).toLowerCase() === 'desc';
                 r = r.slice().sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
@@ -233,8 +242,10 @@ console.log('── PARTE 1 · 3620 informes en el club, el de hoy el último �
        traeElDeHoy(r.cuerpo), r.cuerpo.slice(0, 220));
     ok('1b · y NO se queda en el estado vacío NI revienta',
        salioBien(r.cuerpo), r.cuerpo.slice(0, 220));
-    ok('1c · 🔑 la consulta pide los MÁS NUEVOS primero, no una ventana ciega',
-       r.consultas.length > 0 && r.consultas.every(c => c.orden !== '(SIN ORDEN)'),
+    // ⚡ v800 · «Ventana ciega» = un `limit` SIN orden. El camino rápido pide
+    // lo de SU EQUIPO entero, sin `limit`: no hay ventana que se quede corta.
+    ok('1c · 🔑 ninguna consulta es una ventana ciega (limit sin orden)',
+       r.consultas.length > 0 && r.consultas.every(c => c.orden !== '(SIN ORDEN)' || c.limite == null),
        JSON.stringify(r.consultas));
 }
 
@@ -303,11 +314,18 @@ console.log('\n── PARTE 4 · v785 · se pagina hasta agotar ──');
     const r = await abrirMisInformes(heredado(), me, { paginar: true });
     ok('4a · 🔑🔑 aparecen los 60 partidos heredados del equipo (antes: los que cupieran en 500)',
        todos(r.cuerpo) === 60 && salioBien(r.cuerpo), 'vistos: ' + todos(r.cuerpo));
-    ok('4b · 🔑 se pide sólo la copia del entrenador (_forCoach) y se pagina con startAfter',
-       r.consultas.every(c => c.campos.includes('_forCoach')) && r.consultas.length >= 3,
+    ok('4b · ⚡ v800 · se pide sólo la copia del entrenador (_forCoach), por EQUIPO y sin tope',
+       r.consultas.every(c => c.campos.includes('_forCoach')) &&
+       r.consultas.some(c => c.in && c.campos.indexOf('teamId') !== -1 && c.limite == null),
        JSON.stringify(r.consultas));
+    // Y la lectura completa de respaldo (si el `in` falla) sigue paginando.
+    const rR = await abrirMisInformes(heredado(), me, { paginar: true, fallaIn: true });
+    ok('4b2 · 🔑 si la consulta por equipo falla, la lectura completa pagina con startAfter y salen los 60',
+       todos(rR.cuerpo) === 60 && salioBien(rR.cuerpo) &&
+       rR.consultas.filter(c => !c.fallo && !c.in).length >= 3,
+       JSON.stringify(rR.consultas).slice(0, 300));
 
-    const r2 = await abrirMisInformes(heredado(), me, { paginar: true, fallaForCoach: true });
+    const r2 = await abrirMisInformes(heredado(), me, { paginar: true, fallaForCoach: true, fallaIn: true });
     ok('4c · ⚠️ si la consulta con _forCoach falla, repite SIN el filtro y lo enseña todo igual',
        todos(r2.cuerpo) === 60 && salioBien(r2.cuerpo)
        && r2.consultas.some(c => c.fallo) && r2.consultas.some(c => !c.fallo && !c.campos.includes('_forCoach')),

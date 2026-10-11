@@ -155,22 +155,11 @@ async function _sdLoadReports() {
         // 3. Recopilar TODOS los clubIds de todos esos usuarios (incluidos los de allRoles)
         // 4. Consultar informes por cada clubId encontrado
         const _allClubIds = new Set([clubId]);
-
-        // Paso 1: Leer allRoles del propio director
-        try {
-            const myDoc = await getDoc(doc(db, 'users', me.uid));
-            if (myDoc.exists()) {
-                const myData = myDoc.data();
-                // ClubId raíz
-                if (myData.clubId) _allClubIds.add(myData.clubId);
-                // ClubIds de allRoles
-                if (myData.allRoles && Array.isArray(myData.allRoles)) {
-                    myData.allRoles.forEach(r => {
-                        if (r.clubId) _allClubIds.add(r.clubId);
-                    });
-                }
-            }
-        } catch(_) {}
+        const _sumaRoles = (data) => {
+            if (!data) return;
+            if (data.clubId) _allClubIds.add(data.clubId);
+            if (Array.isArray(data.allRoles)) data.allRoles.forEach(r => { if (r && r.clubId) _allClubIds.add(r.clubId); });
+        };
 
         // Documentos de usuario que ya se leen aquí abajo. Antes se usaban SÓLO
         // para recopilar clubIds y se tiraban; ahora alimentan también el índice
@@ -178,9 +167,38 @@ async function _sdLoadReports() {
         // nueva para eso.
         const _sdUserDocs = [];
 
-        // Paso 2: Para cada clubId, buscar usuarios y recopilar SUS clubIds
-        const _initialClubIds = [..._allClubIds];
-        for (const cid of _initialClubIds) {
+        // ══════════════════════════════════════════════════════════════
+        //  ⚡ v800 · LAS LECTURAS VAN A LA VEZ, NO EN FILA
+        //
+        //  Encargo del autor (implementar.txt 2026-10-11): el panel tiene que
+        //  abrir en menos de un segundo en iPad y móvil.
+        //
+        //  📏 MEDIDO (CD DÍA, sólo lectura): los datos ya eran pocos —85
+        //  informes de dirección, 3 usuarios—, pero se pedían UNO DETRÁS DE
+        //  OTRO: mi documento → los usuarios del club → la búsqueda por correo
+        //  → los informes. Cuatro viajes de red encadenados (~1,5 s desde un
+        //  PC con fibra; bastante más con datos móviles).
+        //
+        //  🔑 Ninguna de las cuatro necesita el resultado de otra para el club
+        //  PROPIO, así que salen en paralelo. Lo único encadenado es lo que de
+        //  verdad depende: los clubIds ALTERNATIVOS (v179) que descubran esas
+        //  lecturas, que se piden después — y en un club sano no hay ninguno.
+        //  Los pasos 1-4 de v179 se conservan enteros; sólo cambia el orden.
+        // ══════════════════════════════════════════════════════════════
+
+        // Paso 1: Leer allRoles del propio director
+        const _leeMiDoc = async () => {
+            try {
+                const myDoc = await getDoc(doc(db, 'users', me.uid));
+                if (myDoc.exists()) _sumaRoles(myDoc.data());
+            } catch(_) {}
+        };
+
+        // Paso 2: Para un clubId, buscar usuarios y recopilar SUS clubIds
+        const _usuariosLeidos = new Set();
+        const _leeUsuarios = async (cid) => {
+            if (_usuariosLeidos.has(cid)) return;
+            _usuariosLeidos.add(cid);
             try {
                 const usersSnap = await getDocs(query(
                     collection(db, 'users'),
@@ -190,58 +208,43 @@ async function _sdLoadReports() {
                 usersSnap.forEach(d => {
                     const data = d.data();
                     _sdUserDocs.push({ id: d.id, ...data });
-                    if (data.clubId) _allClubIds.add(data.clubId);
-                    if (data.allRoles && Array.isArray(data.allRoles)) {
-                        data.allRoles.forEach(r => {
-                            if (r.clubId) _allClubIds.add(r.clubId);
-                        });
-                    }
+                    _sumaRoles(data);
                 });
             } catch(e) {
                 if(window._CRONOS_DEBUG) if(window._CRONOS_DEBUG) console.warn('[StaffDashboard][DIAG] No se pudieron buscar usuarios con clubId', cid, ':', e.code || e.message);
             }
-        }
+        };
 
         // Paso 3 (FIX v179): Buscar por email del propio director para encontrar
         // otros documentos de usuario con el mismo email (caso multi-rol donde
-        // el mismo email tiene clubIds diferentes). Esto cubre el caso donde
-        // el director y entrenador comparten email pero tienen clubIds distintos.
-        try {
-            if (me.email) {
-                const emailSnap = await getDocs(query(
-                    collection(db, 'users'),
-                    where('email', '==', me.email),
-                    limit(10)
-                ));
-                emailSnap.forEach(d => {
-                    const data = d.data();
-                    if (data.clubId) _allClubIds.add(data.clubId);
-                    if (data.allRoles && Array.isArray(data.allRoles)) {
-                        data.allRoles.forEach(r => {
-                            if (r.clubId) _allClubIds.add(r.clubId);
-                        });
-                    }
-                });
+        // el mismo email tiene clubIds diferentes).
+        const _leePorEmail = async () => {
+            try {
+                if (me.email) {
+                    const emailSnap = await getDocs(query(
+                        collection(db, 'users'),
+                        where('email', '==', me.email),
+                        limit(10)
+                    ));
+                    emailSnap.forEach(d => _sumaRoles(d.data()));
+                }
+            } catch(e) {
+                if(window._CRONOS_DEBUG) console.warn('[StaffDashboard][DIAG] Búsqueda por email falló:', e.code || e.message);
             }
-        } catch(e) {
-            if(window._CRONOS_DEBUG) console.warn('[StaffDashboard][DIAG] Búsqueda por email falló:', e.code || e.message);
-        }
+        };
 
-
-        // FIX (v179): Consultar por TODOS los clubIds encontrados
+        // Paso 4 (FIX v179): los informes de dirección de UN clubId.
         const combinedDocs = [];
         const seenIds = new Set();
         let _clubQueryOk = false;
-
-        for (const cid of _allClubIds) {
+        const _informesLeidos = new Set();
+        const _leeInformesClub = async (cid) => {
+            if (_informesLeidos.has(cid)) return;
+            _informesLeidos.add(cid);
             // FIX (limit-500): el club puede tener MILES de docs (informes de
-            // staff + coach + padres de muchos partidos). La query antigua
-            //   where(clubId==cid).limit(500)
-            // traía 500 docs SIN orden, que se llenaban con _coach_pN / _parent_*
-            // y partidos antiguos; tras el filtro cliente staffReport===true al
-            // director le quedaban muy pocos (o 1) partido visible. Ahora la query
-            // PRIMARIA filtra ya por staffReport==true y ordena por createdAt desc,
-            // así el limit se gasta SOLO en docs útiles del panel de staff.
+            // staff + coach + padres de muchos partidos). La query PRIMARIA
+            // filtra ya por staffReport==true y ordena por createdAt desc, así
+            // el limit se gasta SOLO en docs útiles del panel de staff.
             // Requiere el índice compuesto (clubId, staffReport, createdAt desc).
             // Si el índice aún no está desplegado (failed-precondition), se hace
             // fallback a la query antigua sin orderBy para no romper nada.
@@ -325,6 +328,24 @@ async function _sdLoadReports() {
                     }
                 }
             }
+        };
+
+        // ⚡ Las plantillas publicadas (para la tabla de temporada) también
+        // salen YA: antes se pedían al final, después de todo lo demás. Se
+        // recogen al pintar el árbol; si fallan, la tabla sale como siempre.
+        const _sdPlantillasP = (typeof window.cronosFetchAllTeamRosters === 'function')
+            ? Promise.resolve().then(() => window.cronosFetchAllTeamRosters(clubId)).catch(() => ({}))
+            : Promise.resolve({});
+
+        // ⚡ Primera tanda, a la vez: todo lo del club PROPIO.
+        await Promise.all([_leeMiDoc(), _leeUsuarios(clubId), _leePorEmail(), _leeInformesClub(clubId)]);
+        // Segunda tanda: los clubIds alternativos que hayan aparecido (v179).
+        // Los usuarios, de los que salieron de MI documento (el paso 2 de
+        // siempre); los informes, de TODOS los descubiertos.
+        const _alternativos = [..._allClubIds].filter(c => c !== clubId);
+        if (_alternativos.length) {
+            await Promise.all(_alternativos.map(c => _leeUsuarios(c)));
+            await Promise.all([..._allClubIds].map(c => _leeInformesClub(c)));
         }
 
         let rawSnap = { forEach: (fn) => combinedDocs.forEach(fn) };
@@ -916,10 +937,9 @@ async function _sdLoadReports() {
             // Si la lectura falla o el equipo no la ha publicado, la tabla sale
             // como siempre — sólo con quien tiene informes.
             let _sdPlantillas = {};
-            if (typeof window.cronosFetchAllTeamRosters === 'function') {
-                try { _sdPlantillas = await window.cronosFetchAllTeamRosters(clubId) || {}; }
-                catch (_) { _sdPlantillas = {}; }
-            }
+            // ⚡ v800 · la lectura se lanzó al principio, en paralelo.
+            try { _sdPlantillas = (await _sdPlantillasP) || {}; }
+            catch (_) { _sdPlantillas = {}; }
 
             // Descarga global: TODOS los equipos del club en un solo documento.
             // Sólo en el camino del árbol — en la lista plana no hay tabla de
@@ -995,7 +1015,13 @@ async function _sdLoadReports() {
                             ? window.cronosSAvRenderTemporada(arr.map(x => x.m), _filas, { categoria: catId })
                             : '');
                 },
-                renderLeaf: (x) => _sdReportCard(x.m),
+                // ⚡ v800 · Con las ramas perezosas una ficha se pinta al ABRIR
+                // su rama, quizá después de ocultar o purgar ese partido desde
+                // otra: si ya no está en el mapa, no se pinta.
+                renderLeaf: (x) => (window._sdMatchData && window._sdMatchData[_sdKey64(x.m)]) ? _sdReportCard(x.m) : '',
+                // ⚡ v800 · Ramas PEREZOSAS: cada subcategoría construye su
+                // tabla de temporada y sus fichas al abrirla (category-tree.js).
+                lazyBody: true,
                 // v593 · El árbol del coordinador es el de SU modalidad.
                 modalidad:  (typeof window._cronosCoordScope === 'function')
                                 ? window._cronosCoordScope(me) : '',
