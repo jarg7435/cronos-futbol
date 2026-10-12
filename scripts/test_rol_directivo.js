@@ -123,10 +123,10 @@ ok('1z · tarjeta de cada ENTE: su barra, contando sólo plazas `directivo` del 
 }
 
 // El panel, EJECUTADO.
-function cajaPanel(me, extraOn) {
+function cajaPanel(me, extraOn, videosOn) {
     const els = {};
     const mk = (id) => ({ id, style: {}, innerHTML: '', set cssText(v) { this._css = v; } });
-    const abiertas = [], toasts = [];
+    const abiertas = [], toasts = [], listas = [];
     const sb = {
         console, Promise, Object, Array, String,
         document: {
@@ -139,28 +139,39 @@ function cajaPanel(me, extraOn) {
         showToast: (m) => toasts.push(m),
         open: (u, t) => abiertas.push([u, t]),
         CRONOS_ROL_EXTRA_MOTIVO: { partidos_en_vivo: 'Partidos en Vivo no está contratado en el plan de tu club.' },
+        // 🎬 v812 · el módulo de vídeos, con su puerta (el extra) y su lista.
+        CronosClips: { activo: () => !!videosOn, abrirLista: () => listas.push(1) },
+        setInterval, clearInterval,
     };
     sb.window = sb;
     vm.createContext(sb);
     vm.runInContext(leer('js/directivo/panel.js'), sb);
-    return { sb, els, abiertas, toasts };
+    return { sb, els, abiertas, toasts, listas };
 }
 (async () => {
-    const yo = { uid: 'd1', email: 'dir@x.es', role: 'directivo', clubId: 'clubA', clubName: 'CD Prueba' };
-    let c = cajaPanel(yo, true);
+    const yo = { uid: 'd1', email: 'dir@x.es', role: 'directivo', clubId: 'clubA', clubName: 'CD Prueba', extras: {} };
+    let c = cajaPanel(yo, true, true);
     await c.sb.openDirectivoPanel();
     const html = (c.els['directivo-panel'] || {}).innerHTML || '';
-    ok('1u · 🔑 el panel tiene UNA sola tarjeta: Partidos en Vivo', /Partidos en Vivo/.test(html) &&
-       (html.match(/<button type="button" id="dv-/g) || []).length === 1 && !/Informes|Mensajes|Convocatoria/.test(html), html.slice(0, 300));
+    // 🎬 v812 · DOS tarjetas: Partidos en Vivo y Vídeos (encargo del autor).
+    ok('1u · 🔑 el panel tiene DOS tarjetas: Partidos en Vivo y Vídeos, y nada más', /Partidos en Vivo/.test(html) && />Vídeos</.test(html) &&
+       (html.match(/<button type="button" id="dv-/g) || []).length === 2 && !/Informes|Mensajes|Convocatoria/.test(html), html.slice(0, 300));
+    c.sb.cronosDirectivoVideos();
+    ok('1u2 · 🎬 con el extra de vídeos, la tarjeta abre la lista de clips', c.listas.length === 1 && c.toasts.length === 0);
     c.sb.cronosDirectivoEnVivo();
     ok('1v · y abre el visor de siempre (live.html), en otra pestaña', c.abiertas.length === 1 && c.abiertas[0][0] === './live.html');
-    c = cajaPanel(yo, false);
+    c = cajaPanel(yo, false, false);
     await c.sb.openDirectivoPanel();
     c.sb.cronosDirectivoEnVivo();
     ok('1w · 🔑 sin el extra: tarjeta con candado y motivo, y NO abre nada',
        /🔒/.test(c.els['directivo-panel'].innerHTML) && /no está contratado/.test(c.els['directivo-panel'].innerHTML) &&
        c.abiertas.length === 0 && c.toasts.length === 1);
-    c = cajaPanel({ uid: 'p1', role: 'parent', clubId: 'clubA' }, true);
+    c.sb.cronosDirectivoVideos();
+    const _dvV = (c.els['directivo-panel'].innerHTML.split('id="dv-videos"')[1] || '');
+    ok('1w2 · 🎬 sin el extra de vídeos: candado, el aviso de Dirección y NO abre la lista',
+       /🔒/.test(_dvV) && /Extra no activado para tu club\. Habla con el administrador\./.test(_dvV) &&
+       c.listas.length === 0 && c.toasts.length === 2);
+    c = cajaPanel({ uid: 'p1', role: 'parent', clubId: 'clubA' }, true, true);
     await c.sb.openDirectivoPanel();
     ok('1x · ⚠️ otro rol no entra a este panel', !c.els['directivo-panel'] && /restringido/.test(c.toasts[0] || ''));
 

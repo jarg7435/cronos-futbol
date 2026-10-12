@@ -78,6 +78,11 @@
             || ROLES_DIRECCION.indexOf(me.role || '') >= 0;
     }
     function esFamilia(me) { return ROLES_FAMILIA.indexOf(_rol(me)) >= 0; }
+    // 🏢 v812 · El Directivo / Empleado VE los clips como el cuerpo técnico
+    // (todas las categorías, también las de menores: decisión del autor),
+    // pero no los sube ni los borra. Por eso no entra en ROLES_STAFF, que es
+    // también la lista de quien sube.
+    function esDirectivo(me) { return _rol(me) === 'directivo'; }
 
     // La categoría, con la MISMA forma que mira firestore.rules (slug sin
     // modalidad: 'regional', 'regional-fem', 'nacional', 'f7-alevin' → 'alevin').
@@ -226,7 +231,7 @@
         if (!clubId) return [];
         const fs = await import(FS_URL);
         const filtros = [fs.where('clubId', '==', clubId)];
-        if (!esStaff(me)) {
+        if (!esStaff(me) && !esDirectivo(me)) {   // v812 · el directivo, como el staff
             if (!esFamilia(me)) return [];
             filtros.push(fs.where('audiencia', '==', 'familias'));
         }
@@ -497,7 +502,7 @@
 
     window.CronosClips = {
         EXTRA, MAX_BYTES, MAX_SEG, VIDA_MS,
-        activo, esStaff, esFamilia, esAdultos, categoriaSlug,
+        activo, esStaff, esFamilia, esDirectivo, esAdultos, categoriaSlug,
         compruebaFichero, tipoVideo, subir, listar, borrar, puedeBorrar, abrirLista, cerrarLista, ver, cerrarVisor,
         _sesion: () => _sesion,
     };

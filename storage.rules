@@ -50,6 +50,12 @@ service firebase.storage {
           ['user', 'coach', 'director', 'coordinator', 'club_admin',
            'individual', 'admin_individual', 'individual_admin', 'entrenador_individual'];
       }
+      // 🏢 v812 · El Directivo / Empleado descarga (= reproduce) como el cuerpo
+      // técnico, pero no sube ni borra. Mismo documento de usuario: no añade
+      // ninguna consulta (sigue el límite de 2 documentos por petición).
+      function esDirectivo() {
+        return delClub() && usuario().get('role', '') == 'directivo';
+      }
       function esFamilia() {
         return delClub() && usuario().get('role', '') in
           ['parent', 'padre_individual', 'parent_individual'];
@@ -66,7 +72,7 @@ service firebase.storage {
       allow read: if request.auth != null
         && request.time < resource.timeCreated + duration.value(24, 'h')
         && !firestore.exists(/databases/(default)/documents/cronos_clips/$(clipId)/vistas/$(request.auth.uid))
-        && (esStaff()
+        && (esStaff() || esDirectivo()
             || (resource.metadata.get('audiencia', '') == 'familias' && esFamilia()));
 
       allow create: if request.auth != null

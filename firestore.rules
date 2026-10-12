@@ -2102,9 +2102,13 @@ service cloud.firestore {
                     .get('modulo_videos', false) == true;
       }
 
+      // 🏢 v812 · El Directivo / Empleado VE los clips como el cuerpo técnico
+      // (todas las categorías, también menores: decisión del autor), pero
+      // NO sube (create exige clStaff) ni borra (delete: autor o Dirección).
       allow get, list: if isAuth() && (
         isSuperAdmin() ||
         clStaff(resource.data.get('clubId', null)) ||
+        esDirectivoDe(resource.data.get('clubId', null)) ||
         (resource.data.get('audiencia', '') == 'familias' && clFamilia(resource.data.get('clubId', null)))
       );
       allow create: if isAuth()

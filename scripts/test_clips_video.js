@@ -230,6 +230,16 @@ async function lote(tk, nombre, fichero, casos, mocksDe) {
           existing: { data: FICHA() }, req: { auth: A('otro'), path: P, method: 'delete' } },
         { n: '2v · ⚠️ ni una familia', exp: 'DENY', user: U('parent'),
           existing: { data: FICHA({ audiencia: 'familias', categoria: 'regional' }) }, req: { auth: A('fam'), path: P, method: 'delete' } },
+        // 🏢 v812 · El Directivo / Empleado VE como el cuerpo técnico (también
+        // menores: decisión del autor), pero no sube ni borra.
+        rd('2w · 🔑 el directivo VE un clip de MENORES (sólo cuerpo técnico) de su club', 'ALLOW', 'dv', U('directivo'), FICHA()),
+        rd('2x · ⚠️ pero no el de otro club', 'DENY', 'dv', U('directivo', 'clubB'), FICHA()),
+        rd('2y · ⚠️ ni sin estar aprobado', 'DENY', 'dv', U('directivo', 'clubA', { isAuthorized: false }), FICHA()),
+        cr('2z · 🔑🔑 el directivo NO sube clips', 'DENY', 'dv', U('directivo'), FICHA({ uploaderUid: 'dv', expiresAt: iso(AHORA + 20 * H) })),
+        { n: '2za · 🔑🔑 ni los borra', exp: 'DENY', user: U('directivo'),
+          existing: { data: FICHA() }, req: { auth: A('dv'), path: P, method: 'delete' } },
+        { n: '2zb · y apunta SU vista (vista única)', exp: 'ALLOW', user: U('directivo'),
+          req: { auth: A('dv'), path: `${P}/vistas/dv`, method: 'create', resource: { data: { uid: 'dv', at: iso(AHORA), completo: false, expiresAt: iso(AHORA + 25 * H) } } } },
     ], fsMocks);
 
     // ── PARTE 3 · storage.rules ──────────────────────────────────────
@@ -282,6 +292,12 @@ async function lote(tk, nombre, fichero, casos, mocksDe) {
         borra('3t · ⚠️ otro entrenador NO', 'DENY', 'otro', U('user')),
         borra('3u · ⚠️ ni un Director de otro club', 'DENY', 'dir', U('director', 'clubB')),
         borra('3v · ⚠️ ni una familia', 'DENY', 'fam', U('parent')),
+        // 🏢 v812 · El Directivo / Empleado reproduce como el cuerpo técnico.
+        lee('3w · 🔑 el directivo reproduce un clip de MENORES de su club', 'ALLOW', 'dv', U('directivo'), OBJ(), false),
+        lee('3x · 🔑🔑 VISTA ÚNICA también para él', 'DENY', 'dv', U('directivo'), OBJ(), true),
+        lee('3y · ⚠️ ni el de otro club', 'DENY', 'dv', U('directivo', 'clubB'), OBJ(), false),
+        sube('3z · 🔑🔑 el directivo NO sube', 'DENY', 'dv', U('directivo')),
+        borra('3za · 🔑🔑 ni borra', 'DENY', 'dv', U('directivo')),
     ], stMocks);
 
     fin();
