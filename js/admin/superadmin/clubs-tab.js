@@ -283,9 +283,12 @@ window.saClubs = async function saClubs() {
             };
             const slotBar = (role, icon, label, color) => {
                 const used = countByRole(role);
+                // 🏢 v811 · cupo propio del Directivo / Empleado; 10 si el club
+                //    aún no lo tiene guardado (mismo valor que el panel del club).
                 const max  = c.slots?.[role === 'director' ? 'directors'
                            : role === 'coordinator' ? 'coordinators'
-                           : role === 'user' ? 'users' : 'parents'] ?? '∞';
+                           : role === 'user' ? 'users'
+                           : role === 'directivo' ? 'directivos' : 'parents'] ?? (role === 'directivo' ? 10 : '∞');
                 const pct  = max !== '∞' && max > 0 ? Math.round((used/max)*100) : 0;
                 const full = max !== '∞' && used >= max;
                 return `<div style="display:flex;align-items:center;gap:0.5rem;padding:0.3rem 0.9rem;border-bottom:1px solid rgba(255,255,255,0.03);">
@@ -347,6 +350,7 @@ window.saClubs = async function saClubs() {
                     ${slotBar('coordinator', '🎯', 'Coordinadores',           '#d2a8ff')}
                     ${slotBar('user',        '⚙️', 'Entrenadores',            '#58a6ff')}
                     ${slotBar('parent',      '👨‍👩‍👧', 'Familiares / Jugadores','#79c0ff')}
+                    ${slotBar('directivo',   '🏢', 'Directivos / Empleados',  '#ff5858')}
                 </div>
                 <!-- Detalle usuarios (colapsable) -->
                 <details>

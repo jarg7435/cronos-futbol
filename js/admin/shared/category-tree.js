@@ -185,6 +185,7 @@
         const catHasAny  = new Set();
         const subHasAny  = new Set();
         const unassigned = [];          // entrenadores/padres sin categoría válida
+        const directivos = [];          // 🏢 v811 · Directivos / Empleados (modo 'individual')
 
         // Pase previo: qué pares (persona, rol) YA tienen equipo válido.
         const _conEquipo = new Set();   // 'uid|rol'
@@ -205,6 +206,17 @@
             const r = u._activeRoleData || {};
             const role = r.role || u.role;
 
+            // 🏢 v811 · El Directivo / Empleado no lleva equipo: en un club sale
+            //    en el Staff (igual que en el panel del administrador); en un
+            //    ente, en su propio bloque. Antes no salía en NINGÚN sitio.
+            if (role === 'directivo') {
+                const kDv = _idPersona(u) + '|directivo';
+                if (_yaPintada.has(kDv)) return;
+                _yaPintada.add(kDv);
+                if (mode === 'club') staff.push({ u, role, coordType: '' });
+                else directivos.push(u);
+                return;
+            }
             if (mode === 'club') {
                 if (role === 'director') { staff.push({ u, role, coordType: '' }); return; }
                 if (role === 'coordinator') {
@@ -247,7 +259,7 @@
             catHasAny.add(cat);
             subHasAny.add(cat + '|' + sub);
         });
-        return { staff, byCatSub, catHasAny, subHasAny, unassigned };
+        return { staff, byCatSub, catHasAny, subHasAny, unassigned, directivos };
     }
 
     // ════════════════════════════════════════════════════════════════════
@@ -567,10 +579,24 @@
             '</div>';
     }
 
+    // ── 🏢 v811 · Directivos / Empleados de un ENTE (en un club van al Staff) ──
+    function _directivosBlockHtml(lista) {
+        if (!lista || !lista.length) return '';
+        return '' +
+            '<div style="margin-bottom:0.6rem; border:1px solid rgba(255,88,88,0.25); border-radius:10px; overflow:hidden;">' +
+            '<div style="background:rgba(255,88,88,0.06); padding:0.45rem 0.9rem;">' +
+            '<span style="font-size:0.78rem; font-weight:700; color:#ff5858;">🏢 Directivos / Empleados (' + lista.length + ')</span>' +
+            '<span style="font-size:0.7rem; color:#8b949e; margin-left:0.5rem;">sólo ven Partidos en Vivo</span>' +
+            '</div>' +
+            '<div>' + _rowHeaderHtml() + lista.map(_userRowHtml).join('') + '</div>' +
+            '</div>';
+    }
+
     // ── Bloque Staff (solo modo 'club'), SIN acciones ───────────────────
     function _staffBlockHtml(staff) {
-        const ordered = staff.slice().sort((a, b) =>
-            (a.role === 'director' ? 0 : 1) - (b.role === 'director' ? 0 : 1));
+        // 🏢 v811 · Director, Coordinadores y después Directivos / Empleados.
+        const _orden = (r) => r === 'director' ? 0 : r === 'coordinator' ? 1 : 2;
+        const ordered = staff.slice().sort((a, b) => _orden(a.role) - _orden(b.role));
         const items = ordered.map(function (s) {
             const u = s.u, role = s.role, coordType = s.coordType;
             const roleMeta = (window.ROLE_META || {})[role] || { icon: '👤', color: '#8b949e', label: role };
@@ -590,7 +616,7 @@
         return '' +
             '<div style="background:rgba(240,136,62,0.05); border:1px solid rgba(240,136,62,0.25); border-radius:10px; padding:0.8rem 0.9rem; margin-bottom:1rem;">' +
             '<div style="font-size:0.78rem; font-weight:700; color:#f0883e; text-transform:uppercase; letter-spacing:1px; margin-bottom:0.5rem;">📋 Staff del Club</div>' +
-            (items || '<div style="font-size:0.78rem; color:#8b949e; padding:0.4rem 0;">Sin staff (Director / Coordinadores) registrado.</div>') +
+            (items || '<div style="font-size:0.78rem; color:#8b949e; padding:0.4rem 0;">Sin staff (Director / Coordinadores / Directivos) registrado.</div>') +
             '</div>';
     }
 
@@ -656,8 +682,9 @@
         const treeHtml = CT_CATEGORIES.map(function (c) { return _categoryCardHtml(c, idx); }).join('');
         const staffHtml    = (mode === 'club') ? _staffBlockHtml(idx.staff) : '';
         const unassignedHtml = _unassignedBlockHtml(idx.unassigned);
+        const directivosHtml = _directivosBlockHtml(idx.directivos);
         return _SCOPED_STYLE +
-            '<div style="margin-bottom:0.5rem;">' + staffHtml + unassignedHtml + treeHtml + '</div>';
+            '<div style="margin-bottom:0.5rem;">' + staffHtml + directivosHtml + unassignedHtml + treeHtml + '</div>';
     }
 
     window.renderCategoryTreeReadOnly = renderCategoryTreeReadOnly;

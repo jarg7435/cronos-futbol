@@ -187,6 +187,7 @@ window.saIndividuals = async function saIndividuals() {
                     entrenador_individual: ['user', 'entrenador_individual'],
                     parent:                ['parent', 'parent_individual'],
                     parent_individual:     ['parent', 'parent_individual'],
+                    directivo:             ['directivo'],   // 🏢 v811
                 };
                 // ⚠️ v598/v600 · EL FILTRO SE EXTRAE A SU PROPIA FUNCIÓN porque ya
                 //    lo necesitan TRES sitios: la barra de cupo, la decisión de
@@ -216,7 +217,8 @@ window.saIndividuals = async function saIndividuals() {
                 const slotBar = (roleKey) => {
                     const meta = roleLabels[roleKey];
                     const used = _usadasEnBarra(roleKey);
-                    const max = ent.slots?.[meta.slot] ?? '∞';
+                    // 🏢 v811 · el cupo de directivos vale 10 si el ente aún no lo tiene guardado.
+                    const max = ent.slots?.[meta.slot] ?? (roleKey === 'directivo' ? 10 : '∞');
                     const pct = max !== '∞' && max > 0 ? Math.round((used/max)*100) : 0;
                     const full = max !== '∞' && used >= max;
                     return `<div style="display:flex;align-items:center;gap:0.5rem;padding:0.3rem 0.9rem;border-bottom:1px solid rgba(255,255,255,0.03);">
@@ -329,6 +331,7 @@ window.saIndividuals = async function saIndividuals() {
                          sobra: el SuperAdmin no entendería las cuentas. -->
                     ${_usadasEnBarra('user') > 0 ? slotBar('user') : ''}
                     ${slotBar('parent_individual')}
+                    ${slotBar('directivo')}
                     <div style="padding:0.5rem 0.9rem;">
                         <button onclick="saShowCreateIndividualForEntity('${eId}')" style="padding:0.28rem 0.7rem;background:rgba(63,185,80,0.12);border:1px solid rgba(63,185,80,0.4);border-radius:6px;color:#3fb950;font-size:0.72rem;cursor:pointer;font-weight:700;">👤 + Añadir Usuario</button>
                         <button onclick="saShowEntityUsers('${eId}')" style="padding:0.28rem 0.7rem;margin-left:0.4rem;background:rgba(121,192,255,0.12);border:1px solid rgba(121,192,255,0.4);border-radius:6px;color:#79c0ff;font-size:0.72rem;cursor:pointer;font-weight:700;">📋 Ver usuarios (${entUsers.length})</button>

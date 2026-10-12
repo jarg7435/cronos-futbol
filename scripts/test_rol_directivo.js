@@ -91,6 +91,37 @@ ok('1s · ROLE_META lo rotula', /directivo:\s*\{ label:'Directivo \/ Empleado'/.
 ok('1t · el panel se carga y se precachea', /<script src="js\/directivo\/panel\.js\?v=[^"]+"><\/script>/.test(IDX) &&
    /'\.\/js\/directivo\/panel\.js'/.test(leer('sw.js')));
 
+// 🏢 v811 · Las vistas del SuperAdmin (implementar.txt 2026-10-12, capturas 11380-11382).
+ok('1y · tarjeta de cada CLUB: barra «Directivos / Empleados» con su cupo (10 si no está guardado)',
+   /\$\{slotBar\('directivo',\s*'🏢', 'Directivos \/ Empleados'/.test(leer('js/admin/superadmin/clubs-tab.js')) &&
+   /role === 'directivo' \? 'directivos' : 'parents'\] \?\? \(role === 'directivo' \? 10 : '∞'\)/.test(leer('js/admin/superadmin/clubs-tab.js')));
+const IT = leer('js/admin/superadmin/individuals-tab.js');
+ok('1z · tarjeta de cada ENTE: su barra, contando sólo plazas `directivo` del ente',
+   /\$\{slotBar\('directivo'\)\}/.test(IT) && /directivo:\s*\['directivo'\],/.test(IT) &&
+   /\?\? \(roleKey === 'directivo' \? 10 : '∞'\)/.test(IT));
+{
+    // El árbol compartido, EJECUTADO («Ver usuarios» del club y «Usuarios del Ente»).
+    const sb = { console, Set, Map, Array, Object, String, Number, JSON, Math };
+    sb.window = sb;
+    sb.ROLE_META = { directivo: { label: 'Directivo / Empleado', icon: '🏢', color: '#ff5858' },
+                     director: { label: 'Director Deportivo', icon: '📋', color: '#f0883e' } };
+    sb.cronosNombreUsuario = (u) => u.firstName || u.email;
+    vm.createContext(sb);
+    vm.runInContext(leer('js/admin/shared/category-tree.js'), sb);
+    const dv = { _id: 'd1', email: 'dv@x.es', firstName: 'Pepe', _activeRoleData: { role: 'directivo', isAuthorized: true, status: 'active' } };
+    const di = { _id: 'd2', email: 'di@x.es', firstName: 'Ana', _activeRoleData: { role: 'director', isAuthorized: true, status: 'active' } };
+    const club = sb.renderCategoryTreeReadOnly([dv, di], { mode: 'club', conBorrado: true });
+    const staffClub = club.slice(club.indexOf('Staff del Club'), club.indexOf('Prebenjam'));
+    ok('1za · 🔑 «Ver usuarios» del CLUB: el directivo sale en el Staff, detrás del Director',
+       /Directivo \/ Empleado/.test(staffClub) && staffClub.indexOf('Director Deportivo') < staffClub.indexOf('Directivo / Empleado') &&
+       !/Sin categoría\/subcategoría/.test(club), staffClub.slice(0, 200));
+    const ente = sb.renderCategoryTreeReadOnly([dv], { mode: 'individual', conBorrado: true });
+    ok('1zb · 🔑 «Usuarios del Ente»: bloque propio «Directivos / Empleados (1)», no «sin categoría»',
+       /🏢 Directivos \/ Empleados \(1\)/.test(ente) && /dv@x\.es/.test(ente) && !/Sin categoría\/subcategoría/.test(ente), ente.slice(0, 300));
+    const dos = sb.renderCategoryTreeReadOnly([dv, Object.assign({}, dv)], { mode: 'individual' });
+    ok('1zc · y la misma persona no sale dos veces', /Directivos \/ Empleados \(1\)/.test(dos));
+}
+
 // El panel, EJECUTADO.
 function cajaPanel(me, extraOn) {
     const els = {};
