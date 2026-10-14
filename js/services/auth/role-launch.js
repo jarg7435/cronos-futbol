@@ -169,10 +169,18 @@ function _aplicaExtras(id, ex) {
     if (cambio) {
         console.log('[extras] extras de', id, 'aplicados, se re-deciden los botones:', ex);
         _cronosReevaluaBarrasDirecto();
+        if (typeof _avisaExtrasCambiados === 'function') _avisaExtrasCambiados();
     }
     return cambio;
 }
 window._cronosAplicaExtras = _aplicaExtras;
+
+// 🔴 v817 · Los tableros pintados ANTES de que lleguen los extras (Dirección,
+// club-reports.js) se enteran por aquí y se repintan. Sin esto, un extra que
+// vale «ausente = APAGADO» (`modulo_videos`) se quedaba con candado.
+function _avisaExtrasCambiados() {
+    try { window.dispatchEvent(new CustomEvent('cronos-extras-cambiados')); } catch (e) { /* sin DOM */ }
+}
 
 // ── Escucha en vivo del documento de la entidad ──────────────────────
 //  Una sola a la vez; si la entidad cambia (equipo de otro club), se cambia
@@ -1001,6 +1009,7 @@ function _launchWithRole(role) {
                 const _vig = window._cronosCurrentUser;
                 if (_ex && _vig) _vig.extras = _ex;
                 console.log('[auth] extras del club cargados:', _vig && _vig.extras);
+                if (_ex && _vig) _avisaExtrasCambiados();   // 🔴 v817
                 // 🔴 v776 · Y desde aquí, escucha EN VIVO: lo que el SuperAdmin
                 // encienda llega al partido abierto sin recargar.
                 _escuchaExtras().catch(() => {});

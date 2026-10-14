@@ -113,13 +113,17 @@ console.log('\n── PARTE 1 · el modal "Registrar Evento Perdido" ──');
 
     // — minuto inválido —
     registrados.length = 0;
+    // 🎬 v817 · pulsar el tipo YA activo lo quita: se parte de «sin tipo».
+    w._setRetroEventType(null);
     w._setRetroEventType('comment');
     el('retro-minute-input').value = 'abc';
     el('retro-comment-input').value = 'nota';
     await w.submitRetroactiveEvent();
     ok('1m · un minuto no válido no se guarda', registrados.length === 0 && /minuto válido/.test(toasts.join('|')));
 
-    // — 🔑 al reabrir, el tipo vuelve a Gol (el modal se repinta con Gol marcado) —
+    // — 🔑 al reabrir, el tipo de la vez anterior NO sobrevive —
+    // 🎬 v817 · el modal abre SIN TIPO (antes, con Gol): sin tipo y sin vídeo
+    // no se guarda nada, y desde luego no el comentario de la vez anterior.
     registrados.length = 0;
     w._setRetroEventType('comment');
     await w.openRetroactiveEventModal();
@@ -129,8 +133,9 @@ console.log('\n── PARTE 1 · el modal "Registrar Evento Perdido" ──');
     el('retro-player-select').value = '3';
     el('retro-comment-input').value = 'resto de la vez anterior';
     await w.submitRetroactiveEvent();
-    ok('1n · 🔴🔴 reabrir el modal NO guarda como "comentario" lo que se ve como "Gol"',
-       registrados[0] && registrados[0][0] === 'goal', registrados[0] && registrados[0][0]);
+    ok('1n · 🔴🔴 reabrir el modal NO guarda como "comentario" lo que se ve sin tipo',
+       registrados.length === 0 && /Elige un tipo de suceso o un vídeo/.test(toasts.join('|')),
+       registrados[0] && registrados[0][0]);
 }
 
 // ───────────────────────────────────────────────────────────────────────────

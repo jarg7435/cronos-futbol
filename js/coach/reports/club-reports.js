@@ -559,6 +559,20 @@ window.switchStaffTab = async (tab) => {
         if (window.CronosUnlocks && typeof window.CronosUnlocks.pintarBadge === 'function') {
             window.CronosUnlocks.pintarBadge('sd-badge-desbloqueos');
         }
+        // 🔴 v817 · «VÍDEOS: EXTRA NO ACTIVADO» CON EL EXTRA EN VERDE (captura
+        // 11550). Los extras del club llegan de la nube DESPUÉS de abrir el
+        // panel (role-launch.js, sin await). Casi todos valen «ausente =
+        // activo» y no se notaba; `modulo_videos` vale «ausente = APAGADO», así
+        // que el tablero pintado antes de tiempo lo dejaba con candado para
+        // siempre. Ahora role-launch.js avisa (`cronos-extras-cambiados`) al
+        // cargarlos y cada vez que el SuperAdmin los cambia, y el tablero se
+        // repinta si sigue a la vista. Un solo oyente para toda la sesión.
+        if (!window._sdOyeExtras && typeof window.addEventListener === 'function') {
+            window._sdOyeExtras = true;
+            window.addEventListener('cronos-extras-cambiados', () => {
+                if (document.getElementById('sd-badge-desbloqueos')) window.switchStaffTab('menu');
+            });
+        }
         return;
     }
 

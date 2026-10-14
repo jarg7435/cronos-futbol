@@ -155,6 +155,7 @@ const partido = (horas, extra) => Object.assign({
         ok('2h · con permiso vigente el formulario se ENCIENDE',
            E.el('retro-form-body').style.pointerEvents === 'auto' && E.el('retro-save-btn').disabled === false);
         ok('2i · y dice quién lo concedió', /Desbloqueado por <strong>Director Prueba/.test(E.el('retro-match-status').innerHTML));
+        E.sb._setRetroEventType('goal');   // 🎬 v817 · el modal abre sin tipo
         E.el('retro-player-select').value = '1';
         E.el('retro-half-select').value = '2T';
         E.el('retro-minute-input').value = '40';
@@ -168,6 +169,7 @@ const partido = (horas, extra) => Object.assign({
         // 2l · partido en su ventana de 2 h: libre, y también marcado.
         const E = entornoModal();
         await E.sb.openRetroactiveEventModal('M1', partido(1));
+        E.sb._setRetroEventType('goal');   // 🎬 v817 · el modal abre sin tipo
         E.el('retro-player-select').value = '1';
         await E.sb.submitRetroactiveEvent();
         const r = E.registrados[0] || [];

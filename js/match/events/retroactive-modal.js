@@ -6,7 +6,9 @@
 (function() {
     'use strict';
 
-    let _selectedEventType = 'goal';
+    // 🎬 v817 · null = SIN TIPO: el suceso es sólo el vídeo de la jugada (ver
+    // _setRetroEventType). El modal abre así, sin nada marcado.
+    let _selectedEventType = null;
     let _targetMatchId = null;
     // v434 · Datos del partido destino, para saber si admite incidencias. Lo
     // aportan los listados de Partidos Terminados al abrir el modal desde una
@@ -616,19 +618,20 @@
             document.body.appendChild(modal);
         }
 
-        // v690 · El modal se repinta SIEMPRE con "Gol" marcado, así que el tipo
-        // elegido tiene que volver a 'goal' al abrir. Antes sobrevivía de la
-        // vez anterior: tras un "Cambio", reabrir enseñaba "Gol" y guardaba un
-        // cambio. Con "Comentario" habría guardado una nota con el campo de
-        // texto escondido.
-        _selectedEventType = 'goal';
+        // v690 · El tipo elegido NO sobrevive de la vez anterior: tras un
+        // "Cambio", reabrir enseñaba "Gol" y guardaba un cambio.
+        // 🎬 v817 · Y ya no abre con "Gol" marcado: abre SIN TIPO (encargo del
+        // autor, implementar.txt 2026-10-14). Con Gol por defecto, quien sólo
+        // quería subir un vídeo apuntaba un gol sin darse cuenta — y un gol
+        // mueve el marcador y el informe.
+        _selectedEventType = null;
         _paraDictado();   // 🎤 v803 · un dictado de la vez anterior no sigue escuchando
         _jugadoresModal = _targetMatchId ? _jugadoresDestino() : [];
         const playerOptions    = _opcionesJugadores(_jugadoresModal, 'todos');
         const playerOptionsIn  = _opcionesJugadores(_jugadoresModal, 'banquillo');
 
         modal.innerHTML = `
-            <div class="modal-content" style="width:min(92vw, 480px); max-height:92vh; overflow-y:auto; box-sizing:border-box; background:#0d1117; border:1px solid rgba(88,166,255,0.3); border-radius:14px; padding:1.2rem; display:flex; flex-direction:column; gap:1rem; box-shadow:0 10px 30px rgba(0,0,0,0.8);">
+            <div class="modal-content" style="width:min(94vw, 580px); max-height:92vh; overflow-y:auto; box-sizing:border-box; background:#0d1117; border:1px solid rgba(88,166,255,0.3); border-radius:14px; padding:1.2rem; display:flex; flex-direction:column; gap:1rem; box-shadow:0 10px 30px rgba(0,0,0,0.8);">
                 <!-- Cabecera -->
                 <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid rgba(255,255,255,0.1); padding-bottom:0.6rem;">
                     <h3 style="margin:0; font-size:1.05rem; color:white; display:flex; align-items:center; gap:0.5rem;">
@@ -672,12 +675,15 @@
                     <label style="font-size:0.75rem; font-weight:700; color:#58a6ff; display:block; margin-bottom:0.4rem;">Tipo de Suceso:</label>
                     <!-- v690 · seis tipos: en tres columnas caben en el móvil sin cortar el texto -->
                     <div style="display:grid; grid-template-columns: repeat(3, 1fr); gap:0.4rem;">
-                        <button type="button" onclick="window._setRetroEventType('goal')" id="btn-retro-goal" class="btn-retro-type" style="background:rgba(88,166,255,0.25); border:1px solid #58a6ff; color:white; padding:0.5rem 0.2rem; border-radius:8px; font-weight:800; font-size:0.75rem; cursor:pointer;">⚽ Gol</button>
-                        <button type="button" onclick="window._setRetroEventType('sub')" id="btn-retro-sub" class="btn-retro-type" style="background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.1); color:#7d8590; padding:0.5rem 0.2rem; border-radius:8px; font-weight:800; font-size:0.75rem; cursor:pointer;">🔄 Cambio</button>
-                        <button type="button" onclick="window._setRetroEventType('yellow')" id="btn-retro-yellow" class="btn-retro-type" style="background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.1); color:#7d8590; padding:0.5rem 0.2rem; border-radius:8px; font-weight:800; font-size:0.75rem; cursor:pointer;">🟨 Amarilla</button>
-                        <button type="button" onclick="window._setRetroEventType('red')" id="btn-retro-red" class="btn-retro-type" style="background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.1); color:#7d8590; padding:0.5rem 0.2rem; border-radius:8px; font-weight:800; font-size:0.75rem; cursor:pointer;">🟥 Roja</button>
-                        <button type="button" onclick="window._setRetroEventType('injury')" id="btn-retro-injury" class="btn-retro-type" style="background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.1); color:#7d8590; padding:0.5rem 0.2rem; border-radius:8px; font-weight:800; font-size:0.75rem; cursor:pointer;">🚑 Lesión</button>
-                        <button type="button" onclick="window._setRetroEventType('comment')" id="btn-retro-comment" class="btn-retro-type" style="background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.1); color:#7d8590; padding:0.5rem 0.2rem; border-radius:8px; font-weight:800; font-size:0.75rem; cursor:pointer;">💬 Comentario</button>
+                        <button type="button" onclick="window._setRetroEventType('goal')" id="btn-retro-goal" class="btn-retro-type" aria-pressed="false" style="background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.1); color:#7d8590; padding:0.5rem 0.2rem; border-radius:8px; font-weight:800; font-size:0.75rem; cursor:pointer;">⚽ Gol</button>
+                        <button type="button" onclick="window._setRetroEventType('sub')" id="btn-retro-sub" class="btn-retro-type" aria-pressed="false" style="background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.1); color:#7d8590; padding:0.5rem 0.2rem; border-radius:8px; font-weight:800; font-size:0.75rem; cursor:pointer;">🔄 Cambio</button>
+                        <button type="button" onclick="window._setRetroEventType('yellow')" id="btn-retro-yellow" class="btn-retro-type" aria-pressed="false" style="background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.1); color:#7d8590; padding:0.5rem 0.2rem; border-radius:8px; font-weight:800; font-size:0.75rem; cursor:pointer;">🟨 Amarilla</button>
+                        <button type="button" onclick="window._setRetroEventType('red')" id="btn-retro-red" class="btn-retro-type" aria-pressed="false" style="background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.1); color:#7d8590; padding:0.5rem 0.2rem; border-radius:8px; font-weight:800; font-size:0.75rem; cursor:pointer;">🟥 Roja</button>
+                        <button type="button" onclick="window._setRetroEventType('injury')" id="btn-retro-injury" class="btn-retro-type" aria-pressed="false" style="background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.1); color:#7d8590; padding:0.5rem 0.2rem; border-radius:8px; font-weight:800; font-size:0.75rem; cursor:pointer;">🚑 Lesión</button>
+                        <button type="button" onclick="window._setRetroEventType('comment')" id="btn-retro-comment" class="btn-retro-type" aria-pressed="false" style="background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.1); color:#7d8590; padding:0.5rem 0.2rem; border-radius:8px; font-weight:800; font-size:0.75rem; cursor:pointer;">💬 Comentario</button>
+                    </div>
+                    <div id="retro-type-hint" style="font-size:0.66rem; color:#7d8590; margin-top:0.3rem; line-height:1.35;">
+                        Pulsa otra vez un tipo para quitarlo. Sin tipo, sólo se guarda el vídeo de la jugada.
                     </div>
                 </div>
 
@@ -788,7 +794,9 @@
                 </div>
 
                 <!-- 📋 v799 · los sucesos pendientes de guardar -->
-                <div id="retro-lote" style="display:none; background:rgba(255,255,255,0.03); border:1px solid rgba(88,166,255,0.25); border-radius:8px; padding:0.55rem; max-height:220px; overflow-y:auto;"></div>
+                <!-- 🎬 v817 · más grande y legible (encargo del autor, implementar.txt 2026-10-14):
+                     filas en tarjeta, y crece hasta media pantalla antes de hacer scroll. -->
+                <div id="retro-lote" style="display:none; background:rgba(88,166,255,0.05); border:1px solid rgba(88,166,255,0.35); border-radius:10px; padding:0.75rem; min-height:110px; max-height:min(50vh, 440px); overflow-y:auto;"></div>
 
                 <!-- Botón Guardar -->
                 <div style="display:flex; justify-content:flex-end; gap:0.6rem; margin-top:0.4rem;">
@@ -895,14 +903,41 @@
         if (!fa || !fa.db) return false;
         try {
             const fsm = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
-            const snap = await fsm.getDocs(fsm.query(
-                fsm.collection(fa.db, 'cronos_player_reports'),
-                fsm.where('matchId', '==', _targetMatchId)));
-            if (snap.empty) return true;
+            // ════════════════════════════════════════════════════════════
+            //  🔴 v817 · «EL INFORME DEL PARTIDO NO SE PUDO ACTUALIZAR»
+            //  (captura 11547). La consulta iba SÓLO por `matchId`, y las
+            //  reglas no son filtros: Firestore rechaza entera una consulta
+            //  que no puede DEMOSTRAR que sólo devuelve documentos legibles, y
+            //  `matchId` no aparece en ninguna regla de cronos_player_reports.
+            //  Era permission-denied siempre que quien guarda no es SuperAdmin.
+            //  Ahora van dos consultas que las reglas sí pueden demostrar —por
+            //  el club (sameClubAsDoc/userDocClubId) y por el autor (coachUid),
+            //  el patrón de _partidoDesdeInformes— y se funden por documento.
+            //  Basta con que una responda; si fallan las dos, se avisa.
+            // ════════════════════════════════════════════════════════════
+            const me = window._cronosCurrentUser || {};
+            const col = fsm.collection(fa.db, 'cronos_player_reports');
+            const clubId = (_targetMatchData && _targetMatchData.clubId) || me.clubId || '';
+            const consultas = [];
+            if (clubId) consultas.push(fsm.getDocs(fsm.query(col,
+                fsm.where('clubId', '==', String(clubId)), fsm.where('matchId', '==', String(_targetMatchId)))));
+            if (me.uid) consultas.push(fsm.getDocs(fsm.query(col,
+                fsm.where('coachUid', '==', me.uid), fsm.where('matchId', '==', String(_targetMatchId)))));
+            // Sin club ni sesión conocidos, la de siempre (que sólo el SuperAdmin pasa).
+            if (!consultas.length) consultas.push(fsm.getDocs(fsm.query(col,
+                fsm.where('matchId', '==', String(_targetMatchId)))));
+            const res = await Promise.allSettled(consultas);
+            const buenas = res.filter(r => r.status === 'fulfilled');
+            res.filter(r => r.status === 'rejected').forEach(r =>
+                console.warn('[v817] Consulta de informes rechazada:', r.reason && (r.reason.code || r.reason.message)));
+            if (!buenas.length) return false;
+            const porRuta = new Map();
+            buenas.forEach(r => r.value.forEach(d => porRuta.set((d.ref && d.ref.path) || d.ref || d.id, d)));
+            if (!porRuta.size) return true;
 
             const lote = fsm.writeBatch(fa.db);
             let escrituras = 0;
-            snap.forEach(d => {
+            porRuta.forEach(d => {
                 const r = d.data() || {};
                 const upd = {};
                 const dorsalDoc = String(r.playerNumber || '').trim();
@@ -942,12 +977,16 @@
             }
             return true;
         } catch (e) {
-            console.warn('[v715] No se pudieron corregir los informes del partido:', e && e.message);
+            console.warn('[v715] No se pudieron corregir los informes del partido:', e && (e.code || ''), e && e.message);
             return false;
         }
     }
 
     window._setRetroEventType = function(type) {
+        // 🎬 v817 · PULSAR EL TIPO YA ACTIVO LO QUITA (encargo del autor,
+        // implementar.txt 2026-10-14): sin tipo, el suceso es sólo el vídeo de
+        // la jugada. Todo lo de abajo entiende null como «ninguno».
+        if (type && type === _selectedEventType) type = null;
         // 🎤 v803 · el dictado es del comentario: fuera de él, se para.
         if (type !== 'comment') _paraDictado();
         _selectedEventType = type;
@@ -955,6 +994,7 @@
         types.forEach(t => {
             const btn = document.getElementById(`btn-retro-${t}`);
             if (btn) {
+                if (btn.setAttribute) btn.setAttribute('aria-pressed', t === type ? 'true' : 'false');
                 if (t === type) {
                     btn.style.background = 'rgba(88,166,255,0.25)';
                     btn.style.borderColor = '#58a6ff';
@@ -1035,6 +1075,11 @@
         const item = { uid: 'l' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
                        tipo, half: half === '2T' ? '2T' : '1T', minute, playerId, subPlayerId, nota: '' };
 
+        // 🎬 v817 · SIN TIPO, el suceso es el vídeo: sin vídeo no hay nada que guardar.
+        if (!tipo && !_clipElegido) {
+            _toast('✋ Elige un tipo de suceso o un vídeo de la jugada.', 4000);
+            return null;
+        }
         if (tipo === 'comment') {
             const ta = document.getElementById('retro-comment-input');
             const nota = String((ta && ta.value) || '').replace(/\s+/g, ' ').trim().slice(0, 500);
@@ -1078,11 +1123,13 @@
         };
         item.resumen = tipo === 'comment' ? '«' + item.nota.slice(0, 60) + (item.nota.length > 60 ? '…' : '') + '»'
                      : tipo === 'sub' ? 'Sale ' + (nom(playerId) || '—') + ' · Entra ' + (nom(subPlayerId) || '—')
-                     : (nom(playerId) || 'Equipo');
+                     : (nom(playerId) || (tipo ? 'Equipo' : ''));
         // 🎬 v804 · El vídeo elegido viaja CON su suceso (ya comprobado al elegirlo).
         if (_clipElegido) {
             item.clip = _clipElegido.file;
             item.clipDuracion = _clipElegido.duracion;
+            item.clipNombre = String(_clipElegido.file.name || 'vídeo');
+            item.clipMB = (_clipElegido.file.size || 0) / 1048576;
             const fam = document.getElementById('retro-clip-familias');
             item.clipFamilias = !!(fam && fam.checked && _partidoDeAdultos());
         }
@@ -1162,7 +1209,7 @@
                 file: it.clip, duracion: it.clipDuracion, matchId: _targetMatchId,
                 teamId: eq.teamId, category: eq.category, subcategory: eq.subcategory,
                 tipo: it.tipo, half: it.half, minute: it.minute,
-                rotulo: (_NOMBRE_TIPO[it.tipo] || 'Jugada') + ' · ' + (it.resumen || '') + ' · ' + it.half + ' ' + it.minute + "'",
+                rotulo: [_NOMBRE_TIPO[it.tipo] || 'Jugada', it.resumen, it.half + ' ' + it.minute + "'"].filter(Boolean).join(' · '),
                 paraFamilias: it.clipFamilias,
             });
             if (r.ok) ok++; else mal++;
@@ -1187,14 +1234,23 @@
         if (!caja) return;
         let html = '';
         if (n) {
-            html += '<div style="font-size:0.75rem; font-weight:800; color:#58a6ff; margin-bottom:0.35rem;">📋 Pendientes de guardar (' + n + ') · se guardarán en orden de minuto</div>';
-            html += _ordenCrono(_lote).map(it =>
-                '<div style="display:flex; align-items:center; gap:0.5rem; padding:0.35rem 0.5rem; border-bottom:1px solid rgba(255,255,255,0.06); font-size:0.78rem;">' +
-                    '<span style="min-width:52px; font-weight:800; color:#f0883e; font-variant-numeric:tabular-nums;">' + it.half + ' ' + String(it.minute).padStart(2, '0') + '\'</span>' +
-                    '<span style="flex-shrink:0;">' + (_ICONO_TIPO[it.tipo] || '•') + '</span>' +
-                    '<span style="flex:1; min-width:0; color:#c9d1d9; word-break:break-word;"><strong>' + escapeHtml(_NOMBRE_TIPO[it.tipo] || it.tipo) + '</strong> · ' + escapeHtml(it.resumen || '') + (it.clip ? ' <span title="Con vídeo">🎬</span>' : '') + '</span>' +
-                    '<button type="button" onclick="window._retroQuitarDeLista(\'' + it.uid + '\')" title="Quitar de la lista" style="flex-shrink:0; background:rgba(255,88,88,0.12); border:1px solid rgba(255,88,88,0.4); color:#ff5858; border-radius:6px; padding:0.15rem 0.45rem; cursor:pointer; font-weight:800;">✕</button>' +
-                '</div>').join('');
+            html += '<div style="font-size:0.85rem; font-weight:800; color:#58a6ff; margin-bottom:0.55rem;">📋 Pendientes de guardar (' + n + ') <span style="font-weight:600; color:#7d8590; font-size:0.72rem;">· se guardarán en orden de minuto</span></div>';
+            html += _ordenCrono(_lote).map(it => {
+                // 🎬 v817 · EL VÍDEO SE VE EN LA FILA: una etiqueta propia con el
+                // nombre del archivo, no un icono suelto al final del texto.
+                const etiquetaVideo = it.clip
+                    ? '<div style="margin-top:0.35rem;"><span title="Este suceso lleva un vídeo adjunto" style="display:inline-flex; align-items:center; gap:0.3rem; max-width:100%; background:rgba(163,113,247,0.18); border:1px solid rgba(163,113,247,0.6); color:#d2a8ff; border-radius:999px; padding:0.15rem 0.6rem; font-size:0.72rem; font-weight:800;">🎬 VÍDEO <span style="font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; min-width:0;">' +
+                      escapeHtml(it.clipNombre || '') + (it.clipMB ? ' · ' + it.clipMB.toFixed(1) + ' MB' : '') +
+                      (it.clipDuracion ? ' · ' + Math.round(it.clipDuracion) + ' s' : '') + '</span></span></div>'
+                    : '';
+                const nombre = it.tipo ? (_NOMBRE_TIPO[it.tipo] || it.tipo) : 'Sólo vídeo';
+                return '<div style="display:flex; align-items:flex-start; gap:0.65rem; padding:0.6rem 0.7rem; margin-bottom:0.45rem; background:rgba(255,255,255,0.04); border:1px solid ' + (it.clip ? 'rgba(163,113,247,0.45)' : 'rgba(255,255,255,0.08)') + '; border-radius:8px; font-size:0.88rem;">' +
+                    '<span style="min-width:58px; font-weight:800; color:#f0883e; font-variant-numeric:tabular-nums; padding-top:0.1rem;">' + it.half + ' ' + String(it.minute).padStart(2, '0') + '\'</span>' +
+                    '<span style="flex-shrink:0; font-size:1.05rem;">' + (it.tipo ? (_ICONO_TIPO[it.tipo] || '•') : '🎬') + '</span>' +
+                    '<div style="flex:1; min-width:0; color:#e6edf3; word-break:break-word; line-height:1.35;"><strong>' + escapeHtml(nombre) + '</strong>' + (it.resumen ? ' · ' + escapeHtml(it.resumen) : '') + etiquetaVideo + '</div>' +
+                    '<button type="button" onclick="window._retroQuitarDeLista(\'' + it.uid + '\')" title="Quitar de la lista" aria-label="Quitar de la lista" style="flex-shrink:0; background:rgba(255,88,88,0.12); border:1px solid rgba(255,88,88,0.4); color:#ff5858; border-radius:6px; min-width:2rem; min-height:2rem; cursor:pointer; font-weight:800;">✕</button>' +
+                '</div>';
+            }).join('');
         }
         if (_informePendiente) {
             html += '<div style="margin-top:0.5rem; font-size:0.76rem; color:#ff9b93; background:rgba(248,81,73,0.08); border:1px solid rgba(248,81,73,0.35); border-radius:8px; padding:0.5rem;">' +
@@ -1291,6 +1347,10 @@
                 },
             };
         }
+
+        // 🎬 v817 · SIN TIPO = sólo el vídeo: no hay suceso que registrar, ni
+        // ficha, ni marcador, ni informe. El vídeo lo sube _subeClips después.
+        if (!item.tipo) return { cambio: null };
 
         const eventType = item.tipo;
         let text = '';
@@ -1476,7 +1536,7 @@
         if (typeof renderPlayers === 'function') renderPlayers();
         if (typeof updateMasterUI === 'function') updateMasterUI();
 
-        const _haySucesosDeJuego = items.some(it => it.tipo !== 'comment');
+        const _haySucesosDeJuego = items.some(it => it.tipo && it.tipo !== 'comment');
         // v531 · Ficha y marcador del partido destino, UNA vez para todo el
         // lote. 🔓 v797 · Sin documento de directo (más de 10 h) no hay ficha.
         const _corregido = (_soloInformes || !_haySucesosDeJuego) ? true : await _persisteCorreccionDestino();
@@ -1493,7 +1553,11 @@
         const _enCurso = (typeof liveMatchId !== 'undefined') ? liveMatchId : null;
         const _esElEnCurso = !_targetMatchId || _targetMatchId === _enCurso;
         let aviso, ms;
-        if (items.length === 1 && items[0].tipo === 'comment') {
+        if (items.length === 1 && !items[0].tipo) {
+            // 🎬 v817 · sólo el vídeo: el resultado lo añade la línea de _vid de abajo.
+            aviso = '🎬 Jugada guardada sin suceso';
+            ms = 4000;
+        } else if (items.length === 1 && items[0].tipo === 'comment') {
             aviso = _esElEnCurso
                 ? '💬 Comentario añadido al historial. Saldrá en el informe del partido.'
                 : (_informes

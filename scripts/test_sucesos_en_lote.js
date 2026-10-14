@@ -154,11 +154,27 @@ function apunta(E, tipo, half, minute, campos) {
         // Con la lista VACÍA el botón guarda el suceso del formulario, como antes.
         const E = entorno();
         await E.sb.openRetroactiveEventModal('M1', partido());
+        E.sb._setRetroEventType('goal');   // 🎬 v817 · el modal abre sin tipo
         E.el('retro-player-select').value = '1';
         E.el('retro-minute-input').value = '12';
         await E.sb.submitRetroactiveEvent();
         ok('4a · con la lista vacía, Guardar registra el suceso del formulario (un clic, como siempre)',
            E.registrados.length === 1 && E.registrados[0][0] === 'goal');
+    }
+    {
+        // 🎬 v817 · pulsar otra vez el tipo activo lo QUITA, y sin tipo ni vídeo
+        // no se registra nada (antes «Gol» venía marcado y no se podía quitar).
+        const E = entorno();
+        await E.sb.openRetroactiveEventModal('M1', partido());
+        E.el('retro-player-select').value = '1';
+        await E.sb.submitRetroactiveEvent();
+        ok('4a2 · 🔑 el modal abre SIN tipo: sin vídeo no registra nada y lo dice',
+           E.registrados.length === 0 && /Elige un tipo de suceso o un vídeo/.test(E.toasts.join('|')), E.toasts);
+        E.sb._setRetroEventType('goal');
+        E.sb._setRetroEventType('goal');
+        await E.sb.submitRetroactiveEvent();
+        ok('4a3 · 🔑 Gol pulsado dos veces queda QUITADO (no se registra un gol)',
+           E.registrados.length === 0, E.registrados);
     }
     {
         // Cambiar de partido con pendientes: se pregunta; si no, se queda.
@@ -209,7 +225,7 @@ function apunta(E, tipo, half, minute, campos) {
             { id: 'M_staff_p1',  data: { playerNumber: '1', goals: 0, scoreHome: 1, scoreAway: 0, cards: null, staffReport: true } },
         ];
         const escrituras = []; let lotes = 0, commits = 0;
-        const ctx = { console: { warn() {}, log() {} }, String, Number, Object, Date, Array,
+        const ctx = { console: { warn() {}, log() {} }, String, Number, Object, Date, Array, Promise, Map, _targetMatchData: null, // v817
                       _targetMatchId: 'M', window: { _cronos_auth: { db: {} } } };
         ctx.__imp = async () => ({
             collection: () => ({}), where: () => ({}), query: () => ({}),

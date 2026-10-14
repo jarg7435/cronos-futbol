@@ -297,7 +297,7 @@ console.log('\n── PARTE 4 · [E][F] el gol retroactivo corrige el INFORME �
             const escrituras = [];
             let lotes = 0, commits = 0;
             const ctx = {
-                console: { warn() {}, log() {} }, String, Number, Object, Date,
+                console: { warn() {}, log() {} }, String, Number, Object, Date, Promise, Map, _targetMatchData: null, // v817
                 _targetMatchId: o.sinPartido ? null : 'M',
                 window: { _cronos_auth: { db: {} }, _CRONOS_DEBUG: false },
             };
