@@ -690,7 +690,14 @@ async function openParentPanel(initialTab) {
                                 ⏱️ ${elapsed}
                             </div>` : ''}
                         </div>
+                        <!-- 🔴 v816 · SE ABRE CON window.open, NO CON EL ENLACE A PELO.
+                             La sesión es por pestaña (sessionStorage, v638) y sólo
+                             viaja a la pestaña nueva si ésta conserva el opener.
+                             Chrome trata todo target="_blank" como noopener desde
+                             la v88: el visor nacía SIN sesión y pedía el login de
+                             staff. El href se queda de respaldo. -->
                         <a href="${typeof escapeAttr==='function'?escapeAttr(liveUrl):liveUrl}" target="_blank"
+                            onclick="window.open(this.href, '_blank'); return false;"
                             style="display:inline-block;padding:0.65rem 1.2rem;
                                    background:#ff5858;border-radius:8px;color:#fff;
                                    font-weight:700;font-size:0.86rem;

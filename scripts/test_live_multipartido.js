@@ -278,7 +278,10 @@ console.log('\n── PARTE 3 · [C] el negro del móvil ──');
            const i = S.indexOf("['startup-screen', 'auth-overlay'");
            if (i === -1) return false;
            const bloque = S.slice(i, i + 700);
-           return /offsetParent !== null/.test(bloque) &&
+           // 🔴 v816 · offsetParent es null en todo position:fixed (el login
+           // lo es): daba el login por invisible y lo tapaba con el aviso.
+           return /getClientRects\(\)\.length > 0/.test(bloque) &&
+                  !/\.filter\(el => el && el\.offsetParent/.test(bloque) &&
                   /_mostrarFalloDeAcceso\(/.test(bloque);
        })(),
        'convierte cualquier pantalla en negro en un mensaje con salida');
