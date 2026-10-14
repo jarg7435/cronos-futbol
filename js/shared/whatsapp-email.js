@@ -353,6 +353,56 @@ window._cronosOpenRecipientPicker = async function(role, context) {
     }
     console.log('[_cronosOpenRecipientPicker] filtered despues de fallback:', filtered.length);
 
+    // ══════════════════════════════════════════════════════════════════
+    //  🔒 v813 · LAS FAMILIAS, SÓLO LAS DEL EQUIPO ABIERTO
+    //
+    //  Medido en testeo (2026-10-13): la convocatoria de Regional B salió
+    //  marcada para las 6 familias del club, también las 3 de Alevín C, y
+    //  les llegó. La lista mezclaba `emailConfig` (una por ENTRENADOR, común
+    //  a sus equipos) con TODOS los usuarios del club. Y el permiso CONV./
+    //  ENTR. que el entrenador marca en Contactos no se miraba.
+    //
+    //  Ahora una familia entra si su vínculo es de este equipo o, si aún no
+    //  tiene vínculo, si su plaza de familiar lo es; y su casilla sale como
+    //  el entrenador la dejó en Contactos. El staff no cambia.
+    // ══════════════════════════════════════════════════════════════════
+    const _eqAbierto = (typeof window.cronosEquipoAbierto === 'function') ? window.cronosEquipoAbierto() : '';
+    if (wantsPadres && _eqAbierto) {
+        const _nt = (t) => (typeof window.cronosTeamIdNorm === 'function') ? window.cronosTeamIdNorm(t) : String(t || '');
+        const _flag = context === 'convocatoria' ? 'canReceiveConv' : 'canReceiveTr';
+        const _me = window._cronosCurrentUser || {};
+        const _vincEquipo = new Map();   // uid → vínculo de ESTE equipo
+        try {
+            const { collection, getDocs, query, where } = await import(
+                'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
+            const snap = await getDocs(query(collection(window._cronos_auth.db, 'cronos_player_links'),
+                where('clubId', '==', _me.clubId || '')));
+            snap.forEach(d => {
+                const l = d.data();
+                if (l.parentUid && l.teamId && _nt(l.teamId) === _nt(_eqAbierto)) _vincEquipo.set(l.parentUid, l);
+            });
+        } catch (e) { console.warn('[_cronosOpenRecipientPicker] vínculos no disponibles:', e.code || e.message); }
+        const _plazaDelEquipo = (c) => (c.allRoles || []).some(r => r &&
+            (r.role === 'parent' || r.role === 'parent_individual') && r.status !== 'removed' &&
+            typeof window.cronosTeamId === 'function' &&
+            _nt(window.cronosTeamId(_me.clubId, r.category, r.subcategory || '')) === _nt(_eqAbierto));
+        const _esFamilia = (c) => {
+            const roles = Array.isArray(c.allRoles) ? c.allRoles.map(r => (r && r.role) || '') : [];
+            const staff = ['director', 'coordinator', 'user', 'coach', 'club_admin', 'admin'];
+            return c.type === 'parent' || (roles.some(r => /parent|padre/.test(r)) && !roles.some(r => staff.includes(r)));
+        };
+        for (let i = filtered.length - 1; i >= 0; i--) {
+            const c = filtered[i];
+            if (!_esFamilia(c)) continue;
+            const v = c.uid ? _vincEquipo.get(c.uid) : null;
+            const delEquipo = v || (c.uid && _plazaDelEquipo(c)) ||
+                (!c.uid && c.teamId && _nt(c.teamId) === _nt(_eqAbierto));
+            if (!delEquipo) { filtered.splice(i, 1); continue; }
+            if (v && v[_flag] === false) c._desmarcado = true;
+        }
+        console.log('[_cronosOpenRecipientPicker] 🔒 familias del equipo', _eqAbierto, '→', filtered.filter(_esFamilia).length);
+    }
+
     const roleLabel = role === 'directores' ? 'Directores Deportivos'
         : role === 'coordinadores' ? 'Coordinadores'
         : role === 'padres' ? 'Familiares / Jugadores'
@@ -410,7 +460,7 @@ window._cronosOpenRecipientPicker = async function(role, context) {
                     data-label="${(realName||'').replace(/"/g,'&quot;')}"
                     data-role="${roleLabel}"
                     data-target-role="${roleLabel}"
-                    checked style="width:18px;height:18px;accent-color:var(--primary);flex-shrink:0;">
+                    ${c._desmarcado ? '' : 'checked'} style="width:18px;height:18px;accent-color:var(--primary);flex-shrink:0;">
                 <span style="font-size:1.1rem;">${typeIcon}</span>
                 <div style="flex:1;min-width:0;">
                     <div style="font-size:0.85rem;font-weight:600;color:var(--text);">${realName}</div>
@@ -728,7 +778,9 @@ window.sharedBuildRecipientsHTML = function(savedRecipients, prefix = 'cv') {
     });
 
     // 2. Padres desde emailConfig (tipo parent manual)
-    const parentContacts = (emailConfig.contacts || []).filter(c => c.type === 'parent');
+    // 🔒 v814 · sólo las familias del equipo abierto (la lista es común a todos los equipos del entrenador).
+    const parentContacts = (emailConfig.contacts || []).filter(c => c.type === 'parent' &&
+        !(typeof window.cronosContactoDeOtroEquipo === 'function' && window.cronosContactoDeOtroEquipo(c)));
     parentContacts.forEach(c => {
         if (!c.name && !c.email && !c.phone) return;
         allContacts.push({

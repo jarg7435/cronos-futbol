@@ -322,8 +322,15 @@ async function openParentPanel(initialTab) {
         // del club. Si no, la tarjeta ni aparece. El servidor lo vuelve a exigir.
         try {
             const _yo = window._cronosCurrentUser || {};
-            const _cat = (_yo._activeRoleData && _yo._activeRoleData.category) || _yo.category || '';
-            if (window.CronosClips && window.CronosClips.activo(_yo) && window.CronosClips.esAdultos(_cat)) {
+            // 🔧 v814 · la familia NO trae `category` en la sesión (role-launch sólo
+            // copia inviteCode/alias/dorsal): la categoría está en su PLAZA. Medido
+            // en testeo (2026-10-13): las familias de Regional B nunca veían la
+            // tarjeta aunque sí podían ver sus clips.
+            const _cats = [(_yo._activeRoleData && _yo._activeRoleData.category) || _yo.category || '']
+                .concat((_yo.allRoles || []).filter(r => r && (r.role === 'parent' || r.role === 'parent_individual') &&
+                    r.status !== 'removed' && (!clubId || r.clubId === clubId || r.individualEntityId === clubId)).map(r => r.category || ''))
+                .filter(Boolean);
+            if (window.CronosClips && window.CronosClips.activo(_yo) && _cats.some(c => window.CronosClips.esAdultos(c))) {
                 opciones.push({ icono: '🎬', titulo: 'Vídeos', color: '#d2a8ff',
                     desc: 'Clips de las jugadas: se ven una vez y se borran a las 24 h.',
                     onclick: 'window.CronosClips.abrirLista()', bloqueado: '' });
@@ -1202,10 +1209,19 @@ async function openParentPanel(initialTab) {
                                 where('clubId',     '==', clubId)
                             ));
 
+                            // 🔒 v813 · SÓLO SE ADOPTA UN VÍNCULO SIN DUEÑO Y DE MI EQUIPO.
+                            // Antes bastaba con que el código «J10» coincidiera: la
+                            // familia del #10 de Regional B se quedaba con el vínculo
+                            // del #10 de Alevín C (medido en testeo, 2026-10-13).
+                            const _miEq = (typeof window.cronosEquipoDeFamilia === 'function')
+                                ? window.cronosEquipoDeFamilia(myData, clubId, myData.inviteCode || '').teamId : '';
+                            const _ntA = (t) => (typeof window.cronosTeamIdNorm === 'function') ? window.cronosTeamIdNorm(t) : String(t || '');
                             for (const q of queries) {
-                                const qSnap = await getDocs(q);
+                                const qSnap = await getDocs(q).catch(() => ({ forEach: () => {} }));
                                 qSnap.forEach(d => {
                                     const ld = d.data();
+                                    if (ld.parentUid && ld.parentUid !== me.uid) return;
+                                    if (ld.teamId && _miEq && _ntA(ld.teamId) !== _ntA(_miEq)) return;
                                     if (!pNum && (ld.playerNumber || ld.inviteCode)) {
                                         pNum   = ld.playerNumber || (ld.inviteCode ? ld.inviteCode.replace(/^J/, '') : null);
                                         pAlias = ld.playerAlias || ld.playerName || pAlias;
@@ -1236,8 +1252,6 @@ async function openParentPanel(initialTab) {
                         const pCat = myData.category || myData.categoryLabel
                             || _roleCat.category || _roleCat.categoryLabel
                             || (me && me.category) || '';
-                        const linkId = `${clubId}_${pNum}`;
-                        const existingLink = await getDoc(doc(fa.db, 'cronos_player_links', linkId));
                         // 🔒 v764 · EL EQUIPO DE LA FAMILIA VA EN EL VÍNCULO. Sin él,
                         // el envío de informes no puede saber a quién le toca y
                         // (opción A del autor) no le envía nada. Sale de su plaza
@@ -1247,38 +1261,31 @@ async function openParentPanel(initialTab) {
                             ? window.cronosEquipoDeFamilia(myData, clubId, pNum) : { teamId: '' };
                         const _camposEquipo = _eqFam.teamId
                             ? { teamId: _eqFam.teamId, subcategory: _eqFam.subcategory } : {};
-
-                        if (existingLink.exists()) {
-                            const _exCat = existingLink.data().category;
-                            await updateDoc(doc(fa.db, 'cronos_player_links', linkId), {
-                                parentUid:   me.uid,
-                                parentEmail: me.email || '',
-                                parentPhone: myData.phone || '',   // v671 · sin el respaldo `.whatsapp`
-                                parentName:  myData.displayName || me.email || '',
-                                // Solo establecer categoría si el link no la tenía aún.
-                                ...(!_exCat && pCat ? { category: pCat } : {}),
-                                ..._camposEquipo,
-                            });
-                        } else {
-                            await setDoc(doc(fa.db, 'cronos_player_links', linkId), {
-                                clubId,
-                                playerNumber:      String(pNum),
-                                playerAlias:       pAlias,
-                                teamName:          pTeam,
-                                category:          pCat || pTeam || '',
-                                parentUid:         me.uid,
-                                parentEmail:       me.email || '',
-                                parentPhone:       myData.phone || '',   // v671 · sin `.whatsapp`
-                                parentName:        myData.displayName || me.email || '',
-                                canReceiveReports: true,
-                                canReceiveConv:    true,
-                                canReceiveTr:      true,
-                                canReceiveMsg:     true,
-                                inviteCode:        `J${pNum}`,
-                                createdAt:         new Date().toISOString(),
-                                ..._camposEquipo,   // 🔒 v764
-                            });
-                        }
+                        // 🔗 v813 · el id lleva el uid (cronosIdVinculo): no puede
+                        // existir uno ajeno con este nombre, así que no se lee antes.
+                        // Esa lectura previa era la que denegaban las reglas sobre un
+                        // documento inexistente y dejaba a TODA familia nueva sin
+                        // auto-vinculación (medido en testeo, 2026-10-13).
+                        const linkId = (typeof window.cronosIdVinculo === 'function')
+                            ? window.cronosIdVinculo(clubId, _eqFam.teamId, pNum, me.uid) : `${clubId}_${pNum}_${me.uid}`;
+                        await setDoc(doc(fa.db, 'cronos_player_links', linkId), {
+                            clubId,
+                            playerNumber:      String(pNum),
+                            playerAlias:       pAlias,
+                            teamName:          pTeam,
+                            category:          pCat || pTeam || '',
+                            parentUid:         me.uid,
+                            parentEmail:       me.email || '',
+                            parentPhone:       myData.phone || '',   // v671 · sin `.whatsapp`
+                            parentName:        myData.displayName || me.email || '',
+                            canReceiveReports: true,
+                            canReceiveConv:    true,
+                            canReceiveTr:      true,
+                            canReceiveMsg:     true,
+                            inviteCode:        `J${pNum}`,
+                            createdAt:         new Date().toISOString(),
+                            ..._camposEquipo,   // 🔒 v764
+                        });
                         // Recargar tras la vinculación
                         const refreshSnap = await getDocs(query(
                             collection(fa.db, 'cronos_player_links'),
@@ -1347,7 +1354,21 @@ async function openParentPanel(initialTab) {
                                 doc, getDoc, setDoc, updateDoc } = await import(
                             'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
 
-                        // 1. Buscar link existente por inviteCode o playerNumber
+                        // 🔒 v764 · el equipo de la familia, también al vincular a mano.
+                        const _eqFamM = (typeof window.cronosEquipoDeFamilia === 'function')
+                            ? window.cronosEquipoDeFamilia(window._cronosCurrentUser || me, clubId, manualPNum)
+                            : { teamId: '' };
+                        const _camposEquipoM = _eqFamM.teamId
+                            ? { teamId: _eqFamM.teamId, category: _eqFamM.category, subcategory: _eqFamM.subcategory } : {};
+
+                        // 1. Buscar link existente por inviteCode o playerNumber.
+                        // 🔒 v813 · SÓLO UNO SIN DUEÑO (o ya mío) Y DE MI EQUIPO. Antes
+                        // se cogía el primero que coincidiera en el club y se le
+                        // ponía este parentUid: el #10 de un equipo le quitaba el
+                        // vínculo al #10 de otro.
+                        const _ntM = (t) => (typeof window.cronosTeamIdNorm === 'function') ? window.cronosTeamIdNorm(t) : String(t || '');
+                        const _adoptable = (ld) => (!ld.parentUid || ld.parentUid === me.uid) &&
+                            !(ld.teamId && _eqFamM.teamId && _ntM(ld.teamId) !== _ntM(_eqFamM.teamId));
                         let linkDoc = null, linkRef = null;
                         const byCode = await getDocs(query(
                             collection(fa.db, 'cronos_player_links'),
@@ -1356,7 +1377,7 @@ async function openParentPanel(initialTab) {
                         )).catch(() => null);
 
                         if (byCode && !byCode.empty) {
-                            byCode.forEach(d => { if (!linkDoc) { linkDoc = d.data(); linkRef = d.ref; } });
+                            byCode.forEach(d => { if (!linkDoc && _adoptable(d.data())) { linkDoc = d.data(); linkRef = d.ref; } });
                         }
 
                         if (!linkRef) {
@@ -1367,16 +1388,16 @@ async function openParentPanel(initialTab) {
                                 where('clubId',       '==', clubId)
                             )).catch(() => null);
                             if (byNum && !byNum.empty) {
-                                byNum.forEach(d => { if (!linkDoc) { linkDoc = d.data(); linkRef = d.ref; } });
+                                byNum.forEach(d => { if (!linkDoc && _adoptable(d.data())) { linkDoc = d.data(); linkRef = d.ref; } });
                             }
                         }
 
-                        // 🔒 v764 · el equipo de la familia, también al vincular a mano.
-                        const _eqFamM = (typeof window.cronosEquipoDeFamilia === 'function')
-                            ? window.cronosEquipoDeFamilia(window._cronosCurrentUser || me, clubId, manualPNum)
-                            : { teamId: '' };
-                        const _camposEquipoM = _eqFamM.teamId
-                            ? { teamId: _eqFamM.teamId, category: _eqFamM.category, subcategory: _eqFamM.subcategory } : {};
+                        // El nombre del jugador, del registro de la familia (antes se
+                        // guardaba vacío y el panel decía «Jugador · 3»).
+                        const _yoM = window._cronosCurrentUser || me;
+                        const _plazaM = ((_yoM.allRoles || []).find(r => r && (r.role === 'parent' || r.role === 'parent_individual') &&
+                            (r.clubId === clubId || !r.clubId)) || {});
+                        const _aliasM = _yoM.playerAlias || _plazaM.playerAlias || '';
 
                         if (linkRef) {
                             // Link encontrado: añadir parentUid
@@ -1392,12 +1413,15 @@ async function openParentPanel(initialTab) {
                                 if(window._CRONOS_DEBUG) if(window._CRONOS_DEBUG) console.warn('[ppPlayer] Vinculación manual cancelada: clubId ausente, no se crea link para evitar ID basura "null_' + manualPNum + '" en cronos_player_links.');
                                 return;
                             }
-                            const newLinkId = clubId + '_' + manualPNum;
+                            // 🔗 v813 · id con el uid: ver cronosIdVinculo (utils.js).
+                            const newLinkId = (typeof window.cronosIdVinculo === 'function')
+                                ? window.cronosIdVinculo(clubId, _eqFamM.teamId, manualPNum, me.uid)
+                                : clubId + '_' + manualPNum + '_' + me.uid;
                             linkRef = doc(fa.db, 'cronos_player_links', newLinkId);
                             await setDoc(linkRef, {
                                 clubId,
                                 playerNumber:      manualPNum,
-                                playerAlias:       '',
+                                playerAlias:       _aliasM,
                                 inviteCode:        codeRaw,
                                 parentUid:         me.uid,
                                 parentEmail:       me.email || '',
@@ -2889,7 +2913,11 @@ window.ppNotifsByType = async function(type) {
         const queries = [
             getDocs(query(collection(fa.db,'cronos_notifications'), where('parentUid','==',me.uid), where('type','==',type))).catch(()=>null),
         ];
-        if (clubId) {
+        // 🔒 v813 · la familia, sólo lo SUYO. Por el club le llegaban las
+        // convocatorias de todos los equipos (las de Regional B a una familia
+        // de Alevín C), y las reglas ya no se lo dejan leer.
+        const _esFamilia = ['parent', 'padre_individual', 'parent_individual'].includes(me.role);
+        if (clubId && !_esFamilia) {
             queries.push(getDocs(query(collection(fa.db,'cronos_notifications'), where('clubId','==',clubId), where('type','==',type))).catch(()=>null));
         }
         const snaps = await Promise.all(queries);

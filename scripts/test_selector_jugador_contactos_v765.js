@@ -100,7 +100,9 @@ console.log('\n3) El guardado');
     ok('3b · 🔑 sólo si hay jugador elegido Y equipo abierto (vaciar no borra el enlace)',
        /if \(jugOpt && eqAbierto\)/.test(save));
     ok('3c · el contacto manual guarda también su equipo y dorsal',
-       /teamId:\s*\(playerId &&/.test(save) && /playerNumber:\s*String\(_pDs\.number/.test(save));
+       // v814 · el equipo va en `_equipoFila`: el abierto si hay jugador, si no el de su única plaza.
+       /const _equipoFila = \(playerId && typeof window\.cronosEquipoAbierto === 'function'\) \? window\.cronosEquipoAbierto\(\)/.test(save)
+       && /teamId:\s*_equipoFila,/.test(save) && /playerNumber:\s*String\(_pDs\.number/.test(save));
     ok('3d · la tabla de familias enseña las del equipo abierto (y las aún sin equipo)',
        /_cmVinculosDelEquipo\(links\)/.test(CM));
 }

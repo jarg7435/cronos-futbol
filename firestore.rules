@@ -534,6 +534,24 @@ service cloud.firestore {
              && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('role', '') == 'directivo';
     }
 
+    // 🔒 v813 · ¿ES UNA CUENTA DE FAMILIA? (implementar.txt 2026-10-13)
+    //
+    // Medido en testeo con la sesión real de una familia de Alevín C: por la
+    // pertenencia al club (sameClubAsDoc / userDocClubId) leía los vínculos,
+    // los avisos y los 244 informes de TODOS los equipos del club, y podía
+    // modificar el vínculo de otra familia. A la familia le toca lo suyo: lo
+    // que lleva su `parentUid`.
+    //
+    // Mismo criterio que attendanceStaff(): rol RAÍZ del documento (nunca
+    // allRoles, que es autoescribible). Los entrenadores tienen raíz 'user',
+    // así que quien es familia Y entrenador sigue entrando como entrenador.
+    function esCuentaFamilia() {
+      return isAuth()
+             && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+             && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('role', '')
+                  in ['parent', 'padre_individual', 'parent_individual'];
+    }
+
     // El usuario tiene acceso al club de este enlace
     function isLinkClubMember() {
       return isAuth() && (
@@ -1678,14 +1696,19 @@ service cloud.firestore {
     // COLECCIÓN: cronos_notifications
     // SEC-004/SEC-015: Restrict create
     // ============================================================
+    // 🔒 v813 · la familia lee, cambia y borra sólo los avisos que son SUYOS
+    // (userId/parentUid). Por el club leía las convocatorias de todos los
+    // equipos, y su panel borraba avisos ajenos al pasar de 40.
     match /cronos_notifications/{notifId} {
       allow read: if isAuth() && (
         isSuperAdmin() ||
         request.auth.uid == resource.data.get('userId', null) ||
         request.auth.uid == resource.data.get('parentUid', null) ||
         request.auth.uid == resource.data.get('coachUid', null) ||
-        sameClubAsDoc(resource.data.get('clubId', null)) ||
-        userDocClubId(resource.data.get('clubId', null))
+        (!esCuentaFamilia() && (
+          sameClubAsDoc(resource.data.get('clubId', null)) ||
+          userDocClubId(resource.data.get('clubId', null))
+        ))
       );
       allow create: if isAuth() && (
         isSuperAdmin() ||
@@ -1700,16 +1723,20 @@ service cloud.firestore {
         request.auth.uid == resource.data.get('userId', null) ||
         request.auth.uid == resource.data.get('parentUid', null) ||
         request.auth.uid == resource.data.get('coachUid', null) ||
-        sameClubAsDoc(resource.data.get('clubId', null)) ||
-        userDocClubId(resource.data.get('clubId', null))
+        (!esCuentaFamilia() && (
+          sameClubAsDoc(resource.data.get('clubId', null)) ||
+          userDocClubId(resource.data.get('clubId', null))
+        ))
       );
       allow delete: if isAuth() && (
         isSuperAdmin() ||
         request.auth.uid == resource.data.get('userId', null) ||
         request.auth.uid == resource.data.get('parentUid', null) ||
         request.auth.uid == resource.data.get('coachUid', null) ||
-        sameClubAsDoc(resource.data.get('clubId', null)) ||
-        userDocClubId(resource.data.get('clubId', null))
+        (!esCuentaFamilia() && (
+          sameClubAsDoc(resource.data.get('clubId', null)) ||
+          userDocClubId(resource.data.get('clubId', null))
+        ))
       );
     }
 
@@ -1767,6 +1794,9 @@ service cloud.firestore {
     // COLECCIÓN: cronos_player_reports
     // SEC-013: Validate club on create
     // ============================================================
+    // 🔒 v813 · las ramas «del club» dejan fuera a la cuenta de familia
+    // (esCuentaFamilia): leía, creaba y cambiaba informes de todos los equipos.
+    // Lo suyo lo sigue leyendo y descartando por `parentUid`.
     match /cronos_player_reports/{reportId} {
       // ⚠️ v435 · TODAS LAS LECTURAS DEL DOCUMENTO USAN .get(campo, null).
       // En el lenguaje de reglas, leer una clave AUSENTE de un mapa LANZA, y un
@@ -1781,7 +1811,7 @@ service cloud.firestore {
       // comportamiento en v435: una lectura estatica no lo ve.
       allow read: if isAuth() && (
         isSuperAdmin() ||
-        sameClubAsDoc(resource.data.get('clubId', null)) ||
+        (!esCuentaFamilia() && sameClubAsDoc(resource.data.get('clubId', null))) ||
         request.auth.uid == resource.data.get('coachUid', null) ||
         request.auth.uid == resource.data.get('parentUid', null) ||
         // FIX: directores/coordinadores reciben informes de staff aunque su
@@ -1793,15 +1823,15 @@ service cloud.firestore {
         (resource.data.get('staffUids', null) != null &&
          request.auth.uid in resource.data.get('staffUids', [])) ||
         // FIX (entrenador sin claim): miembros del club según users/{uid}.clubId.
-        userDocClubId(resource.data.get('clubId', null)) ||
-        transitionalRead(resource.data.get('clubId', null))
+        (!esCuentaFamilia() && userDocClubId(resource.data.get('clubId', null))) ||
+        (!esCuentaFamilia() && transitionalRead(resource.data.get('clubId', null)))
       );
       allow create: if isAuth() && (
         isSuperAdmin() ||
-        sameClub(request.resource.data.get('clubId', null)) ||
-        request.auth.uid == request.resource.data.get('coachUid', null) ||
+        (!esCuentaFamilia() && sameClub(request.resource.data.get('clubId', null))) ||
+        (!esCuentaFamilia() && request.auth.uid == request.resource.data.get('coachUid', null)) ||
         // FIX (entrenador sin claim): autor miembro del club por users/{uid}.
-        userDocClubId(request.resource.data.get('clubId', null))
+        (!esCuentaFamilia() && userDocClubId(request.resource.data.get('clubId', null)))
       );
       // ══════════════════════════════════════════════════════════════
       // v435 · CRITERIO DEL AUTOR PARA LOS INFORMES
@@ -1816,7 +1846,7 @@ service cloud.firestore {
       //   · El SuperAdmin puede vaciar al cerrar la temporada.
       allow update: if isAuth() && (
         isSuperAdmin() ||
-        sameClubAsDoc(resource.data.get('clubId', null)) ||
+        (!esCuentaFamilia() && sameClubAsDoc(resource.data.get('clubId', null))) ||
         request.auth.uid == resource.data.get('coachUid', null) ||
         // ⚠️ v435 · ELIMINADA la rama `request.auth.uid ==
         // request.resource.data.coachUid`. Leia el documento ENTRANTE, no el
@@ -1895,7 +1925,7 @@ service cloud.firestore {
         (request.auth.uid == resource.data.get('parentUid', null) &&
          request.resource.data.diff(resource.data).affectedKeys()
             .hasOnly(['dismissedBy'])) ||
-        userDocClubId(resource.data.get('clubId', null))
+        (!esCuentaFamilia() && userDocClubId(resource.data.get('clubId', null)))
       );
       // ══════════════════════════════════════════════════════════════
       // 2026-08-13 · QUIÉN DESTRUYE UN INFORME COLECTIVO
@@ -1963,7 +1993,7 @@ service cloud.firestore {
          && puedePurgarInformes(resource.data.get('clubId', null))) ||
         // Los que NO son de staff (individuales y sueltos) se quedan como
         // estaban: cualquier miembro del club puede borrarlos.
-        (resource.data.get('staffReport', false) != true &&
+        (!esCuentaFamilia() && resource.data.get('staffReport', false) != true &&
          (sameClubAsDoc(resource.data.get('clubId', null)) ||
           userDocClubId(resource.data.get('clubId', null))))
       );
@@ -1973,30 +2003,43 @@ service cloud.firestore {
     // COLECCIÓN: cronos_player_links
     // FIX CRÍTICO: antes era "allow read, write: if isAuth()"
     // ============================================================
+    // 🔒 v813 · la familia: lee y crea SÓLO lo suyo, y de lo suyo sólo toca
+    // sus datos de contacto. El jugador (playerCode/playerNumber/teamId) y los
+    // permisos (canReceive*, canWatchLive, canSendMsg) los decide el
+    // entrenador en Contactos: si la familia pudiera cambiarlos, se apuntaría
+    // a los informes de otro niño.
     match /cronos_player_links/{linkId} {
       allow read: if isAuth() && (
         isSuperAdmin() ||
         isLinkOwner() ||
-        isLinkClubMember() ||
-        // FIX (C2): fallback para entrenador sin custom claim clubId
-        userDocClubId(resource.data.get('clubId', null)) ||
-        transitionalRead(resource.data.get('clubId', null))
+        (!esCuentaFamilia() && (
+          isLinkClubMember() ||
+          // FIX (C2): fallback para entrenador sin custom claim clubId
+          userDocClubId(resource.data.get('clubId', null)) ||
+          transitionalRead(resource.data.get('clubId', null))
+        ))
       );
       allow create: if isAuth() && (
         isSuperAdmin() ||
-        sameClub(request.resource.data.get('clubId', null)) ||
-        sameClubAsDoc(request.resource.data.get('clubId', null)) ||
-        // FIX (C2): fallback para entrenador sin custom claim clubId
-        userDocClubId(request.resource.data.get('clubId', null))
+        ((sameClub(request.resource.data.get('clubId', null)) ||
+          sameClubAsDoc(request.resource.data.get('clubId', null)) ||
+          // FIX (C2): fallback para entrenador sin custom claim clubId
+          userDocClubId(request.resource.data.get('clubId', null)))
+         && (!esCuentaFamilia() ||
+             (request.resource.data.get('parentUid', null) == request.auth.uid
+              && !request.resource.data.keys().hasAny(['playerCode', 'canWatchLive', 'canSendMsg']))))
       );
       allow update: if isAuth() && (
         isSuperAdmin() ||
-        isLinkOwner() ||
-        isLinkClubMember()
+        (!esCuentaFamilia() && isLinkClubMember()) ||
+        (isLinkOwner()
+         && request.resource.data.get('parentUid', null) == request.auth.uid
+         && request.resource.data.diff(resource.data).affectedKeys()
+              .hasOnly(['parentUid', 'parentEmail', 'parentName', 'parentPhone']))
       );
       allow delete: if isAuth() && (
         isSuperAdmin() ||
-        isLinkClubMember()
+        (!esCuentaFamilia() && isLinkClubMember())
       );
     }
 

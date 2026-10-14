@@ -100,7 +100,7 @@ const parte1 = (async () => {   // async: 1f3 espera al reloj de 5 s
     ok('1n · y los vídeos se suben DESPUÉS de registrar los sucesos', RM.indexOf('const _vid = await _subeClips(items);') > RM.indexOf('_informePendiente = _informes ? null : cambios;'));
     const PP = leer('js/parent/panel.js');
     ok('1o · 🔑 la familia sólo ve la tarjeta en categorías de adultos',
-       /window\.CronosClips\.activo\(_yo\) && window\.CronosClips\.esAdultos\(_cat\)/.test(PP));
+       /window\.CronosClips\.activo\(_yo\) && _cats\.some\(c => window\.CronosClips\.esAdultos\(c\)\)/.test(PP));
     const FB = JSON.parse(leer('firebase.json'));
     const ign = (Array.isArray(FB.hosting) ? FB.hosting : [FB.hosting]).every(h => (h.ignore || []).indexOf('storage.rules') >= 0);
     ok('1p · storage.rules registrado y FUERA del hosting público', FB.storage && FB.storage.rules === 'storage.rules' && ign);

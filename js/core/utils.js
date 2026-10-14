@@ -2654,6 +2654,36 @@ function cronosEquipoDeFamilia(yo, clubId, dorsal) {
 }
 window.cronosEquipoDeFamilia = cronosEquipoDeFamilia;
 
+// ════════════════════════════════════════════════════════════════════
+//  🔗 v813 · EL VÍNCULO ES DE UNA CUENTA, UN EQUIPO Y UN DORSAL
+//
+//  Antes el id era `${clubId}_${dorsal}`: UNO por dorsal en todo el club.
+//  Medido en testeo (2026-10-13): la familia del #10 de Regional B entró,
+//  encontró por «J10» el vínculo de la familia del #10 de Alevín C y se lo
+//  QUEDÓ en silencio; la siguiente en entrar se lo volvía a quitar. Y dos
+//  familiares del mismo niño tampoco cabían.
+//
+//  Ahora el uid va en el id: un vínculo nuevo no puede pisar el de otra
+//  cuenta. Los vínculos viejos siguen valiendo (se leen por `parentUid`);
+//  sólo cambia cómo se llama el que se CREA.
+// ════════════════════════════════════════════════════════════════════
+function cronosIdVinculo(clubId, teamId, dorsal, uid) {
+    const d = String(dorsal == null ? '' : dorsal).replace(/^J-?/i, '');
+    return [clubId, teamId, d, uid].filter(x => x != null && String(x) !== '').join('_');
+}
+window.cronosIdVinculo = cronosIdVinculo;
+
+// 🔒 v814 · ¿Este contacto de familia es de OTRO equipo que el abierto? Las
+// listas de destinatarios salen de `emailConfig.contacts`, que es UNA por
+// entrenador y mezcla sus equipos. Sin equipo conocido no se excluye (no se
+// puede juzgar); el envío de informes vuelve a exigirlo (opción A).
+function cronosContactoDeOtroEquipo(c) {
+    if (!c || c.type !== 'parent' || !c.teamId) return false;
+    const eq = (typeof window.cronosEquipoAbierto === 'function') ? window.cronosEquipoAbierto() : '';
+    return !!eq && cronosTeamIdNorm(c.teamId) !== cronosTeamIdNorm(eq);
+}
+window.cronosContactoDeOtroEquipo = cronosContactoDeOtroEquipo;
+
 // Normaliza una clave de equipo YA GUARDADA. Hace falta porque el histórico de
 // informes lleva escrito `teamId: 'club__f11-regional__b'` y hay que poder
 // compararlo con la clave canónica sin reescribir un solo documento de

@@ -134,7 +134,8 @@ console.log('\n4) Los despachos pasan el equipo y avisan; los vínculos lo guard
     ok('4b · envío manual post-partido', /_manualAuthIds,\s*\(typeof window\.cronosEquipoAbierto/.test(SEND) && /_cronosAvisaFamiliasSinEquipo\(_parentTargetsManual\)/.test(SEND));
     ok('4c · informe manual (equipo del FORMULARIO)', /null, _eqManual\)/.test(MAN) && /cronosTeamId\(clubId, S\.equipo\.category, S\.equipo\.subcategory\)/.test(MAN));
     ok('4d · 🔑 los vínculos que escriben las familias llevan su equipo (auto y manual)',
-       (PAR.match(/\.\.\._camposEquipo,/g) || []).length === 2 && (PAR.match(/\.\.\._camposEquipoM,/g) || []).length === 2);
+       // v813 · la auto-vinculación ya sólo CREA (id con el uid): una escritura, no dos.
+       (PAR.match(/\.\.\._camposEquipo,/g) || []).length === 1 && (PAR.match(/\.\.\._camposEquipoM,/g) || []).length === 2);
 }
 
 console.log('\n──────────────────────────────────────────────────────────');

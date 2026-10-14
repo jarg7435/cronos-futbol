@@ -3225,6 +3225,9 @@ export async function doAuth() {
                             where('clubId', '==', targetEntityId)
                         ));
                         linkSnap.forEach(async d => {
+                            // 🔒 v813 · sólo un vínculo SIN dueño: antes se le ponía este
+                            // parentUid a TODOS los «J10» del club, de cualquier equipo.
+                            if (d.data().parentUid) return;
                             await updateDoc(doc(fa.db, 'cronos_player_links', d.id), {
                                 parentUid:   cred.user.uid,
                                 parentEmail: email,
@@ -4056,6 +4059,9 @@ export async function doAuth() {
                         where('clubId', '==', targetEntityId)
                     ));
                     linkSnap.forEach(async d => {
+                        // 🔒 v813 · sólo un vínculo SIN dueño: antes se le ponía este
+                        // parentUid a TODOS los «J10» del club, de cualquier equipo.
+                        if (d.data().parentUid) return;
                         await updateDoc(doc(fa.db, 'cronos_player_links', d.id), {
                             parentUid:   cred.user.uid,
                             parentEmail: email,

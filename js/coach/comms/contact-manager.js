@@ -88,6 +88,12 @@ async function openContactManager() {
 
         const links = [];
         snap.forEach(d => links.push({ _id: d.id, ...d.data() }));
+        // 🔒 v813 · quién tiene ya vínculo (de cualquier equipo): esa familia se
+        // gestiona en SU fila vinculada, nunca además como fila «manual».
+        _cmUidsVinculados = new Set(links.map(l => l.parentUid).filter(Boolean));
+        _cmLinks = links;
+        _cmEquiposFamilia = new Map();
+        _cmOcultas = [];
 
         hideSpinner();
 
@@ -269,6 +275,11 @@ async function openContactManager() {
             parentUsersSnap.forEach(d => {
                 const u = d.data();
                 const uUid = d.id;
+                // 🔒 v813 · los equipos de esta familia (sus plazas), para no
+                // pintarla en la tabla de OTRO equipo (ver _cmFilaManualVisible).
+                _cmEquiposFamilia.set(uUid, (u.allRoles || []).filter(r => r &&
+                    (r.role === 'parent' || r.role === 'parent_individual') && r.status !== 'removed')
+                    .map(r => (typeof window.cronosTeamId === 'function') ? window.cronosTeamId(me.clubId, r.category, r.subcategory || '') : ''));
                 const cat = u.category || u.categoryLabel || '';
                 const sub = u.subcategory || '';
                 if (_catAndSubcatMatch(coachCat, coachSub, cat, sub)) {
@@ -580,7 +591,7 @@ async function openContactManager() {
                                     <td style="padding:0.45rem;text-align:center;color:var(--text-muted);
                                                font-size:0.65rem;">—</td>
                                 </tr>`).join('')}
-                                ${emailConfig.contacts.filter(c => c.type === 'parent').map(c => renderParentRowMarkup(c)).join('')}
+                                ${emailConfig.contacts.filter(c => c.type === 'parent' && _cmFilaManualVisible(c)).map(c => renderParentRowMarkup(c)).join('')}
                             </tbody>
                         </table>
                     </div>
@@ -689,9 +700,12 @@ async function saveContactManagerData() {
             const rptEl       = document.querySelector(`.contact-rpt[data-linkid="${linkId}"]`);
             const liveEl      = document.querySelector(`.contact-live[data-linkid="${linkId}"]`);
 
-            // Extraer playerNumber del linkId ({clubId}_{playerNumber})
-            const playerNum = linkId.includes('_') ? linkId.split('_').pop() : null;
-            // inviteCode = 'J' + playerNumber (ej: J10, J7, J1)
+            // inviteCode = 'J' + playerNumber (ej: J10, J7, J1).
+            // 🔗 v813 · el dorsal ya NO sale del final del id: los vínculos nuevos
+            // terminan en el uid de la familia (cronosIdVinculo). Sólo el formato
+            // viejo `{clubId}_{dorsal}` acaba en número.
+            const _colaId = linkId.includes('_') ? linkId.split('_').pop() : '';
+            const playerNum = /^\d+$/.test(_colaId) ? _colaId : null;
             const inviteCode = playerNum ? `J${playerNum}` : null;
 
             const updateData = {
@@ -750,7 +764,8 @@ async function saveContactManagerData() {
             }
 
             // Solo añadir inviteCode si no existía ya (para no sobreescribir)
-            if (inviteCode) updateData.inviteCode = inviteCode;
+            if (updateData.playerNumber) updateData.inviteCode = 'J' + updateData.playerNumber;
+            else if (inviteCode) updateData.inviteCode = inviteCode;
 
             await updateDoc(doc(db, 'cronos_player_links', linkId), updateData);
         }
@@ -802,7 +817,15 @@ async function saveContactManagerData() {
                 ? (_pDs.alias || String(pOpt.text || '').split(/ · |\] /).pop().trim())
                 : '';
 
+            // 🔒 v814 · si la fila es de una familia con cuenta, se guarda su uid
+            // y —si sólo tiene una plaza— su equipo: así no se ofrece como
+            // destinataria en los envíos de OTRO equipo (sharedBuildRecipientsHTML).
+            const _idFila = row.dataset.id || '';
+            const _eqsFila = (_cmEquiposFamilia.get(_idFila) || []).filter(Boolean);
+            const _equipoFila = (playerId && typeof window.cronosEquipoAbierto === 'function') ? window.cronosEquipoAbierto()
+                : (_eqsFila.length === 1 ? _eqsFila[0] : '');
             updatedContacts.push({
+                ...(_cmEquiposFamilia.has(_idFila) ? { uid: _idFila } : {}),
                 id:     row.dataset.id || ('p_' + Math.random().toString(36).substr(2,6)),
                 type:   'parent',
                 name:   row.querySelector('.p-name').value.trim(),
@@ -810,18 +833,61 @@ async function saveContactManagerData() {
                 playerId: playerId,   // 🔗 El vínculo inequívoco: el CÓDIGO del jugador (v764)
                 // 🔗 v765 · su equipo y su dorsal, para el envío de informes.
                 playerNumber: String(_pDs.number || ''),
-                teamId: (playerId && typeof window.cronosEquipoAbierto === 'function') ? window.cronosEquipoAbierto() : '',
+                teamId: _equipoFila,
                 phone:  '',   // v671 · ver la nota del `.c-phone` de arriba
                 email:  row.querySelector('.p-email').value.trim(),
                 tags
             });
         });
 
+        // 🔗 v814 · LAS FAMILIAS VINCULADAS TAMBIÉN SON CONTACTOS. El envío de
+        // informes (match-reports-send.js) recorre ESTA lista y sólo después
+        // empareja con el vínculo: una familia vinculada que no esté aquí no
+        // recibe nada. Antes entraba de rebote, como fila «manual» duplicada;
+        // ahora se escribe a propósito desde su vínculo —con lo que el
+        // entrenador acaba de marcar en su fila—, sin pintarse dos veces.
+        const _q = (cls, id) => document.querySelector(`.${cls}[data-linkid="${id}"]`);
+        const _vinc = new Map();
+        (_cmLinks || []).filter(l => l && l.parentUid).forEach(l => {
+            const fila = !!_q('contact-parent-email', l._id);
+            const marca = (cls, campo, def) => fila ? !!(_q(cls, l._id) || {}).checked : (l[campo] === undefined ? def : !!l[campo]);
+            const tags = [];
+            if (marca('contact-cv', 'canReceiveConv', true))       tags.push('cv');
+            if (marca('contact-tr', 'canReceiveTr', true))         tags.push('tr');
+            if (marca('contact-msg', 'canReceiveMsg', true))       tags.push('msg');
+            if (marca('contact-rpt', 'canReceiveReports', false))  tags.push('rpt');
+            if (marca('contact-live', 'canWatchLive', false))      tags.push('live');
+            const sel = fila ? _q('contact-player', l._id) : null;
+            const opt = sel && sel.value ? sel.options[sel.selectedIndex] : null;
+            _vinc.set(l._id, {   // por VÍNCULO: dos hijos, dos líneas (mismo uid)
+                id: l.parentUid, uid: l.parentUid, type: 'parent', vinculado: true,
+                name:  fila ? ((_q('contact-parent-name', l._id) || {}).value || '').trim() : (l.parentName || ''),
+                email: fila ? ((_q('contact-parent-email', l._id) || {}).value || '').trim() : (l.parentEmail || ''),
+                player: (opt && opt.dataset.alias) || l.playerAlias || '',
+                playerId: (sel && sel.value) || l.playerCode || '',
+                playerNumber: String((opt && opt.dataset.number) || l.playerNumber || ''),
+                teamId: (fila && sel && sel.value && typeof window.cronosEquipoAbierto === 'function')
+                    ? window.cronosEquipoAbierto() : (l.teamId || ''),
+                phone: '', tags,
+            });
+        });
+        const _uidsVinc = new Set(Array.from(_vinc.values()).map(c => c.uid));
+        for (let i = updatedContacts.length - 1; i >= 0; i--) {
+            const c = updatedContacts[i];
+            if (c.type === 'parent' && _uidsVinc.has(c.uid || c.id)) updatedContacts.splice(i, 1);
+        }
+        _vinc.forEach(c => updatedContacts.push(c));
+
+        // 🔒 v813 · las familias de OTRO equipo no se pintaron aquí, pero son
+        // contactos del entrenador: vuelven tal cual (ver _cmFilaManualVisible).
+        const _idsGuardados = new Set(updatedContacts.map(c => c.id));
+        (_cmOcultas || []).forEach(c => { if (!_idsGuardados.has(c.id)) { _idsGuardados.add(c.id); updatedContacts.push(c); } });
+
         if (typeof emailConfig !== 'undefined') {
             emailConfig.contacts = updatedContacts;
             
             // Mantener compatibilidad con campos antiguos por si acaso se usan en otros scripts legacy
-            const firstReport = updatedContacts.find(c => c.tags.includes('reports'));
+            const firstReport = updatedContacts.find(c => (c.tags || []).includes('reports'));
             if (firstReport) {
                 emailConfig.directorEmail = firstReport.email;
                 // v671 · ya no se escribe `whatsappNumber`. Y NO se pone a ''
@@ -1007,6 +1073,36 @@ function _cmEsDeEsteEquipo(link) {
     const eq = (typeof window.cronosEquipoAbierto === 'function') ? window.cronosEquipoAbierto() : '';
     const norm = (t) => (typeof window.cronosTeamIdNorm === 'function') ? window.cronosTeamIdNorm(t) : String(t || '');
     return !!(eq && link && link.teamId && norm(link.teamId) === norm(eq));
+}
+// ══════════════════════════════════════════════════════════════════════
+//  🔒 v813 · LAS FILAS «MANUALES» DE FAMILIA, SÓLO LAS DE ESTE EQUIPO
+//
+//  `emailConfig.contacts` es UNA lista por entrenador, común a todos sus
+//  equipos, y la apertura le añade las familias del club. Medido en testeo
+//  (2026-10-13): cada familia salía dos veces (su fila vinculada y una
+//  manual) y en Regional B aparecían las tres de Alevín C con CONV. y
+//  ENTR. marcados. Ahora no se pinta una manual de quien ya tiene vínculo,
+//  ni la de una familia cuyo equipo (elegido o por su plaza) es otro.
+//  Las de otro equipo se APARTAN y vuelven a la lista al guardar: guardar
+//  desde un equipo no puede borrar los contactos del otro.
+// ══════════════════════════════════════════════════════════════════════
+let _cmUidsVinculados = new Set();
+let _cmLinks = [];
+let _cmEquiposFamilia = new Map();
+let _cmOcultas = [];
+function _cmFilaManualVisible(c) {
+    // ⚠️ La fila manual guardada NO conserva `uid` (saveContactManagerData,
+    // 2b): la de una familia con cuenta lo lleva en el `id`.
+    const uid = c.uid || c.id || '';
+    if (uid && _cmUidsVinculados.has(uid)) return false;    // la gestiona su fila vinculada
+    const eq = (typeof window.cronosEquipoAbierto === 'function') ? window.cronosEquipoAbierto() : '';
+    if (!eq) return true;
+    const norm = (t) => (typeof window.cronosTeamIdNorm === 'function') ? window.cronosTeamIdNorm(t) : String(t || '');
+    let delEquipo = true;
+    if (c.teamId) delEquipo = norm(c.teamId) === norm(eq);
+    else if (uid && _cmEquiposFamilia.has(uid)) delEquipo = _cmEquiposFamilia.get(uid).some(t => norm(t) === norm(eq));
+    if (!delEquipo) _cmOcultas.push(c);
+    return delEquipo;
 }
 function _cmVinculosDelEquipo(links) {
     return (links || []).filter(l => l && (!l.teamId || _cmEsDeEsteEquipo(l)));

@@ -278,6 +278,8 @@ function buildConvocationRecipientsHTML(filterCriteria, prefix = 'rpt', allConta
     // Filtramos los padres: solo si su playerId o playerNumber coincide con la convocatoria
     const activeParents = !_hayFamilias ? [] : contacts.filter(c => {
         if (c.type !== 'parent') return false;
+        // 🔒 v814 · nunca la familia de otro equipo (el #10 de Alevín C no es el de Regional B).
+        if (typeof window.cronosContactoDeOtroEquipo === 'function' && window.cronosContactoDeOtroEquipo(c)) return false;
 
         // 1. Intentar por ID único (J-01, etc)
         const matchById = c.playerId && ids.includes(c.playerId);
