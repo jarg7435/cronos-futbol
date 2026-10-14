@@ -2729,8 +2729,27 @@
 //        LIBERADA (no la borra), permission-denied = «no hay marca» y se
 //        escribe la propia, y el oyente sólo desaloja con datos del SERVIDOR
 //        y ante una marca ajena VIVA.
-const VERSION = 'v812';
-const CACHE_NAME = 'cronos-cache-v812';
+// v813 · EL VÍNCULO DE LA FAMILIA ES SUYO Y DE SU EQUIPO. Medido en testeo con
+//        5 familias: ninguna se auto-vinculaba (lectura previa denegada), el
+//        #10 de Regional B se quedaba el vínculo del #10 de Alevín C, y una
+//        familia leía avisos e informes de todo el club. Id con el uid y
+//        reglas que dejan a la familia sólo lo suyo.
+// v814 · LAS FAMILIAS, SÓLO LAS DEL EQUIPO. La convocatoria y la planificación
+//        de Regional B salían marcadas (y llegaban) a las familias de Alevín C:
+//        el selector mezclaba todo el club. Contactos ya no duplica familias
+//        ni pinta las de otro equipo.
+// v815 · LOS INFORMES VUELVEN A LLEGAR A LAS FAMILIAS VINCULADAS (Contactos las
+//        guarda como contactos con sus permisos), las listas de destinatarios
+//        filtran por equipo y la familia de Regional ve la tarjeta de Vídeos.
+// v816 · «VER PARTIDO» DE LA FAMILIA ENTRA EN EL VISOR. El enlace target=_blank
+//        (noopener) no pasaba la sesión por pestaña y live.html pedía el login
+//        de staff; y su red de seguridad tapaba el login con un aviso falso.
+// v817 · EVENTO PERDIDO: tipo deseleccionable (sin tipo = sólo vídeo), etiqueta
+//        de vídeo en los pendientes, lista más grande, y el informe del partido
+//        se corrige con consultas que las reglas aceptan. Dirección ve Vídeos en
+//        cuanto llegan los extras del club.
+const VERSION = 'v817';
+const CACHE_NAME = 'cronos-cache-v817';
 
 const ASSETS = [
     './',
