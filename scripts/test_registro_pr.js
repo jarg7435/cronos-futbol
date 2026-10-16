@@ -691,7 +691,8 @@ ok('cada copia que lleva matchComments lleva también matchPR',
 
 const engine = leer('js/coach/reports/report-engine.js');
 ok('el informe colectivo pinta el panel de P/R',
-   /buildPRPanel\(_prDelInforme\(m\), players\)/.test(engine));
+   // v821 · el resumen se lee una vez (`_pr`) y lo comparten P/R y F-D.
+   /const _pr\s*=\s*_prDelInforme\(m\);/.test(engine) && /buildPRPanel\(_pr, players\)/.test(engine));
 
 // ── El motor del informe, EJECUTADO de verdad ───────────────────────────────
 // 🔑 El encargo pide "asegurar que estos datos se listen correctamente". Que

@@ -126,7 +126,7 @@ parte('PARTE 5 · v757 · «Mis Informes de Partido» descarga el colectivo como
     const cuerpo = mi.slice(i, mi.indexOf('};', i));
     ok('5b · 🔑 usa el MISMO módulo que Dirección (rxExportarInformePDF / CSV)',
         /window\.rxExportarInformeCSV\(m\)/.test(cuerpo) && /window\.rxExportarInformePDF\(m, cuerpo/.test(cuerpo));
-    ok('5c · 🔑 y el MISMO motor visual (_RP.build)', /_RP\.build\(m, window\._cronosCurrentUser\)/.test(cuerpo));
+    ok('5c · 🔑 y el MISMO motor visual (_RP.build)', /_RP\.build\(m, window\._cronosCurrentUser[,)]/.test(cuerpo));
     ok('5d · 🚨 sin `await` antes de abrir la ventana (bloqueo de ventanas emergentes)', !/await/.test(cuerpo));
     ok('5e · botones 🖨️ y 📊 en la tarjeta, sin desplegar',
         /miExportInforme\('\$\{key64\}','pdf'\)"\s*title="Descargar este informe grupal en PDF"/.test(mi) &&

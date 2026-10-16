@@ -1352,6 +1352,162 @@ const _RP = (() => {
                `</div>`;
     };
 
+    // ════════════════════════════════════════════════════════════════
+    //  💪 v821 · F-D · FORTALEZAS Y DEBILIDADES EN EL INFORME DEL PARTIDO
+    //
+    //  Encargo del autor (implementar.txt 16-10, captura 11564): el análisis
+    //  del botón F-D del directo, como bloque de resumen del informe.
+    //
+    //  🔑 EL ANÁLISIS ES EL DEL DIRECTO, NO UNA COPIA: `cronosFDAnaliza`
+    //  (js/match/events/strengths-panel.js). Así los umbrales no pueden
+    //  separarse. Como este motor es PURO (cero referencias a la ventana),
+    //  quien llama lo PASA: `_RP.build(m, me, { fdAnaliza })`. Sin él
+    //  —arneses de prueba—, el bloque no sale.
+    //  Se alimenta de lo GUARDADO: `matchPR` y `matchStats` (los mismos que
+    //  pintan los dos paneles de arriba), el marcador y los goles y tarjetas
+    //  de cada jugador. Sin R/P ni estadísticas avanzadas no hay bloque: el
+    //  directo tampoco ofrece el botón en ese caso.
+    // ════════════════════════════════════════════════════════════════
+    const _fdEntrada = (pr, sav, extra) => {
+        const e = { minutos: extra.minutos, jugadores: extra.jugadores || [] };
+        if (extra.goles) e.goles = extra.goles;
+        if (pr) {
+            const porDorsal = {};
+            Object.keys((pr.recuperaciones || {}).porDorsal || {}).forEach(d => {
+                porDorsal[d] = porDorsal[d] || {}; porDorsal[d].rec = Number(pr.recuperaciones.porDorsal[d]) || 0;
+            });
+            Object.keys((pr.perdidas || {}).porDorsal || {}).forEach(d => {
+                porDorsal[d] = porDorsal[d] || {}; porDorsal[d].perd = Number(pr.perdidas.porDorsal[d]) || 0;
+            });
+            e.pr = { rec: Number((pr.recuperaciones || {}).total) || 0,
+                     perd: Number((pr.perdidas || {}).total) || 0, porDorsal: porDorsal };
+        }
+        if (sav) e.sav = sav;
+        return e;
+    };
+
+    // Una parte (prefijo «1T» / «2T» del minuto) rehecha desde el detalle
+    // guardado. null si el informe no trae detalle (informes antiguos).
+    const _fdPrDeParte = (pr, pref) => {
+        if (!pr || !Array.isArray(pr.items)) return null;
+        const its = pr.items.filter(i => String((i && i.matchTime) || '').indexOf(pref) === 0);
+        return {
+            perdidas:       { total: its.filter(i => i.kind === 'loss').length },
+            recuperaciones: { total: its.filter(i => i.kind === 'recovery').length }
+        };
+    };
+    const _fdSavDeParte = (s, pref) => {
+        if (!s) return null;
+        const de = (k) => ((s[k] && Array.isArray(s[k].detalle)) ? s[k].detalle : null);
+        if (!de('corners') && !de('faltas') && !de('centros') && !de('ocasiones')) return null;
+        const parte = (k) => (de(k) || []).filter(x => String((x && x.minuto) || '').indexOf(pref) === 0);
+        const par = (k) => ({ favor: parte(k).filter(x => x.tipo === 'favor').length,
+                              contra: parte(k).filter(x => x.tipo === 'contra').length });
+        return { corners: par('corners'), faltas: par('faltas'),
+                 centros: { total: parte('centros').length }, ocasiones: par('ocasiones'), porDorsal: {} };
+    };
+
+    const buildFDPanel = (m, players, pr, sav, totMin, analiza) => {
+        if (typeof analiza !== 'function') return '';
+        if (!pr && !sav) return '';
+        const hayPR = !!pr && ((Number((pr.perdidas || {}).total) || 0) + (Number((pr.recuperaciones || {}).total) || 0)) > 0;
+        if (!hayPR && !sav) return '';
+        const prU = hayPR ? pr : null;
+
+        const sh = m.scoreHome, sa = m.scoreAway;
+        const goles = (sh != null && sa != null)
+            ? (m.myTeamRole === 'away' ? { favor: Number(sa) || 0, contra: Number(sh) || 0 }
+                                       : { favor: Number(sh) || 0, contra: Number(sa) || 0 })
+            : null;
+        // Amarillas del historial, como la cabecera (buildStats): `cards`
+        // guarda sólo la última tarjeta.
+        const amarillas = p => ((p.history || []).filter(e =>
+            e && ((typeof e === 'object' && e.type === 'yellow') ||
+                  (typeof e === 'string' && e.toLowerCase().indexOf('amarilla') !== -1))).length);
+        const jugadores = (players || []).map(p => ({
+            number: String(p.playerNumber == null ? '' : p.playerNumber).trim(),
+            alias: p.playerAlias || '', goals: Number(p.goals) || 0,
+            cards: (p.cards === 'red') ? 'roja' : p.cards, yellowCards: amarillas(p)
+        }));
+        const a = analiza(_fdEntrada(prU, sav, { minutos: totMin, goles: goles, jugadores: jugadores }));
+        if (!a || !a.items || !a.items.length) return '';
+
+        // ── Balance general ──
+        const juzgados = a.items.filter(i => i.estado !== 'escasa');
+        const dif = a.fortalezas - a.criticos;
+        const veredicto = !juzgados.length ? { t: 'MUESTRA INSUFICIENTE', c: '#8b949e' }
+            : (dif > 0 ? { t: 'BALANCE POSITIVO', c: '#3fb950' }
+            : (dif < 0 ? { t: 'BALANCE NEGATIVO', c: '#f85149' }
+                       : { t: 'BALANCE EQUILIBRADO', c: '#eab308' }));
+
+        const COL = { fortaleza: '#3fb950', critico: '#f85149', neutro: '#8b949e', escasa: '#8b949e' };
+        const ETQ = { fortaleza: 'Fortaleza', neutro: 'Neutro', critico: 'Punto crítico', escasa: 'Muestra escasa' };
+        const fila = (it) =>
+            `<div data-fd-item="${esc(it.id)}" data-fd-estado="${it.estado}" style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid rgba(255,255,255,0.05);">` +
+            `<div style="flex:1;min-width:0;"><div style="font-size:0.76rem;font-weight:700;">${esc(it.nombre)}</div>` +
+            `<div style="font-size:0.66rem;color:var(--text-muted);">${esc(it.detalle || '')}</div>` +
+            `<div style="height:4px;border-radius:2px;background:rgba(255,255,255,0.08);margin-top:3px;overflow:hidden;">` +
+            `<span style="display:block;height:100%;width:${Number(it.barra) || 0}%;background:${COL[it.estado]};"></span></div></div>` +
+            `<span style="flex-shrink:0;font-size:0.6rem;font-weight:800;border-radius:6px;padding:3px 6px;color:${COL[it.estado]};` +
+            (it.estado === 'escasa' ? 'border:1px dashed rgba(139,148,158,0.5);' : `background:${COL[it.estado]}22;`) +
+            `">${ETQ[it.estado]}</span></div>`;
+        const columna = (titulo, color, lista, vacio) =>
+            `<div style="flex:1;min-width:210px;">` +
+            `<div style="font-size:0.66rem;font-weight:800;color:${color};text-transform:uppercase;letter-spacing:0.5px;margin-bottom:2px;">${titulo}</div>` +
+            (lista.length ? lista.map(fila).join('')
+                          : `<div style="font-size:0.7rem;color:var(--text-muted);padding:4px 0;">${vacio}</div>`) +
+            `</div>`;
+        const resto = a.items.filter(i => i.estado === 'neutro' || i.estado === 'escasa');
+
+        // ── Por partes (sólo con el detalle guardado y apuntes en las dos) ──
+        let partes = '';
+        const p1 = { pr: _fdPrDeParte(prU, '1T'), sav: _fdSavDeParte(sav, '1T') };
+        const p2 = { pr: _fdPrDeParte(prU, '2T'), sav: _fdSavDeParte(sav, '2T') };
+        if ((p1.pr || p1.sav) && (p2.pr || p2.sav)) {
+            const linea = (nombre, p) => {
+                const r = analiza(_fdEntrada(p.pr, p.sav, { minutos: totMin / 2 }));
+                return `<div style="font-size:0.7rem;padding:2px 0;"><strong>${nombre}:</strong> ` +
+                       `<span style="color:#3fb950;">${r.fortalezas} fortaleza${r.fortalezas === 1 ? '' : 's'}</span> · ` +
+                       `<span style="color:#f85149;">${r.criticos} punto${r.criticos === 1 ? '' : 's'} crítico${r.criticos === 1 ? '' : 's'}</span>` +
+                       (r.mejor ? ` · Lo mejor: <strong>${esc(r.mejor)}</strong>` : '') +
+                       (r.peor ? ` · A mejorar: <strong>${esc(r.peor)}</strong>` : '') + `</div>`;
+            };
+            partes = `<div style="margin-top:8px;padding-top:6px;border-top:1px solid rgba(255,255,255,0.07);">` +
+                     linea('1.ª parte', p1) + linea('2.ª parte', p2) + `</div>`;
+        }
+
+        const jug = (j) => `<div style="font-size:0.72rem;line-height:1.45;"><strong>#${esc(j.number)} ${esc(String(j.name || '').toUpperCase())}</strong> ` +
+                           `<span style="color:var(--text-muted);">${esc(j.detalle || '')}</span></div>`;
+
+        return `<div style="font-size:0.67rem;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;margin:10px 0 7px;">` +
+               `Fortalezas y debilidades</div>` +
+               `<div data-fd-informe="1" style="border:1px solid rgba(137,87,229,0.35);border-radius:10px;padding:8px 10px;margin-bottom:4px;">` +
+               `<div style="display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-bottom:6px;">` +
+               `<span data-fd-balance="1" style="font-size:0.66rem;font-weight:800;letter-spacing:0.5px;color:${veredicto.c};border:1px solid ${veredicto.c};border-radius:6px;padding:2px 7px;">${veredicto.t}</span>` +
+               `<span style="font-size:0.72rem;"><span style="color:#3fb950;">${a.fortalezas} fortaleza${a.fortalezas === 1 ? '' : 's'}</span> · ` +
+               `<span style="color:#f85149;">${a.criticos} punto${a.criticos === 1 ? '' : 's'} crítico${a.criticos === 1 ? '' : 's'}</span>` +
+               (a.mejor ? ` · Lo mejor: <strong>${esc(a.mejor)}</strong>` : '') +
+               (a.peor ? ` · A mejorar: <strong>${esc(a.peor)}</strong>` : '') + `</span></div>` +
+               `<div style="display:flex;flex-wrap:wrap;gap:14px;">` +
+               columna('💪 Fortalezas', '#3fb950', a.items.filter(i => i.estado === 'fortaleza'), 'Ningún apartado destacó a favor.') +
+               columna('⚠️ Puntos críticos', '#f85149', a.items.filter(i => i.estado === 'critico'), 'Ningún apartado quedó en contra.') +
+               `</div>` +
+               (resto.length
+                   ? `<div style="margin-top:6px;"><div style="font-size:0.66rem;font-weight:800;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;">Resto de apartados</div>` +
+                     resto.map(fila).join('') + `</div>`
+                   : '') +
+               partes +
+               ((a.destacan.length || a.flojean.length)
+                   ? `<div style="display:flex;flex-wrap:wrap;gap:14px;margin-top:8px;padding-top:6px;border-top:1px solid rgba(255,255,255,0.07);">` +
+                     `<div style="flex:1;min-width:210px;"><div style="font-size:0.66rem;font-weight:800;color:#3fb950;">⭐ DESTACAN</div>` +
+                     (a.destacan.length ? a.destacan.map(jug).join('') : `<div style="font-size:0.7rem;color:var(--text-muted);">Nadie.</div>`) + `</div>` +
+                     `<div style="flex:1;min-width:210px;"><div style="font-size:0.66rem;font-weight:800;color:#f0883e;">⚠️ FLOJEAN</div>` +
+                     (a.flojean.length ? a.flojean.map(jug).join('') : `<div style="font-size:0.7rem;color:var(--text-muted);">Nadie.</div>`) + `</div>` +
+                     `</div>`
+                   : '') +
+               `</div>`;
+    };
+
     // 🟠 v715 · Y EL COMENTARIO RETROACTIVO TAMBIÉN. El autor los nombra
     // primeros en su lista («comentarios, goles, tarjetas, lesiones,
     // cambios»), y son justo los que más se apuntan tarde: son la nota de lo
@@ -1579,7 +1735,8 @@ const _RP = (() => {
     // ════════════════════════════════════════════════════════════════
     //  ORQUESTADOR PRINCIPAL — build(matchData, currentUser)
     // ════════════════════════════════════════════════════════════════
-    const build = (m, me) => {
+    // 💪 v821 · `ext` (opcional): { fdAnaliza } — ver buildFDPanel.
+    const build = (m, me, ext) => {
         const totMin  = getTotMin(m);
         const stopMin = parseInt(m.stoppageTime) || 0;
 
@@ -1635,6 +1792,8 @@ const _RP = (() => {
 
         const subs      = buildSubs(players);
         const clubName  = me?.clubName || 'CD Local';
+        const _pr  = _prDelInforme(m);
+        const _sav = _savDelInforme(m);
 
         return (
             `<div style="padding:0.35rem 0 0.15rem;">` +
@@ -1648,8 +1807,9 @@ const _RP = (() => {
             buildLegend() +
             buildTimeSummary(players) +
             buildRotPanel(subs) +
-            buildPRPanel(_prDelInforme(m), players) +
-            buildSAvPanel(_savDelInforme(m), players) +
+            buildPRPanel(_pr, players) +
+            buildSAvPanel(_sav, players) +
+            buildFDPanel(m, players, _pr, _sav, totMin + stopMin, ext && ext.fdAnaliza) +
             buildEventsList(players, _comentariosDelInforme(m)) +
             `</div>`
         );

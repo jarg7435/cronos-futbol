@@ -392,7 +392,7 @@ const inCol = (written, col) => written.filter(w => w.col === col);
     }
     ok('1g · el render del Gantt usa la guarda typeof sobre _RP (ilusoria para un const en TDZ)',
         /typeof _RP !== 'undefined' && typeof _RP\.build === 'function'/.test(BLOCK)
-        && /_RP\.build\(m, window\._cronosCurrentUser\)/.test(BLOCK));
+        && /_RP\.build\(m, window\._cronosCurrentUser[,)]/.test(BLOCK));
     ok('1h · no hay ni un solo deleteDoc en el bloque (borrado SIEMPRE logico)',
         !/deleteDoc/.test(BLOCK));
     if (IS_EXTRACTED) {

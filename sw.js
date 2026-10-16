@@ -2758,8 +2758,12 @@
 // v820 · iPAD: TODOS LOS EXTRAS EN UNA FILA bajo el campo, de su esquina
 //        izquierda a la derecha y con el mismo hueco entre bloques (antes
 //        quedaban descentrados y se salían por la derecha). Móvil y PC igual.
-const VERSION = 'v820';
-const CACHE_NAME = 'cronos-cache-v820';
+// v821 · INFORMES COLECTIVOS: el acumulado de temporada suma también las
+//        pérdidas y recuperaciones COLECTIVAS (fila «sin jugador asignado» y
+//        bloque con totales, balance y medias), y el informe del partido lleva
+//        el bloque F-D (fortalezas, puntos críticos, balance y por partes).
+const VERSION = 'v821';
+const CACHE_NAME = 'cronos-cache-v821';
 
 const ASSETS = [
     './',

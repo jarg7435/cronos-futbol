@@ -688,7 +688,10 @@ window.openMisInformes = async function openMisInformes() {
             } catch (_) { /* sin plantilla local, la tabla sale como antes */ }
 
             _miResumenHtml = barra + window.ctRenderStatsTable(
-                _miFilas, { matchCount: _miParaResumen.length, categoria: _miCatEquipo() }
+                _miFilas, { matchCount: _miParaResumen.length, categoria: _miCatEquipo(),
+                            // 🔵🔴 v821 · P/R del equipo, también las colectivas.
+                            teamPR: (typeof window.ctAccumulateTeamPR === 'function')
+                                ? window.ctAccumulateTeamPR(_miParaResumen) : null }
             ) +
             // 📈 v774 · El mismo bloque de estadísticas avanzadas que ve el
             // Director (reports-tab.js): los dos paneles no pueden discrepar.
@@ -1021,7 +1024,9 @@ window.openMisInformes = async function openMisInformes() {
                     try {
                         // Usar el motor de reportes unificado (_RP) de 22_club_reports.js
                         if (typeof _RP !== 'undefined' && typeof _RP.build === 'function') {
-                            const fullReportHtml = _RP.build(m, window._cronosCurrentUser);
+                            // 💪 v821 · con el análisis F-D del directo.
+                            const fullReportHtml = _RP.build(m, window._cronosCurrentUser,
+                                                             { fdAnaliza: window.cronosFDAnaliza });
                             
                             // Añadir botones de acción al final del informe visual
                             const btns = `
@@ -1090,7 +1095,7 @@ window.openMisInformes = async function openMisInformes() {
             try {
                 if (typeof _RP === 'undefined' || typeof _RP.build !== 'function')
                     throw new Error('Motor de informes no disponible. Reintenta en unos segundos.');
-                cuerpo = _RP.build(m, window._cronosCurrentUser);
+                cuerpo = _RP.build(m, window._cronosCurrentUser, { fdAnaliza: window.cronosFDAnaliza });
             } catch (err) {
                 if (typeof showToast==='function') showToast('⚠️ Error al generar el informe: ' + err.message, 4000);
                 return;

@@ -1320,13 +1320,97 @@
     //  Viaja repetido en cada documento de jugador (así lo escriben los
     //  despachos desde v693), así que vale con el primero que lo traiga; se
     //  acepta también al nivel del partido por si un agrupador lo sube ahí.
+    //  💪 v821 · Y DE ENTRE LOS EJEMPLARES, EL MÁS COMPLETO (la misma regla que
+    //  el informe del partido, report-engine.js `_prDelInforme`). Con «el
+    //  primero», un documento escrito antes del último apunte dejaba en el
+    //  acumulado menos pérdidas que el propio informe del partido.
     function _ctMatchPR(m) {
         if (!m) return null;
-        if (m.matchPR) return m.matchPR;
+        const cands = [];
+        if (m.matchPR) cands.push(m.matchPR);
         const ps = Array.isArray(m.players) ? m.players : [];
-        for (let i = 0; i < ps.length; i++) if (ps[i] && ps[i].matchPR) return ps[i].matchPR;
-        return null;
+        for (let i = 0; i < ps.length; i++) if (ps[i] && ps[i].matchPR) cands.push(ps[i].matchPR);
+        const tot = function (c) {
+            return (Number((c.perdidas || {}).total) || 0) + (Number((c.recuperaciones || {}).total) || 0);
+        };
+        let mejor = null;
+        cands.forEach(function (c) { if (!mejor || tot(c) > tot(mejor)) mejor = c; });
+        return mejor;
     }
+
+    // ════════════════════════════════════════════════════════════════
+    //  🔵🔴 v821 · PÉRDIDAS Y RECUPERACIONES DEL EQUIPO EN LA TEMPORADA
+    //
+    //  Encargo del autor (implementar.txt 16-10, captura 11563): la tabla
+    //  sólo sumaba lo apuntado A UN DORSAL, así que las pérdidas y
+    //  recuperaciones registradas «del equipo» (sin jugador) no llegaban al
+    //  acumulado — el «Total equipo» daba 0/0 en un equipo con 17 pérdidas y
+    //  24 recuperaciones en su único partido.
+    //
+    //  Los TOTALES salen del resumen de cada partido (`total`), no de sumar
+    //  dorsales: así cuadran con el panel del informe del partido. El reparto
+    //  jugador / colectivo se da aparte para la fila «sin jugador asignado».
+    //  ctAccumulateTeamPR(matches) → { partidos, perdidas, recuperaciones,
+    //                                  colP, colR, jugP, jugR }
+    // ════════════════════════════════════════════════════════════════
+    window.ctAccumulateTeamPR = function (matches) {
+        const r = { partidos: 0, perdidas: 0, recuperaciones: 0, colP: 0, colR: 0, jugP: 0, jugR: 0 };
+        (matches || []).forEach(function (m) {
+            const pr = _ctMatchPR(m);
+            if (!pr) return;
+            const p = pr.perdidas || {}, c = pr.recuperaciones || {};
+            const tp = Number(p.total) || 0, tr = Number(c.total) || 0;
+            if (!tp && !tr) return;   // partido sin registros: no cuenta en la media
+            r.partidos++;
+            r.perdidas += tp;
+            r.recuperaciones += tr;
+            const sp = Number(p.sinAsignar) || 0, sr = Number(c.sinAsignar) || 0;
+            r.colP += sp; r.colR += sr;
+            r.jugP += Math.max(0, tp - sp);
+            r.jugR += Math.max(0, tr - sr);
+        });
+        return r;
+    };
+
+    // Bloque resumen bajo la tabla: totales, balance y medias por partido, y
+    // de dónde sale cada cifra (a nombre de un jugador / del equipo).
+    window.ctRenderTeamPRSeason = function (t) {
+        if (!t || !t.partidos) return '';
+        const bal = t.recuperaciones - t.perdidas;
+        const colBal = bal > 0 ? '#3fb950' : (bal < 0 ? '#f85149' : '#8b949e');
+        const media = function (n) {
+            const v = n / t.partidos;
+            return (Math.round(v * 10) / 10).toLocaleString('es-ES');
+        };
+        const kpi = function (titulo, valor, color, pie) {
+            return '<div class="ct-pr-kpi"><div class="ct-pr-kt">' + titulo + '</div>' +
+                   '<div class="ct-pr-kv" style="color:' + color + ';">' + valor + '</div>' +
+                   '<div class="ct-pr-kp">' + pie + '</div></div>';
+        };
+        const signo = function (n) { return (n > 0 ? '+' : '') + n; };
+        return '<style>' +
+            '.ct-pr-wrap{margin:0 0 0.9rem;padding:0.6rem 0.8rem;border:1px solid rgba(63,185,80,0.25);' +
+                'border-radius:10px;background:rgba(255,255,255,0.02);}' +
+            '.ct-pr-tit{font-size:0.78rem;font-weight:700;color:#3fb950;}' +
+            '.ct-pr-sub{font-size:0.66rem;color:#8b949e;margin:2px 0 8px;}' +
+            '.ct-pr-kpis{display:flex;flex-wrap:wrap;gap:8px;}' +
+            '.ct-pr-kpi{flex:1;min-width:120px;padding:0.45rem 0.6rem;border:1px solid rgba(255,255,255,0.08);border-radius:8px;}' +
+            '.ct-pr-kt{font-size:0.6rem;text-transform:uppercase;letter-spacing:0.5px;color:#8b949e;}' +
+            '.ct-pr-kv{font-size:1.1rem;font-weight:800;}' +
+            '.ct-pr-kp{font-size:0.62rem;color:#8b949e;}' +
+            '</style>' +
+            '<div class="ct-pr-wrap" data-pr-temporada="1">' +
+            '<div class="ct-pr-tit">🔁 Pérdidas y recuperaciones del equipo · temporada</div>' +
+            '<div class="ct-pr-sub">En ' + t.partidos + ' partido' + (t.partidos === 1 ? '' : 's') +
+                ' con registro · incluye las acciones registradas a nivel colectivo (sin jugador asignado)</div>' +
+            '<div class="ct-pr-kpis">' +
+            kpi('&#9650; Recuperaciones', t.recuperaciones, '#3fb950',
+                'media ' + media(t.recuperaciones) + ' / partido · ' + t.jugR + ' de jugador · ' + t.colR + ' colectivas') +
+            kpi('&#9660; Pérdidas', t.perdidas, '#f85149',
+                'media ' + media(t.perdidas) + ' / partido · ' + t.jugP + ' de jugador · ' + t.colP + ' colectivas') +
+            kpi('Balance', signo(bal), colBal, 'media ' + signo(Math.round(bal / t.partidos * 10) / 10).replace('.', ',') + ' / partido') +
+            '</div></div>';
+    };
 
     window.ctAccumulatePlayerStats = function (matches) {
         const porJugador = new Map();
@@ -1766,6 +1850,21 @@
         const totPj = (typeof opts.matchCount === 'number' && isFinite(opts.matchCount))
             ? String(opts.matchCount) : '-';
 
+        // 🔵🔴 v821 · LO COLECTIVO (sin jugador asignado). Sólo si quien llama
+        // pasa `opts.teamPR` (ctAccumulateTeamPR): una fila propia antes del
+        // total, y el total del equipo pasa a incluirlo. Sin `teamPR`, la
+        // tabla es exactamente la de antes.
+        const _tpr = (_prActivo && opts.teamPR && opts.teamPR.partidos) ? opts.teamPR : null;
+        if (_tpr) { tot.prP += _tpr.colP; tot.prR += _tpr.colR; }
+        const filaColectiva = (_tpr && (_tpr.colP || _tpr.colR))
+            ? '<tr class="ct-stats-col">' +
+                '<td class="ct-stats-name" title="Pérdidas y recuperaciones registradas sin asignarlas a ningún jugador">' +
+                    'Equipo · sin jugador asignado</td>' +
+                '<td>-</td><td>-</td><td>-</td><td>-</td><td>-</td><td>-</td><td>-</td>' +
+                celPR({ prRecuperaciones: _tpr.colR, prPerdidas: _tpr.colP }) +
+              '</tr>'
+            : '';
+
         const _sinJugar = filas.filter(function (f) { return f.sinDatos; }).length;
 
         const cuerpo = filas.map(function (f) {
@@ -1864,7 +1963,7 @@
                       '<th title="Pérdidas de balón" style="color:#f85149;">&#9660; P</th>'
                     : '') +
             '</tr></thead>' +
-            '<tbody>' + cuerpo + cuerpoInv + '</tbody>' +
+            '<tbody>' + cuerpo + cuerpoInv + filaColectiva + '</tbody>' +
             '<tfoot><tr class="ct-stats-total">' +
                 '<td class="ct-stats-name">Total equipo</td>' +
                 '<td title="Partidos disputados por el equipo">' + totPj + '</td>' +
@@ -1883,6 +1982,7 @@
                       '<td style="color:#f85149;">' + tot.prP + '</td>'
                     : '') +
             '</tr></tfoot>' +
-        '</table></div>';
+        '</table></div>' +
+        (_tpr ? window.ctRenderTeamPRSeason(_tpr) : '');
     };
 })();

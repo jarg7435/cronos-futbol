@@ -1007,7 +1007,10 @@ async function _sdLoadReports() {
                     // normalizada aquí mismo: no hay que deducirla de nada.
                     // La regla vive en `ctCategoriaRegistraPR` (category-tree.js).
                     return _sdStatsBar(arr, catId, subId) + window.ctRenderStatsTable(
-                        _filas, { matchCount: arr.length, guestRows: _inv, categoria: catId }) +
+                        _filas, { matchCount: arr.length, guestRows: _inv, categoria: catId,
+                                  // 🔵🔴 v821 · P/R del equipo, también las colectivas.
+                                  teamPR: (typeof window.ctAccumulateTeamPR === 'function')
+                                      ? window.ctAccumulateTeamPR(arr.map(x => x.m)) : null }) +
                         // 📈 v774 · Estadísticas avanzadas de la temporada, en
                         // bloque APARTE debajo de la tabla ('' si el extra está
                         // apagado, la categoría es de base o no hay datos).
@@ -1045,7 +1048,10 @@ async function _sdLoadReports() {
         // cualquier cambio futuro en el motor podría llegar a una vía y no a la
         // otra. Además, la aserción 1c del guard exige que _RP.build aparezca
         // una sola vez en este archivo.
-        const _sdReportHtml = (m) => _RP.build(m, window._cronosCurrentUser);
+        // 💪 v821 · y el análisis F-D del directo, que el motor (puro) no
+        // puede ir a buscar por su cuenta.
+        const _sdReportHtml = (m) => _RP.build(m, window._cronosCurrentUser,
+                                               { fdAnaliza: window.cronosFDAnaliza });
 
         // ── Toggle con renderizado lazy del informe visual ────────────
         window.sdToggleReport = (key64) => {
