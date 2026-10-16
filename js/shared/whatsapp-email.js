@@ -935,10 +935,14 @@ function buildConvocationText() {
     msg += `🆚 vs ${rival}\n\n`;
     msg += `👥 *CONVOCADOS:*\n${playerLines}\n\n`;
 
-    if (venue || meettime || kickoff) {
+    // 👕 v822 · la equipación de la ventana de convocatoria
+    const equipacion = (typeof window.cronosEquipacionTexto === 'function')
+        ? window.cronosEquipacionTexto((window._savedConvData || {}).equipacion) : '';
+    if (venue || meettime || kickoff || equipacion) {
         msg += `📍 *CONCENTRACIÓN:*\n`;
         if (venue)    msg += `🏟️ Campo: ${venue}\n`;
         if (meettime) msg += `🕐 Presentarse: ${meettime}h\n`;
+        if (equipacion) msg += `👕 ${equipacion}\n`;
         if (kickoff)  msg += `⚽ Inicio del partido: ${kickoff}h\n`;
         msg += '\n';
     }
@@ -1350,6 +1354,8 @@ async function publishConvocationToApp() {
             subcategory: me.subcategory || null,
             matchDate:  dateStr,
             rival, meettime, kickoff, venue, extra,
+            // 👕 v822 · clave del catálogo (utils.js); '' = sin indicar
+            equipacion: sv.equipacion || '',
             players:    playersArr,
             // v753 · para el imprimible de Dirección (ver _cronosResolveStartersArr)
             ...(startersArr ? { starters: startersArr } : {}),
@@ -1493,6 +1499,8 @@ window.publishConvocationToAppV2 = async function() {
             targetRole: role || null,
             matchDate:  dateStr,
             rival, meettime, kickoff, venue, extra,
+            // 👕 v822 · clave del catálogo (utils.js); '' = sin indicar
+            equipacion: sv.equipacion || '',
             players:    playersArr,
             // v753 · para el imprimible de Dirección (ver _cronosResolveStartersArr)
             ...(startersArr ? { starters: startersArr } : {}),

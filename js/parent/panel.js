@@ -862,6 +862,7 @@ async function openParentPanel(initialTab) {
                         </div>` : ''}
                         ${n.venue    ? `<div style="font-size:0.82rem;margin-bottom:0.22rem;">🏟️ ${typeof escapeHtml==='function'?escapeHtml(n.venue):n.venue}</div>` : ''}
                         ${n.meettime ? `<div style="font-size:0.82rem;margin-bottom:0.22rem;">🕐 Presentación: <strong>${typeof escapeHtml==='function'?escapeHtml(n.meettime):n.meettime}h</strong></div>` : ''}
+                        ${(n.equipacion && typeof window.cronosEquipacionTexto === 'function') ? `<div style="font-size:0.82rem;margin-bottom:0.22rem;">👕 <strong>${typeof escapeHtml==='function'?escapeHtml(window.cronosEquipacionTexto(n.equipacion)):window.cronosEquipacionTexto(n.equipacion)}</strong></div>` : ''}
                         ${n.kickoff  ? `<div style="font-size:0.82rem;margin-bottom:0.22rem;">⚽ Inicio: <strong>${typeof escapeHtml==='function'?escapeHtml(n.kickoff):n.kickoff}h</strong></div>` : ''}
                         ${n.players?.length ? `
                         <div style="margin-top:0.5rem;padding:0.55rem 0.8rem;
@@ -3070,6 +3071,7 @@ window.ppNotifsByType = async function(type) {
                         ${d.rival   ?`<div style="font-size:0.95rem;margin-bottom:0.5rem;">🆚 vs <strong>${typeof escapeHtml==='function'?escapeHtml(d.rival):d.rival}</strong></div>`:''}
                         ${d.venue   ?`<div style="font-size:0.88rem;margin-bottom:0.4rem;">🏟️ ${typeof escapeHtml==='function'?escapeHtml(d.venue):d.venue}</div>`:''}
                         ${d.meettime?`<div style="font-size:0.88rem;margin-bottom:0.4rem;">🕐 Presentación: <strong>${typeof escapeHtml==='function'?escapeHtml(d.meettime):d.meettime}h</strong></div>`:''}
+                        ${(d.equipacion && typeof window.cronosEquipacionTexto === 'function')?`<div style="font-size:0.88rem;margin-bottom:0.4rem;">👕 <strong>${typeof escapeHtml==='function'?escapeHtml(window.cronosEquipacionTexto(d.equipacion)):window.cronosEquipacionTexto(d.equipacion)}</strong></div>`:''}
                         ${d.kickoff ?`<div style="font-size:0.88rem;margin-bottom:0.4rem;">⚽ Inicio: <strong>${typeof escapeHtml==='function'?escapeHtml(d.kickoff):d.kickoff}h</strong></div>`:''}
                     ` : isPlan ? `
                         ${d.weekStartDate?`<div style="font-size:0.9rem;font-weight:700;color:#f0883e;margin-bottom:0.8rem;">📅 Semana del ${new Date(d.weekStartDate+'T12:00:00').toLocaleDateString('es-ES',{day:'numeric',month:'long',year:'numeric'})}</div>`:''}

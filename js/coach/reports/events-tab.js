@@ -458,6 +458,7 @@ async function _sdLoadEvents(type) {
                     ${d.rival   ?`<div style="font-size:0.92rem;margin-bottom:0.4rem;">🆚 vs <strong>${escapeHtml(d.rival)}</strong></div>`:''}
                     ${d.venue   ?`<div style="font-size:0.88rem;margin-bottom:0.4rem;">🏟️ ${escapeHtml(d.venue)}</div>`:''}
                     ${d.meettime?`<div style="font-size:0.88rem;margin-bottom:0.4rem;">🕐 Presentación: <strong>${escapeHtml(d.meettime)}h</strong></div>`:''}
+                    ${(d.equipacion && typeof window.cronosEquipacionTexto === 'function')?`<div style="font-size:0.88rem;margin-bottom:0.4rem;">👕 <strong>${escapeHtml(window.cronosEquipacionTexto(d.equipacion))}</strong></div>`:''}
                     ${d.kickoff ?`<div style="font-size:0.88rem;margin-bottom:0.4rem;">⚽ Inicio: <strong>${escapeHtml(d.kickoff)}h</strong></div>`:''}
                 </div>
                 ${d.players?.length?`
@@ -872,6 +873,7 @@ window.cronosImprimirAviso = function (d) {
             fecha:        d.matchDate && d.matchDate !== '—' ? d.matchDate : '',
             hora:         d.kickoff ? d.kickoff + ' h' : '',
             presentacion: d.meettime ? d.meettime + ' h' : '',
+            equipacion:   (typeof window.cronosEquipacionTexto === 'function') ? window.cronosEquipacionTexto(d.equipacion) : '',
             lugar:        d.venue || '',
             rival:        d.rival || '',
             mensaje:      d.extra || '',

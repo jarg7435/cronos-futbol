@@ -269,6 +269,33 @@
         '@media print{.rx-btn{display:none !important;}}';
 
     // ════════════════════════════════════════════════════════════════
+    //  🧾 v822 · SIN LA DIRECCIÓN WEB AL PIE (convocatoria)
+    //
+    //  Encargo del autor (implementar.txt 17-10): la convocatoria de dos
+    //  páginas salía con la dirección web de Cronos al pie. NO la escribe este
+    //  documento —su pie es `.rx-pie`—: la pone el NAVEGADOR al imprimir
+    //  (cabecera con fecha y título, pie con la URL y «1/2»), en TODAS las
+    //  páginas. Medido con Chrome --print-to-pdf: la URL salía en las 3
+    //  páginas de una convocatoria de 40.
+    //
+    //  🔑 Declarar las cajas de margen de @page (vacías) hace que el navegador
+    //  no pinte las suyas, y el margen de 12 mm se mantiene en cada página.
+    //  `margin:0` también las quita, pero deja la segunda página sin margen
+    //  arriba: descartado.
+    // ════════════════════════════════════════════════════════════════
+    //  📄 Y LA HOJA QUE SÓLO LLEVABA EL PIE. Con 18 convocados (un F11 normal)
+    //  la segunda página existía SOLO para la línea «Chronos Fútbol ·
+    //  convocatoria generada…» (y la URL del navegador). Al imprimir, el pie
+    //  se ciñe (fuera los 24 px de relleno del body): cabe en una página. Si
+    //  aun así no cabe, `break-before:avoid` lo baja CON el bloque anterior
+    //  en vez de dejarlo solo en una hoja.
+    const RX_CSS_SIN_CABECERA =
+        '@page{@top-left{content:""}@top-center{content:""}@top-right{content:""}' +
+        '@bottom-left{content:""}@bottom-center{content:""}@bottom-right{content:""}}' +
+        '@media print{body{padding-bottom:0;}' +
+            '.rx-pie{margin-top:8px;padding-top:6px;break-before:avoid;page-break-before:avoid;}}';
+
+    // ════════════════════════════════════════════════════════════════
     //  📲 v681 · EN TÁCTIL EL DOCUMENTO SE ABRE **DENTRO** DE LA APP
     //
     //  Reportado por el autor (implementar.txt + capturas 10144-10145,
@@ -427,7 +454,8 @@
             '<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8">' +
             '<meta name="viewport" content="width=device-width,initial-scale=1">' +
             '<title>' + _rxEsc(titulo) + '</title>' +
-            '<style>' + RX_CSS.replace('SIZE', opts.apaisado ? 'landscape' : 'portrait') + '</style>' +
+            '<style>' + RX_CSS.replace('SIZE', opts.apaisado ? 'landscape' : 'portrait') +
+                (opts.sinCabeceraNavegador ? RX_CSS_SIN_CABECERA : '') + '</style>' +
             '</head><body><div class="rx-page">' +
                 '<div class="rx-head">' +
                     '<div>' +
@@ -572,6 +600,7 @@
                 _rxFila('Fecha', c.fecha) +
                 _rxFila('Hora del partido', c.hora) +
                 _rxFila('Hora de presentación', c.presentacion) +
+                _rxFila('Equipación', c.equipacion) +   // v822 · ya en texto
                 _rxFila('Lugar / Campo', c.lugar) +
             '</tbody></table></div>';
 
@@ -602,6 +631,7 @@
                        datos + listas + mensaje,
             pie:       c.pie || 'Chronos Fútbol · convocatoria generada desde la aplicación del club.',
             apaisado:  false,
+            sinCabeceraNavegador: true,   // v822 · sin la URL al pie (ver rxImprimir)
         });
     };
 

@@ -1492,6 +1492,28 @@ if (typeof window._cronosParseRoleValue !== 'function') {
 //  porque un enlace que llega en el payload y se reenvía por correo es
 //  una vía de suplantación.
 // ════════════════════════════════════════════════════════════════════
+// ════════════════════════════════════════════════════════════════════
+//  👕 v822 · LA EQUIPACIÓN DE LA CONVOCATORIA
+//
+//  Encargo del autor (implementar.txt 17-10, captura 11566): un desplegable
+//  «Equipación» junto a la hora de presentación. El catálogo vive AQUÍ y en
+//  ningún otro sitio: la ventana de convocatoria pinta las opciones, y las
+//  familias, Dirección y el PDF traducen la clave guardada a su texto.
+//  En el aviso se guarda la CLAVE (`equipacion: 'partido'`); una clave
+//  desconocida se enseña tal cual, y vacía no se enseña.
+// ════════════════════════════════════════════════════════════════════
+window.CRONOS_EQUIPACIONES = window.CRONOS_EQUIPACIONES || [
+    { v: 'entrenamiento', t: 'Equipación de entrenamiento' },
+    { v: 'partido',       t: 'Equipación de partido' },
+    { v: 'salida',        t: 'Equipación de salida (ropa oficial de paseo y llegada a los encuentros)' }
+];
+window.cronosEquipacionTexto = function (v) {
+    const k = String(v == null ? '' : v).trim();
+    if (!k) return '';
+    const e = window.CRONOS_EQUIPACIONES.find(function (x) { return x.v === k; });
+    return e ? e.t : k;
+};
+
 if (typeof window.CRONOS_APP_URL !== 'string') {
     // 🧪 v761 · TESTEO AISLADO: los enlaces que se generan en testeo (o en
     // local) apuntan a testeo; un enlace de testeo que llevara a producción

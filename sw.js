@@ -2762,8 +2762,12 @@
 //        pérdidas y recuperaciones COLECTIVAS (fila «sin jugador asignado» y
 //        bloque con totales, balance y medias), y el informe del partido lleva
 //        el bloque F-D (fortalezas, puntos críticos, balance y por partes).
-const VERSION = 'v821';
-const CACHE_NAME = 'cronos-cache-v821';
+// v822 · CONVOCATORIA: desplegable «Equipación» (entrenamiento / partido /
+//        salida) junto a la hora de presentación, que llega a familias,
+//        Dirección y PDF; y el PDF ya no lleva la URL que imprimía el
+//        navegador al pie (ni una hoja sólo para el pie con 18 convocados).
+const VERSION = 'v822';
+const CACHE_NAME = 'cronos-cache-v822';
 
 const ASSETS = [
     './',

@@ -522,6 +522,16 @@ function openConvocationModal() {
                         <input type="time" id="conv-meettime" class="conv-input"
                             value="${savedConv.meettime || ''}">
                     </div>
+                    <!-- v822 · Equipación, en la misma fila que la hora de
+                         presentación (catálogo en utils.js). -->
+                    <div>
+                        <label for="conv-equipacion" style="font-size:0.72rem; color:var(--text-muted); display:block; margin-bottom:0.2rem;">\u{1F455} Equipación</label>
+                        <select id="conv-equipacion" class="conv-input">
+                            <option value="">— Sin indicar —</option>
+                            ${(window.CRONOS_EQUIPACIONES || []).map(e =>
+                                `<option value="${e.v}"${savedConv.equipacion === e.v ? ' selected' : ''}>${e.t}</option>`).join('')}
+                        </select>
+                    </div>
                 </div>
 
                 <!-- \u2500\u2500 MENSAJE PARA LOS JUGADORES \u2500\u2500 -->
@@ -1040,6 +1050,8 @@ function saveConvData() {
         // se pregunta en LIGA, así que en amistoso/copa/torneo viaja vacía.
         jornada:  document.getElementById('conv-jornada')?.value.trim() || '',
         meettime: document.getElementById('conv-meettime')?.value || '',
+        // 👕 v822 · clave del catálogo CRONOS_EQUIPACIONES ('' = sin indicar)
+        equipacion: document.getElementById('conv-equipacion')?.value || '',
         // 💬 Mensaje del entrenador para los jugadores. Va APARTE de `type`:
         // ver el comentario de _cronosConvExtra() en whatsapp-email.js, donde
         // se explica el fallo que confundía los dos campos.
@@ -1118,6 +1130,7 @@ function cronosImprimirConvocatoriaActual() {
         fecha,
         hora:         data.time ? data.time + ' h' : '',
         presentacion: data.meettime ? data.meettime + ' h' : '',
+        equipacion:   (typeof window.cronosEquipacionTexto === 'function') ? window.cronosEquipacionTexto(data.equipacion) : '',
         lugar:        data.venue,
         rival:        data.rival,
         mensaje:      data.message,
