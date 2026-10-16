@@ -690,11 +690,111 @@
         } catch (e) { return 0; }
     }
 
+    // ════════════════════════════════════════════════════════════════
+    //  📟 v820 · iPAD: UNA FILA DE ESQUINA A ESQUINA BAJO EL CAMPO
+    // ════════════════════════════════════════════════════════════════
+    //  Encargo del autor (implementar.txt 16-10, IMG_0631): con R/P centrada
+    //  bajo el campo y los avanzados pegados a su derecha, el conjunto
+    //  quedaba descentrado y se salía por la esquina derecha del césped.
+    //  Ahora, con las DOS barras encendidas, todos los bloques forman una
+    //  fila del borde izquierdo al derecho del campo con el MISMO hueco
+    //  entre bloques. Si no caben, hueco mínimo y la fila centrada.
+    //
+    //  🔑 Lo calculan las DOS barras con la misma función y las mismas
+    //  medidas (los anchos de los HIJOS, que no dependen del hueco), así que
+    //  cada una se coloca sola sin pelearse con la otra cada segundo.
+    //  Sólo iPad (951-1366 px): el móvil y el PC no cambian.
+    var HUECO_MIN = 6;
+    function _suma(a) { var s = 0; for (var i = 0; i < a.length; i++) s += a[i]; return s; }
+
+    window.cronosExtrasFilaTablet = function (m) {
+        if (!m || !m.campo || !m.pr || !m.sav) return null;
+        if (!(m.ancho > 950 && m.ancho <= 1366)) return null;
+        var ap = m.pr.anchos || [], as = m.sav.anchos || [];
+        var n = ap.length + as.length;
+        if (!ap.length || !as.length) return null;
+        var c = m.campo;
+        var contenido = _suma(ap) + _suma(as);
+        var g = ((c.right - c.left) - contenido) / (n - 1);
+        var inicio = c.left;
+        if (g < HUECO_MIN) {                       // no caben: hueco mínimo, centrada
+            g = HUECO_MIN;
+            var total = contenido + g * (n - 1);
+            inicio = (c.left + c.right) / 2 - total / 2;
+            inicio = Math.max(4, Math.min(inicio, m.ancho - total - 4));
+        }
+        // La altura: la misma regla que la R/P de iPad (v770), en el hueco
+        // bajo el césped y sin meterse en la zona segura.
+        var h = Math.max(m.pr.h || 0, m.sav.h || 0);
+        var seguro = m.seguro || 0;
+        var hueco = (m.alto - seguro) - c.bottom;
+        var top = c.bottom + Math.max(4, (hueco - h) / 2);
+        var limite = m.alto - seguro - h - 4;
+        if (limite < c.bottom + 2) limite = m.alto - h - 2;
+        top = Math.min(top, limite);
+        var cy = top + h / 2;
+        var wPr  = _suma(ap) + g * (ap.length - 1);
+        var wSav = _suma(as) + g * (as.length - 1);
+        return {
+            gap: Math.round(g * 10) / 10,
+            pr:  { left: Math.round(inicio), top: Math.round(cy - (m.pr.h || 0) / 2), w: wPr },
+            sav: { left: Math.round(inicio + wPr + g), top: Math.round(cy - (m.sav.h || 0) / 2), w: wSav }
+        };
+    };
+
+    // Anchos de los bloques de una barra (el separador de avanzados no cuenta:
+    // en la fila repartida se oculta, el hueco ya separa).
+    function _mideHijos(el) {
+        var res = { anchos: [], h: 0 };
+        var hs = el ? el.children : null;
+        for (var i = 0; hs && i < hs.length; i++) {
+            if (hs[i].classList && hs[i].classList.contains('sav-sep')) continue;
+            var r = hs[i].getBoundingClientRect();
+            if (!r || !(r.width > 0)) continue;
+            res.anchos.push(r.width);
+            if (r.height > res.h) res.h = r.height;
+        }
+        return res;
+    }
+
+    window.cronosExtrasMideFila = function () {
+        var ancho = window.innerWidth;
+        if (!(ancho > 950 && ancho <= 1366) || typeof document.querySelector !== 'function') return null;
+        var pr = document.getElementById('cronos-pr-bar');
+        var sv = document.getElementById('cronos-sav-bar');
+        if (!pr || !sv || !pr.classList.contains('on') || !sv.classList.contains('on')) return null;
+        var campo = _rectVisible(document.querySelector('.pitch'));
+        if (!campo) return null;
+        return window.cronosExtrasFilaTablet({
+            ancho: ancho, alto: window.innerHeight, seguro: _seguroInferior(), campo: campo,
+            pr: _mideHijos(pr), sav: _mideHijos(sv)
+        });
+    };
+
     function _colocaBarra() {
         var barra = document.getElementById('cronos-pr-bar');
         var asig  = document.getElementById('cronos-pr-assign');
         if (!barra || !barra.style) return;
         var ancho = window.innerWidth, alto = window.innerHeight;
+
+        // 📟 v820 · iPad con las dos barras: la fila repartida bajo el campo.
+        var fila = (barra.classList.contains('on') && typeof window.cronosExtrasMideFila === 'function')
+            ? window.cronosExtrasMideFila() : null;
+        if (fila) {
+            barra.classList.remove('tapado');
+            barra.style.left = fila.pr.left + 'px';
+            barra.style.top  = fila.pr.top + 'px';
+            barra.style.gap  = fila.gap + 'px';
+            if (asig && asig.style) {
+                asig.style.left = Math.round(fila.pr.left + fila.pr.w / 2) + 'px';
+                asig.style.right = 'auto';
+                asig.style.bottom = Math.round(alto - fila.pr.top + 8) + 'px';
+                asig.style.maxWidth = Math.round(Math.min(440, ancho - 20)) + 'px';
+                asig.style.transform = 'translateX(-50%)';
+            }
+            return;
+        }
+        barra.style.gap = '';
 
         // 📱 v818 · El cajón de VISIT. abierto ocupa el margen derecho: la
         // columna se aparta (lo mismo que hace la de extras con el de LOCAL).

@@ -2752,8 +2752,14 @@
 //        no es columna fija de 170px; se abre con su botón) y las columnas de
 //        extras y sus ventanas «¿de quién?» no se mezclan con un banquillo
 //        abierto ni entre sí.
-const VERSION = 'v818';
-const CACHE_NAME = 'cronos-cache-v818';
+// v819 · F-D · FORTALEZAS Y DEBILIDADES EN DIRECTO (como Cronos Basket): botón
+//        en la barra de R/P (columna derecha en el móvil) y ventana que juzga
+//        goles, R/P, ocasiones, córners, faltas y centros, con Destacan/Flojean.
+// v820 · iPAD: TODOS LOS EXTRAS EN UNA FILA bajo el campo, de su esquina
+//        izquierda a la derecha y con el mismo hueco entre bloques (antes
+//        quedaban descentrados y se salían por la derecha). Móvil y PC igual.
+const VERSION = 'v820';
+const CACHE_NAME = 'cronos-cache-v820';
 
 const ASSETS = [
     './',

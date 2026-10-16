@@ -380,6 +380,8 @@
             'gap:6px;align-items:stretch;pointer-events:none;}',
             '#cronos-sav-bar.on{display:flex;}',
             '#cronos-sav-bar.tapado{display:none;}',
+            // v820 · En la fila repartida del iPad el hueco ya separa los bloques.
+            '#cronos-sav-bar.reparto .sav-sep{display:none;}',
             // Separador con el bloque R/P (encargo 4.A).
             '#cronos-sav-bar .sav-sep{width:2px;align-self:stretch;margin:4px 4px 4px 0;',
             'background:rgba(255,255,255,0.18);border-radius:2px;}',
@@ -616,6 +618,26 @@
         var tapado = ancho <= 950 && !!(cajon && cajon.classList && cajon.classList.contains('open'));
         if (tapado) { barra.classList.add('tapado'); return; }
         barra.classList.remove('tapado');
+
+        // 📟 v820 · iPad con las dos barras: la fila repartida bajo el campo,
+        // calculada con la MISMA función que R/P (possession-tracker.js).
+        var fila = (typeof window.cronosExtrasMideFila === 'function') ? window.cronosExtrasMideFila() : null;
+        if (fila) {
+            barra.classList.add('reparto');
+            barra.style.left = fila.sav.left + 'px';
+            barra.style.top  = fila.sav.top + 'px';
+            barra.style.gap  = fila.gap + 'px';
+            if (asig && asig.style) {
+                asig.style.left = Math.round(fila.sav.left + fila.sav.w / 2) + 'px';
+                asig.style.right = 'auto';
+                asig.style.bottom = Math.round(alto - fila.sav.top + 8) + 'px';
+                asig.style.maxWidth = Math.round(Math.min(560, ancho - 20)) + 'px';
+                asig.style.transform = 'translateX(-50%)';
+            }
+            return;
+        }
+        barra.classList.remove('reparto');
+        barra.style.gap = '';
 
         var rb = _rectVisible(barra);
         if (!rb || typeof document.querySelector !== 'function') return;
