@@ -1163,37 +1163,16 @@ input, select {
     }
 }
 
-@media (max-width: 950px) and (orientation: landscape) {
-    .hide-visitor:not(.role-away) .sidebar,
-    .hide-visitor.role-away .sidebar-right {
-        position: relative !important;
-        transform: none !important;
-        width: 170px !important;
-        flex: 0 0 170px;
-        box-shadow: none;
-    }
-
-    .hide-visitor .main-container {
-        display: flex;
-        flex-direction: row;
-    }
-
-    .hide-visitor .field-area {
-        flex: 1;
-        width: auto !important;
-    }
-
-    .hide-visitor .pitch {
-        max-height: 75vh;
-        margin: 0 auto;
-    }
-
-    /* El botón de la banca que ya está fija como columna no hace falta; el
-       otro equipo no existe. v709 · Y jugando de VISITANTE la columna fija es
-       la DERECHA, así que el que sobra es el de VISIT., no el de LOCAL (misma
-       corrección que los GRUPAL: lo que decide es el LADO, no «home»). */
-    .hide-visitor:not(.role-away) .mobile-toggle.home { display: none !important; }
-    .hide-visitor.role-away .mobile-toggle.away { display: none !important; }
+/* v818 · Con UN SOLO equipo el banquillo también es CAJÓN en el móvil
+   (encargo 16-10, IMG_5041-IMG_5045): antes era una columna fija de 170px
+   que se comía el margen izquierdo, y la columna de extras avanzados y la
+   ventana «¿de quién?» acababan montadas encima de él. Ahora va oculto por
+   defecto, igual que con dos equipos, y se abre con SU botón. El que sobra
+   es el del equipo que no existe: el de VISIT. en casa y el de LOCAL de
+   visitante (v709: lo que decide es el LADO, no «home»). */
+@media (max-width: 950px) {
+    .hide-visitor:not(.role-away) .mobile-toggle.away { display: none !important; }
+    .hide-visitor.role-away .mobile-toggle.home { display: none !important; }
 }
 
 /* --- ROSTER TABLE --- */

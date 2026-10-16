@@ -545,11 +545,15 @@
             left = l ? l.left : 10;
             if (m.campo) left = Math.min(left, m.campo.left - w - 4);
             left = Math.max(4, Math.min(left, m.ancho - w - 4));
+            // v818 · …y se para ANTES de la columna R/P del margen derecho.
+            var desde = left + w + 8;
+            var maxW = m.ancho - desde - 8;
+            if (m.pr && m.pr.left > 0) maxW = Math.min(maxW, m.pr.left - 8 - desde);
             return { modo: 'movil', left: Math.round(left), top: Math.round(top), w: w, h: h,
                      // La lista de jugadores crece HACIA LA DERECHA.
-                     asignar: { left: Math.round(left + w + 8), right: null,
+                     asignar: { left: Math.round(desde), right: null,
                                 bottom: Math.round(Math.max(4, m.alto - (top + h))),
-                                maxW: Math.max(160, Math.round(m.ancho - (left + w + 8) - 8)) } };
+                                maxW: Math.max(160, Math.round(maxW)) } };
         }
 
         var p = m.pr;
@@ -698,6 +702,10 @@
             '<button type="button" class="sav-chip gen" data-gen="1">' +
                 (contra ? '⚑ Rival / equipo' : '👥 Equipo') + '</button>' +
             '<button type="button" class="sav-chip undo" data-undo="1">↩ Rectificar</button></div>';
+        // v818 · Una sola ventana flotante a la vez: fuera el banquillo
+        // abierto (lo tapaba, z-index 2000) y la «¿de quién?» de R/P.
+        if (typeof window.closeDrawers === 'function') window.closeDrawers();
+        if (typeof window.cronosPRCierraAsignar === 'function') window.cronosPRCierraAsignar();
         cont.classList.add('on');
         _colocaBarra();
 
@@ -726,6 +734,9 @@
         var cont = document.getElementById('cronos-sav-assign');
         if (cont) { cont.classList.remove('on'); cont.innerHTML = ''; }
     }
+    // v818 · Para que el banquillo y la otra ventana puedan cerrarla.
+    window.cronosSAvCierraAsignar = _cierraBarraYa;
+    window.cronosSAvColoca = _colocaBarra;
 
     // ════════════════════════════════════════════════════════════════
     //  📈 RESUMEN POR JUGADOR, EN VIVO

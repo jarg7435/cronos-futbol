@@ -94,11 +94,28 @@ function toggleBench(team) {
     cronosAjustaCajones();
     if (otherDrawer) otherDrawer.classList.remove('open');
     if (drawer) drawer.classList.toggle('open');
+    // v818 · Un banquillo abierto y una ventana «¿de quién?» nunca a la vez:
+    // el cajón (z-index 2000) tapaba media ventana (1003) y se mezclaban.
+    if (drawer && drawer.classList.contains('open')) {
+        if (typeof window.cronosPRCierraAsignar === 'function') window.cronosPRCierraAsignar();
+        if (typeof window.cronosSAvCierraAsignar === 'function') window.cronosSAvCierraAsignar();
+    }
+    cronosRecolocaExtras();
 }
 
 function closeDrawers() {
     document.querySelector('.sidebar')?.classList.remove('open');
     document.querySelector('.sidebar-right')?.classList.remove('open');
+    cronosRecolocaExtras();
+}
+
+// v818 · Las columnas de extras se apartan del cajón de SU lado al momento,
+// sin esperar al vigía de 1 s.
+function cronosRecolocaExtras() {
+    try {
+        if (typeof window.cronosPRColoca === 'function') window.cronosPRColoca();
+        if (typeof window.cronosSAvColoca === 'function') window.cronosSAvColoca();
+    } catch (e) { /* nunca tumba la interfaz */ }
 }
 
 // ══════════════════════════════════════════════════════════════════

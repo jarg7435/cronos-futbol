@@ -183,13 +183,15 @@ console.log('\n── PARTE 3 · las demás señales por LADO, simétricas ─�
     const tog = (clase, clasesBody) => resolver(REGLAS, 'display',
         { tag: 'button', clases: ['mobile-toggle', clase], ancestros: [cuerpo(clasesBody)] }, TABLET);
 
-    ok('3a · en casa sobra el botón de banca LOCAL (su columna ya está fija)',
-       tog('home', ['hide-visitor']) === 'none' && tog('away', ['hide-visitor']) !== 'none',
+    // v818 · El banquillo de un solo equipo ya no es columna fija sino cajón
+    // oculto: su botón SE VE y sobra el del equipo que no existe.
+    ok('3a · en casa se ve el botón LOCAL (abre mi cajón) y sobra el de VISIT.',
+       tog('home', ['hide-visitor']) !== 'none' && tog('away', ['hide-visitor']) === 'none',
        'home=' + tog('home', ['hide-visitor']) + ' away=' + tog('away', ['hide-visitor']));
 
-    ok('3b · 🔑 y de visitante sobra el de VISIT., no el de LOCAL',
-       tog('away', ['hide-visitor', 'role-away']) === 'none' &&
-       tog('home', ['hide-visitor', 'role-away']) !== 'none',
+    ok('3b · 🔑 y de visitante se ve el de VISIT. y sobra el de LOCAL',
+       tog('away', ['hide-visitor', 'role-away']) !== 'none' &&
+       tog('home', ['hide-visitor', 'role-away']) === 'none',
        'home=' + tog('home', ['hide-visitor', 'role-away']) +
        ' away=' + tog('away', ['hide-visitor', 'role-away']));
 

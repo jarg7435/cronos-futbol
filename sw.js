@@ -2748,8 +2748,12 @@
 //        de vídeo en los pendientes, lista más grande, y el informe del partido
 //        se corrige con consultas que las reglas aceptan. Dirección ve Vídeos en
 //        cuanto llegan los extras del club.
-const VERSION = 'v817';
-const CACHE_NAME = 'cronos-cache-v817';
+// v818 · MÓVIL: BANQUILLOS OCULTOS POR DEFECTO también con un solo equipo (ya
+//        no es columna fija de 170px; se abre con su botón) y las columnas de
+//        extras y sus ventanas «¿de quién?» no se mezclan con un banquillo
+//        abierto ni entre sí.
+const VERSION = 'v818';
+const CACHE_NAME = 'cronos-cache-v818';
 
 const ASSETS = [
     './',

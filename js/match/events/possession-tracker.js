@@ -465,6 +465,8 @@
             //  de césped que hay bajo ella.
             'pointer-events:none;}',
             '#cronos-pr-bar.on{display:flex;}',
+            // v818 · El cajón de VISIT. abierto ocupa ese margen: se aparta.
+            '#cronos-pr-bar.tapado{display:none;}',
             // Los botones SÍ son interactivos: el `none` del padre se hereda
             // en cascada y hay que reponerlo explícitamente en cada control.
             '.cronos-pr-btn{pointer-events:auto;',
@@ -639,12 +641,16 @@
             // Fuera del césped: si el margen lo permite, a la derecha del campo.
             if (m.campo) left = Math.max(left, m.campo.right + 4);
             left = Math.min(Math.max(4, left), m.ancho - w - 4);
+            // v818 · …y se para ANTES de la columna de extras avanzados del
+            // margen izquierdo, en vez de taparla.
+            var maxW = left - 18;
+            if (m.sav && m.sav.right > 0) maxW = Math.min(maxW, (left - 8) - (m.sav.right + 8));
             return { modo: 'movil', left: Math.round(left), top: Math.round(top),
                      w: w, h: h,
                      // El desplegable crece HACIA LA IZQUIERDA desde la columna.
                      asignar: { right: Math.round(m.ancho - left + 8), left: null,
                                 bottom: Math.round(m.alto - (top + h)),
-                                maxW: Math.max(120, Math.round(left - 18)) } };
+                                maxW: Math.max(120, Math.round(maxW)) } };
         }
 
         // 📟 iPAD: los tres juntos, centrados en la franja bajo el campo.
@@ -689,12 +695,21 @@
         var asig  = document.getElementById('cronos-pr-assign');
         if (!barra || !barra.style) return;
         var ancho = window.innerWidth, alto = window.innerHeight;
+
+        // 📱 v818 · El cajón de VISIT. abierto ocupa el margen derecho: la
+        // columna se aparta (lo mismo que hace la de extras con el de LOCAL).
+        var cajon = (typeof document.querySelector === 'function') ? document.querySelector('.sidebar-right') : null;
+        var tapado = ancho <= 950 && !!(cajon && cajon.classList && cajon.classList.contains('open'));
+        if (tapado) { barra.classList.add('tapado'); return; }
+        barra.classList.remove('tapado');
+
         var rb = (barra.classList.contains('on')) ? _rectVisible(barra) : null;
         var sitio = (rb && typeof document.querySelector === 'function')
             ? window.cronosPRSitioBarra({
                 ancho: ancho, alto: alto, seguro: _seguroInferior(),
                 campo: _rectVisible(document.querySelector('.pitch')),
                 visit: _rectVisible(document.getElementById('toggle-bench-away')),
+                sav: _rectVisible(document.getElementById('cronos-sav-bar')),
                 barra: { w: rb.width, h: rb.height }
               })
             : null;
@@ -805,6 +820,11 @@
         cont.classList.remove('desde-izq', 'desde-der');
         cont.classList.add(item.kind === 'loss' ? 'desde-der' : 'desde-izq');
 
+        // v818 · Una sola ventana flotante a la vez: fuera el banquillo
+        // abierto (lo tapaba, z-index 2000) y la «¿de quién?» de extras.
+        if (typeof window.closeDrawers === 'function') window.closeDrawers();
+        if (typeof window.cronosSAvCierraAsignar === 'function') window.cronosSAvCierraAsignar();
+
         cont.classList.add('on');
         _colocaBarra();
 
@@ -833,6 +853,9 @@
         var cont = document.getElementById('cronos-pr-assign');
         if (cont) { cont.classList.remove('on'); cont.innerHTML = ''; }
     }
+    // v818 · Para que el banquillo y la otra ventana puedan cerrarla.
+    window.cronosPRCierraAsignar = _cierraBarraYa;
+    window.cronosPRColoca = _colocaBarra;
 
     // ════════════════════════════════════════════════════════════════
     //  📊 PANEL DE RESUMEN POR JUGADOR, EN VIVO
