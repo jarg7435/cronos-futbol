@@ -114,6 +114,18 @@ ok('4d · las sesiones salen del parte, no del cuadrante',
    /sesionesDeParte\(/.test(cuerpoAbrir));
 ok('4e · la plantilla sale de la que ya se trajo el árbol',
    /plantillas/.test(cuerpoAbrir) && !/cronosFetchAllTeamRosters/.test(cuerpoAbrir));
+// 📊 v823 · % pre-partido y % de temporada SÍ necesitan los meses de atrás.
+// La regla de arriba se mantiene para la TABLA (sale al instante, sin
+// lecturas ni esperas); lo de atrás va APARTE, sólo de ESTE equipo (por su
+// id de documento, nunca una consulta del club entero) y una vez por equipo
+// y mes (`_sdParteExtra`).
+const cuerpoHist = cuerpoDe(CLUB, 'async function _sdParteCargarHistorico(');
+ok('4f · los meses de atrás se leen APARTE, por documento del equipo',
+   /getDoc\(doc\(db, 'clubs', clubId, 'attendance',\s*window\.CronosAttendance\.docId\(teamId, m\)\)\)/.test(cuerpoHist) &&
+   !/getDocs|where\(/.test(cuerpoHist));
+ok('4g · el mes mostrado no se vuelve a pedir', /\(m === mes\) \? \(parteMes \|\| \{\}\)/.test(cuerpoHist));
+ok('4h · y no se repite mientras no cambie equipo o mes',
+   /window\._sdParteExtra\.clave === _clave/.test(cuerpoAbrir) && /if \(_ex \|\|/.test(cuerpoAbrir));
 
 // ── PARTE 5 · ⚠️ el alcance no se ensancha ──────────────────────────
 console.log('\nPARTE 5 · el coordinador sigue viendo sólo lo suyo');

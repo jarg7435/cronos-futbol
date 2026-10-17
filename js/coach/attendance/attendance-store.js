@@ -926,6 +926,116 @@
 
     // ── Exportación ──────────────────────────────────────────────────
     // ══════════════════════════════════════════════════════════════════
+    //  📊 v823 · % PRE-PARTIDO Y % DE TEMPORADA EN EL PARTE MENSUAL
+    // ══════════════════════════════════════════════════════════════════
+    //  Encargo del autor (implementar.txt 17-10, captura 11570), y su
+    //  respuesta a la duda de alcance: «semana previa».
+    //    · PRE-PARTIDO: los ENTRENAMIENTOS entre el partido anterior y el
+    //      último partido (ninguno de los dos incluido). «Último» = el último
+    //      que haya hasta el fin del mes mostrado, sin pasar de hoy. Sin
+    //      partido anterior, los 28 días previos (y se dice).
+    //    · TEMPORADA: todas las sesiones desde el 1 de JULIO (la misma regla
+    //      que calendario-parser.js `temporadaDe`) hasta el fin del mes
+    //      mostrado, sin pasar de hoy.
+    //  Los porcentajes salen de `resumenJugador`: lo SIN MARCAR no cuenta y el
+    //  retraso es asistencia, igual que la columna % del mes.
+    //
+    //  🔑 PURA, como `parteMensualHtml`: recibe los meses por argumento
+    //  (`porMes['YYYY-MM'] = { sesiones, marks }`), así que la usan igual el
+    //  entrenador (caché + cuadrante) y Dirección (los documentos del parte).
+    function _inicioTemporada(mes) {
+        var y = parseInt(String(mes).slice(0, 4), 10);
+        var m = parseInt(String(mes).slice(5, 7), 10);
+        return (m >= 7 ? y : y - 1) + '-07-01';
+    }
+
+    // Meses que hacen falta para el mes `mes`: del anterior al inicio de la
+    // temporada (el ciclo pre-partido puede empezar en junio) hasta `mes`.
+    function mesesHistorico(mes) {
+        var out = [], cur = _mesDesplazado(_inicioTemporada(mes).slice(0, 7), -1);
+        // ⚠️ Con tope: sin `_cronosLocalDateKey` el desplazamiento devuelve ''
+        // y `'' <= mes` no acabaría nunca. Una temporada son 13 meses.
+        while (/^\d{4}-\d{2}$/.test(cur) && cur <= mes && out.length < 14) {
+            out.push(cur); cur = _mesDesplazado(cur, 1);
+        }
+        return out;
+    }
+
+    function periodosExtra(o) {
+        o = o || {};
+        var mes = String(o.mes || '');
+        var hoy = String(o.hoy || _clave(new Date()));
+        var finMes = _clave(new Date(parseInt(mes.slice(0, 4), 10), parseInt(mes.slice(5, 7), 10), 0, 12, 0, 0));
+        var limite = finMes < hoy ? finMes : hoy;
+
+        var porFecha = {}, marks = {};
+        Object.keys(o.porMes || {}).forEach(function (k) {
+            var d = o.porMes[k] || {};
+            (d.sesiones || []).forEach(function (s) {
+                var t = (s && (s.tipo === 'partido' || s.tipo === 'entrenamiento')) ? s.tipo : _tipoDeSesion(s);
+                if (s && s.fecha && t && !porFecha[s.fecha]) porFecha[s.fecha] = { fecha: s.fecha, tipo: t };
+            });
+            Object.keys(d.marks || {}).forEach(function (f) { marks[f] = d.marks[f]; });
+        });
+        var todas = Object.keys(porFecha).sort().map(function (f) { return porFecha[f]; })
+            .filter(function (s) { return s.fecha <= limite; });
+
+        var ultimo = null, anterior = null;
+        for (var i = todas.length - 1; i >= 0; i--) {
+            if (todas[i].tipo !== 'partido') continue;
+            if (!ultimo) ultimo = todas[i].fecha;
+            else if (todas[i].fecha < ultimo) { anterior = todas[i].fecha; break; }
+        }
+        var pre = null;
+        if (ultimo) {
+            var desdePre = anterior || _sumarDias(ultimo, -CICLO_DIAS_RESPALDO);
+            pre = {
+                ultimoPartido: ultimo, partidoAnterior: anterior,
+                sesiones: todas.filter(function (s) {
+                    return s.tipo === 'entrenamiento' &&
+                           (anterior ? s.fecha > anterior : s.fecha >= desdePre) && s.fecha < ultimo;
+                })
+            };
+        }
+        var desdeT = _inicioTemporada(mes);
+        return {
+            mes: mes,
+            marks: marks,
+            pre: pre,
+            temporada: { desde: desdeT, hasta: limite,
+                         sesiones: todas.filter(function (s) { return s.fecha >= desdeT; }) }
+        };
+    }
+
+    // % del EQUIPO en un periodo: asistencias / registradas de toda la
+    // plantilla (la misma cuenta que la fila de totales del mes).
+    function _pctEquipo(marks, sesiones, fichas) {
+        var a = 0, reg = 0;
+        (fichas || []).forEach(function (f) {
+            var r = resumenJugador(marks || {}, sesiones || [], f);
+            a += r.asistencias; reg += r.registradas;
+        });
+        return reg ? Math.round(a / reg * 100) + '%' : '—';
+    }
+
+    // ENTRENADOR: carga los meses que faltan (una lectura por mes, en
+    // paralelo; el mes mostrado ya lo leyó quien llama) y monta los periodos.
+    async function cargarHistorico(mes, equipoOpc) {
+        var eq = equipoOpc || _miEquipo();
+        if (!eq) return null;
+        var meses = mesesHistorico(mes);
+        await Promise.all(meses.map(function (m) {
+            return (m === mes) ? Promise.resolve() : cargarMes(m, eq).catch(function () {});
+        }));
+        var porMes = {};
+        meses.forEach(function (m) {
+            porMes[m] = { sesiones: _sesionesDeMesUnidas(m, eq),
+                          marks: (_mesLocal(docId(eq.teamId, m)).marks) || {} };
+        });
+        return periodosExtra({ mes: mes, porMes: porMes });
+    }
+
+    // ══════════════════════════════════════════════════════════════════
     //  📅 EL PARTE MENSUAL, EN UN SOLO SITIO
     // ══════════════════════════════════════════════════════════════════
     //  Lo pintan DOS pantallas: la del entrenador (su equipo) y la del
@@ -962,6 +1072,14 @@
         var marks      = o.marks    || {};
         var cambiarMes = o.cambiarMes || '_attCambiarMes';
         var acciones   = o.acciones || '';
+        // 📊 v823 · `extra`: ausente = sin las dos columnas nuevas (como
+        // antes); 'cargando' = columnas con «…»; objeto = `periodosExtra`.
+        var extra      = o.extra || null;
+        var conExtra   = !!extra;
+        var cargando   = extra === 'cargando';
+        var pre        = (!cargando && extra && extra.pre) || null;
+        var temp       = (!cargando && extra && extra.temporada) || null;
+        var pctTxt     = function (r) { return (r && r.pct != null) ? r.pct + '%' : '—'; };
 
         var nombreMes = new Date(parseInt(mes.slice(0, 4), 10), parseInt(mes.slice(5, 7), 10) - 1, 1)
             .toLocaleDateString('es-ES', { month: 'long', year: 'numeric' });
@@ -1012,7 +1130,17 @@
                 '<th title="Retrasos" style="padding:0.4rem 0.5rem; border-bottom:2px solid rgba(88,166,255,0.25); color:#d29922; white-space:nowrap;">⏰</th>' +
                 '<th style="padding:0.4rem 0.5rem; border-bottom:2px solid rgba(88,166,255,0.25); color:#ff5858; white-space:nowrap;">❌</th>' +
                 '<th style="padding:0.4rem 0.5rem; border-bottom:2px solid rgba(88,166,255,0.25); color:#f0883e; white-space:nowrap;">🩹</th>' +
-                '<th style="padding:0.4rem 0.5rem; border-bottom:2px solid rgba(88,166,255,0.25); color:var(--primary); white-space:nowrap;">%</th>' +
+                '<th title="Asistencia del mes" style="padding:0.4rem 0.5rem; border-bottom:2px solid rgba(88,166,255,0.25); color:var(--primary); white-space:nowrap;">%</th>' +
+                (conExtra
+                    ? '<th data-att-col="pre" title="' + esc(pre
+                          ? 'Entrenamientos antes del último partido (' + diaMes(pre.ultimoPartido) + ')' +
+                            (pre.partidoAnterior ? ', desde el partido del ' + diaMes(pre.partidoAnterior) : ', 28 días previos (no hay partido anterior)')
+                          : 'Entrenamientos antes del último partido') + '"' +
+                      ' style="padding:0.4rem 0.5rem; border-bottom:2px solid rgba(88,166,255,0.25); color:#f0883e; white-space:nowrap; font-size:0.62rem;">' +
+                      '% PRE ⚽' + (pre ? '<br>' + diaMes(pre.ultimoPartido) : '') + '</th>' +
+                      '<th data-att-col="temporada" title="' + esc('Lo que va de temporada' + (temp ? ' (desde el ' + diaMes(temp.desde) + ' hasta el ' + diaMes(temp.hasta) + ')' : '')) + '"' +
+                      ' style="padding:0.4rem 0.5rem; border-bottom:2px solid rgba(88,166,255,0.25); color:#d2a8ff; white-space:nowrap; font-size:0.62rem;">% TEMP.</th>'
+                    : '') +
                 '</tr></thead><tbody>';
 
         plantel.forEach(function (p) {
@@ -1052,6 +1180,12 @@
                     '<td style="text-align:center; font-weight:700; color:#ff5858;">' + r.I + '</td>' +
                     '<td style="text-align:center; font-weight:700; color:#f0883e;">' + r.J + '</td>' +
                     '<td style="text-align:center; font-weight:700; color:var(--primary);">' + (r.pct == null ? '—' : r.pct + '%') + '</td>' +
+                    (conExtra
+                        ? '<td style="text-align:center; font-weight:700; color:#f0883e;">' +
+                            (cargando ? '…' : (pre ? pctTxt(resumenJugador(extra.marks, pre.sesiones, p.ficha)) : '—')) + '</td>' +
+                          '<td style="text-align:center; font-weight:700; color:#d2a8ff;">' +
+                            (cargando ? '…' : (temp ? pctTxt(resumenJugador(extra.marks, temp.sesiones, p.ficha)) : '—')) + '</td>'
+                        : '') +
                     '</tr>';
         });
 
@@ -1077,9 +1211,29 @@
                 '<td style="text-align:center; font-weight:700; color:#f0883e;">' + totJ + '</td>' +
                 '<td style="text-align:center; font-weight:700; color:var(--primary);">' +
                   (totReg ? Math.round(totAsist / totReg * 100) + '%' : '—') + '</td>' +
+                (conExtra
+                    ? '<td style="text-align:center; font-weight:700; color:#f0883e;">' +
+                        (cargando ? '…' : (pre ? _pctEquipo(extra.marks, pre.sesiones, fichas) : '—')) + '</td>' +
+                      '<td style="text-align:center; font-weight:700; color:#d2a8ff;">' +
+                        (cargando ? '…' : (temp ? _pctEquipo(extra.marks, temp.sesiones, fichas) : '—')) + '</td>'
+                    : '') +
                 '</tr>';
 
         html += '</tbody></table></div>';
+
+        // 📊 v823 · De qué periodo habla cada % (un porcentaje sin su periodo
+        // no se puede leer).
+        if (conExtra) {
+            html += '<div data-att-periodos="1" style="margin-top:0.5rem; font-size:0.7rem; color:var(--text-muted); line-height:1.6;">' +
+                (cargando ? 'Calculando % pre-partido y % de temporada…'
+                    : '<span style="color:#f0883e; font-weight:700;">% PRE ⚽</span> ' +
+                      (pre ? 'entrenamientos ' + (pre.partidoAnterior ? 'entre el partido del ' + diaMes(pre.partidoAnterior) + ' y ' : 'de los 28 días antes de ') +
+                             'el último partido (' + diaMes(pre.ultimoPartido) + '): ' + pre.sesiones.length + ' sesi' + (pre.sesiones.length === 1 ? 'ón' : 'ones')
+                           : 'sin partido jugado todavía') +
+                      ' &nbsp;·&nbsp; <span style="color:#d2a8ff; font-weight:700;">% TEMP.</span> ' +
+                      (temp ? 'desde el ' + diaMes(temp.desde) + ' hasta el ' + diaMes(temp.hasta) + ': ' + temp.sesiones.length + ' sesi' + (temp.sesiones.length === 1 ? 'ón' : 'ones') : '')) +
+                '</div>';
+        }
 
         // ── Desglose de faltas ──────────────────────────────────────────
         var porMotivo = {}, faltasPartido = 0, faltasEntreno = 0, porMotivoRetraso = {};
@@ -1180,6 +1334,10 @@
         resumenSesion: resumenSesion,
         parteMensualHtml: parteMensualHtml,
         sesionesDeParte: sesionesDeParte,
+        // 📊 v823 · % pre-partido y % de temporada
+        periodosExtra: periodosExtra,
+        mesesHistorico: mesesHistorico,
+        cargarHistorico: cargarHistorico,
         // Para los guards y los tests: funciones puras.
         _rutaSegura: _rutaSegura,
         _tipoDeSesion: _tipoDeSesion,

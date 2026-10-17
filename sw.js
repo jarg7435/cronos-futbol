@@ -2766,8 +2766,12 @@
 //        salida) junto a la hora de presentación, que llega a familias,
 //        Dirección y PDF; y el PDF ya no lleva la URL que imprimía el
 //        navegador al pie (ni una hoja sólo para el pie con 18 convocados).
-const VERSION = 'v822';
-const CACHE_NAME = 'cronos-cache-v822';
+// v823 · ASISTENCIA: el botón de falta justificada lleva el icono de SU causa
+//        (📚 estudios, 💼 trabajo…, antes siempre 🩹), y el parte mensual
+//        añade % PRE-PARTIDO (entrenos de la semana previa al último partido)
+//        y % DE TEMPORADA (desde el 1 de julio), entrenador y Dirección.
+const VERSION = 'v823';
+const CACHE_NAME = 'cronos-cache-v823';
 
 const ASSETS = [
     './',

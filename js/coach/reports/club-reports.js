@@ -1128,20 +1128,70 @@ window._sdAbrirParteMensual = function (teamId) {
         alias:  String((p && p.alias) || '').trim()
     })).filter(p => p.ficha && (p.nombre || p.alias));
 
-    const cuerpo = window.CronosAttendance.parteMensualHtml({
-        mes:        d.mes,
-        equipo:     _sdEtiquetaEquipo(e),
-        sesiones:   sesiones,
-        plantel:    plantel,
-        marks:      marks,
-        isMobile:   window.innerWidth < 640,
-        cambiarMes: '_sdParteCambiarMes',
-        acciones:   '<button class="btn" onclick="_sdParteVolver()" style="padding:0.35rem 0.7rem; font-size:0.68rem;">← VOLVER</button>'
-    });
+    // 📊 v823 · % pre-partido y % de temporada: hacen falta los partes de los
+    // meses de atrás de ESTE equipo. Se pinta ya con «…» y se repinta al
+    // llegar (sólo si el director sigue en el mismo equipo y mes).
+    const _clave = teamId + '|' + d.mes;
+    const _ex = (window._sdParteExtra && window._sdParteExtra.clave === _clave) ? window._sdParteExtra.datos : null;
+    const pinta = (extra) => {
+        const cuerpo = window.CronosAttendance.parteMensualHtml({
+            mes:        d.mes,
+            equipo:     _sdEtiquetaEquipo(e),
+            sesiones:   sesiones,
+            plantel:    plantel,
+            marks:      marks,
+            extra:      (typeof window.CronosAttendance.periodosExtra === 'function') ? (extra || 'cargando') : null,
+            isMobile:   window.innerWidth < 640,
+            cambiarMes: '_sdParteCambiarMes',
+            acciones:   '<button class="btn" onclick="_sdParteVolver()" style="padding:0.35rem 0.7rem; font-size:0.68rem;">← VOLVER</button>'
+        });
+        container.innerHTML = '<div style="display:flex; flex-direction:column;">' + cuerpo + '</div>';
+    };
 
     window._sdParteEquipo = teamId;
-    container.innerHTML = '<div style="display:flex; flex-direction:column;">' + cuerpo + '</div>';
+    pinta(_ex);
+    if (_ex || typeof window.CronosAttendance.periodosExtra !== 'function') return;
+
+    // La tabla ya está en pantalla; los meses de atrás llegan aparte.
+    _sdParteCargarHistorico(teamId, d.mes, parte).then(datos => {
+        if (!datos) return;
+        window._sdParteExtra = { clave: _clave, datos: datos };
+        if (window._sdParteEquipo === teamId && window._sdAsistDatos && window._sdAsistDatos.mes === d.mes &&
+            container.querySelector('[data-att-periodos]')) {
+            pinta(datos);
+        }
+    });
 };
+
+// 📊 v823 · Los partes de los meses de atrás de UN equipo (del mes anterior
+// al inicio de la temporada hasta el mostrado, que ya está descargado y no se
+// vuelve a pedir). Una lectura por mes, en paralelo; el resultado se guarda
+// en `_sdParteExtra` y no se repite mientras no cambie el equipo o el mes.
+// Devuelve los periodos de `periodosExtra`, o null si algo falla.
+async function _sdParteCargarHistorico(teamId, mes, parteMes) {
+    try {
+        const me = window._cronosCurrentUser;
+        const clubId = window._testRoleClubId || me?.clubId || '';
+        const { db, doc, getDoc } = await _sdFS();
+        const meses = window.CronosAttendance.mesesHistorico(mes);
+        const porMes = {};
+        await Promise.all(meses.map(async (m) => {
+            let p = (m === mes) ? (parteMes || {}) : null;
+            if (!p) {
+                try {
+                    const snap = await getDoc(doc(db, 'clubs', clubId, 'attendance',
+                                                  window.CronosAttendance.docId(teamId, m)));
+                    p = snap.exists() ? (snap.data() || {}) : {};
+                } catch (_) { p = {}; }
+            }
+            porMes[m] = { sesiones: window.CronosAttendance.sesionesDeParte(p), marks: p.marks || {} };
+        }));
+        return window.CronosAttendance.periodosExtra({ mes: mes, porMes: porMes });
+    } catch (err) {
+        console.warn('[Dirección] % pre-partido / temporada:', err);
+        return null;
+    }
+}
 
 // Cambiar de mes DENTRO del parte. Recarga la pestaña —que es quien sabe
 // traerse los documentos del mes nuevo— y vuelve a abrir el mismo equipo.

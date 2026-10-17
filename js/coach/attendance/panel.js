@@ -267,7 +267,13 @@ function _attRenderSemana() {
               '<button onclick="_attAbrirMotivo(\'' + _attEsc(p.ficha) + '\')" title="Falta" style="cursor:pointer; border-radius:8px; padding:0.3rem 0.6rem; font-size:0.9rem;' +
                 'border:1px solid ' + (estado === 'I' ? '#ff5858' : (estado === 'J' ? '#f0883e' : 'var(--glass-border)')) + ';' +
                 'background:' + (estado === 'I' ? 'rgba(255,88,88,0.25)' : (estado === 'J' ? 'rgba(240,136,62,0.25)' : 'transparent')) + ';' +
-                'color:' + (estado === 'I' ? '#ff5858' : (estado === 'J' ? '#f0883e' : 'var(--text-muted)')) + ';">' + (estado === 'J' ? '🩹' : '❌') + '</button>' +
+                // 🎨 v823 · EL ICONO DE SU CAUSA, NO SIEMPRE 🩹 (captura 11569:
+                // Estudios y Trabajo salían con el de «Motivo médico / lesión»).
+                // `motivoIcon` es la misma lista que la etiqueta de debajo y la
+                // rejilla del parte; sin causa grabada devuelve el 🩹 de siempre.
+                'color:' + (estado === 'I' ? '#ff5858' : (estado === 'J' ? '#f0883e' : 'var(--text-muted)')) + ';"' +
+                (estado === 'J' ? ' data-att-causa="' + _attEsc((m && m.m) || '') + '"' : '') + '>' +
+                (estado === 'J' ? _attEsc(window.CronosAttendance.motivoIcon(m && m.m)) : '❌') + '</button>' +
             '</span>' +
           '</div>';
 
@@ -570,6 +576,20 @@ async function openAttendanceMonth() {
     }
     window._attMes = await window.CronosAttendance.cargarMes(window._attMonth, eq);
     _attRenderMes();
+
+    // 📊 v823 · % pre-partido y % de temporada: necesitan los meses de atrás.
+    // La tabla ya está pintada (con «…»); se repinta al llegar, y sólo si el
+    // entrenador sigue en ESTE mes.
+    var mesPedido = window._attMonth;
+    if (typeof window.CronosAttendance.cargarHistorico === 'function') {
+        window.CronosAttendance.cargarHistorico(mesPedido, eq).then(function (ex) {
+            if (window._attMonth !== mesPedido) return;
+            window._attExtra = ex;
+            if (document.querySelector('#setup-modal [data-att-periodos]')) _attRenderMes();
+        }).catch(function (e) {
+            console.warn('[Asistencia] % pre-partido / temporada:', e && e.message ? e.message : e);
+        });
+    }
 }
 
 window._attCambiarMes = async function (delta) {
@@ -600,6 +620,8 @@ function _attRenderMes() {
         sesiones:   window.CronosAttendance.sesionesDeMes(window._attMonth),
         plantel:    window.CronosAttendance.jugadores(),
         marks:      (window._attMes && window._attMes.marks) || {},
+        // 📊 v823 · los periodos de ESTE mes, o «…» mientras llegan
+        extra:      (window._attExtra && window._attExtra.mes === window._attMonth) ? window._attExtra : 'cargando',
         isMobile:   isMobile,
         cambiarMes: '_attCambiarMes',
         acciones:
