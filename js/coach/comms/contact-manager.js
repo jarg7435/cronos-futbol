@@ -266,6 +266,7 @@ async function openContactManager() {
         });
 
         // 3. Cargar Usuarios con rol de Padre registrados en Firestore para la categoría/subcategoría
+        const _padres = [];   // ⏳ v824 · para los «Pendientes de asignar»
         try {
             const parentUsersSnap = await getDocs(query(
                 collection(db, 'users'),
@@ -275,6 +276,7 @@ async function openContactManager() {
             parentUsersSnap.forEach(d => {
                 const u = d.data();
                 const uUid = d.id;
+                _padres.push({ ...u, uid: uUid });
                 // 🔒 v813 · los equipos de esta familia (sus plazas), para no
                 // pintarla en la tabla de OTRO equipo (ver _cmFilaManualVisible).
                 _cmEquiposFamilia.set(uUid, (u.allRoles || []).filter(r => r &&
@@ -303,6 +305,13 @@ async function openContactManager() {
                 }
             });
         } catch(pErr) { console.warn('[Contactos] Error buscando usuarios padres:', pErr); }
+
+        // ⏳ v824 · las familias de ESTE equipo que esperan a que se les asigne
+        // jugador. Antes de pintar: sus filas «manuales» se apartan (ver
+        // _cmFilaManualVisible) porque se gestionan en el bloque de avisos.
+        _cmPendientes = _cmCalculaPendientes(links, _padres, me.clubId || '',
+            (typeof window.cronosEquipoAbierto === 'function') ? window.cronosEquipoAbierto() : '');
+        _cmUidsPendientes = new Set(_cmPendientes.map(p => p.uid));
 
         const modal = document.getElementById('setup-modal');
         modal.style.display = 'flex';
@@ -455,6 +464,8 @@ async function openContactManager() {
                             ➕ AÑADIR FAMILIAR / JUGADOR
                         </button>
                     </div>
+
+                    ${_cmPendientesHTML(_cmPendientes)}
 
                     <div style="padding:0.5rem 0.5rem 0;">${_cmBarra('ctfam')}</div>
 
@@ -1090,10 +1101,15 @@ let _cmUidsVinculados = new Set();
 let _cmLinks = [];
 let _cmEquiposFamilia = new Map();
 let _cmOcultas = [];
+let _cmPendientes = [];
+let _cmUidsPendientes = new Set();
 function _cmFilaManualVisible(c) {
     // ⚠️ La fila manual guardada NO conserva `uid` (saveContactManagerData,
     // 2b): la de una familia con cuenta lo lleva en el `id`.
     const uid = c.uid || c.id || '';
+    // ⏳ v824 · la familia pendiente se asigna en su aviso, no aquí; se aparta
+    // y vuelve tal cual al guardar.
+    if (uid && _cmUidsPendientes.has(uid)) { _cmOcultas.push(c); return false; }
     if (uid && _cmUidsVinculados.has(uid)) return false;    // la gestiona su fila vinculada
     const eq = (typeof window.cronosEquipoAbierto === 'function') ? window.cronosEquipoAbierto() : '';
     if (!eq) return true;
@@ -1108,6 +1124,164 @@ function _cmVinculosDelEquipo(links) {
     return (links || []).filter(l => l && (!l.teamId || _cmEsDeEsteEquipo(l)));
 }
 window._cmVinculosDelEquipo = _cmVinculosDelEquipo;
+
+// ══════════════════════════════════════════════════════════════════════
+//  ⏳ v824 · «ASIGNAR CÓDIGO»: LAS FAMILIAS QUE ESPERAN A SU JUGADOR
+//
+//  Encargo del autor (implementar.txt, 2026-10-18): la familia ya no
+//  teclea ningún código (parent/panel.js enseña «pendiente de asignación»)
+//  y es el entrenador quien la asocia, de forma oficial, al jugador de su
+//  plantilla. Aquí se calcula quién espera y se pinta su aviso.
+//
+//  🔑 EL AVISO SE DEDUCE, NO SE ESCRIBE: una familia está pendiente si
+//  tiene cuenta APROBADA (isAuthorized), una plaza de familiar en ESTE
+//  equipo y ningún vínculo para él. Así no hay una colección más que
+//  mantener ni regla nueva, y el aviso desaparece solo al asignar.
+//  Sin plaza con equipo (altas viejas) se mira la categoría de la raíz; si
+//  tampoco hay, sale con la marca «sin equipo» para que nadie se quede
+//  esperando para siempre — el entrenador decide si es suya.
+//  Una familia con hijos en dos equipos sale en cada uno hasta que se le
+//  asigne el jugador de ese equipo.
+// ══════════════════════════════════════════════════════════════════════
+function _cmCalculaPendientes(links, padres, clubId, eq) {
+    const norm = (t) => (typeof window.cronosTeamIdNorm === 'function') ? window.cronosTeamIdNorm(t) : String(t || '');
+    const tid = (cat, sub) => (typeof window.cronosTeamId === 'function') ? window.cronosTeamId(clubId, cat, sub || '') : '';
+    const out = [];
+    (padres || []).forEach(u => {
+        if (!u || !u.uid || (u.isAuthorized !== true && u.status !== 'active')) return;
+        const plazas = (u.allRoles || []).filter(r => r &&
+            (r.role === 'parent' || r.role === 'parent_individual') && r.status !== 'removed' &&
+            (!r.clubId || r.clubId === clubId || r.individualEntityId === clubId));
+        let equipos = plazas.map(r => tid(r.category, r.subcategory)).filter(Boolean);
+        if (!equipos.length && u.category) equipos = [tid(u.category, u.subcategory)].filter(Boolean);
+        const sinEquipo = !equipos.length;
+        if (eq && !sinEquipo && !equipos.some(t => norm(t) === norm(eq))) return;
+        const yaVinculada = (links || []).some(l => l && l.parentUid === u.uid &&
+            (!eq || !l.teamId || norm(l.teamId) === norm(eq)));
+        if (yaVinculada) return;
+        const plaza = plazas.find(r => eq && norm(tid(r.category, r.subcategory)) === norm(eq)) || plazas[0] || {};
+        out.push({
+            uid: u.uid,
+            email: u.email || '',
+            name: u.displayName || [u.firstName, u.lastName].filter(Boolean).join(' ') || u.email || 'Familiar / Jugador',
+            playerAlias: plaza.playerAlias || u.playerAlias || '',
+            category: plaza.category || u.category || '',
+            subcategory: plaza.subcategory || u.subcategory || '',
+            sinEquipo,
+        });
+    });
+    return out.sort((a, b) => String(a.name).localeCompare(String(b.name), 'es'));
+}
+window._cmCalculaPendientes = _cmCalculaPendientes;
+
+function _cmPendientesHTML(lista) {
+    if (!lista || !lista.length) return '';
+    const esc  = (s) => (typeof escapeHtml === 'function') ? escapeHtml(s) : String(s == null ? '' : s);
+    const escA = (s) => (typeof escapeAttr === 'function') ? escapeAttr(s) : String(s == null ? '' : s);
+    const filas = lista.map(p =>
+        '<div class="cm-pend-row" data-uid="' + escA(p.uid) + '" style="display:grid;' +
+            'grid-template-columns:minmax(180px,1.2fr) minmax(200px,1.4fr) auto;gap:0.6rem;align-items:center;' +
+            'padding:0.55rem 0.6rem;border-top:1px solid rgba(240,136,62,0.18);">' +
+          '<div style="min-width:0;">' +
+            '<div style="font-size:0.78rem;font-weight:700;color:white;overflow:hidden;text-overflow:ellipsis;">' + esc(p.name) + '</div>' +
+            '<div style="font-size:0.68rem;color:#58a6ff;overflow:hidden;text-overflow:ellipsis;">' + esc(p.email) + '</div>' +
+            (p.playerAlias ? '<div style="font-size:0.66rem;color:var(--text-muted);">Indicó el jugador: <strong style="color:#c9d1d9;">' + esc(p.playerAlias) + '</strong></div>' : '') +
+            (p.sinEquipo ? '<div style="font-size:0.64rem;color:#f0883e;">Sin equipo indicado al registrarse: comprueba que es de este equipo</div>' : '') +
+          '</div>' +
+          '<div>' + _cmSelectorJugador('cm-pend-player', 'data-uid="' + escA(p.uid) + '"', '', null) + '</div>' +
+          '<button onclick="window.cmAsignarJugador && window.cmAsignarJugador(this.closest(\'.cm-pend-row\').dataset.uid)"' +
+            ' style="padding:0.45rem 0.8rem;background:#3fb950;color:#0a0e14;border:none;border-radius:6px;' +
+            'font-weight:800;font-size:0.72rem;cursor:pointer;white-space:nowrap;">✅ ASIGNAR</button>' +
+        '</div>').join('');
+    return '<div id="cm-pendientes" style="margin:0.6rem 0.5rem 0.2rem;border:1px solid rgba(240,136,62,0.5);' +
+            'border-radius:10px;background:rgba(240,136,62,0.07);overflow-x:auto;">' +
+        '<div style="padding:0.6rem 0.7rem;">' +
+          '<div style="font-size:0.82rem;font-weight:800;color:#f0883e;">🔔 Asignar código · ' + lista.length +
+            (lista.length === 1 ? ' familia pendiente' : ' familias pendientes') + '</div>' +
+          '<div style="font-size:0.68rem;color:var(--text-muted);margin-top:0.15rem;line-height:1.45;">' +
+            'Se han dado de alta y esperan a que les asignes su jugador. Elige el jugador correcto de tu plantilla y pulsa ASIGNAR: ' +
+            'esa cuenta verá exclusivamente la información de ese jugador. Se guarda al momento.</div>' +
+        '</div>' + filas + '</div>';
+}
+
+// Asignación oficial: crea el vínculo de la familia con el jugador elegido
+// del equipo ABIERTO. Mismos campos que dejaba la auto-vinculación de
+// antes (ppPlayer), más `playerCode` (v765, el enlace de los informes) y
+// quién lo asignó.
+window.cmAsignarJugador = async function cmAsignarJugador(uid) {
+    const p = (_cmPendientes || []).find(x => x.uid === uid);
+    const sel = Array.from(document.querySelectorAll('.cm-pend-player')).find(s => s.dataset.uid === uid);
+    if (!p || !sel) return;
+    if (!sel.value) { if (typeof showToast === 'function') showToast('⚠️ Elige primero el jugador de la lista', 3000); return; }
+    const me = window._cronosCurrentUser;
+    const eq = (typeof window.cronosEquipoAbierto === 'function') ? window.cronosEquipoAbierto() : '';
+    const fa = window._cronos_auth;
+    if (!me || !me.clubId || !fa || !fa.db) return;
+    if (!eq) { if (typeof showToast === 'function') showToast('⚠️ No se sabe qué equipo tienes abierto: vuelve a entrar en Contactos', 4000); return; }
+    const opt = sel.options[sel.selectedIndex];
+    const ds = (opt && opt.dataset) || {};
+    const dorsal = String(ds.number || '');
+    if (!confirm('🔗 ASIGNAR JUGADOR\n\n' + (opt ? opt.text : sel.value) + '\n→ ' + p.name + ' (' + p.email + ')\n\n' +
+                 'Esa cuenta recibirá exclusivamente la información y las estadísticas de este jugador.\n\n¿Confirmar?')) return;
+    if (typeof showSpinner === 'function') showSpinner('Asignando jugador…');
+    try {
+        const { doc, setDoc } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
+        const linkId = window.cronosIdVinculo(me.clubId, eq, dorsal || sel.value, uid);
+        await setDoc(doc(fa.db, 'cronos_player_links', linkId), {
+            clubId:            me.clubId,
+            playerCode:        sel.value,
+            playerNumber:      dorsal,
+            playerAlias:       ds.alias || '',
+            teamId:            eq,
+            category:          p.category || me.category || '',
+            subcategory:       p.subcategory || me.subcategory || '',
+            parentUid:         uid,
+            parentEmail:       p.email,
+            parentName:        p.name,
+            canReceiveReports: true,
+            canReceiveConv:    true,
+            canReceiveTr:      true,
+            canReceiveMsg:     true,
+            inviteCode:        dorsal ? 'J' + dorsal : '',
+            assignedBy:        me.uid,
+            createdAt:         new Date().toISOString(),
+        });
+        if (typeof hideSpinner === 'function') hideSpinner();
+        if (typeof showToast === 'function') showToast('✅ Jugador asignado a ' + p.name, 3000);
+        await openContactManager();   // repinta: el aviso pasa a su fila vinculada
+    } catch (e) {
+        if (typeof hideSpinner === 'function') hideSpinner();
+        console.error('[Contactos] Asignar jugador:', e);
+        if (typeof showToast === 'function') showToast('⚠️ No se pudo asignar: ' + (e && e.message || e), 4000);
+    }
+};
+
+// 🔔 El aviso fuera de Contactos: la insignia del botón 📱 CONTACTOS del
+// menú del partido (setup-modal.js). Misma cuenta que el bloque de arriba.
+window.cmPintaInsigniaPendientes = async function cmPintaInsigniaPendientes() {
+    const badge = document.getElementById('cm-pend-badge');
+    const me = window._cronosCurrentUser;
+    const fa = window._cronos_auth;
+    if (!badge || !me || !me.clubId || !fa || !fa.db) return;
+    if (typeof window.cronosHayPadres === 'function' && !window.cronosHayPadres()) return;
+    try {
+        const { collection, getDocs, query, where } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
+        const [ls, us] = await Promise.all([
+            getDocs(query(collection(fa.db, 'cronos_player_links'), where('clubId', '==', me.clubId))),
+            getDocs(query(collection(fa.db, 'users'), where('clubId', '==', me.clubId), where('role', '==', 'parent'))),
+        ]);
+        const links = [], padres = [];
+        ls.forEach(d => links.push({ _id: d.id, ...d.data() }));
+        us.forEach(d => padres.push({ ...d.data(), uid: d.id }));
+        const eq = (typeof window.cronosEquipoAbierto === 'function') ? window.cronosEquipoAbierto() : '';
+        const n = _cmCalculaPendientes(links, padres, me.clubId, eq).length;
+        const b = document.getElementById('cm-pend-badge');
+        if (!b) return;
+        b.textContent = n ? String(n) : '';
+        b.style.display = n ? 'inline-flex' : 'none';
+        b.title = n ? (n + (n === 1 ? ' familia pendiente' : ' familias pendientes') + ' de asignar jugador') : '';
+    } catch (e) { /* sin insignia: el bloque de Contactos sigue avisando */ }
+};
 
 // Al cambiar el desplegable, el aviso de debajo se actualiza al momento: el
 // entrenador ve qué va a pasar ANTES de guardar.

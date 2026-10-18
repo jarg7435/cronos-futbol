@@ -2770,8 +2770,12 @@
 //        (📚 estudios, 💼 trabajo…, antes siempre 🩹), y el parte mensual
 //        añade % PRE-PARTIDO (entrenos de la semana previa al último partido)
 //        y % DE TEMPORADA (desde el 1 de julio), entrenador y Dirección.
-const VERSION = 'v823';
-const CACHE_NAME = 'cronos-cache-v823';
+// v824 · VINCULACIÓN DE FAMILIAS: la familia ya no teclea el código del
+//        jugador; ve «registrada, pendiente de asignación» y el entrenador la
+//        asigna desde Contactos (aviso «Asignar código» + insignia). Las
+//        reglas ya no dejan a una cuenta de familia crear su vínculo.
+const VERSION = 'v824';
+const CACHE_NAME = 'cronos-cache-v824';
 
 const ASSETS = [
     './',

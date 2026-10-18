@@ -676,7 +676,7 @@ function openSetupModal() {
                 
                 <div style="display:grid; grid-template-columns: repeat(5, 1fr); gap:0.5rem; align-items:stretch; width:100%;">
                     ${_cronosExtraBtn('plantilla', 'GESTIONAR PLANTILLA', 'saveSetupState(); openRosterManager()', 'rgba(88,166,255,0.12); color:#58a6ff; border:1px solid rgba(88,166,255,0.4)')}
-                    ${_cronosExtraBtn('contactos', '📱 CONTACTOS', 'saveSetupState(); Promise.resolve(openContactManager()).catch(function(e){ console.error(\'[Contactos] Error al abrir:\', e); if(typeof hideSpinner===\'function\') hideSpinner(); if(typeof showToast===\'function\') showToast(\'⚠️ No se pudo abrir Contactos\', 3000); });', 'rgba(255,165,0,0.12); color:#ffa500; border:1px solid rgba(255,165,0,0.4)')}
+                    ${_cronosExtraBtn('contactos', '📱 CONTACTOS<span id="cm-pend-badge" style="display:none;margin-left:5px;min-width:17px;height:17px;padding:0 4px;border-radius:9px;background:#f0883e;color:#0a0e14;font-size:0.66rem;font-weight:900;align-items:center;justify-content:center;"></span>', 'saveSetupState(); Promise.resolve(openContactManager()).catch(function(e){ console.error(\'[Contactos] Error al abrir:\', e); if(typeof hideSpinner===\'function\') hideSpinner(); if(typeof showToast===\'function\') showToast(\'⚠️ No se pudo abrir Contactos\', 3000); });', 'rgba(255,165,0,0.12); color:#ffa500; border:1px solid rgba(255,165,0,0.4)')}
                     ${_cronosExtraBtn('convocatorias', '📋 CONVOCATORIA', 'openConvocationModal()', 'rgba(63,185,80,0.12); color:#3fb950; border:1px solid rgba(63,185,80,0.5)')}
                     ${_cronosExtraBtn('entrenamientos', '🏃 ENTRENAMIENTO', 'openTrainingPanel()', 'rgba(88,166,255,0.12); color:#58a6ff; border:1px solid rgba(88,166,255,0.4)')}
                     ${_cronosExtraBtn('informes', '📊 MIS INFORMES', 'typeof openMisInformes === \'function\' ? openMisInformes() : alert(\'Módulo en mantenimiento\')', 'rgba(255,215,0,0.12); color:#ffd700; border:1px solid rgba(255,215,0,0.4)')}
@@ -729,6 +729,11 @@ function openSetupModal() {
     `;
 
     // ── Inicializaciones ──
+    // ⏳ v824 · insignia de familias pendientes de asignar jugador. Con
+    // retraso: el equipo abierto se resuelve tras fijar la categoría (abajo).
+    setTimeout(function () {
+        if (typeof window.cmPintaInsigniaPendientes === 'function') window.cmPintaInsigniaPendientes();
+    }, 1500);
     if (typeof populateSavedTeams === 'function') {
         populateSavedTeams('home');
         populateSavedTeams('away');

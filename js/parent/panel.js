@@ -1119,11 +1119,69 @@ async function openParentPanel(initialTab) {
         body.innerHTML = html;
     };
 
+    // ══════════════════════════════════════════════════════════════════
+    //  ⏳ v824 · CUENTA REGISTRADA, PENDIENTE DE QUE EL ENTRENADOR ASIGNE
+    //
+    //  Lo que ve la familia mientras no tiene vínculo (ver ppPlayer). Dice
+    //  a qué equipo se ha apuntado y con qué nombre de jugador, que es lo
+    //  que el entrenador ve en su aviso de Contactos. No hay nada que
+    //  teclear: el vínculo lo crea SIEMPRE el entrenador.
+    // ══════════════════════════════════════════════════════════════════
+    function _ppPendienteHTML(yo, club) {
+        const esc = (s) => (typeof escapeHtml === 'function') ? escapeHtml(s == null ? '' : s) : String(s == null ? '' : s);
+        const plaza = ((yo && yo.allRoles) || []).find(r => r &&
+            (r.role === 'parent' || r.role === 'parent_individual') && r.status !== 'removed' &&
+            (!club || !r.clubId || r.clubId === club || r.individualEntityId === club)) || {};
+        const equipo = [plaza.categoryLabel || plaza.category || (yo && yo.category) || '',
+                        plaza.subcategory || (yo && yo.subcategory) || ''].filter(Boolean).join(' ');
+        const jugador = plaza.playerAlias || (yo && yo.playerAlias) || '';
+        const dato = (k, v) => v ? '<div style="display:flex;justify-content:space-between;gap:0.8rem;padding:0.35rem 0;' +
+            'border-top:1px solid rgba(255,255,255,0.06);font-size:0.78rem;"><span style="color:#7d8590;">' + k +
+            '</span><span style="color:white;font-weight:600;text-align:right;">' + esc(v) + '</span></div>' : '';
+        return '<div id="pp-pendiente" style="max-width:440px;margin:2rem auto;padding:1.5rem;' +
+                'background:rgba(255,255,255,0.04);border:1px solid rgba(240,136,62,0.35);' +
+                'border-radius:12px;text-align:center;">' +
+            '<div style="font-size:2rem;margin-bottom:0.6rem;">⏳</div>' +
+            '<div style="font-weight:700;font-size:0.98rem;margin-bottom:0.5rem;color:#3fb950;">' +
+                '✅ Tu cuenta se ha registrado correctamente</div>' +
+            '<div style="font-size:0.82rem;color:#c9d1d9;line-height:1.55;margin-bottom:1rem;">' +
+                'Está <strong style="color:#f0883e;">pendiente de que el entrenador de tu equipo te asigne tu jugador</strong>.' +
+                ' En cuanto lo haga, aquí aparecerán sus informes y estadísticas.</div>' +
+            '<div style="text-align:left;margin-bottom:1rem;">' +
+                dato('Cuenta', yo && yo.email) + dato('Equipo', equipo) + dato('Jugador indicado', jugador) +
+            '</div>' +
+            '<div style="font-size:0.72rem;color:#7d8590;line-height:1.5;margin-bottom:0.9rem;">' +
+                'No tienes que introducir ningún código: el entrenador ya ha recibido el aviso. ' +
+                'Esta pantalla se actualiza sola.</div>' +
+            '<button onclick="window.ppPlayer && window.ppPlayer()" style="padding:0.55rem 1.1rem;' +
+                'background:rgba(88,166,255,0.12);color:#58a6ff;border:1px solid rgba(88,166,255,0.4);' +
+                'border-radius:8px;font-weight:700;font-size:0.8rem;cursor:pointer;">🔄 Comprobar ahora</button>' +
+        '</div>';
+    }
+
+    // Escucha su vínculo mientras la pantalla de espera esté a la vista: en
+    // cuanto el entrenador lo asigna, se pinta el jugador sin recargar. Se
+    // da de baja al llegar el vínculo o al primer aviso con la pantalla ya
+    // cambiada (otra pestaña del panel).
+    async function _ppEsperaVinculo(yo) {
+        try {
+            if (typeof window._ppEsperaUnsub === 'function') window._ppEsperaUnsub();
+            window._ppEsperaUnsub = null;
+            const { collection, query, where, onSnapshot } = await import(
+                'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
+            const baja = () => { if (typeof window._ppEsperaUnsub === 'function') window._ppEsperaUnsub(); window._ppEsperaUnsub = null; };
+            window._ppEsperaUnsub = onSnapshot(query(collection(fa.db, 'cronos_player_links'),
+                where('parentUid', '==', yo.uid)), (s) => {
+                if (!document.getElementById('pp-pendiente')) return baja();
+                if (!s.empty) { baja(); if (window.ppPlayer) window.ppPlayer(); }
+            }, baja);
+        } catch (e) { /* sin oyente queda el botón «Comprobar ahora» */ }
+    }
+
     window.ppPlayer = async () => {
         const body = document.getElementById('pp-body');
         try {
-            const { collection, getDocs, query, where,
-                    doc, getDoc, setDoc, updateDoc } = await import(
+            const { collection, getDocs, query, where, doc, updateDoc } = await import(
                 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
 
             // Vínculo padre → jugador
@@ -1134,354 +1192,21 @@ async function openParentPanel(initialTab) {
             const links = [];
             linkSnap.forEach(d => links.push({ _id: d.id, ...d.data() }));
 
-            // ── AUTO-VINCULACIÓN ──────────────────────────────────────────
-            // Si no hay link todavía, intentar crearlo automáticamente usando
-            // los datos del documento del usuario (playerNumber almacenado al
-            // aprobar la solicitud de registro del padre).
-            if (!links.length && clubId) {
-                try {
-                    // Buscar playerNumber en el documento del usuario primero
-                    const myDoc  = await getDoc(doc(fa.db, 'users', me.uid));
-                    const myData = myDoc.exists() ? myDoc.data() : {};
-                    let pNum  = myData.playerNumber || myData.dorsalJugador || null;
-                    let pAlias = myData.playerAlias || myData.playerName || myData.displayName || '';
-
-                    // Si no está en users, buscar en platform_requests
-                    if (!pNum || !myData.inviteCode) {
-                        try {
-                            const prSnap = await getDocs(query(
-                                collection(fa.db, 'platform_requests'),
-                                where('requestedEmail',  '==', me.email || ''),
-                                where('clubId', '==', clubId)
-                            ));
-                            prSnap.forEach(d => {
-                                const pr = d.data();
-                                if (!pNum && (pr.playerNumber || pr.requestedPlayerNumber)) {
-                                    pNum   = pr.playerNumber || pr.requestedPlayerNumber;
-                                    pAlias = pr.playerAlias || pr.playerName || pAlias;
-                                }
-                                if (!myData.inviteCode && pr.inviteCode) {
-                                    myData.inviteCode = pr.inviteCode;
-                                }
-                            });
-                        } catch(_) {}
-                    }
-
-                    // ── FIX A1: extraer playerNumber del inviteCode top-level ──
-                    // El registro guarda inviteCode ('J10') en Firestore, no playerNumber ('10').
-                    if (!pNum && myData.inviteCode) {
-                        const invM = String(myData.inviteCode).match(/^J-?(\d+)$/i);
-                        if (invM) {
-                            pNum = invM[1];
-                        }
-                    }
-
-                    // ── FIX A2: buscar inviteCode dentro de allRoles[] ──
-                    // Usuarios con múltiples roles: el inviteCode puede estar SOLO en
-                    // allRoles[N].inviteCode para la entrada del rol 'parent', no en el top-level.
-                    if (!pNum && Array.isArray(myData.allRoles)) {
-                        const parentEntry = myData.allRoles.find(r =>
-                            r.role === 'parent' && (r.clubId === clubId || !r.clubId)
-                        );
-                        if (parentEntry) {
-                            if (parentEntry.inviteCode) {
-                                const invM2 = String(parentEntry.inviteCode).match(/^J-?(\d+)$/i);
-                                if (invM2) {
-                                    pNum = invM2[1];
-                                    pAlias = parentEntry.playerAlias || parentEntry.displayName || pAlias;
-                                }
-                            }
-                            // Actualizar top-level inviteCode para futuros accesos más rápidos
-                            if (pNum && !myData.inviteCode) {
-                                updateDoc(doc(fa.db, 'users', me.uid), {
-                                    inviteCode: parentEntry.inviteCode || ('J' + pNum),
-                                    playerNumber: String(pNum),
-                                    playerAlias: pAlias || myData.playerAlias || ''
-                                }).catch(() => {});
-                            }
-                        }
-                    }
-
-                    // También buscar en cronos_player_links por email del padre o por inviteCode
-                    if (!pNum && (me.email || myData.inviteCode)) {
-                        try {
-                            const queries = [];
-                            if (me.email) queries.push(query(
-                                collection(fa.db, 'cronos_player_links'),
-                                where('parentEmail', '==', me.email),
-                                where('clubId',      '==', clubId)
-                            ));
-                            if (myData.inviteCode) queries.push(query(
-                                collection(fa.db, 'cronos_player_links'),
-                                where('inviteCode', '==', myData.inviteCode),
-                                where('clubId',     '==', clubId)
-                            ));
-
-                            // 🔒 v813 · SÓLO SE ADOPTA UN VÍNCULO SIN DUEÑO Y DE MI EQUIPO.
-                            // Antes bastaba con que el código «J10» coincidiera: la
-                            // familia del #10 de Regional B se quedaba con el vínculo
-                            // del #10 de Alevín C (medido en testeo, 2026-10-13).
-                            const _miEq = (typeof window.cronosEquipoDeFamilia === 'function')
-                                ? window.cronosEquipoDeFamilia(myData, clubId, myData.inviteCode || '').teamId : '';
-                            const _ntA = (t) => (typeof window.cronosTeamIdNorm === 'function') ? window.cronosTeamIdNorm(t) : String(t || '');
-                            for (const q of queries) {
-                                const qSnap = await getDocs(q).catch(() => ({ forEach: () => {} }));
-                                qSnap.forEach(d => {
-                                    const ld = d.data();
-                                    if (ld.parentUid && ld.parentUid !== me.uid) return;
-                                    if (ld.teamId && _miEq && _ntA(ld.teamId) !== _ntA(_miEq)) return;
-                                    if (!pNum && (ld.playerNumber || ld.inviteCode)) {
-                                        pNum   = ld.playerNumber || (ld.inviteCode ? ld.inviteCode.replace(/^J/, '') : null);
-                                        pAlias = ld.playerAlias || ld.playerName || pAlias;
-                                        // Si el link ya existe pero sin parentUid, actualizarlo
-                                        if (!ld.parentUid) {
-                                            updateDoc(doc(fa.db, 'cronos_player_links', d.id), {
-                                                parentUid:   me.uid,
-                                                parentEmail: me.email || ld.parentEmail || '',
-                                                parentName:  myData.displayName || me.email || ld.parentName || '',
-                                            }).catch(()=>{});
-                                            links.push({ _id: d.id, ...ld, parentUid: me.uid });
-                                        }
-                                    }
-                                });
-                                if (links.length) break;
-                            }
-                        } catch(_) {}
-                    }
-
-                    if (pNum && clubId && !links.length) {
-                        const pTeam  = myData.teamName || myData.category || '';
-                        // Fase 4: la categoría del jugador permite al entrenador
-                        // filtrar sus contactos por categoría. Se toma del doc del
-                        // padre (category/categoryLabel) o, si no, del rol parent.
-                        const _roleCat = (Array.isArray(myData.allRoles)
-                            ? (myData.allRoles.find(r => r.role === 'parent' || r.role === 'parent_individual') || {})
-                            : {});
-                        const pCat = myData.category || myData.categoryLabel
-                            || _roleCat.category || _roleCat.categoryLabel
-                            || (me && me.category) || '';
-                        // 🔒 v764 · EL EQUIPO DE LA FAMILIA VA EN EL VÍNCULO. Sin él,
-                        // el envío de informes no puede saber a quién le toca y
-                        // (opción A del autor) no le envía nada. Sale de su plaza
-                        // de familiar; va con el parentUid porque describe a ESTA
-                        // familia, que es la que queda en el vínculo.
-                        const _eqFam = (typeof window.cronosEquipoDeFamilia === 'function')
-                            ? window.cronosEquipoDeFamilia(myData, clubId, pNum) : { teamId: '' };
-                        const _camposEquipo = _eqFam.teamId
-                            ? { teamId: _eqFam.teamId, subcategory: _eqFam.subcategory } : {};
-                        // 🔗 v813 · el id lleva el uid (cronosIdVinculo): no puede
-                        // existir uno ajeno con este nombre, así que no se lee antes.
-                        // Esa lectura previa era la que denegaban las reglas sobre un
-                        // documento inexistente y dejaba a TODA familia nueva sin
-                        // auto-vinculación (medido en testeo, 2026-10-13).
-                        const linkId = (typeof window.cronosIdVinculo === 'function')
-                            ? window.cronosIdVinculo(clubId, _eqFam.teamId, pNum, me.uid) : `${clubId}_${pNum}_${me.uid}`;
-                        await setDoc(doc(fa.db, 'cronos_player_links', linkId), {
-                            clubId,
-                            playerNumber:      String(pNum),
-                            playerAlias:       pAlias,
-                            teamName:          pTeam,
-                            category:          pCat || pTeam || '',
-                            parentUid:         me.uid,
-                            parentEmail:       me.email || '',
-                            parentPhone:       myData.phone || '',   // v671 · sin `.whatsapp`
-                            parentName:        myData.displayName || me.email || '',
-                            canReceiveReports: true,
-                            canReceiveConv:    true,
-                            canReceiveTr:      true,
-                            canReceiveMsg:     true,
-                            inviteCode:        `J${pNum}`,
-                            createdAt:         new Date().toISOString(),
-                            ..._camposEquipo,   // 🔒 v764
-                        });
-                        // Recargar tras la vinculación
-                        const refreshSnap = await getDocs(query(
-                            collection(fa.db, 'cronos_player_links'),
-                            where('parentUid', '==', me.uid)
-                        ));
-                        refreshSnap.forEach(d => links.push({ _id: d.id, ...d.data() }));
-                    }
-                } catch(autoErr) {
-                    console.warn('[ppPlayer] Auto-vinculación fallida:', autoErr.message);
-                }
-            }
-
+            // ══════════════════════════════════════════════════════════════
+            //  🔗 v824 · LA FAMILIA YA NO SE VINCULA SOLA
+            //
+            //  Encargo del autor (implementar.txt, 2026-10-18, captura 11577):
+            //  teclear el código «J10» se prestaba a errores —el #10 de otro
+            //  equipo, un dorsal mal puesto— y la auto-vinculación se fiaba de
+            //  datos que escribe la propia familia (su `users` y su solicitud).
+            //  Ahora el jugador lo asigna SIEMPRE el entrenador, desde Contactos
+            //  (bloque «Pendientes de asignar», contact-manager.js), y aquí sólo
+            //  se espera. Las reglas ya no dejan a una cuenta de familia crear
+            //  vínculos. Fuera la auto-vinculación y el formulario manual.
+            // ══════════════════════════════════════════════════════════════
             if (!links.length) {
-                // ── FIX: Mostrar formulario de entrada manual de código ──────
-                // Si inviteCode es null en allRoles (rol parent añadido por admin
-                // sin código) el padre puede introducirlo manualmente aquí.
-                body.innerHTML = `
-                <div style="max-width:420px;margin:2rem auto;padding:1.5rem;
-                    background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.1);
-                    border-radius:12px;text-align:center;">
-                    <div style="font-size:2rem;margin-bottom:0.8rem;">🔗</div>
-                    <div style="font-weight:700;font-size:0.95rem;margin-bottom:0.4rem;color:white;">
-                        Vincular tu jugador
-                    </div>
-                    <div style="font-size:0.8rem;color:#7d8590;margin-bottom:1.2rem;">
-                        Introduce el código de jugador que te proporcionó el entrenador
-                        (por ejemplo: <strong style="color:#58a6ff;">J10</strong>).
-                    </div>
-                    <input id="pp-manual-code"
-                        placeholder="Ej: J10"
-                        maxlength="6"
-                        style="width:100%;box-sizing:border-box;padding:0.65rem 1rem;
-                            background:rgba(255,255,255,0.06);border:1px solid rgba(88,166,255,0.4);
-                            border-radius:8px;color:white;font-size:1rem;text-align:center;
-                            letter-spacing:2px;text-transform:uppercase;outline:none;margin-bottom:0.8rem;"
-                        oninput="this.value=this.value.toUpperCase()"
-                    />
-                    <button onclick="window._ppLinkManual()"
-                        style="width:100%;padding:0.65rem;background:#58a6ff;color:#0a0e14;
-                            border:none;border-radius:8px;font-weight:700;font-size:0.95rem;
-                            cursor:pointer;">
-                        🔗 Vincular jugador
-                    </button>
-                    <div id="pp-link-msg" style="margin-top:0.6rem;font-size:0.8rem;color:#7d8590;"></div>
-                </div>`;
-
-                // Handler del botón de vinculación manual
-                window._ppLinkManual = async () => {
-                    const codeRaw = (document.getElementById('pp-manual-code')?.value || '').trim().toUpperCase();
-                    const msgEl   = document.getElementById('pp-link-msg');
-                    if (!msgEl) return;
-
-                    // Validar formato J + número
-                    const m = codeRaw.match(/^J-?(\d+)$/);
-                    if (!m) {
-                        msgEl.style.color = '#ff5858';
-                        msgEl.textContent = '⚠️ Formato incorrecto. Usa J seguido del número (ej: J10).';
-                        return;
-                    }
-                    const manualPNum = m[1];
-                    msgEl.style.color = '#7d8590';
-                    msgEl.textContent = '🔄 Buscando jugador…';
-
-                    try {
-                        const { collection, getDocs, query, where,
-                                doc, getDoc, setDoc, updateDoc } = await import(
-                            'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
-
-                        // 🔒 v764 · el equipo de la familia, también al vincular a mano.
-                        const _eqFamM = (typeof window.cronosEquipoDeFamilia === 'function')
-                            ? window.cronosEquipoDeFamilia(window._cronosCurrentUser || me, clubId, manualPNum)
-                            : { teamId: '' };
-                        const _camposEquipoM = _eqFamM.teamId
-                            ? { teamId: _eqFamM.teamId, category: _eqFamM.category, subcategory: _eqFamM.subcategory } : {};
-
-                        // 1. Buscar link existente por inviteCode o playerNumber.
-                        // 🔒 v813 · SÓLO UNO SIN DUEÑO (o ya mío) Y DE MI EQUIPO. Antes
-                        // se cogía el primero que coincidiera en el club y se le
-                        // ponía este parentUid: el #10 de un equipo le quitaba el
-                        // vínculo al #10 de otro.
-                        const _ntM = (t) => (typeof window.cronosTeamIdNorm === 'function') ? window.cronosTeamIdNorm(t) : String(t || '');
-                        const _adoptable = (ld) => (!ld.parentUid || ld.parentUid === me.uid) &&
-                            !(ld.teamId && _eqFamM.teamId && _ntM(ld.teamId) !== _ntM(_eqFamM.teamId));
-                        let linkDoc = null, linkRef = null;
-                        const byCode = await getDocs(query(
-                            collection(fa.db, 'cronos_player_links'),
-                            where('inviteCode', '==', codeRaw),
-                            where('clubId',     '==', clubId)
-                        )).catch(() => null);
-
-                        if (byCode && !byCode.empty) {
-                            byCode.forEach(d => { if (!linkDoc && _adoptable(d.data())) { linkDoc = d.data(); linkRef = d.ref; } });
-                        }
-
-                        if (!linkRef) {
-                            // Buscar por playerNumber + clubId
-                            const byNum = await getDocs(query(
-                                collection(fa.db, 'cronos_player_links'),
-                                where('playerNumber', '==', manualPNum),
-                                where('clubId',       '==', clubId)
-                            )).catch(() => null);
-                            if (byNum && !byNum.empty) {
-                                byNum.forEach(d => { if (!linkDoc && _adoptable(d.data())) { linkDoc = d.data(); linkRef = d.ref; } });
-                            }
-                        }
-
-                        // El nombre del jugador, del registro de la familia (antes se
-                        // guardaba vacío y el panel decía «Jugador · 3»).
-                        const _yoM = window._cronosCurrentUser || me;
-                        const _plazaM = ((_yoM.allRoles || []).find(r => r && (r.role === 'parent' || r.role === 'parent_individual') &&
-                            (r.clubId === clubId || !r.clubId)) || {});
-                        const _aliasM = _yoM.playerAlias || _plazaM.playerAlias || '';
-
-                        if (linkRef) {
-                            // Link encontrado: añadir parentUid
-                            await updateDoc(linkRef, {
-                                parentUid:   me.uid,
-                                parentEmail: me.email || '',
-                                parentName:  me.displayName || me.email || '',
-                                ..._camposEquipoM,
-                            });
-                        } else {
-                            // Link no existe: crear uno nuevo
-                            if (!clubId) {
-                                if(window._CRONOS_DEBUG) if(window._CRONOS_DEBUG) console.warn('[ppPlayer] Vinculación manual cancelada: clubId ausente, no se crea link para evitar ID basura "null_' + manualPNum + '" en cronos_player_links.');
-                                return;
-                            }
-                            // 🔗 v813 · id con el uid: ver cronosIdVinculo (utils.js).
-                            const newLinkId = (typeof window.cronosIdVinculo === 'function')
-                                ? window.cronosIdVinculo(clubId, _eqFamM.teamId, manualPNum, me.uid)
-                                : clubId + '_' + manualPNum + '_' + me.uid;
-                            linkRef = doc(fa.db, 'cronos_player_links', newLinkId);
-                            await setDoc(linkRef, {
-                                clubId,
-                                playerNumber:      manualPNum,
-                                playerAlias:       _aliasM,
-                                inviteCode:        codeRaw,
-                                parentUid:         me.uid,
-                                parentEmail:       me.email || '',
-                                parentName:        me.displayName || me.email || '',
-                                canReceiveReports: true,
-                                canReceiveConv:    true,
-                                canReceiveTr:      true,
-                                canReceiveMsg:     true,
-                                createdAt:         new Date().toISOString(),
-                                ..._camposEquipoM,   // 🔒 v764
-                            });
-                        }
-
-                        // 2. Guardar inviteCode en el documento del usuario para futuros logins
-                        await updateDoc(doc(fa.db, 'users', me.uid), {
-                            inviteCode:   codeRaw,
-                            playerNumber: manualPNum,
-                        }).catch(() => {});
-
-                        // 3. Actualizar allRoles[parent].inviteCode en Firestore
-                        const userSnap = await getDoc(doc(fa.db, 'users', me.uid)).catch(() => null);
-                        if (userSnap && userSnap.exists()) {
-                            const userData = userSnap.data();
-                            const updatedRoles = (userData.allRoles || []).map(r =>
-                                (r.role === 'parent' && (r.clubId === clubId || !r.clubId))
-                                    ? { ...r, inviteCode: codeRaw, playerNumber: manualPNum }
-                                    : r
-                            );
-                            await updateDoc(doc(fa.db, 'users', me.uid), {
-                                allRoles: updatedRoles
-                            }).catch(() => {});
-                        }
-
-                        // 4. Actualizar contexto en memoria para esta sesión
-                        if (window._cronosCurrentUser) {
-                            window._cronosCurrentUser.inviteCode   = codeRaw;
-                            window._cronosCurrentUser.playerNumber = manualPNum;
-                        }
-
-                        msgEl.style.color = '#3fb950';
-                        msgEl.textContent = '✅ ¡Vinculado! Cargando tu informe…';
-                        setTimeout(() => window.ppPlayer && window.ppPlayer(), 1200);
-
-                    } catch(err) {
-                        console.error('[ppLinkManual]', err);
-                        const msgEl2 = document.getElementById('pp-link-msg');
-                        if (msgEl2) {
-                            msgEl2.style.color = '#ff5858';
-                            msgEl2.textContent = '⚠️ Error al vincular. Comprueba el código e inténtalo de nuevo.';
-                        }
-                    }
-                };
+                body.innerHTML = _ppPendienteHTML(me, clubId);
+                _ppEsperaVinculo(me);
                 return;
             }
 

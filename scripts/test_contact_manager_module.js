@@ -350,8 +350,10 @@ const manualRow = (id, name, phone, email, playerId, optText, tags = []) => {
         }
         ok('1f · ⚠️ y nadie mas en el repositorio lee window.emailConfig', others === 0, others);
     }
-    ok('1g · usa _cFS() Y ADEMAS dos import() dinamicos del SDK',
-        /await _cFS\(\)/.test(BLOCK) && (BLOCK.match(/await import\(/g) || []).length === 2);
+    // v824 · +2: cmAsignarJugador y cmPintaInsigniaPendientes (las familias
+    // pendientes de asignar jugador) importan el SDK por su cuenta.
+    ok('1g · usa _cFS() Y ADEMAS cuatro import() dinamicos del SDK (2 + 2 de v824)',
+        /await _cFS\(\)/.test(BLOCK) && (BLOCK.match(/await import\(/g) || []).length === 4);
     ok('1h · el guard efectivo contra el crash sigue siendo el de la migracion',
         /if \(!emailConfig \|\| !emailConfig\.contacts\) \{/.test(BLOCK));
     if (IS_EXTRACTED) {

@@ -2019,15 +2019,18 @@ service cloud.firestore {
           transitionalRead(resource.data.get('clubId', null))
         ))
       );
+      // ⏳ v824 · LA FAMILIA YA NO CREA SU VÍNCULO. Hasta v823 podía crearlo a
+      // su nombre (sin jugador ni permisos) con el código que tecleaba o que
+      // ella misma había escrito en su `users`: era la puerta del error
+      // humano. Ahora lo crea SIEMPRE el cuerpo técnico desde Contactos
+      // («Asignar código»). Ver contact-manager.js · cmAsignarJugador.
       allow create: if isAuth() && (
         isSuperAdmin() ||
         ((sameClub(request.resource.data.get('clubId', null)) ||
           sameClubAsDoc(request.resource.data.get('clubId', null)) ||
           // FIX (C2): fallback para entrenador sin custom claim clubId
           userDocClubId(request.resource.data.get('clubId', null)))
-         && (!esCuentaFamilia() ||
-             (request.resource.data.get('parentUid', null) == request.auth.uid
-              && !request.resource.data.keys().hasAny(['playerCode', 'canWatchLive', 'canSendMsg']))))
+         && !esCuentaFamilia())
       );
       allow update: if isAuth() && (
         isSuperAdmin() ||

@@ -70,16 +70,15 @@ console.log('1) El id del vínculo');
 
 console.log('\n2) La familia crea lo suyo y no adopta lo ajeno');
 {
-    const auto = PAR.slice(PAR.indexOf('window.ppPlayer = async'), PAR.indexOf('if (!links.length) {', PAR.indexOf('window.ppPlayer = async')));
+    // ⏳ v824 · la familia ya no crea ni adopta vínculos: los asigna el
+    // entrenador (test_asignar_codigo_v824.js). 2b-2e cambian de contrato.
+    const auto = funcion(PAR, 'window.ppPlayer = async');
     ok('2a · 🔑 ya no lee el vínculo antes de crearlo (getDoc denegado sobre inexistente)', !/existingLink/.test(auto));
-    ok('2b · el vínculo automático se crea con cronosIdVinculo', /cronosIdVinculo\(clubId, _eqFam\.teamId, pNum, me\.uid\)/.test(auto));
-    ok('2c · 🔑 auto: salta vínculos con OTRO dueño o de OTRO equipo',
-       /if \(ld\.parentUid && ld\.parentUid !== me\.uid\) return;/.test(auto) && /_ntA\(ld\.teamId\) !== _ntA\(_miEq\)/.test(auto));
-    const man = funcion(PAR, 'window._ppLinkManual = async');
-    ok('2d · 🔑 manual: sólo adopta sin dueño (o mío) y de mi equipo', /const _adoptable = \(ld\) => \(!ld\.parentUid \|\| ld\.parentUid === me\.uid\)/.test(man)
-       && (man.match(/_adoptable\(d\.data\(\)\)/g) || []).length === 2);
-    ok('2e · manual: id con el uid y el nombre del jugador (no «Jugador · 3»)',
-       /cronosIdVinculo\(clubId, _eqFamM\.teamId, manualPNum, me\.uid\)/.test(man) && /playerAlias:\s+_aliasM,/.test(man));
+    ok('2b · v824: la familia ya no crea vínculos (ni setDoc ni cronosIdVinculo en ppPlayer)', !/setDoc\(/.test(auto) && !/cronosIdVinculo/.test(auto));
+    ok('2c · v824: ni adopta los de otros (ningún updateDoc sobre cronos_player_links)', !/updateDoc\([^)]*cronos_player_links/.test(auto));
+    ok('2d · v824: fuera el formulario manual del código', PAR.indexOf('_ppLinkManual') < 0 && PAR.indexOf('pp-manual-code') < 0);
+    ok('2e · v824: el cuerpo técnico asigna con id de equipo + dorsal + uid',
+       /window\.cronosIdVinculo\(me\.clubId, eq, dorsal \|\| sel\.value, uid\)/.test(CM));
     ok('2f · 🔑 registro (dos sitios): no se pone el parentUid a un «J10» con dueño',
        (AUTH.match(/linkSnap\.forEach\(async d => \{\s*\/\/ 🔒 v813[^\n]*\n[^\n]*\n\s*if \(d\.data\(\)\.parentUid\) return;/g) || []).length === 2);
     ok('2g · la familia ya no pide los avisos de TODO el club', /if \(clubId && !_esFamilia\) \{/.test(PAR));
@@ -96,8 +95,8 @@ console.log('\n4) Reglas');
     ok('4a · existe esCuentaFamilia() por rol RAÍZ', /function esCuentaFamilia\(\)[\s\S]{0,300}\.data\.get\('role', ''\)\s*in \['parent', 'padre_individual', 'parent_individual'\]/.test(RULES));
     const L = bloque(RULES, 'match /cronos_player_links/{linkId}');
     ok('4b · 🔑 vínculos: la familia lee sólo el suyo', /isLinkOwner\(\) \|\|\s*\(!esCuentaFamilia\(\) && \(\s*isLinkClubMember\(\)/.test(L));
-    ok('4c · 🔑 vínculos: la familia crea sólo a su nombre y sin jugador ni permisos',
-       /request\.resource\.data\.get\('parentUid', null\) == request\.auth\.uid\s*&& !request\.resource\.data\.keys\(\)\.hasAny\(\['playerCode', 'canWatchLive', 'canSendMsg'\]\)/.test(L));
+    ok('4c · 🔑 v824: vínculos: la familia ya NO crea ninguno (lo asigna el cuerpo técnico)',
+       /allow create: if isAuth\(\) && \([\s\S]*?userDocClubId\(request\.resource\.data\.get\('clubId', null\)\)\)\s*&& !esCuentaFamilia\(\)\)\s*\);/.test(L));
     ok('4d · 🔑 vínculos: la familia sólo cambia sus datos de contacto',
        /\.hasOnly\(\['parentUid', 'parentEmail', 'parentName', 'parentPhone'\]\)/.test(L) && /\(!esCuentaFamilia\(\) && isLinkClubMember\(\)\) \|\|/.test(L));
     const N = bloque(RULES, 'match /cronos_notifications/{notifId}');

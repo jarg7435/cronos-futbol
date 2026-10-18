@@ -133,9 +133,11 @@ console.log('\n4) Los despachos pasan el equipo y avisan; los vínculos lo guard
     ok('4a · despacho automático', /_cronosResolveParentReportTargets\(contacts, links, homePlayers, preSelectionIds, _eqPartido\)/.test(AUTO) && /_cronosAvisaFamiliasSinEquipo\(_parentTargets\)/.test(AUTO));
     ok('4b · envío manual post-partido', /_manualAuthIds,\s*\(typeof window\.cronosEquipoAbierto/.test(SEND) && /_cronosAvisaFamiliasSinEquipo\(_parentTargetsManual\)/.test(SEND));
     ok('4c · informe manual (equipo del FORMULARIO)', /null, _eqManual\)/.test(MAN) && /cronosTeamId\(clubId, S\.equipo\.category, S\.equipo\.subcategory\)/.test(MAN));
-    ok('4d · 🔑 los vínculos que escriben las familias llevan su equipo (auto y manual)',
-       // v813 · la auto-vinculación ya sólo CREA (id con el uid): una escritura, no dos.
-       (PAR.match(/\.\.\._camposEquipo,/g) || []).length === 1 && (PAR.match(/\.\.\._camposEquipoM,/g) || []).length === 2);
+    // v824 · las familias ya no escriben vínculos: los asigna el entrenador
+    // desde Contactos, siempre con el equipo ABIERTO.
+    const CM = leer('js/coach/comms/contact-manager.js');
+    ok('4d · 🔑 v824: la familia no escribe vínculos y el que asigna el entrenador lleva su equipo',
+       !/_camposEquipoM?,/.test(PAR) && /teamId:\s+eq,/.test(CM));
 }
 
 console.log('\n──────────────────────────────────────────────────────────');
