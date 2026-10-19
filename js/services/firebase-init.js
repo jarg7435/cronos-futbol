@@ -177,6 +177,24 @@
                 return (r && r.token) || '';
             };
             window._cronosAppCheck = 'on';
+            // ══════════════════════════════════════════════════════════
+            //  🔴 v825 · LA PRIMERA VISITA NO PUEDE LEER HASTA QUE HAYA TOKEN
+            //
+            //  Medido en un navegador sin estrenar (prueba E2E de
+            //  invitaciones, 2026-10-19), en testeo Y en producción: el
+            //  primer token de reCAPTCHA tarda >10 s; Firestore espera ese
+            //  token para conectar, se rinde a los 10 s y se marca «sin
+            //  conexión». Las lecturas de la pantalla de alta (lista de
+            //  clubes, invitación) caían justo en esa ventana y no se
+            //  repetían: alta vacía. En la 2ª visita el token ya está en
+            //  disco y todo va a la primera. Quien lee SIN sesión espera aquí.
+            //  Nunca rechaza: al tope, o si App Check falla, sigue igual.
+            window.cronosAppCheckListo = function (msTope) {
+                return Promise.race([
+                    getToken(_appCheckInst, false).then(() => true, () => false),
+                    new Promise((r) => setTimeout(() => r(false), msTope || 30000)),
+                ]);
+            };
             console.log('[Chronos] App Check activo (reCAPTCHA v3) en ' + _host);
         } catch (e) {
             // ⚠️ JAMAS puede tumbar el arranque. Mientras la obligatoriedad

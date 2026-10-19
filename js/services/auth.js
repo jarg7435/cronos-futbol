@@ -181,7 +181,21 @@ export async function loadClubOptions() {
             // nombre. Un club BORRADO no llega aquí: syncClubPublic borra su
             // espejo al borrarse `clubs/{id}`.
             const _esVigente = (c) => !!(c && c.name) && (!c.status || c.status === 'active');
-            const clubsSnap = await m.getDocs(m.collection(fa.db, 'clubs_public'));
+            // 🔴 v825 · LA PRIMERA VISITA. En un navegador sin estrenar,
+            // Firestore no conecta hasta el primer token de App Check (>10 s),
+            // se marca «sin conexión» y `getDocs` NO falla: devuelve la caché,
+            // vacía → «No hay clubes» y el alta (y la invitación) sin club.
+            // Medido en testeo y en producción el 2026-10-19. Se espera al
+            // token y, si aun así sale una caché vacía, se pregunta al SERVIDOR.
+            if (typeof window.cronosAppCheckListo === 'function') {
+                try { await window.cronosAppCheckListo(30000); } catch (e) { /* sigue */ }
+            }
+            let clubsSnap = await m.getDocs(m.collection(fa.db, 'clubs_public'));
+            for (let _i = 0; _i < 3 && clubsSnap.empty && clubsSnap.metadata && clubsSnap.metadata.fromCache; _i++) {
+                await new Promise(r => setTimeout(r, 2000 * (_i + 1)));
+                try { clubsSnap = await m.getDocsFromServer(m.collection(fa.db, 'clubs_public')); }
+                catch (e) { if (String((e && e.code) || '') !== 'unavailable') throw e; }
+            }
             if (!clubsSnap.empty) {
                 clubsSnap.forEach(doc => {
                     const club = doc.data();
@@ -3104,6 +3118,10 @@ export async function doAuth() {
                     });
                 }
 
+                // 🔴 v826 · la invitación, USADA antes de cerrar sesión (invite-prefill.js).
+                if (typeof window.cronosConsumirInvitacionAhora === 'function') {
+                    try { await window.cronosConsumirInvitacionAhora(8000); } catch (_) {}
+                }
                 await fa.signOut(fa.auth).catch(()=>{});
                 window._addingRole = false; window._loginThisSession = false;
                 switchTab('login');
@@ -3312,6 +3330,10 @@ export async function doAuth() {
 
                 // Show result message
                 if (!isAuthorized) {
+                    // 🔴 v826 · la invitación, USADA antes de cerrar sesión (invite-prefill.js).
+                    if (typeof window.cronosConsumirInvitacionAhora === 'function') {
+                        try { await window.cronosConsumirInvitacionAhora(8000); } catch (_) {}
+                    }
                     await fa.signOut(fa.auth);  // _addingRole sigue true durante signOut
                     window._addingRole = false;
                     window._loginThisSession = false;
@@ -3535,6 +3557,10 @@ export async function doAuth() {
 
                 const rl3 = { director:'Director Deportivo', coordinator:'Coordinador', user:'Entrenador', parent:'Familiar / Jugador', directivo:'Directivo / Empleado', club_admin:'Administrador de Club', individual:'Administrador Individual' };
                 if (!isAuthorized) {
+                    // 🔴 v826 · la invitación, USADA antes de cerrar sesión (invite-prefill.js).
+                    if (typeof window.cronosConsumirInvitacionAhora === 'function') {
+                        try { await window.cronosConsumirInvitacionAhora(8000); } catch (_) {}
+                    }
                     // Mantener _addingRole=true durante signOut para bloquear onAuthStateChanged
                     await fa.signOut(fa.auth);
                     window._addingRole = false;

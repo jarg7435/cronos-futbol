@@ -80,6 +80,7 @@ window.CRONOS_SECRETARIA_ROLES = {
     parent:           '👨‍👩‍👧 Familiar / Jugador',
     director:         '📋 Director Deportivo',
     coordinator:      '🎯 Coordinador',
+    directivo:        '🏢 Directivo / Empleado',   // v825 · rol de v810
 };
 // Lo que un Director puede invitar A SU club. Deliberadamente sin
 // `club_admin`, `individual` ni `individual_admin`.
@@ -99,8 +100,14 @@ window.CRONOS_SECRETARIA_ROLES_DIRECTOR = ['user', 'coordinator', 'parent'];
 //    (auth.js, ROLES_BAJO_ENTE, decisión de la v598: el entrenador ES el
 //    administrador). Ofrecer «Entrenador» o «Director» mandaría un enlace
 //    que el formulario de alta no puede cumplir.
+//
+//  📨 v825 · EL ADMINISTRADOR INVITA A CUALQUIER USUARIO DEL CLUB.
+//  Encargo del autor (2026-10-19, preparando la prueba E2E de invitaciones):
+//  se añaden «Familiar / Jugador» y «Directivo / Empleado» (v810). Cambia la
+//  decisión de v781 de dejar las familias sólo al Director. El alta ya admite
+//  los dos valores (index.html, #auth-role), así que el enlace rellena el rol.
 // ════════════════════════════════════════════════════════════════════
-window.CRONOS_SECRETARIA_ROLES_CLUB_ADMIN = ['director', 'coordinator', 'user'];
+window.CRONOS_SECRETARIA_ROLES_CLUB_ADMIN = ['director', 'coordinator', 'user', 'parent', 'directivo'];
 window.CRONOS_SECRETARIA_ROLES_ENTE       = ['parent'];
 
 // ═══════════════════════════════════════════════════════════════════
@@ -129,6 +136,7 @@ window.saSecretary = async function saSecretary(opciones) {
         parent:           '👨‍👩‍👧 Familiar / Jugador',
         director:         '📋 Director Deportivo',
         coordinator:      '🎯 Coordinador',
+        directivo:        '🏢 Directivo / Empleado',
     };
     const _rolesVisibles = Array.isArray(_opts.roles) && _opts.roles.length
         ? _opts.roles
@@ -458,6 +466,7 @@ function _secDatosActuales() {
         parent: 'Familiar / Jugador',
         director: 'Director Deportivo',
         coordinator: 'Coordinador',
+        directivo: 'Directivo / Empleado',
     };
     const email = document.getElementById('sec-email')?.value.trim() || '';
     const club  = document.getElementById('sec-club')?.value.trim() || '';

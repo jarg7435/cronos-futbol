@@ -1680,6 +1680,13 @@ if (typeof window.cronosLeerInvitacion !== 'function') {
         if (!t || !/^[a-z0-9_-]{8,64}$/i.test(t)) return { estado: 'invalida' };
         const fa = await _esperarFirebase(20000);
         if (!fa) return { estado: 'error' };
+        // 🔴 v825 · En la PRIMERA visita del navegador, Firestore no conecta
+        // hasta que App Check tiene su primer token (>10 s): leer antes da
+        // «sin conexión» y los reintentos caían todos en esa ventana. Ver
+        // cronosAppCheckListo (firebase-init.js). Sin App Check, no espera.
+        if (typeof window.cronosAppCheckListo === 'function') {
+            try { await window.cronosAppCheckListo(30000); } catch (e) { /* sigue */ }
+        }
         let m;
         try {
             m = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');

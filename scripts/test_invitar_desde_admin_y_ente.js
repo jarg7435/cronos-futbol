@@ -60,23 +60,32 @@ if (_mRol) vm.runInContext(_mRol[0], sb);
 vm.runInContext(SECR, sb);
 
 const W = sb.window;
-ok('1a · Admin de Club: director, coordinador y entrenador',
-   JSON.stringify(W.CRONOS_SECRETARIA_ROLES_CLUB_ADMIN) === JSON.stringify(['director', 'coordinator', 'user']),
+// 📨 v825 · el autor amplía la lista: el Admin de Club invita también
+// familias y directivos (cambia la decisión de v781: «familias, sólo el Director»).
+const _V825 = ['director', 'coordinator', 'user', 'parent', 'directivo'];
+ok('1a · v825: Admin de Club: director, coordinador, entrenador, familia y directivo',
+   JSON.stringify(W.CRONOS_SECRETARIA_ROLES_CLUB_ADMIN) === JSON.stringify(_V825),
    W.CRONOS_SECRETARIA_ROLES_CLUB_ADMIN);
-ok('1b · Admin de Club: ni familias ni otro administrador',
-   !W.CRONOS_SECRETARIA_ROLES_CLUB_ADMIN.includes('parent') &&
-   !W.CRONOS_SECRETARIA_ROLES_CLUB_ADMIN.includes('club_admin'));
+ok('1b · Admin de Club: nunca otro administrador ni un ente',
+   !W.CRONOS_SECRETARIA_ROLES_CLUB_ADMIN.includes('club_admin') &&
+   !W.CRONOS_SECRETARIA_ROLES_CLUB_ADMIN.includes('individual'));
+ok('1b2 · v825: los dos roles nuevos tienen etiqueta en el desplegable',
+   !!(W.CRONOS_SECRETARIA_ROLES.parent && W.CRONOS_SECRETARIA_ROLES.directivo));
 ok('1c · Ente: SÓLO familias',
    JSON.stringify(W.CRONOS_SECRETARIA_ROLES_ENTE) === JSON.stringify(['parent']), W.CRONOS_SECRETARIA_ROLES_ENTE);
 
 const todoOn = () => true;
 ok('1d · con todo contratado no se quita nada',
    JSON.stringify(W.cronosSecretariaRoles(W.CRONOS_SECRETARIA_ROLES_CLUB_ADMIN, todoOn)) ===
-   JSON.stringify(['director', 'coordinator', 'user']));
+   JSON.stringify(_V825));
 const sinDirector = (k) => k !== 'rol_director';
 ok('1e · sin el extra de Director, el Director se retira',
    JSON.stringify(W.cronosSecretariaRoles(W.CRONOS_SECRETARIA_ROLES_CLUB_ADMIN, sinDirector)) ===
-   JSON.stringify(['coordinator', 'user']));
+   JSON.stringify(['coordinator', 'user', 'parent', 'directivo']));
+const sinFamNiVivo = (k) => k !== 'rol_padres' && k !== 'partidos_en_vivo';
+ok('1e2 · v825: sin Familias ni Partidos en Vivo, Familia y Directivo se retiran',
+   JSON.stringify(W.cronosSecretariaRoles(W.CRONOS_SECRETARIA_ROLES_CLUB_ADMIN, sinFamNiVivo)) ===
+   JSON.stringify(['director', 'coordinator', 'user']));
 ok('1f · el Entrenador nunca se filtra (no tiene extra)',
    W.cronosSecretariaRoles(['user'], () => false).length === 1);
 ok('1g · ente sin Familias → lista VACÍA, no se cae a otro rol',

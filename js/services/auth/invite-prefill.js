@@ -178,7 +178,8 @@
                 // ESPERA a Firebase y reintenta, y puede tardar unos segundos.
                 var _ae = _el('auth-email');
                 if (_ae) _nota('inv-nota-token', _ae,
-                    '⏳ Comprobando tu invitación…', 'rgba(88,166,255,0.85)');
+                    '⏳ Comprobando tu invitación… (la primera vez puede tardar hasta un minuto)',
+                    'rgba(88,166,255,0.85)');
                 var res = await window.cronosResolverInvitacion(token);
                 if (res && res.estado === 'ok') {
                     var inv = res.inv;
@@ -271,7 +272,10 @@
             }
 
             // ── El club ─────────────────────────────────────────────
-            var selClub = await _esperarClubes(20000);
+            // v825 · 60 s: en la PRIMERA visita del navegador la lista llega
+            // tras el primer token de App Check (medido: ~40 s). Con 20 s el
+            // club se quedaba sin fijar aunque la invitación fuera válida.
+            var selClub = await _esperarClubes(60000);
             var hallado = _buscarClub(selClub, club, clubId);
 
             // Si es un ENTE individual, el tipo de entidad tiene que decirlo.
@@ -379,21 +383,48 @@
     //  vigila desde el arranque y el resolutor le avisa al dejar el token.
     // ══════════════════════════════════════════════════════════════════
     var _yaConsumida = false;
+    var _promesaConsumo = null;   // v826 · para poder ESPERARLA (ver abajo)
     var _intentosSesion = 0;
     var _uidPrevio;          // undefined = aún no se sabe qué sesión había
     var _uidActual = null;
+
+    function _consumirYa() {
+        _yaConsumida = true;
+        var t = window._cronosInviteToken;
+        window._cronosInviteToken = null;
+        _promesaConsumo = (typeof window.cronosConsumirInvitacion === 'function')
+            ? Promise.resolve(window.cronosConsumirInvitacion(t)).catch(function () { return false; })
+            : Promise.resolve(false);
+        return _promesaConsumo;
+    }
 
     function _intentarConsumir() {
         if (_yaConsumida || !window._cronosInviteToken) return;
         if (_uidPrevio === undefined) return;               // sesión aún sin resolver
         if (!_uidActual || _uidActual === _uidPrevio) return; // nadie nuevo ha entrado
-        _yaConsumida = true;
-        var t = window._cronosInviteToken;
-        window._cronosInviteToken = null;
-        if (typeof window.cronosConsumirInvitacion === 'function') {
-            window.cronosConsumirInvitacion(t);
-        }
+        _consumirYa();
     }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  🔴 v826 · EL ALTA ESPERA A QUE LA INVITACIÓN QUEDE USADA
+    //
+    //  Prueba E2E 4 (2026-10-19): la cuenta se creó y las DOS invitaciones
+    //  siguieron sin usar: el enlace valía otra vez. Una cuenta pendiente de
+    //  aprobación cierra sesión AL MOMENTO (auth.js, `if (!isAuthorized)`),
+    //  y el consumo de arriba iba «a fuego y olvido»: o encontraba ya la
+    //  sesión cerrada, o su escritura quedaba en la cola de ese usuario —
+    //  Firestore no la envía hasta que ESA cuenta vuelva a entrar.
+    //  El alta llama aquí ANTES de cada signOut tras un alta correcta y
+    //  espera la confirmación del servidor (con tope: nunca bloquea el alta).
+    // ══════════════════════════════════════════════════════════════════
+    window.cronosConsumirInvitacionAhora = function (msTope) {
+        var p = _promesaConsumo;
+        if (!p) {
+            if (_yaConsumida || !window._cronosInviteToken) return Promise.resolve(false);
+            p = _consumirYa();
+        }
+        return Promise.race([p, new Promise(function (r) { setTimeout(function () { r(false); }, msTope || 8000); })]);
+    };
 
     function _vigilarSesion() {
         if (!/[?&]invite=/.test(String((window.location && window.location.search) || ''))) return;

@@ -1767,6 +1767,7 @@ exports.sendInviteEmail = functions
     coordinator: 'Coordinador',
     user: 'Entrenador',
     parent: 'Familiar / Jugador',
+    directivo: 'Directivo / Empleado',   // v825 · el Admin de Club ya lo invita
     spectator: 'Espectador',
   };
   const roleLabel = roleLabels[role] || role || 'Usuario';

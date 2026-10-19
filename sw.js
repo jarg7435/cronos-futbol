@@ -2774,8 +2774,16 @@
 //        jugador; ve «registrada, pendiente de asignación» y el entrenador la
 //        asigna desde Contactos (aviso «Asignar código» + insignia). Las
 //        reglas ya no dejan a una cuenta de familia crear su vínculo.
-const VERSION = 'v824';
-const CACHE_NAME = 'cronos-cache-v824';
+// v825 · REAUDITORÍA 18-10: dependencias sin vulnerabilidades críticas/altas
+//        en runtime (firebase-admin 14.5, firebase-functions 7.4) y la
+//        Secretaría del Admin de Club invita también Familia y Directivo.
+// v826 · PRIMERA VISITA: las lecturas sin sesión (lista de clubes e
+//        invitación) esperan al primer token de App Check; antes caían en el
+//        «sin conexión» de los primeros 10 s y el alta salía vacía.
+// v827 · UN SOLO USO DE VERDAD: el alta espera a que la invitación quede
+//        marcada como usada ANTES de cerrar la sesión de la cuenta pendiente.
+const VERSION = 'v827';
+const CACHE_NAME = 'cronos-cache-v827';
 
 const ASSETS = [
     './',

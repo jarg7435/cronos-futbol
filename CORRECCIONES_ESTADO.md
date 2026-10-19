@@ -1182,3 +1182,44 @@ comportamiento de datos: se mide contra los datos reales antes de desplegar.
 (2) Mientras testeo comparta BD, probar en testeo es escribir en producción.
 Orden del autor: prohibido usar producción para pruebas; queda pendiente montar
 un testeo aislado.
+
+---
+
+## 🛡️ Reauditoría del 18-10 · P0 de dependencias (v825)
+
+**`npm audit --omit=dev` → 0 en la raíz y en `functions/`** (antes: 1 alta en la
+raíz; 1 crítica + 1 alta en Functions).
+
+| Paquete | Antes | Ahora | Por dónde llega |
+|---|---|---|---|
+| `proxy-addr` (CRÍTICA, IP spoofing) | 2.0.7 | **2.0.8** | `firebase-functions → express 5` (Functions) |
+| `@fastify/busboy` (ALTA, DoS/CRLF multipart) | 3.2.0 | **3.2.3** | `firebase-admin` (raíz y Functions) |
+
+**Sin `overrides` nuevos**: las versiones corregidas caben en los rangos que ya
+piden sus padres (`^2.0.7`, `^3.0.0`); lo que las retenía era el lockfile. Se
+subieron `firebase-admin` 14.4.0 → **14.5.0** (raíz y Functions) y
+`firebase-functions` 7.3.2 → **7.4.0**, y después `npm update` de las dos
+sub-dependencias. Nunca `npm audit fix --force` (baja `firebase-tools` a la 6.8.0).
+
+**Árbol de DESARROLLO** (sólo la CLI `firebase-tools`, no se despliega ni recibe
+tráfico): cerrados `proxy-addr` y `@modelcontextprotocol/sdk` con `npm update`.
+Quedan 3 «altas» que son UNA: `braces` (DoS por patrones anidados) vía
+`firebase-tools → chokidar`. **Todas sus versiones están afectadas** (la última,
+3.0.3, incluida): no hay arreglo publicado. Aceptado y documentado; revisar
+cuando salga.
+
+**Entrega limpia.** El ZIP que analizó el auditor (`APPCRONOSFÚTBOL18oct.zip`)
+se hizo comprimiendo la carpeta a mano, con `node_modules` dentro: de ahí el
+`eslint` a 0644. El paquete oficial es `npm run package` (`git archive`, sin
+`node_modules`), y en destino:
+
+```
+npm ci
+cd functions && npm ci && cd ..
+npm run build
+npm run lint
+npm test
+```
+
+Verificado así, desde `npm ci` en limpio: build OK · lint 0 errores (112 avisos)
+· `npm test` **335/335** · `functions/index.js` carga.
