@@ -62,6 +62,12 @@
 (function () {
     'use strict';
 
+    // v828 · Fecha de caducidad de los enlaces antiguos con datos en la URL
+    // (ver la nota de cronosAplicarInvitacion). Sólo informativa: ya pasó.
+    var CRONOS_INVITE_LEGADO_CADUCO = '2026-10-07';
+    var CRONOS_INVITE_LEGADO_CADUCO_TXT = '7 de octubre de 2026';
+    window.CRONOS_INVITE_LEGADO_CADUCO = CRONOS_INVITE_LEGADO_CADUCO;
+
     // Normaliza para comparar nombres de club: sin acentos, sin dobles
     // espacios, sin mayúsculas. Se compara con esto; se ESCRIBE el original.
     function _norm(s) {
@@ -168,12 +174,35 @@
             //  abre la invitación todavía no tiene cuenta— pero prohíbe
             //  enumerar, y deniega si caducó o ya se usó.
             //
-            //  ⚠️ SE ACEPTAN LAS DOS FORMAS, y no es transición perezosa: los
-            //  enlaces ya enviados con `?register=true&email=…` tienen que
-            //  seguir funcionando. Si vienen las dos, MANDA EL TOKEN: es el
-            //  dato que puso quien invita, no lo que traiga la barra.
+            //  ⚠️ Hasta v827 se aceptaban también los enlaces antiguos
+            //  `?register=true&email=…`. Desde v828 ya no: caducaron el
+            //  2026-10-07 (ver la nota de abajo). Sólo manda el token.
             var token = p.get('invite');
-            if (token && typeof window.cronosResolverInvitacion === 'function') {
+
+            // ══════════════════════════════════════════════════════════
+            //  🗓️ v828 · LOS ENLACES ANTIGUOS CADUCARON EL 2026-10-07
+            //
+            //  Reauditoría 18-10 (P1): los enlaces `?register=true&email=…&
+            //  role=…&clubName=…` llevaban datos personales EN LA URL. Se
+            //  dejaron de fabricar el 2026-09-23 (Fase 0, SEC-INV2); con la
+            //  misma vida que una invitación con token (14 días), el último
+            //  caducó el 2026-10-07. Desde entonces la URL NO RELLENA NADA: sólo
+            //  manda el token. index.html además borra esos datos de la barra
+            //  (history.replaceState) para que no sigan en el historial.
+            //  Avisa y deja registrarse a mano: nunca bloquea un alta.
+            // ══════════════════════════════════════════════════════════
+            var _enlaceAntiguo = !!(email || rol || club);
+            email = null; rol = null; club = null;
+            if (!token) {
+                var _ae0 = _el('auth-email');
+                if (_enlaceAntiguo && _ae0) _nota('inv-nota-token', _ae0,
+                    '⚠️ Este enlace de invitación es de un formato antiguo que caducó el ' +
+                    CRONOS_INVITE_LEGADO_CADUCO_TXT + '. Pide uno nuevo a quien te invitó. ' +
+                    'Puedes registrarte igualmente rellenando los datos.',
+                    'rgba(240,136,62,0.9)');
+                return;
+            }
+            if (typeof window.cronosResolverInvitacion === 'function') {
                 // 🔴 v779 · Se dice que se está comprobando: la lectura ahora
                 // ESPERA a Firebase y reintenta, y puede tardar unos segundos.
                 var _ae = _el('auth-email');
@@ -183,9 +212,10 @@
                 var res = await window.cronosResolverInvitacion(token);
                 if (res && res.estado === 'ok') {
                     var inv = res.inv;
-                    email = inv.email || email;
-                    rol   = inv.role || rol;
-                    club  = inv.clubName || club;
+                    // v828 · SÓLO el token: lo que traiga la URL ya no cuenta.
+                    email = inv.email || null;
+                    rol   = inv.role || null;
+                    club  = inv.clubName || null;
                     clubId = inv.clubId || '';
                     // Se recuerda para consumirla en cuanto haya sesión.
                     window._cronosInviteToken = inv.token;

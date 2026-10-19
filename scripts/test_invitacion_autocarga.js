@@ -94,6 +94,17 @@ function montar(dom) {
     return sb;
 }
 
+// 🗓️ v828 · Los datos ya NO salen de la URL (los enlaces antiguos caducaron el
+// 2026-10-07): sólo del token. Los casos de abajo se siguen escribiendo como
+// antes, pero `conToken` los convierte en una invitación con token resuelta.
+function conToken(sb, qs) {
+    const q = new URLSearchParams(qs);
+    sb.window.cronosResolverInvitacion = async () => ({ estado: 'ok', inv: {
+        token: 'tok_prueba', email: q.get('email') || '', role: q.get('role') || '',
+        clubName: q.get('clubName') || '', clubId: '' } });
+    return new URLSearchParams('invite=tok_prueba');
+}
+
 console.log('\n══ v630 · La invitación limpia el correo y rellena el alta ══');
 
 // ════════════════════════════════════════════════════════════════════
@@ -178,8 +189,9 @@ console.log('\n2) 🔴 El defecto que hacía que el club no se rellenara NUNCA')
        /window\.cronosAplicarInvitacion\(urlParams\)/.test(INDEX) &&
        /_intentosInv/.test(INDEX));
 
-    ok('2e · y si el módulo no llega, al menos el correo se rellena',
-       /Respaldo minimo[\s\S]{0,220}?auth-email/.test(INDEX));
+    // v828 · contrato invertido: el respaldo copiaba el `email` de la URL.
+    ok('2e · v828: si el módulo no llega, NO se copia nada de la URL',
+       !/Respaldo minimo[\s\S]{0,220}?auth-email/.test(INDEX) && !/emailParam/.test(INDEX));
 
     ok('2f · index.html carga el módulo y el SW lo precachea',
        /js\/services\/auth\/invite-prefill\.js\?v=/.test(INDEX) &&
@@ -210,7 +222,7 @@ console.log('\n3) 🏟️ ADMINISTRADOR DE CLUB — el caso de su captura (ejecu
         set(v) { this._v = ['club_admin', 'user', 'parent', 'coordinator_f711'].indexOf(v) >= 0 ? v : ''; },
     });
 
-    const p = new URLSearchParams('register=true&email=jarg7435%40gmail.com&role=club_admin&clubName=CD+DORAMAS');
+    const p = conToken(sb, 'register=true&email=jarg7435%40gmail.com&role=club_admin&clubName=CD+DORAMAS');
 
     return sb.window.cronosAplicarInvitacion(p).then(() => {
         ok('3a · el correo se rellena', dom.nodos['auth-email'].value === 'jarg7435@gmail.com');
@@ -258,7 +270,7 @@ console.log('\n4) 🧑‍🏫 Entrenador invitado a un club existente (ejecutado
         set(v) { this._v = ['user', 'parent', 'club_admin'].indexOf(v) >= 0 ? v : ''; },
     });
 
-    const p = new URLSearchParams('register=true&email=a%40b.es&role=user&clubName=cd%20doramas');
+    const p = conToken(sb, 'register=true&email=a%40b.es&role=user&clubName=cd%20doramas');
 
     return sb.window.cronosAplicarInvitacion(p).then(() => {
         ok('4a · 🔑 el club se SELECCIONA en el desplegable', selClub.value === 'club:club_dor',
@@ -295,7 +307,7 @@ console.log('\n5) ⚠️ Lo que NO puede pasar: que esto impida un alta');
     });
 
     return sb.window.cronosAplicarInvitacion(
-        new URLSearchParams('role=user&clubName=CLUB+QUE+NO+EXISTE')).then(() => {
+        conToken(sb, 'role=user&clubName=CLUB+QUE+NO+EXISTE')).then(() => {
         ok('5a · 🔑 si el club no está, el desplegable se deja ABIERTO',
            selClub.disabled === false,
            'fijarlo en el club equivocado sería mucho peor que no fijarlo');
@@ -313,7 +325,7 @@ console.log('\n5) ⚠️ Lo que NO puede pasar: que esto impida un alta');
         sb2.handleRoleChange = function () {};
         sb2._cronosParseRoleValue = function (v) { return { role: v, coordinatorType: '' }; };
         return sb2.window.cronosAplicarInvitacion(
-            new URLSearchParams('role=coordinator')).then(() => {
+            conToken(sb2, 'role=coordinator')).then(() => {
             ok('5c · ⚠️ un enlace viejo con ?role=coordinator cae en la opción mixta',
                rol2.value === 'coordinator_f711',
                'v593 lo desglosó en F7/F11/ambas; dejarlo en la PRIMERA opción sería peor');
@@ -328,7 +340,7 @@ console.log('\n5) ⚠️ Lo que NO puede pasar: que esto impida un alta');
             sb3.handleRoleChange = function () {};
             sb3._cronosParseRoleValue = function (v) { return { role: v, coordinatorType: '' }; };
             return sb3.window.cronosAplicarInvitacion(
-                new URLSearchParams('role=inventado')).then(() => {
+                conToken(sb3, 'role=inventado')).then(() => {
                 ok('5d · 🔑 un rol que no existe NO se fija: el usuario elige',
                    rol3.disabled === false,
                    'bloquear un desplegable vacío dejaría el alta imposible de completar');
@@ -340,11 +352,41 @@ console.log('\n5) ⚠️ Lo que NO puede pasar: que esto impida un alta');
                 ok('5f · nada de esto puede tumbar el alta: todo va en un try',
                    /catch \(err\) \{[\s\S]{0,200}?no se pudo autocompletar/.test(PREF));
 
-                cerrar();
+                return parte6();
             });
         });
     });
 }
+}
+
+// ════════════════════════════════════════════════════════════════════
+function parte6() {
+console.log('\n6) 🗓️ v828 · Enlace ANTIGUO con datos en la URL (caducó el 2026-10-07)');
+    const dom = montarDom();
+    dom.crear('auth-email');
+    const rol = dom.crear('auth-role', 'SELECT');
+    const selClub = dom.crear('auth-club-select', 'SELECT');
+    selClub._opts = [{ value: 'club:club_dor', textContent: '🏟️ CD DORAMAS' }];
+    const sb = montar(dom);
+    sb.handleRoleChange = function () {};
+    sb._cronosParseRoleValue = function (v) { return { role: v, coordinatorType: '' }; };
+    let leyoToken = false;
+    sb.window.cronosResolverInvitacion = async () => { leyoToken = true; return { estado: 'ok', inv: {} }; };
+    return sb.window.cronosAplicarInvitacion(
+        new URLSearchParams('register=true&email=fam%40ej.es&role=user&clubName=CD+DORAMAS')).then(() => {
+        ok('6a · 🔑 el correo de la URL NO se rellena', dom.nodos['auth-email'].value !== 'fam@ej.es', dom.nodos['auth-email'].value);
+        ok('6b · 🔑 ni el rol ni el club se fijan', !rol.disabled && !selClub.disabled && selClub.value !== 'club:club_dor');
+        ok('6c · se avisa de que el enlace es antiguo y con su fecha',
+           /formato antiguo que caducó el 7 de octubre de 2026/.test((dom.nodos['inv-nota-token'] || {}).innerHTML || ''),
+           (dom.nodos['inv-nota-token'] || {}).innerHTML);
+        ok('6d · sin token no se consulta nada', !leyoToken);
+        ok('6e · 🔑 index.html BORRA email/role/clubName de la barra (historial)',
+           /\['email', 'role', 'clubName'\]\.forEach\(function \(k\) \{ _limpia\.delete\(k\); \}\)/.test(INDEX) &&
+           /window\.history\.replaceState\(/.test(INDEX));
+        ok('6f · y con token, lo de la URL tampoco cuenta (sólo el token)',
+           /email = inv\.email \|\| null;/.test(PREF) && /email = null; rol = null; club = null;/.test(PREF));
+        cerrar();
+    });
 }
 
 function cerrar() {

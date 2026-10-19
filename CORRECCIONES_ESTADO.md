@@ -1223,3 +1223,32 @@ npm test
 
 Verificado así, desde `npm ci` en limpio: build OK · lint 0 errores (112 avisos)
 · `npm test` **335/335** · `functions/index.js` carga.
+
+### P1 · Enlaces de invitación antiguos con datos personales (v828)
+
+**Fecha de caducidad fijada: 2026-10-07.** Los enlaces
+`?register=true&email=…&role=…&clubName=…` se dejaron de fabricar el
+2026-09-23 (Fase 0, SEC-INV2). Con la misma vida que una invitación con token
+(14 días), el último caducó el 2026-10-07. Desde v828:
+
+- la URL **no rellena nada**: sólo manda el token (`invite-prefill.js`);
+- `index.html` **borra** `email`, `role` y `clubName` de la barra al abrir la
+  página (`history.replaceState`): no quedan en el historial ni viajan a otras
+  páginas;
+- se avisa «enlace de formato antiguo que caducó el 7 de octubre de 2026» y se
+  deja registrarse a mano (nunca bloquea un alta);
+- fuera el respaldo que copiaba el `email` de la URL.
+
+Comprobado en testeo con un Chrome real: la barra queda en `?register=true`,
+formulario vacío y aviso. Google Analytics no se carga en la app, así que esas
+URL no se enviaron a terceros por esa vía. Lo que ya esté en historiales o
+registros antiguos de servidores ajenos no se puede borrar desde la app.
+
+### App Check: confirmado en producción y paridad en testeo (2026-10-19)
+
+Leído por la API de App Check: **producción** tiene `firestore` e
+`identitytoolkit` en **ENFORCED**. Testeo estaba en UNENFORCED y se ha pasado a
+ENFORCED (mismos servicios) para que reproduzca producción; verificado: una
+lectura anónima sin token da 403. Storage no tiene App Check en ninguno de los
+dos. ⚠️ `npm run dev` (localhost → testeo) necesita ahora un token de
+depuración registrado en el App Check de testeo.

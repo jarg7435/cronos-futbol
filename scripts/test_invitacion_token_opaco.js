@@ -363,9 +363,10 @@ console.log('\n6) 🚪 El invitado aterriza en el ALTA, no en el login');
        // v779 · ahora por el resolutor que distingue «caducada» de «sin red»
        /await window\.cronosResolverInvitacion\(token\)/.test(PREF));
 
-    ok('6c · ⚠️ y las DOS formas conviven: manda el token si vienen las dos',
-       /email = inv\.email \|\| email/.test(PREF),
-       'los enlaces ya enviados con ?register=true&email= tienen que seguir valiendo');
+    // v828 · contrato invertido: los enlaces antiguos caducaron el 2026-10-07.
+    ok('6c · v828: sólo manda el token; la URL antigua ya no rellena nada',
+       /email = inv\.email \|\| null;/.test(PREF) && /email = null; rol = null; club = null;/.test(PREF),
+       'los enlaces ?register=true&email= caducaron el 2026-10-07 (reauditoría 18-10)');
 
     ok('6d · 🔑 un token muerto NO bloquea el alta: avisa y deja el form a mano',
        /ya no es válido[\s\S]*?Puedes registrarte igualmente/.test(PREF),

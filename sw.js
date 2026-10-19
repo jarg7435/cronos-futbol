@@ -2782,8 +2782,10 @@
 //        «sin conexión» de los primeros 10 s y el alta salía vacía.
 // v827 · UN SOLO USO DE VERDAD: el alta espera a que la invitación quede
 //        marcada como usada ANTES de cerrar la sesión de la cuenta pendiente.
-const VERSION = 'v827';
-const CACHE_NAME = 'cronos-cache-v827';
+// v828 · ENLACES ANTIGUOS CADUCADOS (2026-10-07): `?register=true&email=…`
+//        ya no rellena nada y sus datos se borran de la barra al abrirlo.
+const VERSION = 'v828';
+const CACHE_NAME = 'cronos-cache-v828';
 
 const ASSETS = [
     './',
