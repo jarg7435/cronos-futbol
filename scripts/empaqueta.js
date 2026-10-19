@@ -117,7 +117,9 @@ const sha256 = (buf) => crypto.createHash('sha256').update(buf).digest('hex');
 // Contenido de cada fichero de un commit con UN solo `git cat-file --batch`.
 // Con `* text=auto eol=lf` el ZIP lleva exactamente estos bytes.
 function ficherosDelCommit(rev, rutas) {
-    const r = git(['cat-file', '--batch'], { input: rutas.map((p) => rev + ':' + p).join('\n') + '\n', encoding: 'buffer', maxBuffer: 1024 * 1024 * 1024 });
+    // `encoding: undefined` (no 'buffer': Node 24 lo rechaza con «Unknown
+    // encoding») anula el 'utf8' de git() y devuelve Buffers: hay binarios.
+    const r = git(['cat-file', '--batch'], { input: Buffer.from(rutas.map((p) => rev + ':' + p).join('\n') + '\n', 'utf8'), encoding: undefined, maxBuffer: 1024 * 1024 * 1024 });
     if (r.status !== 0) throw new Error('git cat-file falló: ' + String(r.stderr));
     const out = r.stdout;
     const res = {};
