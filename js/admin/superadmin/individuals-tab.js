@@ -26,7 +26,7 @@ window.saIndividuals = async function saIndividuals() {
     if (!body) return;
     body.innerHTML = `<div style="text-align:center;padding:2.5rem;color:#8b949e;"><div style="font-size:1.6rem;">⏳</div>Cargando entidades individuales…</div>`;
     try {
-        const { db, collection, query, where, getDocs } = await saFS();
+        const { db, collection, getDocs } = await saFS();
 
         // Cargar entes individuales (clubs con type=individual)
         // ⏱️ v638 · reintento con refresco de token: esta lectura salía denegada

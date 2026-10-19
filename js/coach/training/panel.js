@@ -8,7 +8,6 @@ function openTrainingPanel() {
     // Pila de navegación (js/core/nav-stack.js).
     if (typeof navScreen === 'function') navScreen('openTrainingPanel');
 
-    const isMobile = window.innerWidth < 640;
     const modal = document.getElementById('setup-modal');
     modal.style.display = 'flex';
     renderTrainingWeek();
@@ -312,7 +311,6 @@ function _getTrainingWeekText() {
         const date = new Date(d + 'T12:00:00');
         return date.toLocaleDateString('es-ES', {day:'numeric', month:'short'});
     };
-    const fmtDD = d => d;
 
     let text = '';
     Object.keys(weekData).sort().forEach(ds => {

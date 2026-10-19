@@ -1048,7 +1048,6 @@ function _launchWithRole(role) {
 
     const isUnderIndividual = !!(me?.isIndividual || me?.individualEntityId);
     const isFieldRole = ['user', 'coach', 'individual', 'admin_individual'].includes(activeRole);
-    const isParent    = (activeRole === 'parent' || activeRole === 'parent_individual');
     const isSA        = (activeRole === 'superadmin');
     // v810 · el Directivo / Empleado aterriza en su panel, no en el campo.
     const isAdminJob  = ['director', 'coordinator', 'club_admin', 'directivo'].includes(activeRole);

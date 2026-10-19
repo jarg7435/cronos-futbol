@@ -112,6 +112,9 @@ scripts/ops/*
 # datos personales reales, y el resto de scripts de un solo uso.
 !scripts/ops/copias_estado.js
 !scripts/ops/exporta_auth.js
+# 2026-10-19 · evidencia_appcheck.js → la evidencia de App Check que cita
+#   VALIDACION_E2E_Y_APPCHECK.md (reauditoría 19-10). Sólo GET, sin datos.
+!scripts/ops/evidencia_appcheck.js
 
 # ACCESOS DIRECTOS DE WINDOWS (no son producto)
 # El proyecto vive en el Escritorio, asi que Windows deja aqui sus .lnk («APP

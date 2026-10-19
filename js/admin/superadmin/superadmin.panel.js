@@ -629,12 +629,6 @@ window.saSetClubUserStatus = async function saSetClubUserStatus(uid, email, newS
                 return;
             }
         }
-        // FIX: Detect if this is an individual entity user for entity cleanup
-        const _isIndividualUser = uData.role === 'individual' || uData.role === 'admin_individual'
-            || uData.role === 'entrenador_individual' || uData.role === 'parent_individual'
-            || !!(uData.individualEntityId || uData.individualOwnerId)
-            || (uData.allRoles||[]).some(r => ['individual','admin_individual','entrenador_individual','parent_individual'].includes(r.role)
-                || r.individualEntityId);
         const _entityId = uData.individualEntityId || uData.clubId || clubId || null;
         const _isIndividualAdmin = uData.role === 'individual' || uData.role === 'admin_individual'
             || (uData.allRoles||[]).some(r => (r.role === 'individual' || r.role === 'admin_individual') && r.isAuthorized);

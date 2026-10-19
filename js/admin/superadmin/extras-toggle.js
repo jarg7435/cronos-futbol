@@ -96,7 +96,7 @@ window.saExtras = async function saExtras() {
     if (!body) return;
     body.innerHTML = '<div style="text-align:center;padding:2.5rem;color:#8b949e;"><div style="font-size:1.6rem;">⏳</div>Cargando…</div>';
     try {
-        const { collection, getDocs, doc, updateDoc, setDoc } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
+        const { collection, getDocs } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
         const db = window._cronos_auth?.db;
         if (!db) { body.innerHTML = '<div style="color:#ff5858;padding:1rem;">⚠️ Firebase no disponible</div>'; return; }
         

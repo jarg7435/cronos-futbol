@@ -616,11 +616,6 @@ async function _cGetStaff(db, clubId, fns, roles) {
         try {
             const me = window._cronosCurrentUser;
             if (me && me.uid) {
-                // Obtener el clubId del coach directamente desde su documento
-                const meSnap = await getDocs(query(
-                    collection(db, 'users'),
-                    where('__name__', '==', me.uid)  // Firestore no permite esto directamente
-                )).catch(() => null);
                 
                 // Fallback: obtener el propio documento del coach
                 try {
@@ -1584,7 +1579,6 @@ async function _loadUnifiedContactList(tabId) {
 
         const coachCategory = me.category || me.categoryLabel || '';
         const coachSubcategory = me.subcategory || '';
-        const coachModality = _getCategoryModality(coachCategory);
 
         // ════════════════════════════════════════════════════════════
         // CASO 1: ENTRENADOR (tabs: parents, director, coordinator)
@@ -3169,22 +3163,17 @@ async function openUnifiedCommsMenu() {
 // ════════════════════════════════════════════════════════════════════
 
 // publishConvocationToApp: el envío unificado está en 19_whatsapp_email.js (sin duplicados)
-window.openCollectiveReport    = window.openCollectiveReport;
-window.openIndividualReports   = window.openIndividualReports;
 window.openCoachMessaging      = openCoachMessaging;
 
 window.openThreadWithParent    = openThreadWithParent;
-window.sendMatchReportsToParents = window.sendMatchReportsToParents;
 window._loadThreadMessages     = _loadThreadMessages;
-// Estas dos viven ahora en js/coach/comms/contact-manager.js, que se carga
-// DESPUES de este archivo. Referenciarlas por su nombre pelado aqui lanzaba
-// ReferenceError en tiempo de carga y abortaba el resto de panel.js. Se dejan
-// como autoasignacion inocua, igual que las dos de arriba: no hace falta
-// exportarlas, porque son declaraciones de funcion y ya cuelgan de window en
-// cuanto su archivo se ejecuta.
-window.openContactManager      = window.openContactManager;
-window.saveContactManagerData  = window.saveContactManagerData;
-window.saveAllMatchReportsInternal = window.saveAllMatchReportsInternal;
+// openCollectiveReport, openIndividualReports, sendMatchReportsToParents,
+// openContactManager, saveContactManagerData y saveAllMatchReportsInternal
+// viven en sus propios archivos (algunos se cargan DESPUÉS de este):
+// referenciarlas por su nombre pelado aquí lanzaba ReferenceError en tiempo
+// de carga. No hace falta exportarlas: son declaraciones de función y ya
+// cuelgan de window en cuanto su archivo se ejecuta. (Antes había aquí
+// autoasignaciones `window.X = window.X`, inocuas; retiradas por el lint.)
 window.openUnifiedCommsMenu    = openUnifiedCommsMenu;
 
 // ════════════════════════════════════════════════════════════════════

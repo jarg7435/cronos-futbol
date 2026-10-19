@@ -1252,3 +1252,104 @@ ENFORCED (mismos servicios) para que reproduzca producción; verificado: una
 lectura anónima sin token da 403. Storage no tiene App Check en ninguno de los
 dos. ⚠️ `npm run dev` (localhost → testeo) necesita ahora un token de
 depuración registrado en el App Check de testeo.
+
+## 🛡️ Reauditoría del 19-10 · Punto 1: paquete reproducible y lint (v829)
+
+**Causa del «Permission denied».** El ZIP auditado (`APPCRONOSFÚTBOL19oct.zip`)
+volvió a hacerse comprimiendo la carpeta a mano, con `node_modules` dentro y
+`.bin/eslint` a 0644. Y `npm run package:verificar` exigía un checkout de git,
+así que el auditor no podía reproducirlo sobre el ZIP. Corregido:
+
+- `npm run lint` llama a ESLint con `node node_modules/eslint/bin/eslint.js`:
+  ya no depende del bit de ejecución de `.bin/`.
+- `npm run package` mete en el ZIP un **`PAQUETE.json`**: commit, fecha y el
+  **sha256 de cada fichero** (sacado de git, no del disco).
+- Sin `.git` (dentro del paquete descomprimido), `npm run package:verificar`
+  comprueba ese manifiesto —nada falta, nada cambió, nada prohibido de más; un
+  `node_modules` copiado sólo avisa porque `npm ci` lo reinstala— y hace
+  `npm ci` (raíz y functions) + build + lint + test. Con git, el empaquetador
+  descomprime su propio paquete y lanza ese mismo camino.
+- CI (`.github/workflows/ci.yml`): instala también `functions/` y corta con
+  `npm audit --omit=dev --audit-level=high` en raíz y Functions.
+- Guard: `test_artefacto_limpio.js` parte 4 (15/15).
+
+**Verificado 2026-10-19** sobre una copia sin git, con un `node_modules` falso
+dentro: manifiesto ✓ · `npm ci` ✓ · build OK · lint 0 errores · **336/336**.
+
+**Avisos de ESLint: 112 → 34.** Se quitaron sólo los que no cambian el
+comportamiento (imports del SDK sin usar, cálculos puros sin lector, `if {}`
+vacíos, `window.X = window.X`, escapes de más, `obj.hasOwnProperty`, una
+lectura de `billing_plans` que no se usaba). `npm run lint` lleva
+`--max-warnings 34`: un aviso nuevo corta igual que un error. Los 34 que quedan
+están listados y justificados en `eslint.config.js` (16 `no-redeclare`
+inocuos; código fijado por guards; 4 variables que parecen funciones a medio
+cablear, a revisar con el autor antes de borrar).
+
+**Hallazgo al limpiar (pendiente, NO corregido aquí):** en el panel del Admin
+de Club, `userRow` está muerto desde el 25-06; la fila viva (`_userRowHtml`)
+usa «➖ Quitar del equipo» → `caRevocarCasilla`, que llama a
+`caSetUserStatus` **sin la plaza** (categoría + subcategoría). Sin plaza, la
+baja es «todo el rol en este club»: a un entrenador con dos equipos se le
+quitarían los dos. Tres guards (`test_baja_por_plaza_y_alta_club` 1a/1b,
+`test_ningun_aprobar_pierde_plazas` 5g, `test_baja_es_revocacion`) comprueban
+la copia muerta, por eso no lo detectaron.
+
+## ⚖️ Reauditoría del 19-10 · Punto 2: un solo modelo RGPD (v830)
+
+**Decisión del titular (2026-10-19): CLUB = RESPONSABLE, CHRONOS = ENCARGADO**
+(art. 28), Google y el SMTP = subencargados. Antes `privacy.html` decía lo
+contrario que `PROTECCION_DATOS.md`, que además seguía titulado BORRADOR.
+
+- `privacy.html` **v2.0**: §1 reescrito (1.1 club responsable · 1.2 Chronos
+  encargado, identificado · 1.3 lo único que Chronos trata como responsable
+  propio: relación con el club, facturación y seguridad); §4 la base la
+  decide el club, el consentimiento sólo para lo opcional; §5 subencargados;
+  §7 los derechos se ejercen ante el club, Chronos los traslada en 5 días
+  hábiles; plazo «un mes».
+- **`encargo.html` (nuevo), Contrato de Encargado v1.0**: las cláusulas del
+  art. 28.3 (instrucciones, confidencialidad, seguridad, subencargados,
+  derechos, brechas en 48 h, asistencia, fin del contrato, auditoría) y las
+  obligaciones del club (base jurídica, informar a las familias,
+  consentimiento parental < 14, nada de datos de salud en los informes).
+  Publicado y en el precache del SW.
+- **Alta**: quien registra un club (`club_admin`) o un ente (`individual`)
+  tiene que marcar `#dpa-consent`; sin ella `doAuth` no sigue. Se guarda en
+  `users/{uid}`: `dpaAccepted`, `dpaAcceptedAt`, `dpaVersion`. La versión de
+  la política aceptada pasa de `'2024-01'` a `CRONOS_PRIVACY_VERSION`
+  (`'2026-10-19'`).
+- `PROTECCION_DATOS.md` **v2.0 vigente** (aprobada por el titular), con el
+  mismo modelo y el estado real de cada punto. No se publica (`*.md` está en
+  el `ignore` de Hosting).
+- Guard: `test_politica_alineada.js` parte 6 (31/31) ata política, contrato,
+  documento interno y alta.
+
+**Pendiente (no es código):** recabar la aceptación del contrato de los
+clubes dados de alta antes del 19-10; DPIA tipo; revisión jurídica externa de
+`encargo.html` (recomendada).
+
+## ✅ Reauditoría del 19-10 · Punto 3: evidencia E2E y App Check
+
+Informe fechado: **`VALIDACION_E2E_Y_APPCHECK.md`**.
+- E2E 6/6 en testeo aislado, con dos clubes ficticios y verificación en BD.
+- App Check medido en producción y en testeo con `scripts/ops/evidencia_appcheck.js`
+  (nuevo, sólo GET).
+
+**Resultado en producción (19-10):**
+- firestore e identitytoolkit en **ENFORCED**;
+- sonda anónima sin token: **403**;
+- en 7 días, 11 984 verificaciones válidas permitidas, 2 inválidas denegadas y ninguna
+  sin token permitida.
+
+**Hallazgo, corregido el mismo día:** quedaban en producción un token de
+depuración (`arnes-rest-local`, de la v634, que ya no usaba nada) y `localhost` en
+los dominios autorizados de Auth.
+- **Retirados el 19-10**, con autorización expresa del titular.
+- Medición repetida: ningún token, sólo los dos dominios de producción y la sonda
+  sin token sigue dando 403.
+
+El informe deja escrito también lo que **no** se ha cubierto:
+- Storage en navegador;
+- prueba de campo con pérdida de red;
+- simulacro de restauración;
+- revisión de logs;
+- monitorización.

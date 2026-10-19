@@ -2784,14 +2784,20 @@
 //        marcada como usada ANTES de cerrar la sesión de la cuenta pendiente.
 // v828 · ENLACES ANTIGUOS CADUCADOS (2026-10-07): `?register=true&email=…`
 //        ya no rellena nada y sus datos se borran de la barra al abrirlo.
-const VERSION = 'v828';
-const CACHE_NAME = 'cronos-cache-v828';
+// v829 · LIMPIEZA DEL LINT (reauditoría 19-10): avisos 112 → 34, sin cambio
+//        de comportamiento (código muerto, imports sin usar, bloques vacíos).
+// v830 · RGPD, UN SOLO MODELO (reauditoría 19-10): club = responsable,
+//        Chronos = encargado. privacy.html v2.0 + Contrato de Encargado
+//        (encargo.html, precacheado) que el alta de club/ente exige aceptar.
+const VERSION = 'v830';
+const CACHE_NAME = 'cronos-cache-v830';
 
 const ASSETS = [
     './',
     './index.html',
     './offline.html',
     './privacy.html',
+    './encargo.html',
     './manifest.json',
     './style.css',
     // v465 · va en el precache como los demas modulos del core: define las

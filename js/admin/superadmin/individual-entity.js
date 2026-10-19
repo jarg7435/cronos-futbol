@@ -451,8 +451,6 @@ window.saShowEntityUsers = async function(entityId) {
         snapByOwnerId.forEach(d => { if (!userMap.has(d.id)) userMap.set(d.id, { id:d.id, ...d.data() }); });
         const users = Array.from(userMap.values());
 
-        const stColor = { active:'#3fb950', blocked:'#f0883e', removed:'#ff5858', pending:'#ffd700', pending_club:'#ffa500', pending_register:'#79c0ff', pending_sa:'#79c0ff', pending_individual:'#ffa500' };
-        const stLabel = { active:'Activo', blocked:'Bloqueado', removed:'Baja', pending:'⏳ Pend.SA', pending_club:'⏳ Pend.Club', pending_register:'⏳ Sin registrar', pending_sa:'⏳ Pend.SA', pending_individual:'⏳ Pend.Indiv.' };
 
         let html = `
         <div style="display:flex;align-items:center;gap:0.7rem;margin-bottom:1rem;">
@@ -463,8 +461,6 @@ window.saShowEntityUsers = async function(entityId) {
         if (!users.length) {
             html += `<div style="text-align:center;padding:2rem;color:#8b949e;">Sin usuarios registrados en este ente.</div>`;
         } else {
-            const _escH = typeof escapeHtml==='function'?escapeHtml:function(s){return s;};
-            const _escA = typeof escapeAttr==='function'?escapeAttr:function(s){return s;};
             const _expandEntityUsers = (entUsers) => {
                 const expanded = [];
                 (entUsers || []).filter(u => u.status !== 'removed').forEach(u => {

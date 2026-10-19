@@ -13,7 +13,7 @@ window.saEditClubSlots = async function(clubId, clubName) {
     // Pila de navegación — con sus argumentos, para repintarse igual al volver.
     if (typeof navScreen === 'function') navScreen('saEditClubSlots', clubId, clubName);
 
-    const { db, doc, getDoc, updateDoc, collection, query, where, getDocs } = await saFS();
+    const { db, doc, getDoc, collection, query, where, getDocs } = await saFS();
     const snap = await getDoc(doc(db,'clubs',clubId));
     if (!snap.exists()) { _saToast('Club no encontrado', 3000); return; }
     const c = snap.data();

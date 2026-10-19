@@ -80,7 +80,6 @@ window.saDeleteClubComplete = async function(clubId, clubName) {
 
         // 2b. También borrar platform_requests por userUid de cada usuario del club
         // (cubre solicitudes sin clubId, como club_admin e individual)
-        const prOps2 = [];
         affectedUsers.forEach((uDoc) => {
             const uid2 = uDoc.id;
             getDocs(query(collection(db,'platform_requests'), where('userUid','==',uid2)))

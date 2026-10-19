@@ -351,12 +351,9 @@ async function _sdLoadReports() {
         let rawSnap = { forEach: (fn) => combinedDocs.forEach(fn) };
 
         // Contar docs de staff
-        let _clubQueryDocCount = 0;
         let _hasStaffDocs = false;
-        let _staffDocCount = 0;
         rawSnap.forEach(d => {
-            _clubQueryDocCount++;
-            if (d.data().staffReport === true) { _hasStaffDocs = true; _staffDocCount++; }
+            if (d.data().staffReport === true) { _hasStaffDocs = true; }
         });
 
         // Si aún no hay docs de staff, intentar por staffUids

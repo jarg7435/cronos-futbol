@@ -148,6 +148,7 @@ console.log('\n5) 🚨 Lo que sigue pendiente, y tiene que seguir VISIBLE');
        !hayHuecos || hayAviso,
        'los huecos sin aviso se publican sin que nadie se dé cuenta');
 
+    // 19-10 · la decisión ya está tomada (modelo A, parte 6): sin huecos, pasa.
     ok('5b · 🔑 la decisión responsable/encargado sigue marcada como jurídica',
        !hayHuecos || /DECISION\s+JURIDICA|decision juridica/i.test(POL),
        'no es un ajuste de texto: cambia quién responde ante la AEPD');
@@ -156,6 +157,51 @@ console.log('\n5) 🚨 Lo que sigue pendiente, y tiene que seguir VISIBLE');
         console.log('      ⚠️ AVISO: privacy.html tiene huecos [PENDIENTE] sin rellenar.');
         console.log('         No la despliegues hasta completarlos (sección 1).');
     }
+}
+
+// ════════════════════════════════════════════════════════════════════
+//  🛡️ Reauditoría 19-10: privacy.html decía «Chronos responsable, club
+//  encargado» y PROTECCION_DATOS.md (titulado BORRADOR) lo contrario. El
+//  titular eligió el modelo A el 19-10: CLUB = RESPONSABLE, CHRONOS =
+//  ENCARGADO. Política, contrato, documento interno y alta deben decir lo
+//  mismo; si uno cambia sin los demás, esto se pone rojo.
+console.log('\n6) ⚖️ Un solo modelo: club responsable, Chronos encargado (19-10)');
+{
+    const DOC = leer('PROTECCION_DATOS.md');
+    const ENC = fs.existsSync(path.join(ROOT, 'encargo.html')) ? leer('encargo.html') : '';
+    const IDX = leer('index.html');
+    const AUTH = leer('js/services/auth.js');
+    const SW = leer('sw.js');
+    const BUILD = leer('scripts/build.js');
+    const sinCom = (s) => s.replace(/<!--[\s\S]*?-->/g, '');
+
+    ok('6a · 🔑🔑 la política: el CLUB es responsable y CHRONOS encargado',
+       /club o entidad individual<\/strong>[^<]*<strong>responsable del tratamiento/.test(sinCom(POL)) &&
+       /como <strong>encargado del tratamiento<\/strong> \(art\. 28/.test(sinCom(POL)),
+       'privacy.html §1');
+    ok('6b · 🔑🔑 …y ya NO dice lo contrario',
+       !/Cada club o entidad individual que utilice CHRONOS FÚTBOL actúa como <strong>encargado/.test(POL) &&
+       !/El responsable del tratamiento de los datos recogidos a través de CHRONOS FÚTBOL es el propietario/.test(POL));
+    ok('6c · 🔑 PROTECCION_DATOS.md deja de ser BORRADOR y dice el mismo modelo',
+       !/BORRADOR/.test(DOC.split('\n')[0]) && /vigente/i.test(DOC) &&
+       /club o ente individual = RESPONSABLE/.test(DOC) && /Chronos Fútbol \(el titular\) = ENCARGADO/.test(DOC));
+    ok('6d · existe el Contrato de Encargado (art. 28) con el mismo reparto',
+       /art\. 28/.test(ENC) && /Responsable del tratamiento:<\/strong> el club o entidad/.test(ENC) &&
+       /Encargado del tratamiento:<\/strong> José Alberto Romero García/.test(ENC));
+    ok('6e · el contrato cubre lo que exige el art. 28.3 (subencargados, brechas, derechos, fin)',
+       /Subencargados/.test(ENC) && /Brechas/.test(ENC) && /Derechos de los interesados/.test(ENC) &&
+       /Fin del contrato/.test(ENC) && /Confidencialidad/.test(ENC));
+    ok('6f · se publica y funciona sin red: en la lista del build y en el precache',
+       /'encargo\.html'/.test(BUILD) && /'\.\/encargo\.html'/.test(SW));
+    ok('6g · 🔑🔑 el alta del club/ente PIDE el contrato (casilla con enlace)',
+       /id="dpa-consent"/.test(IDX) && /href="encargo\.html"/.test(IDX));
+    ok('6h · 🔑🔑 …doAuth lo EXIGE a club_admin e individual y guarda la evidencia',
+       /requestedRole === 'club_admin' \|\| requestedRole === 'individual'\) \{\s*const dpaChk/.test(AUTH) &&
+       /dpaAccepted\s*= true/.test(AUTH) && /dpaVersion\s*= CRONOS_DPA_VERSION/.test(AUTH));
+    ok('6i · la versión de la política aceptada ya no es la de 2024',
+       /gdprConsentVersion: CRONOS_PRIVACY_VERSION/.test(AUTH) && !/gdprConsentVersion: '2024-01'/.test(AUTH));
+    ok('6j · la política enlaza el contrato y manda los derechos al club',
+       /href="encargo\.html"/.test(POL) && /diríjase a <strong>su club<\/strong>/.test(POL));
 }
 
 console.log('\n──────────────────────────────────────────────────────────');

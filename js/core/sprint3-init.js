@@ -91,8 +91,6 @@
       wrapEndMatchForAudit();
       
       
-    } else if (hasAuditLogger && !hasRenderOptimizer) {
-    } else if (!hasAuditLogger && hasRenderOptimizer) {
     }
   }, 100);
   

@@ -2514,7 +2514,6 @@ window.cqAnadirFilaLibre = function () {
 };
 
 window.cqAnadirFilaEquipo = function () {
-    const st = window._cqState;
     const me = window._cronosCurrentUser || {};
     const clubId = window._testRoleClubId || me.clubId || '';
     const cats = (window.CT_CATEGORIES || []).filter(c =>

@@ -149,7 +149,7 @@ const Pseudonymizer = (() => {
 
     // Copiar solo campos permitidos
     ['name', 'email', 'phone', 'birthDate', 'plantilla', 'dorsal', 'posicion'].forEach(field => {
-      if (player.hasOwnProperty(field)) {
+      if (Object.prototype.hasOwnProperty.call(player, field)) {
         if (field === 'email' || field === 'phone' || field === 'birthDate') {
           // Campos sensibles: verificar matriz
           if (_canViewField('player', field, ctx.role)) {
@@ -187,7 +187,7 @@ const Pseudonymizer = (() => {
     const masked = {};
 
     ['name', 'email', 'phone'].forEach(field => {
-      if (user.hasOwnProperty(field)) {
+      if (Object.prototype.hasOwnProperty.call(user, field)) {
         if (_canViewField('user', field, ctx.role)) {
           masked[field] = user[field];
         }

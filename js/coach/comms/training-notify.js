@@ -88,7 +88,6 @@ async function openTrainingNotification() {
     // Pila de navegación (js/core/nav-stack.js).
     if (typeof navScreen === 'function') navScreen('openTrainingNotification');
 
-    const me    = window._cronosCurrentUser;
     const modal = document.getElementById('setup-modal');
     if (!modal) return;
 
@@ -242,9 +241,6 @@ window._sendTrainingNotification = async function() {
         const fa = window._cronos_auth;
         const db = fa.db;
 
-        const dtFmt = datetime
-            ? new Date(datetime).toLocaleString('es-ES', {weekday:'long',day:'numeric',month:'long',hour:'2-digit',minute:'2-digit'})
-            : '—';
 
         // ⚠️ category/subcategory (fase 2 del árbol del panel de Dirección,
         // 2026-07-30): SIN ellas, el panel del Director tenía que deducir la

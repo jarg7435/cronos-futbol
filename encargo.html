@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Contrato de Encargado del Tratamiento — CHRONOS FÚTBOL</title>
+  <style>
+    :root {
+      --bg-dark: #0a0e14;
+      --bg-card: #161b22;
+      --primary: #58a6ff;
+      --text-main: #c9d1d9;
+      --text-muted: #8b949e;
+      --glass-border: rgba(255,255,255,0.1);
+      --success: #3fb950;
+    }
+    * { margin:0; padding:0; box-sizing:border-box; }
+    body {
+      background: var(--bg-dark);
+      color: var(--text-main);
+      font-family: 'Inter', system-ui, -apple-system, sans-serif;
+      line-height: 1.7;
+      padding-bottom: 4rem;
+    }
+
+    /* HERO */
+    .hero {
+      background: radial-gradient(circle at 50% 0%, rgba(88,166,255,0.12), transparent 60%), var(--bg-dark);
+      text-align: center;
+      padding: 3.5rem 1rem 3rem;
+      border-bottom: 1px solid var(--glass-border);
+    }
+    .hero img {
+      height: 120px;
+      width: auto;
+      margin-bottom: 1.25rem;
+      filter: drop-shadow(0 8px 24px rgba(88,166,255,0.25));
+    }
+    .hero h1 {
+      font-size: 2rem;
+      font-weight: 700;
+      color: #fff;
+      letter-spacing: 0.5px;
+    }
+    .hero p {
+      font-size: 0.95rem;
+      color: var(--text-muted);
+      margin-top: 0.5rem;
+    }
+
+    /* HEADER STICKY */
+    .topbar {
+      position: sticky;
+      top: 0;
+      z-index: 10;
+      display: flex;
+      align-items: center;
+      gap: 0.85rem;
+      padding: 0.75rem 1.5rem;
+      background: rgba(10,14,20,0.85);
+      backdrop-filter: blur(10px);
+      border-bottom: 1px solid var(--glass-border);
+    }
+    .topbar img { height: 64px; width: auto; }
+    .topbar h2 {
+      font-size: 1.1rem;
+      font-weight: 600;
+      color: #fff;
+      margin: 0;
+      padding: 0;
+      border: none;
+    }
+
+    .container { max-width: 780px; margin: 0 auto; padding: 2.5rem 1rem 0; }
+
+    h2 {
+      font-size: 1.05rem;
+      font-weight: 600;
+      color: var(--primary);
+      margin: 2rem 0 0.75rem;
+      padding-bottom: 0.4rem;
+      border-bottom: 1px solid var(--glass-border);
+    }
+    h3 { font-size: 0.95rem; font-weight: 600; color: #fff; margin: 1.25rem 0 0.4rem; }
+    p  { font-size: 0.9rem; color: var(--text-main); margin-bottom: 0.75rem; }
+    ul { padding-left: 1.4rem; margin-bottom: 0.75rem; }
+    li { font-size: 0.9rem; color: var(--text-main); margin-bottom: 0.35rem; }
+    .highlight {
+      background: rgba(88,166,255,0.08);
+      border-left: 3px solid var(--primary);
+      padding: 0.75rem 1rem;
+      border-radius: 0 6px 6px 0;
+      margin: 1rem 0;
+      font-size: 0.88rem;
+    }
+    .badge {
+      display: inline-block;
+      background: rgba(63,185,80,0.15);
+      color: var(--success);
+      font-size: 0.75rem;
+      font-weight: 600;
+      padding: 2px 8px;
+      border-radius: 4px;
+      margin-left: 6px;
+      vertical-align: middle;
+    }
+    .back-btn {
+      display: inline-block;
+      margin-top: 2.5rem;
+      padding: 0.6rem 1.4rem;
+      background: var(--primary);
+      color: #0a0e14;
+      font-weight: 600;
+      font-size: 0.9rem;
+      border-radius: 6px;
+      text-decoration: none;
+    }
+    .back-btn:hover { opacity: 0.85; }
+    footer {
+      margin-top: 3rem;
+      padding-top: 1.5rem;
+      border-top: 1px solid var(--glass-border);
+      font-size: 0.8rem;
+      color: var(--text-muted);
+    }
+    @media (max-width: 600px) {
+      .hero img { height: 96px; }
+      .hero h1 { font-size: 1.6rem; }
+      .topbar img { height: 48px; }
+    }
+  </style>
+</head>
+<body>
+
+  <div class="topbar">
+    <img src="public/assets/logo.png" alt="CHRONOS FÚTBOL">
+    <h2>CHRONOS FÚTBOL</h2>
+  </div>
+
+
+  <section class="hero">
+    <img src="public/assets/logo.png" alt="CHRONOS FÚTBOL">
+    <h1>CHRONOS FÚTBOL</h1>
+    <p>Contrato de Encargado del Tratamiento (art. 28 RGPD) · Versión 1.0 · 19 de octubre de 2026</p>
+  </section>
+
+<div class="container">
+
+  <!-- ══════════════════════════════════════════════════════════════════
+       Modelo de roles: CLUB = RESPONSABLE · CHRONOS = ENCARGADO · Google =
+       SUBENCARGADO (decidido por el titular el 2026-10-19). Lo acepta el
+       representante del club en el alta (casilla #dpa-consent de index.html;
+       queda en users/{uid}: dpaAccepted, dpaAcceptedAt, dpaVersion). Si cambia
+       el texto de forma sustancial, súbase CRONOS_DPA_VERSION en auth.js.
+       ══════════════════════════════════════════════════════════════════ -->
+  <div class="highlight">
+    Este contrato regula el tratamiento de datos personales que CHRONOS FÚTBOL realiza <strong>por cuenta de cada club o entidad</strong> que utiliza la plataforma. Lo acepta electrónicamente quien da de alta el club o la entidad, en su nombre y representación, y su aceptación queda registrada con fecha y versión.
+  </div>
+
+  <h2>1. Partes</h2>
+  <ul>
+    <li><strong>Responsable del tratamiento:</strong> el club o entidad que se registra en CHRONOS FÚTBOL, representado por la persona que acepta este contrato al darlo de alta y que declara tener facultades para ello.</li>
+    <li><strong>Encargado del tratamiento:</strong> José Alberto Romero García, NIF 52834815C, con domicilio en Calle Adeje 70, Cruce de Arinaga, 35118 Agüimes, Las Palmas (Gran Canaria), España, y correo de contacto <a href="mailto:jarg7435@gmail.com" style="color:var(--primary)">jarg7435@gmail.com</a>, titular de la plataforma CHRONOS FÚTBOL.</li>
+  </ul>
+
+  <h2>2. Objeto, duración, naturaleza y finalidad</h2>
+  <p>El encargado presta al responsable el servicio CHRONOS FÚTBOL: control de tiempos de juego, convocatorias, asistencia, sucesos e informes de partido, planificación, seguimiento en directo y comunicación entre el club, su cuerpo técnico y las familias. El tratamiento consiste en registrar, conservar, consultar, comunicar a los usuarios autorizados por el club y suprimir los datos necesarios para ese servicio, con la única finalidad de prestarlo.</p>
+  <p>El contrato dura mientras el responsable utilice el servicio y termina con la baja del club o entidad.</p>
+
+  <h2>3. Datos e interesados</h2>
+  <ul>
+    <li><strong>Jugadores, que pueden ser menores:</strong> nombre o alias, dorsal, posición, convocatorias, minutos, sustituciones, sucesos del partido, asistencia con causa genérica e informes deportivos.</li>
+    <li><strong>Familias, cuerpo técnico y personal del club:</strong> correo electrónico, nombre, rol, equipo y los mensajes que intercambian en la plataforma.</li>
+  </ul>
+  <p>El servicio no está pensado para tratar categorías especiales de datos (art. 9 RGPD). La plataforma no ofrece ningún campo para registrar diagnósticos médicos.</p>
+
+  <h2>4. Obligaciones del encargado</h2>
+  <p>El encargado se compromete a:</p>
+  <ul>
+    <li><strong>Instrucciones:</strong> tratar los datos sólo siguiendo las instrucciones documentadas del responsable, que son este contrato y la configuración que el club hace en la plataforma. Si una instrucción le parece contraria a la normativa, lo comunicará de inmediato.</li>
+    <li><strong>Confidencialidad:</strong> garantizar que quienes accedan a los datos por su parte están obligados a guardar secreto.</li>
+    <li><strong>Seguridad (art. 32 RGPD):</strong> mantener, entre otras, autenticación obligatoria, reglas de acceso por club y por rol, aislamiento de los datos de cada club, App Check contra el acceso automatizado, cifrado en tránsito (HTTPS/TLS), copias de seguridad diarias con recuperación a un momento dado, y registros de auditoría.</li>
+    <li><strong>Subencargados:</strong> el responsable autoriza de forma general a Google (Firebase y Google Cloud: base de datos, autenticación, funciones, avisos y reCAPTCHA) y al proveedor de correo SMTP con el que se envían las invitaciones. El encargado avisará al responsable de cualquier cambio de subencargado, y el responsable podrá oponerse antes de que se produzca.</li>
+    <li><strong>Derechos de los interesados:</strong> trasladar al responsable, en un máximo de <strong>5 días hábiles</strong>, cualquier solicitud que reciba directamente, y ayudarle a atenderla con los medios de la plataforma (consulta, rectificación, exportación y supresión).</li>
+    <li><strong>Brechas de seguridad:</strong> notificar al responsable, sin dilación indebida y en todo caso en un máximo de <strong>48 horas</strong> desde que tenga conocimiento, cualquier brecha que afecte a sus datos, con la información disponible para que el responsable pueda cumplir el plazo de 72 horas ante la AEPD.</li>
+    <li><strong>Asistencia:</strong> ayudar al responsable en las evaluaciones de impacto y consultas previas que pudieran ser necesarias.</li>
+    <li><strong>Información y auditoría:</strong> poner a disposición del responsable la información necesaria para demostrar el cumplimiento de este contrato.</li>
+  </ul>
+
+  <h2>5. Dónde se tratan los datos</h2>
+  <p>Los datos se almacenan en la Unión Europea (Firestore, región <code>eur3</code>: Bélgica y Países Bajos). Algunas operaciones automáticas se ejecutan en Google Cloud Functions en la región <code>us-central1</code> (Estados Unidos), con las garantías del contrato de encargado de Google: Cláusulas Contractuales Tipo y el marco de adecuación vigente. Firebase Authentication no permite elegir región.</p>
+
+  <h2>6. Obligaciones del responsable</h2>
+  <p>El club o entidad, como responsable, se compromete a:</p>
+  <ul>
+    <li>contar con una base jurídica para cada tratamiento, informar a los interesados y, cuando proceda, recabar el consentimiento del padre, madre o tutor legal de los menores de 14 años antes de registrar sus datos;</li>
+    <li>dar acceso a la plataforma sólo a las personas que deban tenerlo, con el rol adecuado, y retirarlo cuando dejen de necesitarlo;</li>
+    <li>trasladar a su cuerpo técnico la instrucción de que los informes y comentarios son <strong>deportivos</strong>, y de que en ellos <strong>no se anotan datos de salud, diagnósticos ni información médica</strong>;</li>
+    <li>atender los derechos de los interesados, con la ayuda del encargado.</li>
+  </ul>
+
+  <h2>7. Fin del contrato: devolución y supresión</h2>
+  <p>Cuando el club se da de baja, el encargado <strong>suprime</strong> sus datos, después de que el responsable haya podido exportar lo que necesite con las herramientas de la plataforma. Se conservan únicamente, y bloqueados, los datos que la ley obliga a guardar, como la facturación o los registros de seguridad, durante sus plazos legales. Las copias de seguridad se destruyen solas en <strong>7 días</strong>.</p>
+
+  <h2>8. Aceptación</h2>
+  <p>La persona que da de alta el club o la entidad acepta este contrato marcando la casilla correspondiente del formulario de registro, en nombre del responsable. La aceptación queda registrada con su fecha y la versión del contrato. Si este contrato cambia de forma sustancial, se pedirá una nueva aceptación.</p>
+  <p>Este contrato se rige por el Reglamento (UE) 2016/679 (RGPD) y la Ley Orgánica 3/2018 (LOPDGDD). La información a las familias y usuarios está en la <a href="privacy.html" style="color:var(--primary)">Política de Privacidad</a>.</p>
+
+  <a href="index.html" class="back-btn">← Volver a la aplicación</a>
+
+  <footer>
+    <p>CHRONOS FÚTBOL · Contrato de Encargado del Tratamiento · Versión 1.0 · 19 de octubre de 2026</p>
+    <p style="margin-top:0.4rem">RGPD (UE) 2016/679, art. 28 · LOPDGDD 3/2018</p>
+  </footer>
+
+</div>
+</body>
+</html>

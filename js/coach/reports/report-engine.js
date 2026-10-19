@@ -75,11 +75,6 @@ const _RP = (() => {
     // ── Colores y etiquetas por posición ──────────────────────────────
     const PC = { POR:'#BA7517', DEF:'#185FA5', MED:'#1D9E75', DEL:'#D85A30', SUP:'#7F77DD' };
     
-    // Paleta de colores para cadenas de rotación (Gantt)
-    const CHAIN_COLORS = [
-        '#3fb950', '#58a6ff', '#f0883e', '#d2a8ff', '#ff5858', '#eab308', 
-        '#79c0ff', '#aff5b4', '#ff7b72', '#d29922', '#bc8cff', '#58d1ff'
-    ];
 
     // ── Escape HTML seguro ────────────────────────────────────────────
     const esc = s => (s || '').toString()
@@ -1039,7 +1034,6 @@ const _RP = (() => {
 
         const rows = subs.map((sub, idx) => {
             const op = sub.out, ip = sub.inp;
-            const oc = PC[op._pos] || '#888', ic = ip ? (PC[ip._pos] || '#888') : null;
 
             // ¿Es un regreso? (el jugador entrante tiene más de un intervalo y este no es el primero)
             let retBadge = '';

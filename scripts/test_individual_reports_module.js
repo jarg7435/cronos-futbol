@@ -387,8 +387,10 @@ const inCol = (written, col) => written.filter(w => w.col === col);
             // v659 · la vuelta desde el informe manual, con la misma guarda.
             && /typeof window\.openMisInformes === 'function'/.test(
                 fs.readFileSync(path.join(ROOT, 'js', 'coach', 'comms', 'manual-report.js'), 'utf8')));
-        ok('1f · la autoasignacion window.openIndividualReports = window.openIndividualReports sigue en panel.js',
-            /window\.openIndividualReports\s+= window\.openIndividualReports;/.test(panel));
+        // 19-10 (lint): la autoasignacion `window.X = window.X` era inocua y se
+        // retiro (no-self-assign). Lo que importa: nada de nombre PELADO.
+        ok('1f · panel.js no exporta openIndividualReports por su nombre pelado (ReferenceError en carga)',
+            !/=\s*openIndividualReports\s*;/.test(panel));
     }
     ok('1g · el render del Gantt usa la guarda typeof sobre _RP (ilusoria para un const en TDZ)',
         /typeof _RP !== 'undefined' && typeof _RP\.build === 'function'/.test(BLOCK)

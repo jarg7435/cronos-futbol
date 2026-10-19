@@ -49,11 +49,6 @@
         return (typeof f === 'function') ? f : null;
     }
 
-    function _sameArgs(a, b) {
-        try { return JSON.stringify(a || []) === JSON.stringify(b || []); }
-        catch (e) { return false; }   // args no serializables: trátalos como distintos
-    }
-
     // ── Registro de una pantalla normal ──────────────────────────────
     // `args` son los que hay que repetir para volver a pintarla igual.
     window.navScreen = function(name /*, ...args */) {

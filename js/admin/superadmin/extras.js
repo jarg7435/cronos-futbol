@@ -93,7 +93,7 @@
         if (typeof showToast === 'function') showToast('⏳ Limpiando...', 4000);
 
         try {
-            var { db, collection, getDocs, query, where, doc, updateDoc, deleteDoc } = await saFS();
+            var { db, collection, getDocs, doc, updateDoc, deleteDoc } = await saFS();
 
             // 1. Clubes válidos existentes
             var clubsSnap = await getDocs(collection(db, 'clubs'));

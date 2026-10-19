@@ -213,8 +213,6 @@ async function autoDispatchMatchReports() {
             }
         }
 
-        if (window._cronosDiagReports) {
-        }
         // FIX v177: Log SIEMPRE (no condicional) para diagnosticar por qué
         // el informe colectivo no llega al director/coordinador.
 

@@ -37,6 +37,19 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Install functions dependencies
+        run: npm ci
+        working-directory: functions
+
+      # Reauditoría 19-10: repetir la auditoría en cada cambio y cortar con
+      # vulnerabilidades altas o críticas en lo que llega a producción.
+      - name: Audit runtime dependencies (gate)
+        run: npm audit --omit=dev --audit-level=high
+
+      - name: Audit functions dependencies (gate)
+        run: npm audit --omit=dev --audit-level=high
+        working-directory: functions
+
       - name: Build (gate)
         run: npm run build
 

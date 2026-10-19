@@ -278,7 +278,6 @@ window.saSendMessages = async () => {
 
 window.saOpenThread = async (threadId, otherName) => {
     const body = document.getElementById('sa-body');
-    const me = window._cronosCurrentUser;
     const fa = window._cronos_auth;
 
     body.innerHTML = `

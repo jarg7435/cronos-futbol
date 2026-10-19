@@ -79,7 +79,7 @@ async function _sdLoadEvents(type) {
     // ══════════════════════════════════════════════════════════════════
     const MAX_POR_SUBCAT = 50;
     try {
-        const { db, collection, getDocs, query, where, orderBy, deleteDoc, doc: firestoreDoc, limit } = await _sdFS();
+        const { db, collection, getDocs, query, where, deleteDoc, doc: firestoreDoc, limit } = await _sdFS();
         const clubId = me.clubId || '';
 
         // Buscar por clubId O por parentUid (para coordinadores/directores)

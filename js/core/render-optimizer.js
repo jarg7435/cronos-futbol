@@ -202,8 +202,6 @@ class BatchDomUpdate {
         if (this.updates.length === 0) return;
 
         // Agrupar por tipo de actualización para minimizar reflows
-        const styleUpdates = [];
-        const domUpdates = [];
 
         this.updates.forEach(({ element, updateFn }) => {
             if (typeof updateFn === 'function') {

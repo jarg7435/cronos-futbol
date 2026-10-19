@@ -200,7 +200,7 @@ window.saBilling = async function saBilling(subTab) {
 async function _billOverview() {
     const cont = document.getElementById('bill-content');
     try {
-        const { db, collection, getDocs, query, where } = await _billingFS();
+        const { db, collection, getDocs } = await _billingFS();
 
         // Cargar suscripciones activas
         const subsSnap = await getDocs(collection(db, 'billing_subscriptions')).catch(() => null);
@@ -213,7 +213,6 @@ async function _billOverview() {
         // Métricas
         const activeSubs   = subs.filter(s => s.status === 'active');
         const trialSubs    = subs.filter(s => s.status === 'trial');
-        const expiredSubs  = subs.filter(s => s.status === 'expired');
         const clubSubs     = activeSubs.filter(s => s.entityType === 'club');
         const indSubs      = activeSubs.filter(s => s.entityType === 'individual');
 
@@ -310,7 +309,7 @@ async function _billOverview() {
 async function _billPlans() {
     const cont = document.getElementById('bill-content');
     try {
-        const { db, collection, getDocs, doc, setDoc } = await _billingFS();
+        const { db, collection, getDocs } = await _billingFS();
 
         // Cargar planes guardados en Firestore, o usar defaults
         const plansSnap = await getDocs(collection(db, 'billing_plans')).catch(() => null);
@@ -348,7 +347,6 @@ async function _billPlans() {
 }
 
 function _renderPlanCard(plan) {
-    const featuresStr = (plan.features || []).join('\n');
     return `
     <div class="bill-plan-card" id="plan-card-${plan.code}" data-plan-code="${plan.code}">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.7rem;">
@@ -486,17 +484,14 @@ async function _billSubs() {
     try {
         const { db, collection, getDocs } = await _billingFS();
 
-        const [subsSnap, clubsSnap, plansSnap] = await Promise.all([
+        // (19-10: fuera la lectura de billing_plans, que no se usaba aquí.)
+        const [subsSnap, clubsSnap] = await Promise.all([
             getDocs(collection(db, 'billing_subscriptions')).catch(() => null),
             getDocs(collection(db, 'clubs')).catch(() => null),
-            getDocs(collection(db, 'billing_plans')).catch(() => null),
         ]);
 
         const subs   = subsSnap   ? subsSnap.docs.map(d => ({ id: d.id, ...d.data() }))   : [];
         const clubs  = clubsSnap  ? clubsSnap.docs.map(d => ({ id: d.id, ...d.data() }))  : [];
-        const plans  = plansSnap && !plansSnap.empty
-            ? plansSnap.docs.map(d => ({ id: d.id, ...d.data() }))
-            : window.BILLING_PLAN_DEFAULTS;
 
         // Crear mapa de suscripciones por entityId
         const subMap = {};
@@ -646,7 +641,7 @@ window.billNewSubscription = function() {
 
 window.billSaveSubscription = async function(entityId, entityName, entityEmail, entityType) {
     try {
-        const { db, doc, setDoc, collection } = await _billingFS();
+        const { db, doc, setDoc } = await _billingFS();
         _saShowSpinner('Guardando suscripción…');
 
         const planCode   = document.getElementById('bam-plan')?.value || 'free';
@@ -786,7 +781,7 @@ window.billFilterInvoices = function() {
 // Generar factura desde suscripción
 window.billGenerateInvoice = async function(subId) {
     try {
-        const { db, doc, getDoc, setDoc, collection } = await _billingFS();
+        const { db, doc, getDoc, setDoc } = await _billingFS();
         _saShowSpinner('Generando factura…');
 
         const snap = await getDoc(doc(db, 'billing_subscriptions', subId));

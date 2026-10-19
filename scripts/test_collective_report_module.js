@@ -190,8 +190,11 @@ const inCol = (written, col) => written.filter(w => w.col === col);
             cuerpo.length > 500 && !/openCollectiveReport\s*\(/.test(cuerpo)
             && !/_sendCollectiveReportNow\s*\(/.test(cuerpo),
             { largoCuerpo: cuerpo.length });
-        ok('1f · la autoasignación window.openCollectiveReport = window.openCollectiveReport sigue en panel.js',
-            /window\.openCollectiveReport\s+= window\.openCollectiveReport;/.test(panelOrigen));
+        // 19-10 (lint): la autoasignación `window.X = window.X` era inocua y se
+        // retiró (no-self-assign). Lo que importa es que panel.js no exporte el
+        // nombre PELADO, que da ReferenceError en carga.
+        ok('1f · panel.js no exporta openCollectiveReport por su nombre pelado (ReferenceError en carga)',
+            !/=\s*openCollectiveReport\s*;/.test(panelOrigen));
     }
     if (IS_EXTRACTED) {
         const idxHtml = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');

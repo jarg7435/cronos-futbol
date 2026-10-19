@@ -325,8 +325,6 @@ const TrainingSync = (() => {
 
       localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(allWeeks));
 
-      if (count > 0) {
-      }
 
       return count;
     } catch (err) {
@@ -335,8 +333,7 @@ const TrainingSync = (() => {
       // tras la aprobacion). No es un fallo real: el sync se reintenta en el
       // siguiente arranque con el token ya refrescado. Se baja a console.debug
       // para no generar ruido de error en consola.
-      if (err && err.code === 'permission-denied') {
-      } else {
+      if (!(err && err.code === 'permission-denied')) {
         console.warn('[TrainingSync] Error descargando de Firestore:', err);
       }
       return 0;

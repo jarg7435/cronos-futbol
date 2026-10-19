@@ -237,7 +237,6 @@
 
     // Cuántas claves tiene un usuario (para el guard y para diagnosticar).
     function cronosClavesDeUsuario(uid) {
-        var O = window._cronosLocalOriginal;
         var todas = [];
         try { todas = Object.keys(localStorage); } catch (e) { return []; }
         var suf = SEP + String(uid || '');

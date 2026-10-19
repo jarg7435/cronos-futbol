@@ -1,67 +1,98 @@
-# 🛡️ Protección de datos — Chronos Fútbol (BORRADOR)
+# 🛡️ Protección de datos — Chronos Fútbol
 
-> **Qué es esto y qué no.** Es un borrador **técnico**, escrito midiendo el código y la
-> base de datos reales, para que lo revises y lo lleves a quien corresponda. **No es
-> asesoramiento jurídico**, y varias decisiones de este documento —sobre todo la base
-> jurídica y el papel de cada parte— las tiene que confirmar un profesional. Lo que sí
-> aporta: el inventario de verdad, y **cuatro sitios donde la política que ya publicas
-> promete algo que el código no hace**.
+| | |
+|---|---|
+| **Versión** | **2.0 — vigente** |
+| **Fecha** | 2026-10-19 · app v830 |
+| **Aprobada por** | José Alberto Romero García, titular de la plataforma |
+| **Sustituye a** | Borrador técnico v1 (2026-09-22, app v752) |
+| **Documentos públicos alineados** | `privacy.html` v2.0 · `encargo.html` v1.0 (Contrato de Encargado, art. 28) |
+
+> **Qué es este documento.** Es el registro **interno** de cómo trata datos personales
+> Chronos Fútbol, medido sobre el código y la base de datos reales. No se publica:
+> `firebase.json` excluye los `*.md` de Hosting. Lo que se informa al público está en
+> `privacy.html`, y lo que se acepta con cada club en `encargo.html`. **Los tres dicen
+> lo mismo**, y `scripts/test_politica_alineada.js` (parte 6) corta si dejan de
+> coincidir.
 >
-> Fecha del borrador: 2026-09-22 · versión de la app: v752
+> Lo que **no** sustituye: una revisión jurídica externa. Se recomienda que un asesor
+> revise `encargo.html` y la DPIA (Parte 9) antes de una operación comercial estable.
 
 ---
 
-## Parte 0 · Las cuatro discrepancias medidas (empieza por aquí)
+## Parte 0 · Estado de las discrepancias del borrador v1
 
-Esto es lo urgente: `privacy.html` ya está publicada y dice cosas que hoy no se cumplen.
-Una política que promete de más es peor que una incompleta.
+En el borrador del 22-09 se midieron cuatro promesas de `privacy.html` que el código
+no cumplía. **Las cuatro están cerradas:**
 
-| # | Lo que dice `privacy.html` | Lo que hace el código | Gravedad |
-|---|---|---|---|
-| **1** | §6: «Tras la baja del usuario o del club, los datos se eliminan en un plazo máximo de **30 días**» | `deleteUserData` borra **sólo** `users/{uid}` y `platform_requests`. Informes, mensajes, asistencia, enlaces jugador‑familia, tokens de notificación y sesiones **se quedan** | 🔴 **Alta** |
-| **2** | §5: «servidores en la **Unión Europea**» | Firestore sí (`eur3`: Bélgica + Países Bajos). Pero **las Cloud Functions corren en `us-central1` (Iowa, EE. UU.)** y procesan esos mismos datos | 🟠 Media |
-| **3** | §10: de los menores «solo se registra un nombre o alias y datos deportivos, **sin ningún dato identificativo adicional**» | Además hay dorsal, posición, asistencia con motivo, y **informes de TEXTO LIBRE** donde cabe cualquier cosa | 🟠 Media |
-| **4** | §1: el responsable «facilitará sus datos de contacto **a solicitud**» | El RGPD exige identificar al responsable **en la propia información**, no bajo petición | 🟡 Formal |
-
-**El #1 es el que yo arreglaría primero**, y es trabajo de código: o `deleteUserData`
-borra de verdad lo que promete, o la política deja de prometerlo. Hoy hay un tercer
-estado —promesa incumplida— que es el único que no vale.
+| # | Discrepancia (2026-09-22) | Estado |
+|---|---|---|
+| **1** | Borrado «en 30 días» con un `deleteUserData` que borraba dos cosas | ✅ v754b: purga en cascada (`functions/purga_usuario.js`), probada en producción; §6.1 de la política describe borrar / anonimizar / conservar |
+| **2** | «Servidores en la UE» con Functions en `us-central1` | ✅ La política lo dice: almacenamiento en `eur3`, procesamiento en EE. UU. con garantías |
+| **3** | Menores «sin ningún dato identificativo adicional» | ✅ §10 enumera dorsal, posición, asistencia con causa genérica e informes de texto libre |
+| **4** | Responsable «a solicitud» | ✅ El encargado se identifica en la política (§1.2) y en el contrato |
 
 ---
 
-## Parte 1 · Quién es quién
+## Parte 1 · Quién es quién (modelo vigente)
 
-El modelo que se desprende del producto (y que hay que confirmar):
+**Decidido por el titular el 2026-10-19.** Es el modelo habitual de una plataforma
+que presta servicio a clubes:
 
-- **Cada club o ente individual = RESPONSABLE del tratamiento.** Es quien decide
-  inscribir a sus jugadores, qué informes hace y a quién se los manda.
-- **Chronos Fútbol (tú, como operador) = ENCARGADO del tratamiento.** Tratas datos por
-  cuenta del club, siguiendo sus instrucciones.
-- **Google (Firebase) = SUBENCARGADO.**
+- **Cada club o ente individual = RESPONSABLE del tratamiento.** Decide inscribir a
+  sus jugadores, qué datos registra, qué informes elabora y a quién los envía.
+- **Chronos Fútbol (el titular) = ENCARGADO del tratamiento** (art. 28 RGPD). Trata
+  los datos por cuenta del club, sólo con sus instrucciones.
+- **Google (Firebase / Google Cloud) y el proveedor SMTP = SUBENCARGADOS**, con
+  autorización general del club en el contrato.
 
-👉 **Consecuencia práctica que hoy no existe: hace falta un CONTRATO DE ENCARGADO
-(art. 28 RGPD) firmado con cada club.** Sin él, el club está cediendo datos de menores a
-un tercero sin cobertura. Es un documento de una vez, reutilizable, y debería ser
-requisito para dar de alta un club nuevo.
+**Chronos es responsable propio sólo de** la relación con cada club (alta, contacto de
+su administrador, facturación) y de la seguridad de la plataforma (auditoría,
+antiabuso). No usa los datos de los clubes para fines propios. Si algún día lo hiciera,
+por ejemplo con estadísticas agregadas, en esa parte sería responsable y habría que
+decirlo antes de hacerlo.
 
-⚠️ Si en algún caso tú decides finalidades propias (por ejemplo, estadísticas agregadas
-para mejorar el producto), en esa parte serías **responsable**, no encargado. Conviene
-dejarlo escrito antes de hacerlo, no después.
+### Cómo se formaliza
+
+- **Contrato de Encargado: `encargo.html` (v1.0).** Recoge las cláusulas del art. 28.3:
+  - instrucciones;
+  - confidencialidad;
+  - seguridad;
+  - subencargados;
+  - derechos (traslado en 5 días hábiles);
+  - brechas (aviso al club en 48 h);
+  - asistencia;
+  - fin del contrato;
+  - auditoría.
+- **Aceptación en el alta.** Quien registra un club (`club_admin`) o un ente
+  (`individual`) debe marcar `#dpa-consent`. Sin marcarla, `doAuth` no deja continuar.
+  Queda registrado en `users/{uid}`:
+  - `dpaAccepted`;
+  - `dpaAcceptedAt`, la hora del servidor;
+  - `dpaVersion`.
+- **Política para todos los usuarios.** Cada usuario acepta `privacy.html`. Se guardan
+  `gdprConsent`, `gdprConsentDate` y `gdprConsentVersion`.
+- **Versiones.** `CRONOS_PRIVACY_VERSION` y `CRONOS_DPA_VERSION` en
+  `js/services/auth.js`. Se suben si el texto cambia de forma sustancial.
+
+⚠️ **Los clubes dados de alta antes del 19-10-2026 no han aceptado el contrato en la
+app.** Hay que recabarlo, por correo o con una aceptación en el primer acceso. Ver
+Parte 10.
 
 ---
 
-## Parte 2 · Registro de actividades de tratamiento
+## Parte 2 · Registro de actividades de tratamiento (por cuenta de los clubes)
 
-Inventario real: **40 colecciones raíz + 7 subcolecciones**, todas en
-`cronos-futbol-app`, base `(default)`, región **`eur3`**.
+Inventario real: **40 colecciones raíz + 7 subcolecciones**, en `cronos-futbol-app`,
+base `(default)`, región **`eur3`**.
 
 ### 2.1 · Contienen datos personales de MENORES
 
 | Colección | Qué guarda | Categoría |
 |---|---|---|
 | `players` | nombre/alias, dorsal, posición | Identificativo + deportivo |
-| `cronos_player_reports` | informes individuales y colectivos, **texto libre** | Deportivo + 🔴 riesgo art. 9 |
-| `clubs/*/attendance`, `attendance_players` | asistencia, faltas y **motivo** (`medico`) | 🟠 rozando salud |
+| `cronos_player_reports` | informes individuales y colectivos, **texto libre** | Deportivo + 🟠 riesgo art. 9 (mitigado, Parte 3) |
+| `clubs/*/attendance`, `attendance_players` | asistencia, faltas y causa genérica (`medico`) | 🟠 rozando salud, sin diagnóstico |
 | `clubs/*/team_rosters`, `team_archives` | plantillas por equipo | Identificativo |
 | `cronos_player_links` | vínculo jugador ↔ familiar | Relación familiar |
 | `matches`, `substitutions`, `events`, `formations` | minutos, cambios, sucesos | Deportivo |
@@ -72,16 +103,16 @@ Inventario real: **40 colecciones raíz + 7 subcolecciones**, todas en
 
 | Colección | Qué guarda |
 |---|---|
-| `users` | correo, nombre, rol, club, plazas (`allRoles`) |
-| `clubs`, `individuals` | nombre de la entidad, **`adminEmail`**, `adminUid` |
-| `invites` | correo del invitado, rol, club, caducidad |
-| `cronos_messages`, `cronos_staff_messages`, `cronos_staff_threads`, `cronos_staff_channel` | **contenido de conversaciones**, incluidas familia ↔ entrenador |
+| `users` | correo, nombre, rol, club, plazas (`allRoles`), aceptaciones legales |
+| `clubs`, `individuals` | nombre de la entidad, `adminEmail`, `adminUid` |
+| `invites` | correo del invitado, rol, club, caducidad (token opaco, 14 días, un uso) |
+| `cronos_messages`, `cronos_staff_messages`, `cronos_staff_threads`, `cronos_staff_channel` | contenido de conversaciones |
 | `platform_requests`, `slot_requests`, `succession_requests`, `deletion_requests` | solicitudes de alta y baja |
-| `billing_invoices`, `billing_subscriptions`, `billing_plans` | facturación |
+| `billing_invoices`, `billing_subscriptions`, `billing_plans` | facturación *(Chronos responsable)* |
 | `push_tokens` | identificador de dispositivo |
-| `audit_logs`, `error_logs`, `auth_deletion_failures` | rastro de acciones y fallos |
+| `audit_logs`, `error_logs`, `auth_deletion_failures` | rastro de acciones y fallos *(Chronos responsable: seguridad)* |
 | `cronos_role_sessions` | sesión activa por plaza |
-| `users/*/cronos_data`, `users/*/sa_privado` | datos privados, incluido el **motivo de una baja** |
+| `users/*/cronos_data`, `users/*/sa_privado` | datos privados, incluido el motivo de una baja |
 
 ### 2.3 · Sin datos personales (o derivados públicos)
 
@@ -91,238 +122,149 @@ Inventario real: **40 colecciones raíz + 7 subcolecciones**, todas en
 
 ---
 
-## Parte 3 · Menores: lo que está bien y lo que falta
+## Parte 3 · Menores
 
-### ✅ Lo que ya se hizo bien, y conviene saber defenderlo
+### Lo que está hecho
 
-**No existe la causa «enfermedad».** Está escrito en
-`js/coach/attendance/attendance-store.js:64`:
+- **No existe la causa «enfermedad».** Ver `js/coach/attendance/attendance-store.js`.
+  Hay una causa genérica `medico`, sin texto libre.
+- **Aviso en el formulario.** El comentario del suceso dice «No anotes datos de salud»
+  en un bloque propio, no en el `placeholder`. Al guardar se pide confirmación si el
+  texto contiene términos médicos. Ver `js/match/events/retroactive-modal.js`.
+- **Instrucción escrita al club** en el contrato (`encargo.html` §6): los informes son
+  deportivos, no médicos.
+- Fuera el teléfono con WhatsApp (v671). La Fase 1b retiró la exposición del correo
+  del administrador.
+- **Las familias no teclean códigos** (v824). El entrenador asigna el jugador a cada
+  familia aprobada.
 
-> *«El estado de salud de un menor es categoría especial del RGPD (art. 9). Se dejó una
-> causa genérica `medico` que cubre lesión y enfermedad sin registrar el diagnóstico, y
-> no hay texto libre donde poder escribirlo.»*
+### Consentimiento y patria potestad (responsabilidad del club)
 
-Las cuatro causas son `estudios`, `trabajo`, `medico`, `otros`. Es una decisión de
-minimización tomada a conciencia y **es un argumento a tu favor** ante cualquier revisión.
-
-También: se retiró el teléfono con WhatsApp (v671), y la Fase 1b acaba de eliminar la
-exposición del correo del administrador.
-
-### 🔴 El riesgo que queda: el texto libre
-
-`cronos_player_reports` y los mensajes son **campos abiertos**. Nada impide que un
-entrenador escriba *«no vino, sigue con la lesión de rodilla»*. Eso es un dato de salud de
-un menor, en texto libre, dentro de un informe que además **se comparte** con el cuerpo
-técnico y con la familia.
-
-No se arregla sólo con tecnología. Lo que propongo:
-
-1. **Un aviso en el propio formulario** de informe: «No escribas diagnósticos médicos ni
-   datos de salud». Barato y eficaz.
-2. **Instrucción escrita al club** (va en el contrato de encargado): el informe es
-   deportivo, no médico.
-3. Valorar una **retención más corta** para los informes con texto libre.
-
-### Consentimiento y patria potestad
-
-- Los menores **no se registran solos**: los inscribe el club o entra la familia con un
-  código de invitación. Está bien planteado.
-- Lo que **falta**: dejar constancia de que la **familia ha sido informada** y, cuando
-  proceda, ha autorizado. Hoy no hay ningún registro de eso.
-- En España, para servicios de la sociedad de la información, **por debajo de 14 años** el
-  consentimiento lo da quien ejerce la patria potestad (LOPDGDD art. 7). En fútbol base
-  eso es la mayoría de los jugadores.
+Los menores no se registran solos: los inscribe el club. Con el modelo vigente,
+**informar a las familias y recabar el consentimiento** de quien ejerce la patria
+potestad de los menores de 14 años (LOPDGDD art. 7) cuando la base sea el
+consentimiento, **es obligación del club**. Lo recoge `encargo.html` §6.
 
 ---
 
-## Parte 4 · Base jurídica (propuesta, a confirmar)
+## Parte 4 · Base jurídica (la decide cada club; la orientación es ésta)
 
-| Tratamiento | Base propuesta | Comentario |
+| Tratamiento | Base habitual |
+|---|---|
+| Gestión deportiva (convocatorias, minutos, asistencia) | Ejecución de contrato (relación con el club) / interés legítimo |
+| Comunicación club ↔ familia | Ejecución de contrato / interés legítimo |
+| Informes individuales del jugador | Interés legítimo, con información clara a la familia |
+| Cuentas de usuario y acceso | Ejecución de contrato |
+| Facturación *(Chronos)* | Obligación legal |
+| Notificaciones push | Consentimiento (permiso del dispositivo) |
+| Auditoría y antiabuso *(Chronos)* | Interés legítimo (seguridad) |
+
+`privacy.html` §4 recoge estas bases. El consentimiento queda **sólo** para lo opcional.
+
+---
+
+## Parte 5 · Subencargados y transferencias
+
+| Proveedor | Servicio | Dónde |
 |---|---|---|
-| Gestión deportiva del equipo (convocatorias, minutos, asistencia) | **Interés legítimo** del club, o **ejecución de contrato** con el socio | Es la actividad propia del club |
-| Comunicación club ↔ familia | Ejecución de contrato / interés legítimo | |
-| Informes individuales del jugador | Interés legítimo, **con información clara a la familia** | Si entra texto sensible, decae |
-| Cuentas de usuario y acceso | Ejecución de contrato | |
-| Facturación | **Obligación legal** | |
-| Notificaciones push | **Consentimiento** | Es un permiso del dispositivo |
-| Registro de auditoría | Interés legítimo (seguridad) | |
+| Google (Firebase) | Firestore | `eur3`, UE ✅ |
+| Google | Cloud Functions | `us-central1`, EE. UU. Lo declaran la política §5 y el contrato §5, con CCT y el marco de adecuación |
+| Google | Firebase Auth | global (no se elige región) |
+| Google | Cloud Scheduler, Hosting | — |
+| Google reCAPTCHA | App Check | IP y señales del navegador |
+| Firebase Cloud Messaging | notificaciones push | — |
+| Gmail / SMTP (nodemailer) | correos de invitación | credenciales en Secret Manager ✅ |
 
-⚠️ **El consentimiento no es la mejor base para casi nada de esto**, y es un error común:
-si el club necesita los datos para funcionar, no puede pedir un consentimiento que en
-realidad no se puede retirar sin dejar de jugar. La información, en cambio, es obligatoria
-siempre.
-
----
-
-## Parte 5 · Encargados y transferencias
-
-| Proveedor | Servicio | Dónde | Qué hace falta |
-|---|---|---|---|
-| Google (Firebase) | Firestore | **`eur3`** — UE ✅ | DPA de Google (ya aplica al usar el servicio) |
-| Google | **Cloud Functions** | 🟠 **`us-central1` — EE. UU.** | Ver abajo |
-| Google | Firebase Auth | global (no se elige región) | Correo y hash de contraseña |
-| Google | Cloud Scheduler, Hosting | — | |
-| Google reCAPTCHA | App Check | — | IP y señales del navegador |
-| Firebase Cloud Messaging | notificaciones push | — | |
-| Gmail / SMTP (nodemailer) | correos de invitación | — | Credenciales en Secret Manager ✅ |
-
-### 🟠 La discrepancia nº 2, en detalle
-
-Los datos **reposan** en la UE, pero **se procesan** en Iowa cada vez que corre una
-función: aprobar un alta, borrar una cuenta, enviar una invitación, asignar claims.
-`privacy.html` dice «servidores en la Unión Europea» sin matizarlo.
-
-**Dos salidas, y la primera es mejor:**
-
-1. **Mover las funciones a `europe-west1`.** Técnicamente es cambiar la región y
-   redesplegar. ⚠️ No es gratis: las funciones se **recrean**, y hay que revisar que
-   ningún disparador se pierda por el camino. Es un trabajo acotado y yo lo puedo hacer.
-2. **Corregir la política** para decir la verdad: almacenamiento en la UE, procesamiento
-   en EE. UU. al amparo del DPA de Google y el marco de adecuación vigente.
-
-Lo que no vale es dejarlo como está.
+Mejora posible, no obligatoria: mover las Functions a `europe-west1`. Las funciones se
+recrean al moverlas, así que hay que planificarlo.
 
 ---
 
 ## Parte 6 · Conservación y supresión
 
-### Lo que YA caduca solo ✅
-
-| Dato | Plazo | Quién lo hace |
+| Dato | Plazo | Mecanismo |
 |---|---|---|
 | `live_matches` | 10 h tras el partido | `cleanupLiveMatches` (cada 60 min) |
 | Solicitudes de plaza caducadas | — | `cleanupExpiredRequests` (cada 24 h) |
-| `invites` | **14 días** y un solo uso | Regla + `CRONOS_INVITE_DIAS` |
-| Copias de Firestore | 7 días | Programación diaria (Fase 5) |
+| `invites` | 14 días, un solo uso | reglas + `CRONOS_INVITE_DIAS` |
+| Enlaces de invitación antiguos con datos en la URL | caducados el 2026-10-07 | v828 |
+| Copias de Firestore | 7 días | programación diaria |
 | PITR | 7 días | — |
-
-### 🔴 La discrepancia nº 1, en detalle
-
-`deleteUserData` (`functions/index.js:633`) se dispara al borrar la cuenta de Auth y
-borra **exactamente dos cosas**:
-
-```js
-await admin.firestore().collection('users').doc(uid).delete();
-// + los platform_requests con ese uid
-```
-
-**Se quedan**: `cronos_player_reports`, `cronos_messages` y los hilos de staff,
-`clubs/*/attendance*`, `cronos_player_links`, `push_tokens`, `cronos_role_sessions`,
-`users/{uid}/cronos_data`, `users/{uid}/sa_privado`, `pseudonym_map`, `audit_logs`.
-
-> **✅ Estado a 2026-09-23 (v754b):** cerrado. La cascada vive en
-> `functions/purga_usuario.js` (tabla `PLAN`) y está **probada en producción** con una
-> cuenta de juguete. Esa prueba destapó tres cosas más, ya corregidas: los avisos
-> recibidos/enviados (`cronos_notifications`) no estaban en el plan; `syncUserChanges`
-> volvía a guardar el **correo** en `notifications` (`user_deleted`) justo después de la
-> purga; y un documento que coincidía por dos campos tumbaba el lote atómico entero.
-
-La política promete 30 días para todo. **Hay que cerrar la brecha por uno de los dos
-lados**, y mi recomendación es ampliar la función:
-
-- Borrado **en cascada** de lo que es puramente de esa persona.
-- **Seudonimización** de lo que no se puede borrar sin destruir información legítima de
-  terceros (un mensaje en un hilo compartido, un informe colectivo): sustituir al autor
-  por «Usuario eliminado» en vez de borrar el hilo entero.
-- `audit_logs` y `billing_*` **se conservan** por obligación legal y trazabilidad — pero
-  eso hay que **decirlo** en la política, que hoy no lo dice.
-
-Plazos que propongo declarar:
-
-| Dato | Plazo |
-|---|---|
-| Cuenta y perfil | Borrado en **30 días** desde la baja |
-| Informes y asistencia | Fin de temporada + **1 año**, o borrado a petición del club |
-| Mensajes | **2 años** |
-| Auditoría | **3 años** (seguridad) |
-| Facturación | **6 años** (obligación mercantil) |
+| Baja de una cuenta | borrar / anonimizar («Usuario eliminado») / conservar | `functions/purga_usuario.js` (tabla `PLAN`) |
+| `audit_logs`, `billing_*` | plazos legales | se conservan |
+| Baja de un club | supresión tras exportar; las copias caducan en 7 días | `encargo.html` §7 |
 
 ---
 
 ## Parte 7 · Derechos de los interesados
 
-| Derecho | ¿Se puede hoy? | Qué falta |
-|---|---|---|
-| **Acceso** | Parcial — hay exportación de informes a TXT/PDF | Un procedimiento que reúna **todo** lo de una persona |
-| **Rectificación** | Sí, desde los paneles | — |
-| **Supresión** | 🔴 Incompleta (Parte 6) | Ampliar `deleteUserData` |
-| **Oposición** | No formalizada | Procedimiento |
-| **Limitación** | No existe | Valorar un estado «tratamiento limitado» |
-| **Portabilidad** | Parcial (TXT) | Formato estructurado y reutilizable (JSON/CSV) |
-| **No decisiones automatizadas** | No aplica | La app no perfila automáticamente |
+- **Quién responde:** el club, como responsable. Si la solicitud llega a Chronos, se
+  traslada al club en **5 días hábiles** y Chronos le ayuda a atenderla (`encargo.html`
+  §4). Plazo de respuesta: **un mes** (art. 12).
 
-**Procedimiento propuesto:** un correo de contacto único y visible, plazo de respuesta de
-**un mes**, identificación del solicitante, y **registro de cada solicitud y su respuesta**
-(sin eso, no se puede demostrar que se atendió).
-
-⚠️ Ojo: la solicitud de una familia llega normalmente **al club**, no a ti. El contrato de
-encargado tiene que decir cómo te la traslada y en cuánto tiempo.
+| Derecho | Medio en la plataforma |
+|---|---|
+| Acceso | paneles + exportación de informes (TXT/PDF) |
+| Rectificación | paneles |
+| Supresión | baja con purga en cascada |
+| Oposición / limitación | por solicitud, gestionada por el club |
+| Portabilidad | exportación (pendiente: formato JSON/CSV estructurado) |
+| Decisiones automatizadas | no aplica: la app no perfila |
 
 ---
 
 ## Parte 8 · Incidentes y brechas
 
-**Plazo legal: 72 horas** desde que se tiene conocimiento, para notificar a la AEPD si hay
-riesgo para los derechos de las personas. Si el riesgo es alto, además a los afectados.
-
-Lo que hay que tener escrito **antes** de necesitarlo:
-
-1. **Quién decide** que algo es una brecha (tú, como operador).
-2. **Cómo se detecta.** Hoy: `error_logs`, `audit_logs`, los registros de Cloud Logging y
-   el aviso de un usuario. No hay alertas automáticas — es una carencia conocida.
-3. **Qué se hace primero**: contener (revocar sesiones, cerrar la regla, desplegar),
-   **sin destruir el rastro**.
-4. **Registro de la brecha**, se notifique o no. Esto es obligatorio siempre.
-5. **Cómo se avisa a los clubes afectados.**
-6. **Recuperación**: ya existe, es `RECUPERACION.md`.
-
-👉 Sugiero un `INCIDENTES.md` corto, con la plantilla del registro. Lo puedo redactar.
+- **Plazos:** el encargado avisa al club en **48 h**, y el club notifica a la AEPD en
+  **72 h** si hay riesgo.
+- **Detección hoy:** `error_logs`, `audit_logs`, Cloud Logging y avisos de usuarios.
+  No hay alertas automáticas; es una carencia conocida (P1 de la reauditoría).
+- **Primero se contiene, sin destruir el rastro:**
+  - revocar sesiones;
+  - cerrar la regla;
+  - desplegar.
+- **Registro de cada brecha, se notifique o no.**
+- **Recuperación:** `RECUPERACION.md`.
 
 ---
 
 ## Parte 9 · Evaluación de impacto (DPIA)
 
-**Mi lectura: sí hace falta.** No por una sola razón, sino porque se juntan tres de los
-criterios que la disparan:
+**Necesaria**, porque coinciden tres criterios:
+- datos de **menores**;
+- **evaluación sistemática** (minutos, asistencia, informes de rendimiento);
+- datos que **rozan la salud**.
 
-- tratamiento de **datos de menores** a escala,
-- **evaluación sistemática** de aspectos personales (minutos, asistencia, informes de
-  rendimiento),
-- **datos que rozan la salud** (motivo `medico`, y el texto libre).
-
-No es un trámite enorme para un proyecto de este tamaño, y tiene una ventaja: obliga a
-escribir lo que ya sabemos. Buena parte del material está en este documento y en el
-dictamen de auditoría.
+Como Chronos es encargado, la DPIA **corresponde al club**, con la asistencia de Chronos
+(`encargo.html` §4). Chronos debería preparar una **DPIA tipo** del servicio que cada
+club pueda adoptar. Para ello sirve el material de este documento.
 
 ---
 
-## Parte 10 · Plan de trabajo
+## Parte 10 · Estado del plan
 
-| # | Tarea | Quién | Esfuerzo |
-|---|---|---|---|
-| 1 | Ampliar `deleteUserData` (cascada + seudonimización) | **Yo** | Medio |
-| 2 | Corregir `privacy.html`: transferencias, retención real, responsable identificado, matizar §10 | Tú + yo | Bajo |
-| 3 | Contrato de encargado, requisito para alta de club | Tú (con asesor) | Medio |
-| 4 | Aviso «no escribas datos de salud» en el formulario de informe | **Yo** | Bajo |
-| 5 | Procedimiento de derechos + registro de solicitudes | Tú | Bajo |
-| 6 | `INCIDENTES.md` con plantilla de registro | **Yo** | Bajo |
-| 7 | Decidir sobre `us-central1`: mover funciones o corregir la política | Tú decide, yo ejecuto | Medio |
-| 8 | DPIA | Tú (con asesor) | Medio |
-| 9 | Registro de información a familias / autorización | Tú | Medio |
-
-**Orden que propongo:** 1, 2 y 4 primero — son código y texto, los hago yo, y cierran la
-brecha entre lo prometido y lo real. El 3 y el 9 son los que de verdad te protegen a ti
-frente a un club. El 8 va al final, cuando el resto esté escrito.
+| # | Tarea | Estado |
+|---|---|---|
+| 1 | Purga en cascada al darse de baja | ✅ v754b |
+| 2 | `privacy.html` veraz: transferencias, retención, identificación | ✅ v1.1 (23-09) → v2.0 (19-10, modelo club responsable) |
+| 3 | Contrato de encargado como requisito del alta | ✅ `encargo.html` + casilla obligatoria (v830). ⏳ **Recabar la aceptación de los clubes existentes** |
+| 4 | Aviso «no anotes datos de salud» | ✅ |
+| 5 | Procedimiento de derechos | ✅ definido (Parte 7). ⏳ Registro de solicitudes atendidas |
+| 6 | `INCIDENTES.md` con plantilla de registro | ⏳ |
+| 7 | `us-central1` | ✅ declarado. Mover a `europe-west1` es opcional |
+| 8 | DPIA tipo para los clubes | ⏳ con asesor |
+| 9 | Información a familias / autorización | Responsabilidad del club (`encargo.html` §6) |
+| 10 | Revisión jurídica externa de `encargo.html` | ⏳ recomendada |
 
 ---
 
-## Anexo · Cómo se ha medido esto
+## Anexo · Fuentes medidas
 
-Nada de este documento es genérico. Procede de:
-
-- `firestore.rules` (las 40 colecciones + 7 subcolecciones)
-- la API de Firestore, para la región: `locationId: eur3`
-- `functions/index.js` para la región de las funciones y para `deleteUserData`
-- `js/coach/attendance/attendance-store.js` para las causas de falta
-- `privacy.html` para las cuatro discrepancias
-- la exportación de Auth del 2026-09-22: **10 cuentas, 7 con custom claims**
+- `firestore.rules`: las 40 colecciones y 7 subcolecciones.
+- API de Firestore: `locationId: eur3`.
+- `functions/index.js`: región de las funciones.
+- `functions/purga_usuario.js`: la purga.
+- `js/coach/attendance/attendance-store.js`: las causas de falta.
+- `js/services/auth.js`: las aceptaciones (`_gdprConsentFields`, `CRONOS_*_VERSION`).
+- `scripts/test_politica_alineada.js`: el guard que ata política, contrato, este documento
+  y el código.

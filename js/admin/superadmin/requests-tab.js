@@ -146,7 +146,7 @@ window.saRequests = async function saRequests() {
     if (!body) return;
     body.innerHTML = `<div style="text-align:center;padding:2.5rem;color:#8b949e;"><div style="font-size:1.6rem;">⏳</div>Cargando solicitudes…</div>`;
     try {
-        const { db, collection, query, where, getDocs, orderBy } = await saFS();
+        const { db, collection, query, where, getDocs } = await saFS();
         // FIX: Buscar TAMBIÉN users con status 'pending_individual' (sub-usuarios de ente individual
         // que aún no han sido reenviados) y 'pending_club_admin' (usuarios que necesitan club admin)
         // para dar visibilidad completa al SA.
@@ -968,7 +968,7 @@ window.saApproveRequest = async function saApproveRequest(id, type, approve) {
                 _saToast('❌ Solicitud rechazada.', 3000);
             }
         } else if (type === 'club_admin_succession') {
-            const { collection, getDocs, query, where, deleteDoc, httpsCallable: _httpsCallable } = await saFS();
+            const { collection, getDocs, query, where, deleteDoc } = await saFS();
             const srSnap = await getDoc(doc(db,'succession_requests',id));
             if (!srSnap.exists()) throw new Error('Solicitud de sucesión no encontrada');
             const sr = srSnap.data();

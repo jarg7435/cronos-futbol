@@ -835,7 +835,6 @@ async function openParentPanel(initialTab) {
 
                 const isConv   = (n.type === 'convocatoria');
                 const isReport = (n.type === 'informe_partido');
-                const isWeekly = (n.type === 'planificacion_semanal');
                 const accent = isConv ? '#3fb950' : (isReport ? '#d2a8ff' : '#58a6ff');
                 const icon   = isConv ? '📋' : (isReport ? '📊' : '📅');
                 const title  = isConv ? 'Convocatoria' : (isReport ? 'Informe Rendimiento' : 'Entrenamiento');

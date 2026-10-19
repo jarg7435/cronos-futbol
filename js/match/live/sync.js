@@ -1388,21 +1388,6 @@ async function _emiteLatido(status = 'active') {
         // incluyéramos aquí, sobrescribiríamos el array acumulado por arrayUnion.
         // El arrayUnion añade sin sobrescribir; setDoc merge reemplaza arrays enteros.
 
-        // v230: si el snapshot no tiene la marca de tiempo del partido actual,
-        // calcularla a partir de masterTimeH1/masterTimeH2/matchPhase.
-        const _currentMatchMinute = (() => {
-            try {
-                const h1 = (typeof masterTimeH1 !== 'undefined') ? masterTimeH1 : 0;
-                const h2 = (typeof masterTimeH2 !== 'undefined') ? masterTimeH2 : 0;
-                const phase = (typeof matchPhase !== 'undefined') ? matchPhase : '1st_half';
-                const total = (phase === '2nd_half' || phase === 'finished') ? (h1 + h2) : h1;
-                const part = (phase === '2nd_half' || phase === 'finished') ? '2T' : '1T';
-                const m = Math.floor(total / 60).toString().padStart(2, '0');
-                const s = (total % 60).toString().padStart(2, '0');
-                return part + ' ' + m + ':' + s;
-            } catch(e) { return ''; }
-        })();
-
         // v224: log silenciado en producción (era de diagnóstico v221/v222).
         // console.log('[sync v221] Snapshot enviado. timerThresholds=', snapshot.timerThresholds,
         //             '| half1Max=', snapshot.half1MaxTime, '| half2Max=', snapshot.half2MaxTime,

@@ -77,6 +77,37 @@ function globalesDelProyecto() {
     return Object.fromEntries([...nombres].map(n => [n, 'writable']));
 }
 
+// ─────────────────────────────────────────────────────────────────────────
+//  📉 AVISOS: 112 → 34 (reauditoría del 19-10). Se retiraron los que se
+//  podían quitar SIN cambiar el comportamiento: nombres de SDK importados y
+//  no usados, cálculos puros sin lector, bloques `if {}` vacíos, `window.X =
+//  window.X`, escapes de más y `obj.hasOwnProperty`. `npm run lint` lleva
+//  `--max-warnings 34`: un aviso NUEVO corta la puerta igual que un error.
+//
+//  LOS 34 QUE QUEDAN SON DELIBERADOS (no tocar sin leer esto):
+//   · 16 no-redeclare · superadmin.panel.js (borrado de usuario): `var` en
+//     ramas hermanas de la misma función. Legal y sin efecto en ejecución.
+//   · 6 · club/panel.js `userRow` (+ su uid y 3 escapes) y `_slotKey`: código
+//     MUERTO desde el 25-06 (lo sustituyó `_userRowHtml`), pero tres guards
+//     (test_baja_por_plaza_y_alta_club 1a/1b, test_ningun_aprobar_pierde_plazas
+//     5g, test_baja_es_revocacion) aún lo leen. Se retira junto con el arreglo
+//     de «➖ Quitar del equipo», que hoy no pasa la plaza (hallazgo del 19-10).
+//   · 2 · utils.js `existing`: lo usa el contrafactual de
+//     test_livematchid_idempotency (C1) para demostrar por qué NO reutilizar.
+//   · 1 · individual-reports.js `miDismissed`: fijado por su guard (2l).
+//   · 2 · parent/panel.js `_ppTabAttrs`/`_ppTabLock`: conservados a propósito
+//     (ver el comentario v591 de ese fichero).
+//   · 1 · auth.js `_showMultiRolePicker`: conservado a propósito (ver
+//     test_sa_cambiar_rol / test_role_launch_module).
+//   · 4 · posibles funciones a medio cablear, a revisar con el autor, NO a
+//     borrar a ciegas: extras.js `fallaBajas` (¿avisar en pantalla?),
+//     whatsapp-email.js `maxSlots` (cupo de convocados calculado y no
+//     aplicado), match-reports-send.js `selectedPlayerIds`,
+//     match-reports-auto.js `isRecipientAuthorized`.
+//   · 1 · sprint3-tests.js `passed`: contador de un autotest de consola.
+//   · 1 · functions/index.js `beforeKeys`: tocar functions exige desplegarlas.
+// ─────────────────────────────────────────────────────────────────────────
+
 // Estéticas o inofensivas en ejecución: se ven, pero no cortan.
 const AVISOS = {
     'no-unused-vars': ['warn', { vars: 'local', args: 'none', caughtErrors: 'none' }],

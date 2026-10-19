@@ -381,7 +381,7 @@ window._sendCollectiveReportNow = async function() {
     const text  = window._collectiveReportText  || '';
     if (typeof showSpinner==='function') showSpinner('Enviando informe colectivo…');
     try {
-        const { db, doc, setDoc, updateDoc, getDoc, arrayUnion } = await _cFS();
+        const { db, doc, setDoc, updateDoc, arrayUnion } = await _cFS();
         // Fallback: si el panel no precargó el staff, recargarlo aquí.
         if (!staff.length) {
             try {

@@ -1600,8 +1600,8 @@
                     const chips = pitchPlayersEl.querySelectorAll('.replay-player');
                     chips.forEach(chip => {
                         const style = chip.getAttribute('style') || '';
-                        const leftM = style.match(/left:\s*([\d\.]+)%/);
-                        const topM = style.match(/top:\s*([\d\.]+)%/);
+                        const leftM = style.match(/left:\s*([\d.]+)%/);
+                        const topM = style.match(/top:\s*([\d.]+)%/);
                         if (leftM && topM) {
                             const pctX = parseFloat(leftM[1]) / 100;
                             const pctY = parseFloat(topM[1]) / 100;
@@ -1611,7 +1611,6 @@
 
                             // v446 · TODO SALE DE LOS `data-*`, no del CSS.
                             const d = chip.dataset || {};
-                            const numTxt  = d.num  || '';
                             const nameTxt = d.name || '';
                             const timeTxt = d.time || '';
 

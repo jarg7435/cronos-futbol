@@ -140,7 +140,7 @@
   <section class="hero">
     <img src="public/assets/logo.png" alt="CHRONOS FÚTBOL">
     <h1>CHRONOS FÚTBOL</h1>
-    <p>Política de Privacidad · Última actualización: 23 de septiembre de 2026</p>
+    <p>Política de Privacidad · Última actualización: 19 de octubre de 2026</p>
   </section>
 
 <div class="container">
@@ -150,29 +150,29 @@
   </div>
 
   <!-- 1 -->
-  <h2>1. Responsable del tratamiento</h2>
+  <h2>1. Quién trata sus datos: responsable y encargado</h2>
   <!-- ══════════════════════════════════════════════════════════════════
-       ✅ Datos del responsable completados el 2026-09-23 (Fase 4).
-          El RGPD (arts. 13-14) exige que el responsable se IDENTIFIQUE en la
-          propia informacion, no «a solicitud», que es lo que decia antes.
-
-       ⚠️⚠️ QUEDA ABIERTA UNA DECISION JURIDICA, que no es un hueco de texto:
-       el parrafo siguiente dice que cada CLUB es «encargado del tratamiento».
-       Lo habitual en una plataforma como esta es justo al reves —el club
-       decide inscribir a sus jugadores y para que, luego el club es
-       RESPONSABLE y la plataforma ENCARGADO—, y de ello depende quien firma
-       que con quien y quien responde ante la AEPD.
-       NO SE HA CAMBIADO AQUI A PROPOSITO: es una decision para un asesor,
-       no para un ajuste de texto. Ver PROTECCION_DATOS.md, Parte 1.
+       Modelo de roles decidido por el titular el 2026-10-19 (reauditoría
+       del 19-10): CLUB = RESPONSABLE · CHRONOS = ENCARGADO (art. 28) ·
+       Google = SUBENCARGADO. Es el mismo modelo que PROTECCION_DATOS.md
+       (Parte 1) y que el Contrato de Encargado (encargo.html) que acepta
+       cada club al darse de alta. Si se cambia aquí, se cambia en los tres
+       sitios: test_politica_alineada.js (parte 6) lo vigila.
        ══════════════════════════════════════════════════════════════════ -->
-  <p>El responsable del tratamiento de los datos recogidos a través de CHRONOS FÚTBOL es el propietario y operador de la plataforma (en adelante, <strong>SuperAdministrador</strong>), con los siguientes datos identificativos:</p>
+  <h3>1.1 El club o entidad: responsable del tratamiento</h3>
+  <p>Cada <strong>club o entidad individual</strong> que utiliza CHRONOS FÚTBOL es el <strong>responsable del tratamiento</strong> de los datos de su organización: sus jugadores (incluidos menores), sus familias, su cuerpo técnico y su personal. Es el club quien decide inscribir a sus jugadores, qué datos registra, qué informes elabora y a quién los envía. Los datos de contacto del responsable son los de su club; puede pedírselos al propio club o a su administrador dentro de la aplicación.</p>
+
+  <h3>1.2 CHRONOS FÚTBOL: encargado del tratamiento</h3>
+  <p>El titular de la plataforma presta el servicio <strong>por cuenta de cada club</strong>, como <strong>encargado del tratamiento</strong> (art. 28 RGPD), y trata esos datos únicamente siguiendo las instrucciones del club, conforme al <a href="encargo.html" style="color:var(--primary)">Contrato de Encargado del Tratamiento</a> que el club acepta al darse de alta:</p>
   <ul>
     <li><strong>Titular:</strong> José Alberto Romero García</li>
     <li><strong>NIF:</strong> 52834815C</li>
     <li><strong>Domicilio:</strong> Calle Adeje 70, Cruce de Arinaga, 35118 Agüimes, Las Palmas (Gran Canaria), España</li>
     <li><strong>Correo de contacto en materia de protección de datos:</strong> <a href="mailto:jarg7435@gmail.com" style="color:var(--primary)">jarg7435@gmail.com</a></li>
   </ul>
-  <p>Cada club o entidad individual que utilice CHRONOS FÚTBOL actúa como <strong>encargado del tratamiento</strong> de los datos de sus propios usuarios (entrenadores, padres, directores deportivos y coordinadores).</p>
+
+  <h3>1.3 Lo que CHRONOS FÚTBOL trata como responsable propio</h3>
+  <p>Fuera del encargo, el titular es responsable únicamente de lo imprescindible para operar la plataforma: la <strong>relación con cada club</strong> (alta, datos de contacto de su administrador y facturación) y la <strong>seguridad de la plataforma</strong> (registros de auditoría y protección antiabuso). No utiliza los datos de los clubes para finalidades propias, no los cede ni los usa con fines comerciales.</p>
 
   <!-- 2 -->
   <h2>2. Datos que recogemos</h2>
@@ -215,12 +215,15 @@
 
   <!-- 4 -->
   <h2>4. Base legal del tratamiento</h2>
+  <p>La base jurídica de los tratamientos de cada club la determina el propio club como responsable. Con carácter general son:</p>
   <ul>
-    <li><strong>Consentimiento</strong> (Art. 6.1.a RGPD): el usuario presta su consentimiento al registrarse en la plataforma.</li>
-    <li><strong>Ejecución de un contrato</strong> (Art. 6.1.b RGPD): necesario para prestar el servicio de gestión deportiva.</li>
-    <li><strong>Interés legítimo</strong> (Art. 6.1.f RGPD): generación de informes deportivos para el seguimiento del desarrollo de los jugadores.</li>
+    <li><strong>Ejecución de un contrato</strong> (Art. 6.1.b RGPD): la relación del jugador, la familia o el miembro del cuerpo técnico con su club (inscripción, convocatorias, minutos, asistencia y comunicaciones).</li>
+    <li><strong>Interés legítimo</strong> (Art. 6.1.f RGPD): los informes deportivos para el seguimiento del desarrollo de los jugadores y la seguridad de la plataforma.</li>
+    <li><strong>Obligación legal</strong> (Art. 6.1.c RGPD): la conservación de los datos de facturación.</li>
+    <li><strong>Consentimiento</strong> (Art. 6.1.a RGPD): sólo para lo que es verdaderamente opcional, como las notificaciones en el dispositivo.</li>
   </ul>
-  <p>Para el tratamiento de datos de menores de 14 años, se requiere el consentimiento del padre, madre o tutor legal, conforme al Art. 8 RGPD y Art. 7 LOPDGDD.</p>
+  <p>Para los menores de 14 años, cuando el tratamiento se base en el consentimiento, éste debe darlo el padre, madre o tutor legal (Art. 8 RGPD y Art. 7 LOPDGDD). Corresponde al club, como responsable, recabarlo e informar a las familias antes de registrar datos del menor.</p>
+  <p>Al registrarse, cada usuario declara haber leído esta política; esa aceptación queda registrada con su fecha y versión.</p>
 
   <!-- 5 -->
   <h2>5. Destinatarios y transferencias</h2>
@@ -228,7 +231,8 @@
   <p>Determinadas operaciones automáticas —aprobar un alta, enviar una invitación, eliminar una cuenta o las tareas de limpieza programadas— se ejecutan mediante <strong>Google Cloud Functions</strong>, cuya región actual es <code>us-central1</code> (<strong>Estados Unidos</strong>). Esto supone un <strong>tratamiento de datos fuera del Espacio Económico Europeo</strong>, amparado en el contrato de encargado de Google y en las garantías previstas por el RGPD (Cláusulas Contractuales Tipo y el marco de adecuación vigente).</p>
   <p>El servicio de autenticación (<strong>Firebase Authentication</strong>), que custodia el correo electrónico y la contraseña cifrada, no permite elegir región.</p>
   <p>Se utilizan además <strong>Google reCAPTCHA</strong> (protección antiabuso), <strong>Firebase Cloud Messaging</strong> (avisos) y un <strong>proveedor de correo SMTP</strong> (envío de invitaciones).</p>
-  <p>No se ceden datos a terceros salvo obligación legal.</p>
+  <p>Google (Firebase y Google Cloud) actúa como <strong>subencargado</strong> del tratamiento, con la autorización general que el club otorga en el Contrato de Encargado.</p>
+  <p>Dentro de cada club, los datos sólo los ven las personas que el club autoriza según su rol (por ejemplo, una familia sólo ve los informes de su propio jugador). No se ceden datos a terceros salvo obligación legal.</p>
 
   <!-- 6 -->
   <h2>6. Conservación de los datos</h2>
@@ -267,7 +271,7 @@
     <li><strong>Portabilidad</strong>: recibir sus datos en formato estructurado.</li>
     <li><strong>Oposición</strong>: oponerse al tratamiento basado en interés legítimo.</li>
   </ul>
-  <p>Para ejercer cualquiera de estos derechos, diríjase al administrador de su club o al SuperAdministrador de la plataforma a través del correo electrónico de contacto habilitado en la app. Dispone de un plazo de respuesta de <strong>30 días</strong>.</p>
+  <p>Para ejercer cualquiera de estos derechos, diríjase a <strong>su club</strong>, que es el responsable del tratamiento. Si escribe al correo de contacto de CHRONOS FÚTBOL indicado en la sección 1.2, la solicitud se trasladará a su club en un plazo máximo de <strong>5 días hábiles</strong>, y CHRONOS FÚTBOL le ayudará a atenderla, como prevé el Contrato de Encargado. El plazo de respuesta es de <strong>un mes</strong> desde la recepción, prorrogable en los casos que prevé el art. 12 RGPD.</p>
   <p>Si considera que sus derechos no han sido atendidos, puede presentar una reclamación ante la <strong>Agencia Española de Protección de Datos (AEPD)</strong>: <a href="https://www.aepd.es" style="color:var(--primary)">www.aepd.es</a>.</p>
 
   <!-- 8 -->
@@ -318,7 +322,7 @@
   <a href="index.html" class="back-btn">← Volver a la aplicación</a>
 
   <footer>
-    <p>CHRONOS FÚTBOL · Política de Privacidad · Versión 1.1 · 23 de septiembre de 2026</p>
+    <p>CHRONOS FÚTBOL · Política de Privacidad · Versión 2.0 · 19 de octubre de 2026</p>
     <p style="margin-top:0.4rem">Cumplimiento: RGPD (UE) 2016/679 · LOPDGDD 3/2018 · LSSI-CE 34/2002</p>
   </footer>
 

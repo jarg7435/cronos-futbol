@@ -11,6 +11,11 @@ import { enterApp, showRoleSelection, selectOption } from './auth/role-launch.js
 let _isLoginMode = true;
 let _addingRoleTimestamp = 0;
 const _ADDING_ROLE_TIMEOUT_MS = 30000; // 30s safety net contra _addingRole estancado
+// 🛡️ v830 · Versiones de los textos legales que se aceptan al registrarse.
+// Se guardan en users/{uid} (gdprConsentVersion / dpaVersion) como evidencia.
+// Súbelas cuando cambie de forma sustancial privacy.html o encargo.html.
+const CRONOS_PRIVACY_VERSION = '2026-10-19';   // privacy.html v2.0
+const CRONOS_DPA_VERSION     = '2026-10-19';   // encargo.html v1.0 (art. 28)
 
 // ── Cambiar entre Login y Registro ──────────────────────────
 export async function switchTab(tab) {
@@ -65,6 +70,8 @@ export async function switchTab(tab) {
     // Resetear el checkbox al volver a login para que el consentimiento sea explicito
     const gdprChk = document.getElementById('gdpr-consent');
     if (gdprChk && _isLoginMode) gdprChk.checked = false;
+    const dpaChk = document.getElementById('dpa-consent');   // v830 · igual
+    if (dpaChk && _isLoginMode) dpaChk.checked = false;
 
     // Pie de Política de Privacidad: solo visible en modo login (el modo
     // registro ya tiene el enlace dentro del checkbox de consentimiento).
@@ -338,7 +345,6 @@ export function handleEntityChange() {
     const clubLabel = document.getElementById('auth-club-label');
     const clubHint = document.getElementById('auth-club-hint');
     const roleSelect = document.getElementById('auth-role');
-    const currentRole = roleSelect?.value;
 
     if (entityType === 'individual') {
         // Mostrar selector con solo entidades individuales
@@ -448,9 +454,19 @@ export function handleRoleChange() {
         }
     }
 
+    // 🛡️ v830 · Quien da de alta un club o un ente acepta, en su nombre, el
+    // Contrato de Encargado (club = responsable, Chronos = encargado).
+    const dpaRow = document.getElementById('dpa-consent-row');
+    if (dpaRow) {
+        dpaRow.style.display = (isClubAdmin || isIndividual) ? 'flex' : 'none';
+        if (!(isClubAdmin || isIndividual)) {
+            const _dpaChk = document.getElementById('dpa-consent');
+            if (_dpaChk) _dpaChk.checked = false;
+        }
+    }
+
     // No mostrar club para: club_admin (tiene su propio campo)
     // Individual: el club/entidad se selecciona del desplegable
-    const noClub                = isClubAdmin;
 
     // Para entrenador/padre bajo individual, el selector de entidad se muestra
     // SIEMPRE que no sea club_admin o individual (que tienen su propio flujo)
@@ -1616,7 +1632,7 @@ export async function checkAuthorization(user) {
         // Si hay platform_requests con status:'sa_approved' para este usuario,
         // activar el rol en allRoles aunque la actualización anterior fallara
         try {
-            const { collection, getDocs, query, where, updateDoc, setDoc } =
+            const { collection, getDocs, query, where } =
                 await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
 
             // Consulta simple con timeout de 8s (redes móviles lentas / QUIC)
@@ -2294,7 +2310,6 @@ export async function doAuth() {
     }
 
     // Si hay sesión activa pero el usuario quiere entrar con OTRA cuenta (ha escrito algo), ignorar pending
-    const emailInp = document.getElementById('auth-email')?.value.trim();
     const passInp  = document.getElementById('auth-password')?.value;
 
     if (_isLoginMode && window._pendingAuthUser && !passInp) {
@@ -2396,11 +2411,31 @@ export async function doAuth() {
         // Campos de consentimiento RGPD a persistir en el documento del usuario.
         // Se inyectan en cada ruta de creación de usuario (club, individual, padre, etc.)
         // como evidencia de consentimiento explícito (Art. 7 RGPD).
+        // 🛡️ v830 · La versión es la de privacy.html (2.0, 19-10-2026: modelo
+        // club responsable / Chronos encargado). Antes ponía '2024-01'.
         const _gdprConsentFields = {
             gdprConsent:        true,
             gdprConsentDate:    fa.serverTimestamp(),
-            gdprConsentVersion: '2024-01',
+            gdprConsentVersion: CRONOS_PRIVACY_VERSION,
         };
+        // 🛡️ v830 · Contrato de Encargado (art. 28): obligatorio para quien da
+        // de alta un club (club_admin) o un ente (individual), y registrado
+        // como evidencia de la aceptación en nombre del responsable.
+        if (requestedRole === 'club_admin' || requestedRole === 'individual') {
+            const dpaChk = document.getElementById('dpa-consent');
+            if (!dpaChk || !dpaChk.checked) {
+                const _row = document.getElementById('dpa-consent-row');
+                if (_row) {
+                    _row.style.display = 'flex';
+                    try { _row.scrollIntoView({ block: 'center', behavior: 'smooth' }); } catch (_) {}
+                }
+                showAuthError('Para dar de alta el club o la entidad, acepta el Contrato de Encargado del Tratamiento (marca la casilla).');
+                return;
+            }
+            _gdprConsentFields.dpaAccepted   = true;
+            _gdprConsentFields.dpaAcceptedAt = fa.serverTimestamp();
+            _gdprConsentFields.dpaVersion    = CRONOS_DPA_VERSION;
+        }
 
         const _rawClubValue   = document.getElementById('auth-club-select')?.value   || null;
         // Parsear nuevo formato: "club:xxx" o "individual:xxx"

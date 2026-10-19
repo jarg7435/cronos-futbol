@@ -523,9 +523,11 @@ const inCol = (written, col) => written.filter(w => w.col === col);
 
     // ═════════════════════════════════════════════════════════════════════
     console.log('\n── PARTE 6 · _executeReportsSend: modo interno (las escrituras) ──');
-    ok('6a · ⚠️ el guard anti-duplicados calcula _autoAlreadyRan y su `if` esta VACIO',
+    // 19-10 (lint): el `if (_autoAlreadyRan) {}` VACIO se retiro (no-empty);
+    // la variable sigue, porque se usa mas abajo.
+    ok('6a · el guard anti-duplicados calcula _autoAlreadyRan, sin el `if` vacio de antes',
         /const _autoAlreadyRan = !!window\._cronosLastDispatchedMatch;/.test(BLOCK)
-        && /if \(_autoAlreadyRan\) \{\s*\}/.test(BLOCK.replace(/\r/g, '')));
+        && !/if \(_autoAlreadyRan\) \{\s*\}/.test(BLOCK.replace(/\r/g, '')));
     {
         const t = buildSandbox({
             recipients: [{ id: 'd1', type: 'staff', label: 'Dir' }],

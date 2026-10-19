@@ -241,7 +241,7 @@ async function openIndividualAdminPanel(mantenerSeccion = false) {
         }
         return;
     }
-    const { db, doc, getDoc, collection, getDocs, query, where, setDoc, updateDoc, deleteDoc } = _fs;
+    const { db, doc, getDoc, collection, getDocs, query, where } = _fs;
 
     // ── Load individual's user document ───────────────────────────
     const uid = me.uid;
@@ -2062,7 +2062,7 @@ window.indDeleteParent = async function indDeleteParent(parentUid, email) {
         //    se registra en auth_deletion_failures y se avisa al admin.
         if (_shouldDeleteAuth && httpsCallable && fa && fa.functions) {
             try {
-                const _authRes = await httpsCallable(fa.functions, 'deleteAuthUser')({ uid: parentUid, email });
+                await httpsCallable(fa.functions, 'deleteAuthUser')({ uid: parentUid, email });
             } catch(cfErr) {
                 console.error('[indDeleteParent] deleteAuthUser FALLÓ:', cfErr && cfErr.code, cfErr && cfErr.message);
                 try {

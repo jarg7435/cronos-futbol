@@ -517,10 +517,6 @@ window._executeReportsSend = async function(method) {
     // para este partido, el envío manual solo debe procesar destinatarios adicionales
     // que no fueron cubiertos por el auto-despacho.
     const _autoAlreadyRan = !!window._cronosLastDispatchedMatch;
-    if (_autoAlreadyRan) {
-    }
-    if (window._cronosDiagReports) {
-    }
     showSpinner('Enviando informes internamente...');
     // Generar matchId compartido para todos los destinatarios de staff de este envío.
     // FIX v3: Si el auto-despacho ya generó un matchId para este partido,

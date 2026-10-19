@@ -368,7 +368,6 @@
     //  se debe quitar.
     function ensureMatchViewVisible() {
         var mainHeader    = document.getElementById('main-header');
-        var mainContainer = document.getElementById('main-container');
         var setupModal    = document.getElementById('setup-modal');
 
         // ── NUEVO v9: Si el modal está visible con contenido, setup-mode es legítimo ──

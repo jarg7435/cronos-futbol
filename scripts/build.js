@@ -60,7 +60,7 @@ const mal = (m, detalle) => {
 // Los HTML que Hosting sirve de verdad. `presentacion*.html` y el informe
 // técnico están en el `ignore` de firebase.json, así que no se validan: no
 // viajan.
-const HTML_DESPLEGADOS = ['index.html', 'live.html', 'offline.html', 'privacy.html',
+const HTML_DESPLEGADOS = ['index.html', 'live.html', 'offline.html', 'privacy.html', 'encargo.html',
                           '404.html', 'landing.html'];
 
 const correr = (args, etiqueta) => {

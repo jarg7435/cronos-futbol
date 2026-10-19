@@ -689,7 +689,6 @@ async function saveContactManagerData() {
     //  alguien lo usa para CONTAR filas y no sólo para leer su valor.
     // ══════════════════════════════════════════════════════════════════
     const parentInputs = document.querySelectorAll('.contact-parent-email');
-    const customRows   = document.querySelectorAll('.custom-contact-row');
     const db = window._cronos_auth.db;
     showSpinner('Sincronizando Fuente de la Verdad…');
 

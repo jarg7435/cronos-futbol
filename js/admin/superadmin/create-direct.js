@@ -108,7 +108,7 @@ window.saCreateClubConfirm = async function() {
 
     _saShowSpinner('Creando club...');
     try {
-        const { db, doc, setDoc, collection } = await saFS();
+        const { db, doc, setDoc } = await saFS();
         const clubId = 'club_' + Date.now().toString(36) + '_' + Math.random().toString(36).substr(2,4);
         await setDoc(doc(db, 'clubs', clubId), {
             name,

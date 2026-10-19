@@ -490,7 +490,7 @@
             // ⚠️ NO en el visor interno: ver la nota de _rxVisorEnLaApp.
             (conVentana
                 ? '<script>window.onload=function(){setTimeout(function(){' +
-                      'try{window.focus();window.print();}catch(e){}},350);};<\/script>'
+                      'try{window.focus();window.print();}catch(e){}},350);};</script>'
                 : '') +
             '</body></html>'
         ); };
