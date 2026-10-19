@@ -936,8 +936,21 @@ function _resuelveEquipo(target, data) {
   const esDeEsteClub = (r) => !r.clubId || String(r.clubId) === String(clubBase || '');
 
   let rolElegido = null;
+  // 0. 🔴 v831 · El rol Y EL EQUIPO que el panel dice estar quitando. Con dos
+  //    equipos del mismo rol (Alevín A y Regional B), el paso 1 cogía el
+  //    PRIMERO y el trabajo se archivaba en el equipo que no era. Se compara
+  //    por slug (la misma función que el teamId): 'Alevín' == 'alevin'.
+  let porPlaza = false;
+  if (data && data.role && data.category) {
+    const cat = _teamSlug(data.category);
+    const sub = _teamSlug(data.subcategory);
+    rolElegido = allRoles.find((r) => r && r.role === data.role && esDeEsteClub(r) &&
+      _teamSlug(r.category != null ? r.category : r.categoryLabel) === cat &&
+      _teamSlug(r.subcategory) === sub) || null;
+    porPlaza = !!rolElegido;
+  }
   // 1. El rol que el panel dice estar dando de baja: es la señal más fiable.
-  if (data && data.role) {
+  if (!rolElegido && data && data.role) {
     rolElegido = allRoles.find((r) => r && r.role === data.role && r.category && esDeEsteClub(r)) || null;
   }
   // 2. Si no, el rol revocado MÁS RECIENTE con categoría (la baja acaba de
@@ -954,6 +967,13 @@ function _resuelveEquipo(target, data) {
   }
 
   const clubId = clubBase || (rolElegido && rolElegido.clubId) || null;
+  // Con la plaza identificada, manda ELLA: la raíz describe una sola plaza y
+  // puede ser justo la del otro equipo.
+  if (porPlaza) {
+    const category = rolElegido.category != null ? rolElegido.category : (rolElegido.categoryLabel || '');
+    const subcategory = rolElegido.subcategory || '';
+    return { clubId, category, subcategory, teamId: _teamId(clubId, category, subcategory) };
+  }
   const category = target.category || (rolElegido && rolElegido.category) ||
                    (data && data.category) || '';
   const subcategory = target.subcategory || (rolElegido && rolElegido.subcategory) ||

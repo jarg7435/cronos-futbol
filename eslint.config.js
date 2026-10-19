@@ -78,20 +78,18 @@ function globalesDelProyecto() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────
-//  📉 AVISOS: 112 → 34 (reauditoría del 19-10). Se retiraron los que se
-//  podían quitar SIN cambiar el comportamiento: nombres de SDK importados y
-//  no usados, cálculos puros sin lector, bloques `if {}` vacíos, `window.X =
-//  window.X`, escapes de más y `obj.hasOwnProperty`. `npm run lint` lleva
-//  `--max-warnings 34`: un aviso NUEVO corta la puerta igual que un error.
+//  📉 AVISOS: 112 → 34 (reauditoría del 19-10) → 28 (v831). Se retiraron
+//  los que se podían quitar SIN cambiar el comportamiento: nombres de SDK
+//  importados y no usados, cálculos puros sin lector, bloques `if {}` vacíos,
+//  `window.X = window.X`, escapes de más y `obj.hasOwnProperty`; en v831,
+//  `userRow` y `_slotKey` de club/panel.js (muertos desde el 25-06: tres
+//  guards los leían en lugar de la fila viva y por eso no vieron que «➖
+//  Quitar del equipo» no pasaba la plaza). `npm run lint` lleva
+//  `--max-warnings 28`: un aviso NUEVO corta la puerta igual que un error.
 //
-//  LOS 34 QUE QUEDAN SON DELIBERADOS (no tocar sin leer esto):
+//  LOS 28 QUE QUEDAN SON DELIBERADOS (no tocar sin leer esto):
 //   · 16 no-redeclare · superadmin.panel.js (borrado de usuario): `var` en
 //     ramas hermanas de la misma función. Legal y sin efecto en ejecución.
-//   · 6 · club/panel.js `userRow` (+ su uid y 3 escapes) y `_slotKey`: código
-//     MUERTO desde el 25-06 (lo sustituyó `_userRowHtml`), pero tres guards
-//     (test_baja_por_plaza_y_alta_club 1a/1b, test_ningun_aprobar_pierde_plazas
-//     5g, test_baja_es_revocacion) aún lo leen. Se retira junto con el arreglo
-//     de «➖ Quitar del equipo», que hoy no pasa la plaza (hallazgo del 19-10).
 //   · 2 · utils.js `existing`: lo usa el contrafactual de
 //     test_livematchid_idempotency (C1) para demostrar por qué NO reutilizar.
 //   · 1 · individual-reports.js `miDismissed`: fijado por su guard (2l).

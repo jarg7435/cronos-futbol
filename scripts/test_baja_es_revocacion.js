@@ -83,7 +83,12 @@ if (/cronos_player_links/.test(sinComentarios)) {
 console.log('\n=== 3. Sigue liberando la plaza del club ===');
 // La plaza SÍ debe liberarse: la persona deja de ocuparla. Si esto
 // desapareciera, el club se quedaría sin plazas al rotar entrenadores.
-if (/usedSlots|_slotKey\(/.test(sinComentarios)) verde('libera usedSlots');
+// ⚠️ v831 · Esto miraba `usedSlots|_slotKey(` y sólo pasaba por la DEFINICIÓN
+//    muerta de `_slotKey` (nadie la llamaba): desde v553 el contador no se
+//    toca y la plaza libre sale de contar `allRoles`. Lo que la libera de
+//    verdad es marcar ese rol como revocado DENTRO de allRoles.
+if (/rolesRemovidos\.indexOf\(r\) >= 0\) \? marcaRevocado\(r\)/.test(sinComentarios) &&
+    /allRoles:\s*allRolesTrasRevocar/.test(sinComentarios)) verde('libera la plaza (rol marcado en allRoles)');
 else rojo('la baja ya no libera la plaza del club');
 
 console.log('\n=== 4. Revoca de verdad (isAuthorized:false) ===');

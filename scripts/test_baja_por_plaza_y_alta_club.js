@@ -73,16 +73,27 @@ console.log('\n🔴 BAJA POR PLAZA · ALTA DE CLUB CON CORREO EXISTENTE\n');
 console.log('1 · LA BAJA ES DE UNA PLAZA, NO DE LA PERSONA');
 // ════════════════════════════════════════════════════════════════════
 // El botón "🗑️ Baja" de la fila tiene que decir DE QUÉ plaza habla.
-const _btnBaja = /🗑️ Baja<\/button>/.test(PANEL) &&
-    /caSetUserStatus\('\$\{euid\}','\$\{email\}','removed','\$\{ecid\}','\$\{_rol\}',false,\{category:'\$\{_rcat\}',subcategory:'\$\{_rsub\}'\}\)/.test(PANEL);
-ok('1a · el botón de Baja pasa el rol Y la plaza de su fila', _btnBaja);
+// ⚠️ v831 · 1a/1b miraban `userRow` y su «🗑️ Baja», MUERTOS desde el 25-06
+//    (los sustituyó `_userRowHtml` con «➖ Quitar del equipo»). Por eso no
+//    vieron que el botón vivo NO pasaba la plaza: a un entrenador con dos
+//    equipos se le quitaban los dos. Ahora miran la fila que se pinta.
+const _btnBaja = /➖ Quitar del equipo<\/button>/.test(PANEL) &&
+    /caRevocarCasilla\('\$\{euid\}','\$\{email\}','\$\{ecid\}','\$\{erole\}','\$\{ecat\}','\$\{esub\}'\)/.test(PANEL);
+ok('1a · el botón «Quitar del equipo» pasa el rol Y la plaza de su fila', _btnBaja);
 
 // 🔑 Y esos datos salen de la FILA (_activeRoleData), no de la raíz del
 // documento: la raíz describe UNA sola plaza y en este panel hay una fila por
 // plaza. Leerla de la raíz volvería a apuntar a la casilla equivocada (v560).
 ok('1b · el rol y la plaza salen de _activeRoleData, no de la raíz',
-   /const _rd\s*=\s*u\._activeRoleData \|\| \{\};/.test(PANEL) &&
-   /const _rol\s*=\s*_escA\(_rd\.role/.test(PANEL));
+   /const _userRowHtml = \(u\) => \{\s*const r = u\._activeRoleData \|\| \{\};/.test(PANEL) &&
+   /const ecat\s*=\s*String\(r\.category != null \? r\.category/.test(PANEL) &&
+   /const esub\s*=\s*String\(r\.subcategory != null/.test(PANEL));
+
+// …y caRevocarCasilla la hace llegar a la baja, al aviso y a la Function.
+ok('1b2 · 🔑 caRevocarCasilla pasa la plaza a caSetUserStatus y a archiveAndDeleteCoach',
+   /caRevocarCasilla = async \(userId, userEmail, cid, targetRole, category, subcategory\)/.test(PANEL) &&
+   /caSetUserStatus\(userId, userEmail, 'removed', cid, targetRole, true, plaza\)/.test(PANEL) &&
+   /category: plaza \? plaza\.category : null/.test(PANEL));
 
 // La maquinaria que ya existía y que este arreglo por fin usa.
 ok('1c · caSetUserStatus sigue aceptando targetRole y plaza',

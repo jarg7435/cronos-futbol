@@ -573,116 +573,6 @@ async function openClubAdminPanel(preClubId = null) {
     console.groupEnd();
     // ─────────────────────────────────────────────────────────────────
 
-    // ── Render de una fila de usuario ────────────────────────────────
-    const userRow = (u) => {
-        const isBlocked = u.status === 'blocked';
-        const isRemoved = u.status === 'removed';
-        const isPending = u.status === 'pending_register';
-        const isActive  = u.isAuthorized && !isBlocked && !isRemoved;
-
-        const statusBadge =
-            isRemoved ? '<span class="sa-badge" style="margin-left:0.4rem;background:#ff585822;color:#ff5858;">🗑️ Baja</span>'
-          : isBlocked ? '<span class="sa-badge" style="margin-left:0.4rem;background:#ff585822;color:#ff5858;">🔒 Bloqueado</span>'
-          : isPending ? '<span class="sa-badge" style="margin-left:0.4rem;background:#ffa50022;color:#ffa500;">⏳ Pendiente registro</span>'
-          : isActive  ? '<span class="sa-badge" style="margin-left:0.4rem;background:rgba(63,185,80,0.12);color:#3fb950;">✅ Activo</span>'
-          : '<span class="sa-badge" style="margin-left:0.4rem;background:#ffa50022;color:#ffa500;">⏳ Pendiente</span>';
-
-        const _escA = escapeAttr;
-        const _escH = escapeHtml;
-        const uid   = u._id;
-        const email = _escA(u.email||u._id).replace(/\\/g,'\\\\').replace(/'/g, "\'");
-        const euid  = _escA(u._id).replace(/\\/g,'\\\\').replace(/'/g, "\'");
-        const ecid  = _escA(clubId).replace(/\\/g,'\\\\').replace(/'/g, "\'");
-
-        return `
-        <div class="sa-urow" style="opacity:${isRemoved ? '0.45' : '1'};">
-            <div style="flex:1;min-width:0;">
-                <span style="font-size:0.83rem;font-weight:600;">${_escH(u.email||u._id)}</span>
-                ${u.displayName ? `<span style="color:var(--text-muted);font-size:0.74rem;"> · ${_escH(u.displayName)}</span>` : ''}
-                ${statusBadge}
-                ${(function(){
-                    // 🔑 v560 · LA PLAZA DE ESTA FILA, PRIMERO. La lista se
-                    // expande a UNA FILA POR PLAZA (`_activeRoleData`), pero
-                    // esto leía la RAÍZ del documento antes que nada: a un
-                    // entrenador con dos equipos le pintaba la MISMA categoría
-                    // en sus dos filas, y el botón "Cambiar equipo" de ambas
-                    // mandaba la misma plaza de origen. Desde ahí, mover uno
-                    // reetiquetaba el otro y el equipo se perdía (captura 9062).
-                    const _rowRole = u._activeRoleData || null;
-                    let cat = (_rowRole && (_rowRole.category || _rowRole.categoryLabel)) ||
-                              u.category || u.categoryLabel;
-                    let sub = (_rowRole && _rowRole.subcategory != null)
-                              ? _rowRole.subcategory : u.subcategory;
-                    if (!cat && u.allRoles) {
-                        let roleEntry = u.allRoles.find(r => r.role === u.role);
-                        if (roleEntry) { cat = roleEntry.category; sub = roleEntry.subcategory; }
-                    }
-                    if (!cat) return '';
-                    const _rolFila = _escA((_rowRole && _rowRole.role) || u.role || '');
-                    return `
-                    <div style="margin-top:4px; display:flex; align-items:center; gap:0.5rem;">
-                        <span style="font-size:0.68rem;background:rgba(63,185,80,0.1);color:#3fb950;border:1px solid rgba(63,185,80,0.2);padding:2px 8px;border-radius:100px;font-weight:600;">
-                            ⚽ ${_escH(cat)}${sub ? ' · ' + _escH(sub) : ''}
-                        </span>
-                        <button onclick="caEditUserCategory('${euid}','${email}','${_escA(cat)}','${_escA(sub||'')}','${_rolFila}')"
-                                style="background:none;border:none;color:#58a6ff;font-size:0.65rem;cursor:pointer;text-decoration:underline;padding:0;">
-                            Cambiar equipo</button>
-                    </div>`;
-                })()}
-            </div>
-            <div style="display:flex;gap:0.3rem;flex-shrink:0;align-items:center;flex-wrap:wrap;">
-                ${!isActive && !isRemoved ? `<button class="sa-btn"
-                    onclick="caSetUserStatus('${euid}','${email}','active','${ecid}')"
-                    style="font-size:0.7rem;color:#3fb950;border-color:rgba(63,185,80,0.35);background:rgba(63,185,80,0.08);">
-                    ✅ Activar</button>` : ''}
-                ${isActive ? `<button class="sa-btn"
-                    onclick="caSetUserStatus('${euid}','${email}','blocked','${ecid}')"
-                    style="font-size:0.7rem;color:#ffa500;border-color:rgba(255,165,0,0.35);background:rgba(255,165,0,0.07);">
-                    🔒 Bloquear</button>` : ''}
-                ${!isRemoved ? (function(){
-                    // ═══════════════════════════════════════════════════
-                    //  🔴🔴 2026-08-23 · LA BAJA ES DE ESTA PLAZA, NO DE LA
-                    //  PERSONA ENTERA
-                    //
-                    //  DEFECTO REPORTADO por el autor: al dar de baja a
-                    //  damasorv@gmail.com de CD Día "el sistema ha borrado de
-                    //  golpe TODOS sus roles, incluido el de coordinador de
-                    //  fútbol 11 que debía mantenerse".
-                    //
-                    //  🔑 Y LA CAUSA ERA UNA LLAMADA INCOMPLETA, no una lógica
-                    //  equivocada. Esta lista se expande a UNA FILA POR PLAZA
-                    //  (`_activeRoleData`, ver v560) y `caSetUserStatus` ACEPTA
-                    //  desde v581 el rol y la plaza a los que acotar la baja
-                    //  —el botón "Cambiar equipo" de esta misma fila ya los
-                    //  pasaba—, pero este botón llamaba sin ninguno de los dos.
-                    //  Sin `targetRole`, `rolesRemovidos` se lleva TODAS las
-                    //  entradas de allRoles de este club: entrenador,
-                    //  coordinador, director… todas.
-                    //
-                    //  Es el patrón de siempre en este proyecto: la maquinaria
-                    //  ya existía y fallaba UNA línea. Ahora la fila dice de
-                    //  qué plaza habla, que es justo lo que el administrador
-                    //  está viendo cuando pulsa.
-                    // ═══════════════════════════════════════════════════
-                    const _rd   = u._activeRoleData || {};
-                    const _rol  = _escA(_rd.role || u.role || '');
-                    const _rcat = _escA(_rd.category != null ? _rd.category : (_rd.categoryLabel || ''));
-                    const _rsub = _escA(_rd.subcategory != null ? _rd.subcategory : '');
-                    return `<button class="sa-btn"
-                    onclick="caSetUserStatus('${euid}','${email}','removed','${ecid}','${_rol}',false,{category:'${_rcat}',subcategory:'${_rsub}'})"
-                    style="font-size:0.7rem;color:#ff5858;border-color:rgba(255,88,88,0.3);background:rgba(255,88,88,0.07);">
-                    🗑️ Baja</button>`;
-                })() : ''}
-                <!-- ⚠️ EL BOTÓN "🗑️ Eliminar" (cuenta entera) SE HA RETIRADO.
-                     El borrado global de cuentas es cosa del SuperAdministrador
-                     al cerrar temporada. Desde el Panel de Club sólo se vacían
-                     casillas, y la cuenta desaparece —sola— cuando se revoca la
-                     última. Un botón que borra cuentas enteras al lado de uno
-                     que sólo quita un rol es un accidente esperando. -->
-            </div>
-        </div>`;
-    };
-
     // ── Render de sección acordeón por rol ───────────────────────────
     // ── Render de TABLA UNIFICADA DE USUARIOS ────────────────────────
     const unifiedUserTable = () => {
@@ -819,6 +709,14 @@ async function openClubAdminPanel(preClubId = null) {
             const email = (u.email || '').replace(/'/g, "\\'");
             const ecid  = (clubId || '').replace(/'/g, "\\'");
             const erole = (r.role || u.role || '').replace(/'/g, "\\'");
+            // 🔴 v831 · LA PLAZA DE ESTA FILA. Sin ella, caSetUserStatus
+            // revocaba «todo el rol en el club»: a un entrenador con dos
+            // equipos, «Quitar del equipo» le quitaba LOS DOS. Sale de
+            // _activeRoleData (una fila por plaza, v560), nunca de la raíz.
+            // (Se QUITAN comillas, < > y \: van dentro de un onclick entre
+            // comillas dobles, y una categoría nunca los lleva.)
+            const ecat  = String(r.category != null ? r.category : (r.categoryLabel || '')).replace(/['"<>\\]/g, '');
+            const esub  = String(r.subcategory != null ? r.subcategory : '').replace(/['"<>\\]/g, '');
             return `
                 <div style="display:grid; grid-template-columns:minmax(96px,auto) minmax(80px,1fr) minmax(0,2fr) auto auto;
                             align-items:center; gap:0.6rem; padding:0.55rem 0.6rem;
@@ -833,7 +731,7 @@ async function openClubAdminPanel(preClubId = null) {
                              una fila de equipo sólo se vacía esa casilla; el
                              borrado de cuentas es cosa del SuperAdministrador al
                              cerrar temporada, y ocurre solo si era el último rol. -->
-                        <button onclick="caRevocarCasilla('${euid}','${email}','${ecid}','${erole}')"
+                        <button onclick="caRevocarCasilla('${euid}','${email}','${ecid}','${erole}','${ecat}','${esub}')"
                             title="Quitar esta casilla: archiva su trabajo en la categoría y la deja vacante. La cuenta se conserva si le quedan otros roles."
                             class="sa-btn" style="padding:0.25rem 0.5rem; color:#ffa500; border-color:rgba(255,165,0,0.25);">➖ Quitar del equipo</button>
                     </div>
@@ -2154,7 +2052,24 @@ async function openClubAdminPanel(preClubId = null) {
     //      LIBERA LA PLAZA del club decrementando usedSlots.
     //   2. Después la Function: archiva y verifica; y sólo si no le queda
     //      ningún rol, borra la cuenta.
-    window.caRevocarCasilla = async (userId, userEmail, cid, targetRole) => {
+    //
+    // 🔴 v831 · LA CASILLA ES ROL + EQUIPO. Llegaba sólo el rol, y sin plaza
+    //    caSetUserStatus revoca «todo el rol en este club»: a un entrenador
+    //    con dos equipos (Alevín A y Regional B), quitarle uno le quitaba los
+    //    dos, el aviso le contaba 0 roles restantes («se ELIMINARÁ su
+    //    cuenta») y la Function archivaba en el primer equipo que encontraba.
+    //    Ahora la fila manda categoría y subcategoría y las tres cosas —aviso,
+    //    baja y archivado— hablan de ESA plaza. Sin categoría (filas antiguas
+    //    o roles sin equipo) se comporta como antes.
+    window.caRevocarCasilla = async (userId, userEmail, cid, targetRole, category, subcategory) => {
+        const _nc = (typeof window.ctNormCat === 'function')
+            ? window.ctNormCat : (x) => String(x == null ? '' : x).trim().toLowerCase();
+        const _ns = (typeof window.ctNormSubcat === 'function')
+            ? window.ctNormSubcat : (x) => String(x == null ? '' : x).trim().toUpperCase();
+        const plaza = (category && subcategory) ? { category, subcategory } : null;
+        const _esEstaPlaza = (r) => !plaza || (
+            _nc(r.category != null ? r.category : r.categoryLabel) === _nc(plaza.category) &&
+            _ns(r.subcategory) === _ns(plaza.subcategory));
         // ── Cuántos roles le quedarían: decide el aviso y la confirmación ──
         // Se lee del documento, no de lo pintado en la fila: la fila puede
         // llevar minutos en pantalla.
@@ -2168,7 +2083,8 @@ async function openClubAdminPanel(preClubId = null) {
                                      (r.isAuthorized === true || r.authorized === true);
                 // El que se está revocando ahora todavía consta como vivo.
                 quedanOtros = _todos.filter((r) => _vivo(r) &&
-                    !(r.role === targetRole && (!r.clubId || String(r.clubId) === String(cid || '')))).length;
+                    !(r.role === targetRole && (!r.clubId || String(r.clubId) === String(cid || '')) &&
+                      _esEstaPlaza(r))).length;
             }
         } catch (_) { /* si falla, se avisa en genérico y decide el servidor */ }
 
@@ -2176,9 +2092,15 @@ async function openClubAdminPanel(preClubId = null) {
                           coordinator: 'Coordinador', club_admin: 'Administrador',
                           directivo: 'Directivo / Empleado' }[targetRole] || targetRole;
         const esUltimo = (quedanOtros === 0);
+        // El equipo en claro, para que se sepa CUÁL de sus casillas se quita.
+        const _equipo = plaza
+            ? ((typeof window.cronosNombreCategoria === 'function')
+                ? window.cronosNombreCategoria(plaza.category, plaza.subcategory)
+                : (plaza.category + ' ' + plaza.subcategory))
+            : '';
 
         if (!confirm(
-            '➖ QUITAR LA CASILLA DE "' + _rotulo + '" A ' + userEmail + '\n\n' +
+            '➖ QUITAR LA CASILLA DE "' + _rotulo + (_equipo ? ' · ' + _equipo : '') + '" A ' + userEmail + '\n\n' +
             'QUÉ PASA CON EL TRABAJO:\n' +
             '• Se archiva en la categoría, para el siguiente entrenador\n' +
             '• Informes, convocatorias y entrenamientos siguen en el club\n\n' +
@@ -2214,7 +2136,8 @@ async function openClubAdminPanel(preClubId = null) {
             if (typeof showToast === 'function') showToast('⏳ Archivando el trabajo del equipo…', 4000);
 
             // 1. Revocar esa casilla: marca el rol y libera la plaza.
-            await window.caSetUserStatus(userId, userEmail, 'removed', cid, targetRole, true);
+            //    🔴 v831 · CON la plaza: sin ella se revocaban todos sus equipos.
+            await window.caSetUserStatus(userId, userEmail, 'removed', cid, targetRole, true, plaza);
 
             // 2. Archivar (y borrar la cuenta sólo si era el último rol).
             if (typeof httpsCallable !== 'function' || !fa || !fa.functions) {
@@ -2223,7 +2146,10 @@ async function openClubAdminPanel(preClubId = null) {
                 return;
             }
             const res = await httpsCallable(fa.functions, 'archiveAndDeleteCoach')({
-                uid: userId, email: userEmail, clubId: cid, role: targetRole || null
+                uid: userId, email: userEmail, clubId: cid, role: targetRole || null,
+                // v831 · para archivar en ESTE equipo y no en el primero que haya
+                category: plaza ? plaza.category : null,
+                subcategory: plaza ? plaza.subcategory : null,
             });
             const d = (res && res.data) || {};
             alert('✅ Casilla de "' + _rotulo + '" liberada.\n\n' +
@@ -2422,16 +2348,6 @@ async function openClubAdminPanel(preClubId = null) {
                          'Su cuenta y el histórico del equipo se conservan.')) return false;
         } else {
             if (!confirm('¿Deseas ' + (labels[newStatus] || newStatus) + ' a ' + userEmail + '?')) return;
-        }
-
-        // Función auxiliar para obtener la clave de slot del club según el rol
-        // Definida aquí para estar disponible en TODOS los caminos (removed, active, blocked)
-        function _slotKey(role) {
-            if (role === 'director') return 'usedSlots.directors';
-            if (role === 'coordinator') return 'usedSlots.coordinators';
-            if (role === 'parent') return 'usedSlots.parents';
-            if (role === 'directivo') return 'usedSlots.directivos';   // 🏢 v810
-            return 'usedSlots.users';
         }
 
         try {

@@ -196,7 +196,8 @@ ok('5f · 🔑 "Cambiar equipo" del panel del club mueve SÓLO la plaza editada'
    'reetiquetaba los DOS equipos: el segundo se volvía copia del primero y el arranque lo borraba');
 
 ok('5g · ⚠️ y la fila enseña la plaza de ESA fila, no la raíz del documento',
-   /const _rowRole = u\._activeRoleData \|\| null;/.test(SRC5.club),
+   // v831 · miraba `userRow`, muerto desde el 25-06: ahora la fila VIVA.
+   /const _userRowHtml = \(u\) => \{\s*const r = u\._activeRoleData \|\| \{\};/.test(SRC5.club),
    'con la raíz, las dos filas del entrenador mostraban la misma categoría');
 
 // ── El borrado por "club inexistente" ───────────────────────────────────

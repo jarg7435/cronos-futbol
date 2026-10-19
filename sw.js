@@ -2789,8 +2789,11 @@
 // v830 · RGPD, UN SOLO MODELO (reauditoría 19-10): club = responsable,
 //        Chronos = encargado. privacy.html v2.0 + Contrato de Encargado
 //        (encargo.html, precacheado) que el alta de club/ente exige aceptar.
-const VERSION = 'v830';
-const CACHE_NAME = 'cronos-cache-v830';
+// v831 · «➖ QUITAR DEL EQUIPO» QUITA UN EQUIPO: la fila pasa su plaza
+//        (categoría + subcategoría) a la baja, al aviso y a la Function. Con
+//        dos equipos, antes se quitaban los dos y se avisaba de borrar la cuenta.
+const VERSION = 'v831';
+const CACHE_NAME = 'cronos-cache-v831';
 
 const ASSETS = [
     './',

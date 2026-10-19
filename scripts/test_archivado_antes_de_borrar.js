@@ -326,7 +326,8 @@ console.log('\n=== 6. El botón de la fila: revocar CASILLA, no borrar persona =
     const pFn  = cuerpo.indexOf("'archiveAndDeleteCoach'");
     ok('revoca ANTES (es lo que libera la plaza)', pRev !== -1 && pRev < pFn);
     ok('y manda el rol a la Function', /role: targetRole \|\| null/.test(cuerpo));
-    ok('no encadena un tercer confirm', /'removed', cid, targetRole, true\)/.test(cuerpo));
+    // (v831: ahora lleva además la plaza como 7º argumento.)
+    ok('no encadena un tercer confirm', /'removed', cid, targetRole, true(, plaza)?\)/.test(cuerpo));
 
     // El resultado tiene que decir lo que REALMENTE pasó con la cuenta.
     ok('distingue si la cuenta se borró o sigue viva',
