@@ -132,6 +132,16 @@ console.log('\n4) ⚠️ El aviso está DONDE SE ESCRIBE');
     ok('4c · y se ve: va en su propio bloque, no escondido en una línea gris',
        /No anotes datos de salud[\s\S]{0,200}informe deportivo sobre menores/.test(RETRO));
 
+    // 🧒 v832 · el aviso depende de la categoría del partido elegido
+    const pinta = (RETRO.match(/function _pintaAvisoSalud\(\)[\s\S]*?\n    \}/) || [''])[0];
+    ok('4c2 · 🔑 v832 · el aviso se repinta por categoría (base = menores, adultos = genérico)',
+       /_partidoDeAdultos\(\)/.test(pinta) && /sobre menores/.test(pinta)
+       && /_pintaAvisoSalud\(\);[\s\S]{0,80}\n[\s\S]*_pintaAvisoSalud\(\);/.test(RETRO),
+       'se pinta al abrir el modal y al cambiar de partido');
+
+    ok('4c3 · 🔑 v832 · el texto de adultos NO menciona menores pero SÍ la salud',
+       (() => { const m = pinta.match(/av\.innerHTML = adultos\s*\?\s*'([^']*)'/); return !!m && !/menor/i.test(m[1]) && /salud/.test(m[1]); })());
+
     ok('4d · la política dice que la app avisa (y es cierto)',
        /advierte expresamente/i.test(POL));
 }

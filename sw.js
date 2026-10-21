@@ -2792,8 +2792,10 @@
 // v831 · «➖ QUITAR DEL EQUIPO» QUITA UN EQUIPO: la fila pasa su plaza
 //        (categoría + subcategoría) a la baja, al aviso y a la Function. Con
 //        dos equipos, antes se quitaban los dos y se avisaba de borrar la cuenta.
-const VERSION = 'v831';
-const CACHE_NAME = 'cronos-cache-v831';
+// v832 · EL AVISO DE SALUD DEL COMENTARIO SEGÚN LA CATEGORÍA: en base
+//        (Juvenil hacia abajo) el de menores; en adultos uno genérico.
+const VERSION = 'v832';
+const CACHE_NAME = 'cronos-cache-v832';
 
 const ASSETS = [
     './',

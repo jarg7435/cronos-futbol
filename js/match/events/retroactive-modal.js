@@ -533,6 +533,7 @@
         _repintaSelectores(_selectedEventType);
         _pintaEstadoYFormulario();
         _pintaOpcionClip();   // 🎬 v804 · «también familias» sólo en adultos
+        _pintaAvisoSalud();   // 🧒 v832 · aviso de menores sólo en base
     };
 
     // ── 🔓 v797 · El entrenador pide el desbloqueo ─────────────────────────
@@ -745,8 +746,16 @@
                          una sola comilla invertida lo CIERRA y el fichero
                          deja de compilar. Es la trampa de v596 y v641, y me
                          la comí escribiendo justo este aviso.
+
+                         🧒 v832 · Según la CATEGORÍA del partido elegido
+                         (encargo del autor, implementar.txt 2026-10-21): en
+                         base (Juvenil hacia abajo) este aviso tal cual; en
+                         adultos (Regional, Nacional, FEM...) uno genérico sin
+                         la mención a menores. Lo pinta _pintaAvisoSalud con
+                         la MISMA regla que el vídeo (CronosClips.esAdultos).
+                         Por defecto, el de menores: ante la duda, el estricto.
                          ══════════════════════════════════════════════════ -->
-                    <div style="margin-top:0.4rem; padding:0.4rem 0.55rem; border-radius:6px; background:rgba(248,81,73,0.08); border:1px solid rgba(248,81,73,0.28); font-size:0.66rem; color:#ff9b93; line-height:1.35;">
+                    <div id="retro-aviso-salud" style="margin-top:0.4rem; padding:0.4rem 0.55rem; border-radius:6px; background:rgba(248,81,73,0.08); border:1px solid rgba(248,81,73,0.28); font-size:0.66rem; color:#ff9b93; line-height:1.35;">
                         ⚠️ <strong>No anotes datos de salud</strong> (lesiones concretas, diagnósticos, medicación)
                         ni información personal ajena al partido. Es un informe deportivo sobre menores.
                     </div>
@@ -818,6 +827,7 @@
         _pintaEstadoYFormulario();
         _limpiaClip();       // 🎬 v804
         _pintaOpcionClip();
+        _pintaAvisoSalud();  // 🧒 v832
         _rellenaSelector();
     };
 
@@ -1101,7 +1111,8 @@
                 ? window.cronosPosiblesDatosSalud(nota) : [];
             if (_salud.length && !confirm(
                     '⚠️ Este comentario parece contener datos de salud: «' + _salud.slice(0, 5).join('», «') + '».\n\n' +
-                    'Es un informe deportivo sobre MENORES. La salud es un dato especialmente protegido ' +
+                    (_partidoDeAdultos() ? 'Es un informe deportivo. ' : 'Es un informe deportivo sobre MENORES. ') +
+                    'La salud es un dato especialmente protegido ' +
                     '(art. 9 RGPD) y la política de privacidad no permite anotarla aquí: ' +
                     'ni lesiones concretas, ni diagnósticos, ni medicación.\n\n' +
                     'Pulsa CANCELAR para corregirlo, o ACEPTAR si de verdad no es un dato de salud.')) {
@@ -1163,6 +1174,21 @@
         if (box) box.style.display = _partidoDeAdultos() ? 'flex' : 'none';
         const fam = document.getElementById('retro-clip-familias');
         if (fam && !_partidoDeAdultos()) fam.checked = false;
+    }
+    // 🧒 v832 · El aviso del comentario según la categoría del partido ELEGIDO
+    // (no la del perfil): base = el de menores; adultos = genérico, sin
+    // menores, y en gris en vez de rojo. La salud sigue fuera en los dos:
+    // también en adultos es un dato especialmente protegido (art. 9 RGPD).
+    function _pintaAvisoSalud() {
+        const av = document.getElementById('retro-aviso-salud');
+        if (!av) return;
+        const adultos = _partidoDeAdultos();
+        av.style.background = adultos ? 'rgba(139,148,158,0.08)' : 'rgba(248,81,73,0.08)';
+        av.style.borderColor = adultos ? 'rgba(139,148,158,0.3)' : 'rgba(248,81,73,0.28)';
+        av.style.color = adultos ? '#b1bac4' : '#ff9b93';
+        av.innerHTML = adultos
+            ? 'ℹ️ Escribe sólo observaciones deportivas del partido: sin datos de salud (lesiones concretas, diagnósticos, medicación) ni información personal ajena al juego.'
+            : '⚠️ <strong>No anotes datos de salud</strong> (lesiones concretas, diagnósticos, medicación) ni información personal ajena al partido. Es un informe deportivo sobre menores.';
     }
     function _limpiaClip() {
         _clipElegido = null;
