@@ -611,7 +611,10 @@
         var barra = document.getElementById('cronos-sav-bar');
         var asig  = document.getElementById('cronos-sav-assign');
         if (!barra || !barra.style || !barra.classList.contains('on')) return;
-        var ancho = window.innerWidth, alto = window.innerHeight;
+        // v833 · con pinch-zoom, la ventana de maquetación (possession-tracker.js).
+        var vista = (typeof window.cronosExtrasVista === 'function')
+            ? window.cronosExtrasVista() : { ancho: window.innerWidth, alto: window.innerHeight };
+        var ancho = vista.ancho, alto = vista.alto;
 
         // 📱 El cajón de LOCAL abierto ocupa ese margen: la columna se aparta.
         var cajon = (typeof document.querySelector === 'function') ? document.querySelector('.sidebar') : null;

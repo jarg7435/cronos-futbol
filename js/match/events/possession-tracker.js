@@ -757,8 +757,32 @@
         return res;
     }
 
+    // ════════════════════════════════════════════════════════════════
+    //  🔍 v833 · EL ZOOM DE DOS DEDOS DESCOLOCABA LOS EXTRAS
+    // ════════════════════════════════════════════════════════════════
+    //  Encargo del autor (implementar.txt 23-10, IMG_0672/IMG_0673): al
+    //  ampliar el campo en el iPad, R/P, avanzados y F-D saltaban encima
+    //  de las fichas. La app no escala nada: es el pinch-zoom de Safari.
+    //
+    //  🔑 Con zoom, `innerWidth/innerHeight` miden la VENTANA VISUAL (lo
+    //  que se ve: ~590 px a 2×), pero `position:fixed`, los @media y
+    //  `getBoundingClientRect` siguen en la ventana de MAQUETACIÓN (1180).
+    //  El cálculo mezclaba los dos sistemas: con 590 px se creía en un
+    //  MÓVIL y montaba la columna sobre el césped, y el vigía de 1 s la
+    //  movía otra vez a cada pellizco o desplazamiento.
+    //  Con zoom se mide la ventana de maquetación; sin zoom, como siempre.
+    window.cronosExtrasVista = function () {
+        var vv = window.visualViewport;
+        var de = document.documentElement;
+        if (vv && vv.scale > 1.01 && de && de.clientWidth > 0 && de.clientHeight > 0) {
+            return { ancho: de.clientWidth, alto: de.clientHeight };
+        }
+        return { ancho: window.innerWidth, alto: window.innerHeight };
+    };
+
     window.cronosExtrasMideFila = function () {
-        var ancho = window.innerWidth;
+        var vista = window.cronosExtrasVista();
+        var ancho = vista.ancho;
         if (!(ancho > 950 && ancho <= 1366) || typeof document.querySelector !== 'function') return null;
         var pr = document.getElementById('cronos-pr-bar');
         var sv = document.getElementById('cronos-sav-bar');
@@ -766,7 +790,7 @@
         var campo = _rectVisible(document.querySelector('.pitch'));
         if (!campo) return null;
         return window.cronosExtrasFilaTablet({
-            ancho: ancho, alto: window.innerHeight, seguro: _seguroInferior(), campo: campo,
+            ancho: ancho, alto: vista.alto, seguro: _seguroInferior(), campo: campo,
             pr: _mideHijos(pr), sav: _mideHijos(sv)
         });
     };
@@ -775,7 +799,8 @@
         var barra = document.getElementById('cronos-pr-bar');
         var asig  = document.getElementById('cronos-pr-assign');
         if (!barra || !barra.style) return;
-        var ancho = window.innerWidth, alto = window.innerHeight;
+        var vista = window.cronosExtrasVista();       // v833 · inmune al pinch-zoom
+        var ancho = vista.ancho, alto = vista.alto;
 
         // 📟 v820 · iPad con las dos barras: la fila repartida bajo el campo.
         var fila = (barra.classList.contains('on') && typeof window.cronosExtrasMideFila === 'function')

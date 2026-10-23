@@ -2794,8 +2794,10 @@
 //        dos equipos, antes se quitaban los dos y se avisaba de borrar la cuenta.
 // v832 · EL AVISO DE SALUD DEL COMENTARIO SEGÚN LA CATEGORÍA: en base
 //        (Juvenil hacia abajo) el de menores; en adultos uno genérico.
-const VERSION = 'v832';
-const CACHE_NAME = 'cronos-cache-v832';
+// v833 · EL ZOOM DE DOS DEDOS YA NO DESCOLOCA LOS EXTRAS: con pinch-zoom
+//        se mide la ventana de MAQUETACIÓN, no la visual (iPad se creía móvil).
+const VERSION = 'v833';
+const CACHE_NAME = 'cronos-cache-v833';
 
 const ASSETS = [
     './',
