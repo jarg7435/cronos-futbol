@@ -81,7 +81,7 @@ function sandboxCR(extras) {
     const sb = {};
     vm.createContext(sb);
     sb.window = sb; sb.self = sb;
-    const nuevo = () => ({ style: {}, classList: { add() {}, remove() {} }, innerHTML: '',
+    const nuevo = () => ({ style: {}, classList: { add() {}, remove() {}, toggle() {} }, innerHTML: '',
         addEventListener() {}, appendChild() {}, querySelector: () => null, querySelectorAll: () => [] });
     const els = {};
     const porId = id => (els[id] || (els[id] = nuevo()));

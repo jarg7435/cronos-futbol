@@ -519,6 +519,66 @@ function _cqHHMM(min) {
     return String(Math.floor(min / 60)).padStart(2,'0') + ':' + String(min % 60).padStart(2,'0');
 }
 
+// ════════════════════════════════════════════════════════════════════
+//  ⏱️ v835 · LAS HORAS VAN DE CUARTO EN CUARTO
+//
+//  Encargo del autor (implementar.txt, 2026-10-23, capturas 11672-11673): el
+//  reloj del navegador dejaba elegir cualquier minuto (18:16), y un minuto
+//  suelto descuadraba la detección de solapes (ver el bucle de `ocup` en
+//  _cqHtmlEspacios). Sólo :00, :15, :30 y :45 — y además se teclea antes.
+//
+//  🔑 DOS DESPLEGABLES, NO `<input type="time" step="900">`. El `step` lo
+//  respeta el reloj de Chrome de escritorio, pero el selector de rueda del
+//  iPad/iPhone lo ignora y sigue ofreciendo los 60 minutos. Un <select> con
+//  cuatro opciones es la única restricción que se cumple en todos.
+// ════════════════════════════════════════════════════════════════════
+const CQ_MINUTOS     = ['00', '15', '30', '45'];
+const CQ_HORA_MIN_SEL = 6;                     // primera hora del desplegable
+const CQ_MIN_TOPE    = 23 * 60 + 45;           // último cuarto del día
+
+// 'HH:MM' → el cuarto de hora más cercano ('' si no es una hora).
+function _cqRedondearCuarto(hhmm) {
+    const m = _cqMin(hhmm);
+    if (m == null) return '';
+    return _cqHHMM(Math.min(Math.round(m / CQ_PASO_MIN) * CQ_PASO_MIN, CQ_MIN_TOPE));
+}
+
+function _cqSelectorHora(id, valor) {
+    const partes = /^(\d{2}):(\d{2})$/.exec(valor || '');
+    const h = partes ? partes[1] : '', mi = partes ? partes[2] : '';
+    const est = 'flex:1;min-width:0;padding:0.5rem 0.3rem;border-radius:8px;background:var(--glass);color:white;' +
+                'border:1px solid var(--glass-border);font-size:0.82rem;box-sizing:border-box;text-align:center;';
+    const opcion = (v, sel) => '<option value="' + v + '"' + (v === sel ? ' selected' : '') + '>' + (v || '--') + '</option>';
+    let horas = opcion('', h);
+    // Una hora guardada antes de las 6:00 (raro, pero posible) no puede
+    // desaparecer del desplegable: se perdería al pulsar Aplicar.
+    for (let i = (h && parseInt(h, 10) < CQ_HORA_MIN_SEL) ? 0 : CQ_HORA_MIN_SEL; i < 24; i++) {
+        horas += opcion(String(i).padStart(2, '0'), h);
+    }
+    const minutos = opcion('', mi) + CQ_MINUTOS.map(v => opcion(v, mi)).join('');
+    return '<div style="display:flex;align-items:center;gap:0.3rem;">' +
+        '<select id="' + id + '-h" aria-label="Hora" onchange="cqHoraElegida(\'' + id + '\')" style="' + est + '">' + horas + '</select>' +
+        '<span style="font-weight:800;color:white;">:</span>' +
+        '<select id="' + id + '-m" aria-label="Minutos" onchange="cqHoraElegida(\'' + id + '\')" style="' + est + '">' + minutos + '</select>' +
+    '</div>';
+}
+
+// Elegir la hora sin minutos = en punto; quitar la hora = quitar los minutos.
+// Así nunca queda media hora escrita («18:--») que luego no se guarde.
+window.cqHoraElegida = function (id) {
+    const h = document.getElementById(id + '-h'), m = document.getElementById(id + '-m');
+    if (!h || !m) return;
+    if (h.value && !m.value) m.value = '00';
+    if (!h.value) m.value = '';
+};
+
+function _cqLeerHora(id) {
+    const h = document.getElementById(id + '-h'), m = document.getElementById(id + '-m');
+    if (!h || !h.value) return '';
+    const mi = (m && CQ_MINUTOS.indexOf(m.value) >= 0) ? m.value : '00';
+    return h.value + ':' + mi;
+}
+
 // ── Filas: equipos del club + filas libres ───────────────────────────
 function _cqIdFilaEquipo(clubId, cat, sub) {
     return (typeof cronosTeamId === 'function') ? cronosTeamId(clubId, cat, sub) : (cat + '__' + sub);
@@ -805,6 +865,67 @@ const CQ_CONT_DEFECTO = 'staff-dashboard-content';
 function _cqContId() { return window._cqContenedorId || CQ_CONT_DEFECTO; }
 function _cqCont()   { return document.getElementById(_cqContId()); }
 
+// ════════════════════════════════════════════════════════════════════
+//  ☀️ v835 · EL CUADRANTE SE TRABAJA EN CLARO
+//
+//  Encargo del autor (implementar.txt, 2026-10-23, captura 11671): el fondo
+//  negro del cuadrante dificultaba la lectura. Fondo blanco, y los textos y
+//  colores (negro, naranja, verde, rojo…) adaptados para un contraste limpio.
+//
+//  🔑 SE TRADUCE LA PALETA, NO SE REESCRIBEN LAS PANTALLAS. Los ~150 estilos
+//  en línea de este módulo están escritos para fondo oscuro, y repartirlos en
+//  dos versiones duplicaría cada pantalla. En su lugar, TODO lo que este
+//  módulo pinta para el Director/Coordinador pasa por `_cqClaro()`, que
+//  cambia cada color oscuro por su equivalente legible sobre blanco. Lo que se
+//  escriba mañana con la paleta de siempre saldrá claro sin tocar nada.
+//
+//  ⚠️ LA DIRECTRIZ DEL ENTRENADOR (cronosPintarDirectrizClub) NO PASA POR
+//  AQUÍ: vive dentro de su Planificación Semanal, que sigue siendo oscura.
+//  Por eso la traducción va en el momento de pintar y no en CQ_TIPOS.
+//
+//  Las `var(--…)` no se traducen: las redefine la clase `cq-claro`.
+// ════════════════════════════════════════════════════════════════════
+const CQ_CLARO = [
+    // Colores con nombre (hex) → tono oscuro del mismo color, legible sobre blanco.
+    ['#58a6ff', '#0969da'], ['#3fb950', '#1a7f37'], ['#f0883e', '#bc4c00'],
+    ['#d2a8ff', '#8250df'], ['#ff5858', '#cf222e'], ['#d4b106', '#9a6700'],
+    ['#8b949e', '#57606a'], ['#484f58', '#8c959f'], ['#ffdcdc', '#82071e'],
+    // Fondos de panel oscuros → blanco.
+    ['#161b22', '#ffffff'], ['#0d1117', '#ffffff'],
+    // Los mismos colores en rgba() (fondos y bordes translúcidos, y los que
+    // salen de _cronosHexRgb, que escribe «r,g,b» sin espacios).
+    ['rgba(88,166,255,',  'rgba(9,105,218,'],
+    ['rgba(63,185,80,',   'rgba(26,127,55,'],
+    ['rgba(240,136,62,',  'rgba(188,76,0,'],
+    ['rgba(210,168,255,', 'rgba(130,80,223,'],
+    ['rgba(255,88,88,',   'rgba(207,34,46,'],
+    ['rgba(212,177,6,',   'rgba(154,103,0,'],
+    ['rgba(139,148,158,', 'rgba(87,96,106,'],
+    // Blanco translúcido (rejillas, bordes, «+» de casilla vacía) → negro translúcido.
+    ['rgba(255,255,255,', 'rgba(31,35,40,'],
+    ['color:white',       'color:#1f2328'],
+];
+function _cqClaro(html) {
+    let s = String(html == null ? '' : html);
+    CQ_CLARO.forEach(par => { s = s.split(par[0]).join(par[1]); });
+    return s;
+}
+
+// Las variables del tema (texto apagado, cristal, borde) redefinidas para
+// blanco, más el fondo. Se inyecta una sola vez.
+function _cqEstiloClaro() {
+    if (document.getElementById('cq-claro-css')) return;
+    const css = document.createElement('style');
+    css.id = 'cq-claro-css';
+    css.textContent =
+        '.cq-claro, .cq-claro-ov { --text-muted:#57606a; --text-main:#1f2328; --primary:#0969da;' +
+            ' --glass:#ffffff; --glass-border:#d0d7de; color:#1f2328; color-scheme:light; }' +
+        '.cq-claro { background:#ffffff !important; }' +
+        '#ind-cuadrante-body.cq-claro { padding:1rem; border-radius:12px; }' +
+        '.cq-claro input::placeholder, .cq-claro-ov input::placeholder { color:#8c959f; }';
+    (document.head || document.body).appendChild(css);
+}
+
 // ¿Estamos en un Ente Individual? Cambia SÓLO cómo se llama a las cosas: un
 // entrenador administrador individual no tiene "club", tiene su entidad. La
 // mecánica (documento, filas, celdas, envío) es exactamente la misma.
@@ -822,6 +943,10 @@ async function _sdLoadCuadrante(contenedorId) {
     window._cqContenedorId = contenedorId || CQ_CONT_DEFECTO;
     const container = _cqCont();
     if (!container) return;
+    // ☀️ v835 · Fondo blanco desde el primer «Cargando…». Quien reutiliza el
+    // contenedor para otra sección le quita la clase (switchStaffTab).
+    _cqEstiloClaro();
+    container.classList.add('cq-claro');
     const me     = window._cronosCurrentUser || {};
     const clubId = window._testRoleClubId || me.clubId || '';
 
@@ -1230,7 +1355,7 @@ function _cqPintar() {
     }
 
     html += (st.vista === 'espacios') ? _cqHtmlEspacios(lunes) : _cqHtmlEquipos(lunes);
-    container.innerHTML = html;
+    container.innerHTML = _cqClaro(html);   // ☀️ v835 · ver CQ_CLARO
 }
 
 // ── VISTA 1: matriz por equipos (el formato del cuadrante en papel) ──
@@ -2240,10 +2365,26 @@ function _cqHtmlEspacios(lunes) {
     });
 
     // Mapa franja→espacio→[ítems], para pintar y para detectar colisiones.
+    // ════════════════════════════════════════════════════════════════
+    //  🔴 v835 · LAS FRANJAS SE RECORREN SOBRE LA REJILLA, NO DESDE LA HORA
+    //
+    //  Reporte del autor (capturas 11676-11677): Alevín C y FUTureFEM C, los
+    //  dos a las 18:16 en los espacios 3-4, NO salían en conflicto; al pasarlos
+    //  a 18:15 apareció el rojo. Antes el bucle arrancaba en la hora del
+    //  bloque (18:16 → 1096, 1111…), y la parrilla sólo consulta las franjas
+    //  de la rejilla (18:15 → 1095, 1110…): un bloque con minutos sueltos
+    //  apuntaba a claves que nadie leía y el choque se perdía.
+    //
+    //  🔑 Ahora cada franja de la rejilla recoge a todo bloque que la PISE,
+    //  aunque sea en parte. El editor ya sólo deja elegir cuartos de hora,
+    //  pero los cuadrantes guardados antes pueden traer 18:16 y tienen que
+    //  avisar igual.
+    // ════════════════════════════════════════════════════════════════
     const ocup = {};
     dentro.forEach(it => {
         it.esp.forEach(e => {
-            for (let t = Math.max(it.a, ini); t < Math.min(it.b, fin); t += CQ_PASO_MIN) {
+            for (let t = ini; t < fin; t += CQ_PASO_MIN) {
+                if (it.a >= t + CQ_PASO_MIN || it.b <= t) continue;
                 const k = t + '|' + e;
                 (ocup[k] = ocup[k] || []).push(it);
             }
@@ -2563,6 +2704,20 @@ window.cqEditarCelda = function (filaId, fecha) {
     const nEsp = st.doc.espacios || CQ_ESPACIOS;
     const dia  = new Date(fecha + 'T12:00:00');
 
+    // ⏱️ v835 · Una hora guardada con minutos sueltos (18:16) se abre ya
+    // redondeada al cuarto más cercano —decisión del autor— y se avisa: el
+    // cambio no se guarda hasta pulsar Aplicar.
+    const horaIni = _cqRedondearCuarto(c.ini);
+    let   horaFin = _cqRedondearCuarto(c.fin);
+    if (horaIni && horaFin && _cqMin(horaFin) <= _cqMin(horaIni)) {
+        // 18:20–18:25 redondearía a 18:15–18:30; pero 18:16–18:20 daría
+        // 18:15–18:15: un bloque vacío. Se le deja el cuarto mínimo.
+        horaFin = (_cqMin(horaIni) + CQ_PASO_MIN <= CQ_MIN_TOPE) ? _cqHHMM(_cqMin(horaIni) + CQ_PASO_MIN) : '';
+    }
+    const ajuste = [[c.ini, horaIni], [c.fin, horaFin]]
+        .filter(x => x[0] && x[0] !== x[1])
+        .map(x => x[0] + ' → ' + (x[1] || 'sin hora')).join(' · ');
+
     const opTipos = Object.keys(CQ_TIPOS).map(k =>
         '<option value="' + k + '"' + (c.tipo === k ? ' selected' : '') + ' style="background:#161b22;">' +
         CQ_TIPOS[k].icono + ' ' + _cqE(CQ_TIPOS[k].label) + '</option>').join('');
@@ -2590,10 +2745,12 @@ window.cqEditarCelda = function (filaId, fecha) {
                 '<select id="cq-ce-tipo" onchange="cqTipoCambiado()" style="width:100%;padding:0.5rem;border-radius:8px;background:var(--glass);color:white;border:1px solid var(--glass-border);font-size:0.82rem;">' + opTipos + '</select></div>' +
             '<div style="display:grid;grid-template-columns:1fr 1fr;gap:0.6rem;">' +
                 '<div><label style="font-size:0.72rem;color:var(--text-muted);display:block;margin-bottom:0.25rem;">Desde</label>' +
-                    '<input type="time" id="cq-ce-ini" value="' + _cqA(c.ini) + '" style="width:100%;padding:0.5rem;border-radius:8px;background:var(--glass);color:white;border:1px solid var(--glass-border);font-size:0.82rem;box-sizing:border-box;"></div>' +
+                    _cqSelectorHora('cq-ce-ini', horaIni) + '</div>' +
                 '<div><label style="font-size:0.72rem;color:var(--text-muted);display:block;margin-bottom:0.25rem;">Hasta</label>' +
-                    '<input type="time" id="cq-ce-fin" value="' + _cqA(c.fin) + '" style="width:100%;padding:0.5rem;border-radius:8px;background:var(--glass);color:white;border:1px solid var(--glass-border);font-size:0.82rem;box-sizing:border-box;"></div>' +
+                    _cqSelectorHora('cq-ce-fin', horaFin) + '</div>' +
             '</div>' +
+            (ajuste ? '<div style="font-size:0.68rem;color:#f0883e;margin-top:-0.3rem;">⏱️ Hora ajustada al cuarto de hora más cercano: ' +
+                          _cqE(ajuste) + '. Pulsa <strong>Aplicar</strong> para guardarla así.</div>' : '') +
             '<div id="cq-ce-espbloque"><label style="font-size:0.72rem;color:var(--text-muted);display:block;margin-bottom:0.35rem;">🏟️ Espacios del campo que ocupa</label>' +
                 '<div style="display:flex;gap:0.4rem;flex-wrap:wrap;">' + casillas.join('') + '</div>' +
                 '<div id="cq-ce-espnota" style="font-size:0.66rem;color:var(--text-muted);margin-top:0.3rem;">Puede ocupar 1, 2 o los ' + nEsp + '.</div></div>' +
@@ -2643,12 +2800,12 @@ window.cqTipoCambiado = function () {
         // COMPLETO. Se dice AQUÍ, antes de guardar: si el sistema va a asumir
         // algo, el director tiene que enterarse mientras puede cambiarlo — y no
         // descubrirlo al ver la parrilla llena de rojo.
-        nota.innerHTML = juegaFuera
+        nota.innerHTML = _cqClaro(juegaFuera
             ? '🚌 <strong style="color:#f0883e;">Se juega fuera: no ocupa ningún espacio del club</strong>, así que no puede chocar con nadie.'
             : (meta.campoCompleto && !alguno)
                 ? '🏠 <strong style="color:#3fb950;">Sin marcar nada, un partido en casa ocupa el CAMPO COMPLETO</strong> ' +
                   'y así consta en el informe del Ayuntamiento. Marca espacios sólo si se juega en una parte (por ejemplo, dos partidos de F7 a la vez).'
-                : 'Puede ocupar 1, 2 o los ' + nEsp + '.';
+                : 'Puede ocupar 1, 2 o los ' + nEsp + '.');
     }
 };
 
@@ -2664,7 +2821,7 @@ window.cqAplicarCelda = function (filaId, fecha) {
     const esp = (metaT.ocupa === false) ? [] :
         Array.prototype.slice.call(document.querySelectorAll('.cq-esp'))
             .filter(x => x.checked).map(x => parseInt(x.value, 10));
-    const ini = g('cq-ce-ini'), fin = g('cq-ce-fin');
+    const ini = _cqLeerHora('cq-ce-ini'), fin = _cqLeerHora('cq-ce-fin');
 
     if (ini && fin && _cqMin(fin) !== null && _cqMin(ini) !== null && _cqMin(fin) <= _cqMin(ini)) {
         _cqToast('⚠️ La hora de fin tiene que ser posterior a la de inicio.', 4000);
@@ -2716,9 +2873,14 @@ function _cqOverlay(titulo, cuerpo, botones) {
     cqCerrarOverlay();
     const ov = document.createElement('div');
     ov.id = 'cq-overlay';
-    ov.style.cssText = 'position:fixed;inset:0;z-index:2147482000;background:rgba(0,0,0,0.72);' +
+    // ☀️ v835 · La ventana también en claro. Cuelga de <body>, fuera del
+    // contenedor, así que lleva su propia clase (sólo variables: el fondo
+    // de la cortina sigue oscuro para que la ventana destaque).
+    _cqEstiloClaro();
+    ov.className = 'cq-claro-ov';
+    ov.style.cssText = 'position:fixed;inset:0;z-index:2147482000;background:rgba(0,0,0,0.55);' +
         'display:flex;align-items:center;justify-content:center;padding:1rem;';
-    ov.innerHTML =
+    ov.innerHTML = _cqClaro(
         '<div style="width:min(94vw,520px);max-height:88vh;display:flex;flex-direction:column;overflow:hidden;' +
              'background:#161b22;border:1px solid rgba(255,255,255,0.12);border-radius:14px;box-shadow:0 20px 60px rgba(0,0,0,0.6);">' +
             '<div style="padding:0.9rem 1.1rem;border-bottom:1px solid rgba(255,255,255,0.08);display:flex;justify-content:space-between;align-items:center;gap:0.6rem;">' +
@@ -2727,7 +2889,7 @@ function _cqOverlay(titulo, cuerpo, botones) {
             '</div>' +
             '<div style="flex:1;overflow-y:auto;padding:1rem 1.1rem;">' + cuerpo + '</div>' +
             '<div style="padding:0.8rem 1.1rem;border-top:1px solid rgba(255,255,255,0.08);display:flex;gap:0.5rem;justify-content:flex-end;flex-wrap:wrap;">' + botones + '</div>' +
-        '</div>';
+        '</div>');
     ov.addEventListener('click', ev => { if (ev.target === ov) cqCerrarOverlay(); });
     document.body.appendChild(ov);
 }
@@ -3092,8 +3254,8 @@ window.cqAbrirEnvio = async function () {
         lista = await _cqEntrenadoresDelClub(clubId);
     } catch (e) {
         const b = document.getElementById('cq-env-body');
-        if (b) b.innerHTML = '<div style="color:#ff5858;padding:1rem;">⚠️ No se ha podido leer la lista de entrenadores.<br>' +
-            '<span style="font-size:0.75rem;color:var(--text-muted);">' + _cqE(e && e.message ? e.message : '') + '</span></div>';
+        if (b) b.innerHTML = _cqClaro('<div style="color:#ff5858;padding:1rem;">⚠️ No se ha podido leer la lista de entrenadores.<br>' +
+            '<span style="font-size:0.75rem;color:var(--text-muted);">' + _cqE(e && e.message ? e.message : '') + '</span></div>');
         return;
     }
 
@@ -3123,7 +3285,7 @@ window.cqAbrirEnvio = async function () {
     });
     window._cqEnvioLista = lista;
 
-    body.innerHTML =
+    body.innerHTML = _cqClaro(
         '<div style="font-size:0.74rem;color:var(--text-muted);line-height:1.5;margin-bottom:0.7rem;' +
              'background:rgba(88,166,255,0.05);border:1px solid rgba(88,166,255,0.15);border-radius:8px;padding:0.5rem 0.7rem;">' +
             (_cqEsEnte()
@@ -3139,7 +3301,7 @@ window.cqAbrirEnvio = async function () {
                 '<input type="checkbox" class="cq-env-chk" data-i="' + i + '" checked>' +
                 '<span style="flex:1;min-width:0;">' + _cqE(r.nombre) +
                     (r.cat ? ' <span style="color:#8b949e;font-size:0.72rem;">· ' + _cqE(_cqLabelEquipo(r.cat, r.sub)) + '</span>' : '') +
-                '</span></label>').join('');
+                '</span></label>').join(''));
 };
 
 window.cqEnvioTodos = function (marcado) {

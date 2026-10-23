@@ -264,7 +264,7 @@ async function openStaffDashboard(initialTab) {
     <div class="modal-content" style="width:min(96vw,960px);max-height:94vh;
          display:flex;flex-direction:column;overflow:hidden;padding:0;background:#0d1117;">
 
-        <div style="display:flex;justify-content:space-between;align-items:center;
+        <div class="sd-cab" style="display:flex;justify-content:space-between;align-items:center;
                     padding:1.2rem 1.5rem;background:linear-gradient(to right,#161b22,#0d1117);
                     border-bottom:1px solid var(--glass-border);flex-shrink:0;">
             <div>
@@ -298,7 +298,7 @@ async function openStaffDashboard(initialTab) {
                     🔄 Recargar</button>
                 <!-- v763 · cambio de contraseña para TODOS los roles (password.js) -->
                 ${typeof window.cronosBotonContrasena==='function'?window.cronosBotonContrasena():''}
-                <button onclick="if(typeof logoutUser==='function')logoutUser();else if(typeof cerrarSesion==='function')cerrarSesion();"
+                <button class="sd-salir" onclick="if(typeof logoutUser==='function')logoutUser();else if(typeof cerrarSesion==='function')cerrarSesion();"
                     style="background:rgba(255,88,88,0.1);border:1px solid rgba(255,88,88,0.3);
                            color:#ff5858;padding:0.35rem 0.8rem;border-radius:6px;
                            cursor:pointer;font-size:0.74rem;font-weight:700;">
@@ -364,6 +364,20 @@ async function openStaffDashboard(initialTab) {
         }
         .sd-report-card:hover { border-color:rgba(88,166,255,0.4);background:rgba(88,166,255,0.05); }
         .sd-report-unread { border-color:rgba(255,165,0,0.5);background:rgba(255,165,0,0.04); }
+        /* v835 · El Cuadrante se trabaja en CLARO, y con el su entorno: la
+           cabecera y la barra de vuelta. switchStaffTab pone y quita sd-claro.
+           Los important ganan a los estilos en linea de la plantilla oscura. */
+        .modal-content.sd-claro { background:#ffffff !important; }
+        .sd-claro .sd-cab, .sd-claro #staff-navbar {
+            --text-muted:#57606a; --primary:#0969da; --glass-border:#d0d7de; color-scheme:light;
+        }
+        .sd-claro .sd-cab { background:#ffffff !important; border-bottom:1px solid #d0d7de !important; }
+        .sd-claro .sd-cab h2 { color:#1f2328 !important; }
+        .sd-claro .sd-cab button { background:#f6f8fa !important; border:1px solid #d0d7de !important; color:#1f2328 !important; }
+        .sd-claro .sd-cab button.sd-salir { background:rgba(207,34,46,0.06) !important; border-color:rgba(207,34,46,0.45) !important; color:#cf222e !important; }
+        .sd-claro #staff-navbar { background:#f6f8fa !important; border-bottom:1px solid #d0d7de !important; }
+        .sd-claro #staff-navbar span { color:#1f2328 !important; }
+        .sd-claro #staff-navbar button { background:rgba(9,105,218,0.08) !important; border-color:rgba(9,105,218,0.45) !important; color:#0969da !important; }
     </style>`;
 
     switchStaffTab(_tab);
@@ -437,6 +451,12 @@ window.switchStaffTab = async (tab) => {
     if (btn) btn.classList.add('active');
 
     const container = document.getElementById('staff-dashboard-content');
+    // ☀️ v835 · Claro SÓLO en el Cuadrante. El contenedor es el mismo para
+    // todas las secciones: sin quitarle la clase, la siguiente heredaría el
+    // fondo blanco con sus textos pensados para oscuro.
+    container.classList.toggle('cq-claro', tab === 'cuadrante');
+    const _sdMarco = container.closest ? container.closest('.modal-content') : null;
+    if (_sdMarco) _sdMarco.classList.toggle('sd-claro', tab === 'cuadrante');
     container.innerHTML = `<div style="text-align:center;padding:3rem;color:var(--text-muted);">⏳ Cargando…</div>`;
 
     // ══════════════════════════════════════════════════════════════════

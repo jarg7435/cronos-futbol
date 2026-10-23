@@ -2798,8 +2798,11 @@
 //        se mide la ventana de MAQUETACIÓN, no la visual (iPad se creía móvil).
 // v834 · CON ZOOM, LOS EXTRAS SE QUEDAN QUIETOS: mientras visualViewport.scale
 //        > 1 no se recolocan (al desplazarse volvían a pisar las fichas).
-const VERSION = 'v834';
-const CACHE_NAME = 'cronos-cache-v834';
+// v835 · EL CUADRANTE EN CLARO Y DE CUARTO EN CUARTO: fondo blanco (y su
+//        cabecera) para leerlo bien; horas sólo :00/:15/:30/:45, las viejas se
+//        redondean al abrirlas, y un 18:16 ya no esquiva el aviso de conflicto.
+const VERSION = 'v835';
+const CACHE_NAME = 'cronos-cache-v835';
 
 const ASSETS = [
     './',
