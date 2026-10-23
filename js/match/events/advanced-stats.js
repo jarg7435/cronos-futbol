@@ -519,6 +519,10 @@
             window.addEventListener('resize', _colocaBarra);
             window.addEventListener('orientationchange', function () { setTimeout(_colocaBarra, 250); });
         }
+        // v834 · al soltar el zoom (vuelta a 1×) se recoloca al momento.
+        if (window.visualViewport && typeof window.visualViewport.addEventListener === 'function') {
+            window.visualViewport.addEventListener('resize', _colocaBarra);
+        }
     }
 
     // ════════════════════════════════════════════════════════════════
@@ -611,6 +615,8 @@
         var barra = document.getElementById('cronos-sav-bar');
         var asig  = document.getElementById('cronos-sav-assign');
         if (!barra || !barra.style || !barra.classList.contains('on')) return;
+        // v834 · con pinch-zoom la barra se queda donde estaba (possession-tracker.js).
+        if (typeof window.cronosExtrasCongelada === 'function' && window.cronosExtrasCongelada(barra)) return;
         // v833 · con pinch-zoom, la ventana de maquetación (possession-tracker.js).
         var vista = (typeof window.cronosExtrasVista === 'function')
             ? window.cronosExtrasVista() : { ancho: window.innerWidth, alto: window.innerHeight };

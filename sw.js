@@ -2796,8 +2796,10 @@
 //        (Juvenil hacia abajo) el de menores; en adultos uno genérico.
 // v833 · EL ZOOM DE DOS DEDOS YA NO DESCOLOCA LOS EXTRAS: con pinch-zoom
 //        se mide la ventana de MAQUETACIÓN, no la visual (iPad se creía móvil).
-const VERSION = 'v833';
-const CACHE_NAME = 'cronos-cache-v833';
+// v834 · CON ZOOM, LOS EXTRAS SE QUEDAN QUIETOS: mientras visualViewport.scale
+//        > 1 no se recolocan (al desplazarse volvían a pisar las fichas).
+const VERSION = 'v834';
+const CACHE_NAME = 'cronos-cache-v834';
 
 const ASSETS = [
     './',

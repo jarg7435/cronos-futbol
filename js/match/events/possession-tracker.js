@@ -612,6 +612,10 @@
             window.addEventListener('resize', _colocaBarra);
             window.addEventListener('orientationchange', function () { setTimeout(_colocaBarra, 250); });
         }
+        // v834 · al soltar el zoom (vuelta a 1×) se recoloca al momento.
+        if (window.visualViewport && typeof window.visualViewport.addEventListener === 'function') {
+            window.visualViewport.addEventListener('resize', _colocaBarra);
+        }
     }
 
     // ════════════════════════════════════════════════════════════════
@@ -780,6 +784,35 @@
         return { ancho: window.innerWidth, alto: window.innerHeight };
     };
 
+    // ════════════════════════════════════════════════════════════════
+    //  🔍 v834 · CON ZOOM, LAS BARRAS NO SE VUELVEN A COLOCAR
+    // ════════════════════════════════════════════════════════════════
+    //  Reporte del autor (implementar.txt 23-10, tras v833): con el campo
+    //  ampliado, al DESPLAZARSE los extras volvían a montarse sobre las
+    //  fichas. En la pantalla del partido el <body> mide la pantalla y
+    //  tiene `overflow:hidden`: el documento no hace scroll, así que la
+    //  ventana de maquetación no se mueve y lo `fixed` se amplía y se
+    //  desplaza CON el campo. Lo que estaba mal era la recolocación del
+    //  vigía de 1 s: en pleno zoom Safari da rects y tamaños en un sistema
+    //  que no casa con el de `position:fixed`, y cada pasada los movía.
+    //
+    //  🔑 Mientras `visualViewport.scale` > 1 la posición calculada sin
+    //  zoom YA es la buena (en maquetación nada ha cambiado): se conserva.
+    //  No se compensa con offsetLeft/offsetTop: eso pegaría las barras a
+    //  lo VISIBLE y flotarían encima del césped ampliado. Al volver a 1×
+    //  (evento `resize` del visualViewport) se recolocan como siempre.
+    //  Si una barra se enciende ya con zoom (sin sitio previo), se calcula
+    //  una vez con la ventana de maquetación (v833).
+    window.cronosExtrasConZoom = function () {
+        var vv = window.visualViewport;
+        return !!(vv && vv.scale > 1.01);
+    };
+
+    window.cronosExtrasCongelada = function (barra) {
+        if (!window.cronosExtrasConZoom()) return false;
+        return !!(barra && barra.style && barra.style.top);
+    };
+
     window.cronosExtrasMideFila = function () {
         var vista = window.cronosExtrasVista();
         var ancho = vista.ancho;
@@ -799,6 +832,7 @@
         var barra = document.getElementById('cronos-pr-bar');
         var asig  = document.getElementById('cronos-pr-assign');
         if (!barra || !barra.style) return;
+        if (window.cronosExtrasCongelada(barra)) return;   // v834 · con zoom, quieta
         var vista = window.cronosExtrasVista();       // v833 · inmune al pinch-zoom
         var ancho = vista.ancho, alto = vista.alto;
 
