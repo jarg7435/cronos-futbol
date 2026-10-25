@@ -2809,8 +2809,11 @@
 //        dice «Cargando…» al instante; la marca de la plaza (session-lock) y
 //        la consulta de live_matches llevan tope; sin nube, lo del aparato o
 //        un aviso con «Reintentar».
-const VERSION = 'v837';
-const CACHE_NAME = 'cronos-cache-v837';
+// v838 · CAMPO / INSTALACIÓN EN EL CUADRANTE: al programar una actividad se
+//        elige el campo (nombres personalizables del club, 🏟️ CAMPOS) y
+//        dentro de él sus 4 espacios; los choques se miden por campo.
+const VERSION = 'v838';
+const CACHE_NAME = 'cronos-cache-v838';
 
 const ASSETS = [
     './',

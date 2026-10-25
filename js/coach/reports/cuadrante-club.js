@@ -66,8 +66,9 @@
 //    { v: 1,
 //      weekKey: '2026-05-11',
 //      filas:  [ { id, tipo:'equipo'|'libre', cat, sub, label } ],
-//      celdas: { '<filaId>|<YYYY-MM-DD>': { tipo, ini, fin, esp:[1,2], txt, nota } },
+//      celdas: { '<filaId>|<YYYY-MM-DD>': { tipo, ini, fin, campo:'c2', esp:[1,2], txt, nota } },
 //      espacios: 4,
+//      campos: [ { id:'c1', nombre:'Campo 1' }, … ]   (v838 · copia de CQ_DOC_CAMPOS)
 //      actualizado, actualizadoPor, actualizadoPorNombre,
 //      publicadoEn, publicadoPor, publicadoA: [uid] }
 //
@@ -242,6 +243,98 @@ function _cqEspacioImplicito(c) {
     return !!meta.campoCompleto && !(Array.isArray(c.esp) && c.esp.length);
 }
 
+// ════════════════════════════════════════════════════════════════════
+//  🏟️ v838 · CAMPO / INSTALACIÓN
+//
+//  Encargo del autor (implementar.txt, 2026-10-25, capturas 11698-11700):
+//  como la «Cancha / pista» de Chronos Basket, al programar una actividad se
+//  elige el CAMPO (Campo 1, Campo 2…, con el nombre que el club quiera) y,
+//  dentro de él, los 4 espacios de siempre. Los solapamientos se miden
+//  dentro del campo elegido: el espacio 1 del Campo 1 y el espacio 1 del
+//  Campo 2 no chocan.
+//
+//  🔑 LA LISTA ES DEL CLUB, NO DE LA SEMANA — la lección de v612 con las
+//  filas. Vive en un documento hermano (CUADRANTE__CAMPOS), con las mismas
+//  dos razones: la regla de `trainingPlans/{clubId}/weeks/{weekKey}` ya lo
+//  cubre (CERO reglas nuevas) y `deleteWeek` nunca lo puede borrar.
+//  Cada semana guarda además una COPIA (`campos`) al guardar y al enviar:
+//  es lo que deja al entrenador leer el nombre sin una lectura más.
+//
+//  🔑 UNA CASILLA SIN `campo` ES DEL PRIMER CAMPO. Así todo lo cuadrado
+//  antes de v838 sigue exactamente donde estaba, sin migrar nada, y un club
+//  con un solo campo no ve ningún cambio en sus casillas.
+//
+//  ⚠️ QUITAR UN CAMPO NO LO BORRA: lo marca `baja`. Las semanas ya
+//  cuadradas que lo usaban siguen diciendo su nombre (y que está retirado)
+//  en vez de saltar en silencio a otro campo.
+// ════════════════════════════════════════════════════════════════════
+const CQ_DOC_CAMPOS     = 'CUADRANTE__CAMPOS';
+const CQ_CAMPO_MAX_NOM  = 40;
+function _cqCamposDefecto() { return [{ id: 'c1', nombre: 'Campo 1' }]; }
+
+function _cqCampoLimpio(x) {
+    const o = { id: String((x && x.id) || ''),
+                nombre: String((x && x.nombre) || '').trim().slice(0, CQ_CAMPO_MAX_NOM) };
+    if (!o.nombre) o.nombre = 'Campo';
+    if (x && x.baja) o.baja = true;
+    return o;
+}
+
+// Todos los campos, también los retirados. Con `lista` explícita se usa SÓLO
+// esa (el panel del entrenador no tiene estado del director); sin ella, la
+// del club y, si no se ha leído, la copia de la semana.
+function _cqCamposTodos(lista) {
+    let l = lista;
+    if (l === undefined) {
+        const st = window._cqState || {};
+        l = (Array.isArray(st.camposClub) && st.camposClub.length) ? st.camposClub
+          : (st.doc && st.doc.campos);
+    }
+    const limpios = Array.isArray(l) ? l.filter(x => x && x.id).map(_cqCampoLimpio) : [];
+    return limpios.length ? limpios : _cqCamposDefecto();
+}
+
+function _cqCamposActivos(lista) {
+    const a = _cqCamposTodos(lista).filter(x => !x.baja);
+    return a.length ? a : _cqCamposDefecto();
+}
+
+// El campo de una casilla: el suyo si existe (aunque esté retirado); si no
+// tiene —todo lo anterior a v838— o apunta a uno desconocido, el primero.
+function _cqCampoDe(c, lista) {
+    const todos = _cqCamposTodos(lista);
+    if (c && c.campo && todos.some(x => x.id === c.campo)) return c.campo;
+    return _cqCamposActivos(lista)[0].id;
+}
+
+function _cqNombreCampo(id, lista) {
+    const x = _cqCamposTodos(lista).find(k => k.id === id);
+    if (!x) return '';
+    return x.nombre + (x.baja ? ' (retirado)' : '');
+}
+
+// ¿Hay que decir el campo? Sólo si el club tiene más de uno, o si la casilla
+// está en uno retirado. Con un único campo, las casillas se leen como antes.
+function _cqMostrarCampo(c, lista) {
+    if (_cqCamposActivos(lista).length > 1) return true;
+    return !!c && _cqCampoDe(c, lista) !== _cqCamposActivos(lista)[0].id;
+}
+
+// Lo que se lee en la casilla y en los resúmenes: «Campo 2 · 1·2», o sólo
+// los espacios cuando no hace falta nombrar el campo.
+function _cqRotuloCampo(c, lista) {
+    return _cqMostrarCampo(c, lista) ? _cqNombreCampo(_cqCampoDe(c, lista), lista) : '';
+}
+
+// Copia de una casilla para el portapapeles y los pegados. Un solo sitio:
+// antes cada pegado enumeraba los campos a mano y `campo` se habría perdido
+// en cuanto se olvidara uno de los cinco.
+function _cqCopiaCelda(c) {
+    const o = { tipo: c.tipo, ini: c.ini, fin: c.fin, esp: (c.esp || []).slice(), txt: c.txt, nota: c.nota };
+    if (c.campo) o.campo = c.campo;
+    return o;
+}
+
 // Orden por defecto de las filas: de MAYOR a MENOR edad, como el cuadrante en
 // papel del club. CT_CATEGORIES va de menor a mayor, así que se invierte.
 // 🆕 v747 · 'nacional' se AÑADE AL FINAL, no en cabeza: es la decisión que
@@ -329,6 +422,11 @@ window._cqState = window._cqState || {
     // 🔴 v612 · La lista de equipos del CLUB (doc CUADRANTE__FILAS), en caché
     // de sesión. `null` = todavía no leída; `[]` = leída y vacía.
     filasClub: null,
+    // 🏟️ v838 · Los campos del club (doc CUADRANTE__CAMPOS). Mismo criterio:
+    // `null` = sin leer o lectura fallida; y el campo que enseña la vista de
+    // ocupación ('' = el primero).
+    camposClub: null,
+    campoVista: '',
     // 📋 v604 · Portapapeles de la parrilla: { modo:'celda'|'fila', datos, etiqueta }
     // Mientras hay algo copiado, la parrilla entra en MODO PEGAR: pulsar una
     // casilla (o una fila) pega en vez de abrir el editor.
@@ -486,6 +584,38 @@ async function _cqGuardarFilasClub(clubId, filas) {
     }, { merge: false });
     window._cqState.filasClub = limpias;
     return limpias;
+}
+
+// 🏟️ v838 · Los campos del club (ver la nota de CQ_DOC_CAMPOS). Un fallo de
+// lectura NO tumba el cuadrante: se sigue con la copia de la semana.
+async function _cqLeerCamposClub(clubId) {
+    const st = window._cqState;
+    if (st.camposClub) return st.camposClub;
+    try {
+        const fs = await _cqFS();
+        const snap = await fs.getDoc(fs.doc(fs.db, 'trainingPlans', clubId, 'weeks', CQ_DOC_CAMPOS));
+        const d = snap.exists() ? (snap.data() || {}) : {};
+        st.camposClub = Array.isArray(d.campos) ? d.campos.filter(x => x && x.id).map(_cqCampoLimpio) : [];
+    } catch (e) {
+        console.warn('[Cuadrante] no se pudieron leer los campos del club:', e && e.message ? e.message : e);
+        st.camposClub = null;
+        return [];
+    }
+    return st.camposClub;
+}
+
+async function _cqGuardarCamposClub(clubId, campos) {
+    const me = window._cronosCurrentUser || {};
+    const limpios = (campos || []).filter(x => x && x.id).map(_cqCampoLimpio);
+    const fs = await _cqFS();
+    await fs.setDoc(fs.doc(fs.db, 'trainingPlans', clubId, 'weeks', CQ_DOC_CAMPOS), {
+        v: 1, campos: limpios,
+        actualizado: new Date().toISOString(),
+        actualizadoPor: me.uid || '',
+        actualizadoPorNombre: me.firstName || me.displayName || me.email || '',
+    }, { merge: false });
+    window._cqState.camposClub = limpios;
+    return limpios;
 }
 
 // ── Qué filas se enseñan en una semana ───────────────────────────────
@@ -691,6 +821,7 @@ async function _cqLeer(clubId, weekKey) {
                 espacios: d.espacios || CQ_ESPACIOS,
                 filas:  Array.isArray(d.filas) ? d.filas : [],
                 celdas: (d.celdas && typeof d.celdas === 'object') ? d.celdas : {},
+                campos: Array.isArray(d.campos) ? d.campos : [],   // v838
                 publicadoEn: d.publicadoEn || '', publicadoPor: d.publicadoPor || '',
                 publicadoA:  Array.isArray(d.publicadoA) ? d.publicadoA : [],
                 // v734 · Lo que ven los entrenadores, aparte del borrador.
@@ -738,6 +869,7 @@ function _cqRamaPublicada(datos) {
         espacios: p.espacios || CQ_ESPACIOS,
         filas:    Array.isArray(p.filas) ? p.filas : [],
         celdas:   (p.celdas && typeof p.celdas === 'object') ? p.celdas : {},
+        campos:   Array.isArray(p.campos) ? p.campos : [],   // v838
         publicadoEn:  p.publicadoEn  || '',
         publicadoPor: p.publicadoPor || '',
         publicadoA:   Array.isArray(p.publicadoA) ? p.publicadoA : [],
@@ -772,6 +904,7 @@ async function _cqGuardar(clubId, datos, opciones) {
                     espacios: viejo.espacios || CQ_ESPACIOS,
                     filas:    Array.isArray(viejo.filas) ? viejo.filas : [],
                     celdas:   (viejo.celdas && typeof viejo.celdas === 'object') ? viejo.celdas : {},
+                    campos:   Array.isArray(viejo.campos) ? viejo.campos : [],
                     publicadoEn:  viejo.publicadoEn  || '',
                     publicadoPor: viejo.publicadoPor || '',
                     publicadoA:   Array.isArray(viejo.publicadoA) ? viejo.publicadoA : [],
@@ -794,6 +927,8 @@ async function _cqGuardar(clubId, datos, opciones) {
         espacios: datos.espacios || CQ_ESPACIOS,
         filas:    datos.filas  || [],
         celdas:   datos.celdas || {},
+        // 🏟️ v838 · La copia de los campos del club con los que se cuadró.
+        campos:   _cqCamposTodos(),
         // 🔑 v734 · LO PUBLICADO VIAJA SIEMPRE. Con `merge:false`, omitirlo es
         // borrarlo, y borrarlo deja a los entrenadores sin cuadrante.
         publicado: publicado || null,
@@ -821,6 +956,7 @@ async function _cqGuardar(clubId, datos, opciones) {
     window._cqState.selloPropio = payload.actualizado;
     window._cqState.doc.actualizado = payload.actualizado;
     window._cqState.doc.actualizadoPorNombre = payload.actualizadoPorNombre;
+    window._cqState.doc.campos = payload.campos;
     // v734 · La pantalla necesita saber qué hay publicado para poder decir
     // «guardado, pendiente de enviar».
     window._cqState.doc.publicado = payload.publicado;
@@ -975,9 +1111,11 @@ async function _sdLoadCuadrante(contenedorId) {
         // 🔴 v612 · La lista de equipos es del CLUB (ver CQ_DOC_FILAS). Se lee
         // ANTES de decidir las filas de esta semana: es la que manda.
         const filasClub = await _cqLeerFilasClub(clubId);
+        // 🏟️ v838 · Y los campos del club, por la misma razón.
+        await _cqLeerCamposClub(clubId);
 
         if (!leido) {
-            leido = { v: 1, weekKey, espacios: CQ_ESPACIOS, filas: [],
+            leido = { v: 1, weekKey, espacios: CQ_ESPACIOS, filas: [], campos: [],
                       celdas: {}, publicadoEn: '', publicadoPor: '', publicadoA: [] };
         }
         // 🧹 v673 · Antes de decidir las filas: `_cqFilasEfectivas` mira
@@ -1123,12 +1261,16 @@ function _cqLlegaCambio(snap, weekKey) {
     // nuevo desaparecería en cuanto yo pasara de semana —justo el defecto
     // que este cambio viene a cerrar.
     st.filasClub = null;
+    // 🏟️ v838 · Lo mismo con los campos: si los renombró, su copia de la
+    // semana ya los trae y es la que se usa hasta releer los del club.
+    st.camposClub = null;
 
     const entrante = {
         v: 1, weekKey,
         espacios: d.espacios || CQ_ESPACIOS,
         filas:  Array.isArray(d.filas) ? d.filas : [],
         celdas: (d.celdas && typeof d.celdas === 'object') ? d.celdas : {},
+        campos: Array.isArray(d.campos) ? d.campos : [],
         publicadoEn: d.publicadoEn || '', publicadoPor: d.publicadoPor || '',
         publicadoA:  Array.isArray(d.publicadoA) ? d.publicadoA : [],
         // ⚠️ v734 · LA RAMA PUBLICADA VIAJA TAMBIÉN EN EL CAMBIO AJENO. Sin
@@ -1261,6 +1403,8 @@ function _cqPintar() {
                 ? '<button class="btn" onclick="calAbrirGestor()" title="Importar el calendario oficial de la federación en PDF" style="padding:0.4rem 0.9rem;font-size:0.72rem;font-weight:700;background:rgba(210,168,255,0.12);border:1px solid rgba(210,168,255,0.4);color:#d2a8ff;">📅 CALENDARIO</button>'
                 : '') +
             (nProp ? '<button class="btn" onclick="cqFijarPartidos()" title="Pasar los partidos del calendario oficial a las casillas de esta semana" style="padding:0.4rem 0.9rem;font-size:0.72rem;font-weight:700;background:rgba(63,185,80,0.10);border:1px solid rgba(63,185,80,0.45);color:#3fb950;">📌 FIJAR ' + nProp + ' PARTIDO' + (nProp === 1 ? '' : 'S') + '</button>' : '') +
+            // 🏟️ v838 · Los campos / instalaciones del club y sus nombres.
+            '<button class="btn" onclick="cqAbrirCampos()" title="Campos o instalaciones del club y sus nombres" style="padding:0.4rem 0.9rem;font-size:0.72rem;font-weight:700;background:rgba(88,166,255,0.10);border:1px solid rgba(88,166,255,0.35);color:#58a6ff;">🏟️ CAMPOS (' + _cqCamposActivos().length + ')</button>' +
             '<button class="btn" onclick="cqGuardar()" style="padding:0.4rem 0.9rem;font-size:0.72rem;font-weight:700;background:rgba(63,185,80,0.15);border:1px solid rgba(63,185,80,0.4);color:#3fb950;">💾 GUARDAR</button>' +
             // 🖨️ v605 · Para el Ayuntamiento. Ver la nota sobre cqExportar.
             '<button class="btn" onclick="cqExportar()" title="Descargar el cuadrante en PDF para justificar la ocupación del campo" style="padding:0.4rem 0.9rem;font-size:0.72rem;font-weight:700;background:rgba(210,168,255,0.12);border:1px solid rgba(210,168,255,0.45);color:#d2a8ff;">🖨️ EXPORTAR</button>' +
@@ -1524,6 +1668,10 @@ function _cqHtmlCelda(filaId, fecha, c) {
     const esp = !espLista.length ? ''
               : espCompleto ? 'campo completo'
               : espLista.join('·');
+    // 🏟️ v838 · Con más de un campo, la casilla dice en CUÁL: «1·2» a secas
+    // no distingue la mitad del Campo 1 de la del Campo 2. Un partido fuera
+    // no lleva campo (no pisa ninguno del club).
+    const campoTxt = espLista.length ? _cqRotuloCampo(c) : '';
 
     // 📐 v605 · Texto que respira: más aire alrededor, interlineado suelto y
     // `letter-spacing` a cero. El espaciado entre letras que había apretaba el
@@ -1550,9 +1698,11 @@ function _cqHtmlCelda(filaId, fecha, c) {
         //   · el largo va un punto más pequeño y PUEDE pasar a dos líneas,
         //     que es lo que el autor pidió ("reduciendo ligeramente el tamaño
         //     de su tipografía").
+        (campoTxt ? '<div style="font-size:0.8em;font-weight:700;opacity:0.9;line-height:1.25;overflow-wrap:break-word;word-break:normal;">' +
+                     '🏟️ ' + _cqE(campoTxt) + '</div>' : '') +
         (esp   ? '<div style="font-size:' + (espCompleto ? '0.76em' : '0.88em') + ';opacity:0.8;line-height:1.25;' +
                      (espCompleto ? 'overflow-wrap:break-word;word-break:normal;' : 'white-space:nowrap;') + '">' +
-                     '🏟️ ' + _cqE(esp) + '</div>' : '') +
+                     (campoTxt ? '' : '🏟️ ') + _cqE(esp) + '</div>' : '') +
         (c.nota ? '<div style="font-size:0.85em;opacity:0.75;line-height:1.3;overflow-wrap:break-word;word-break:normal;hyphens:auto;">' + _cqE(c.nota) + '</div>' : '') +
     '</button>';
 }
@@ -1679,7 +1829,8 @@ function _cqEtiquetaCelda(c) {
     const meta = CQ_TIPOS[c.tipo] || CQ_TIPOS.entreno;
     const horas = c.ini ? (c.ini + (c.fin ? '–' + c.fin : '')) : 'sin hora';
     const esp = (Array.isArray(c.esp) && c.esp.length) ? ' · espacios ' + c.esp.slice().sort().join('·') : '';
-    return (c.txt || meta.label) + ' · ' + horas + esp;
+    const campo = (meta.ocupa !== false) ? _cqRotuloCampo(c) : '';
+    return (c.txt || meta.label) + ' · ' + horas + (campo ? ' · ' + campo : '') + esp;
 }
 
 window.cqCopiarCelda = function (filaId, fecha) {
@@ -1690,7 +1841,7 @@ window.cqCopiarCelda = function (filaId, fecha) {
     // barra dice que hay en el portapapeles.
     window._cqState.portapapeles = {
         modo: 'celda',
-        datos: { tipo: c.tipo, ini: c.ini, fin: c.fin, esp: (c.esp || []).slice(), txt: c.txt, nota: c.nota },
+        datos: _cqCopiaCelda(c),
         etiqueta: _cqEtiquetaCelda(c),
     };
     cqCerrarOverlay();
@@ -1712,9 +1863,7 @@ window.cqPegarCelda = function (filaId, fecha) {
                  'Si el partido cambió, abre la casilla y edítalo.', 5000);
         return;
     }
-    st.doc.celdas[filaId + '|' + fecha] = {
-        tipo: d.tipo, ini: d.ini, fin: d.fin, esp: (d.esp || []).slice(), txt: d.txt, nota: d.nota,
-    };
+    st.doc.celdas[filaId + '|' + fecha] = _cqCopiaCelda(d);
     st.sucio = true;
     _cqHistPush('pegar casilla');
     _cqPintar();
@@ -1794,9 +1943,7 @@ window.cqCopiarFila = function (filaId) {
         if (!c) return;
         // 🔴 El partido NO viaja (ver la nota de arriba).
         if (_cqEsPartido(c)) { partidosFuera++; return; }
-        entradas.push({ dia: dia,
-            celda: { tipo: c.tipo, ini: c.ini, fin: c.fin,
-                     esp: (c.esp || []).slice(), txt: c.txt, nota: c.nota } });
+        entradas.push({ dia: dia, celda: _cqCopiaCelda(c) });
     });
 
     if (!entradas.length) {
@@ -1872,10 +2019,7 @@ window.cqPegarFila = function (filaId) {
         // donde ESTA semana hay partido. El partido manda — fijado o todavía en
         // el calendario (v723).
         if (_cqPartidoOficialEn(clave)) { respetados++; return; }
-        const c = en.celda || {};
-        st.doc.celdas[clave] = {
-            tipo: c.tipo, ini: c.ini, fin: c.fin,
-            esp: (c.esp || []).slice(), txt: c.txt, nota: c.nota };
+        st.doc.celdas[clave] = _cqCopiaCelda(en.celda || {});
         pegadas++;
     });
 
@@ -2148,9 +2292,7 @@ window.cqCopiarSemana = function () {
             if (!c) return;
             // 🔴 El partido NO viaja: cambia de día cada jornada (ver la nota).
             if (_cqEsPartido(c)) { partidosFuera++; return; }
-            entradas.push({ filaId: f.id, dia: i,
-                celda: { tipo: c.tipo, ini: c.ini, fin: c.fin,
-                         esp: (c.esp || []).slice(), txt: c.txt, nota: c.nota } });
+            entradas.push({ filaId: f.id, dia: i, celda: _cqCopiaCelda(c) });
         });
     }
 
@@ -2264,10 +2406,7 @@ window.cqPegarSemana = function () {
         // viene del calendario oficial y su día no es negociable.
         // 🔴 v723 · Fijado o todavía en el calendario: los dos cuentan.
         if (_cqPartidoOficialEn(clave)) { respetados++; return; }
-        const c = en.celda || {};
-        st.doc.celdas[clave] = {
-            tipo: c.tipo, ini: c.ini, fin: c.fin,
-            esp: (c.esp || []).slice(), txt: c.txt, nota: c.nota };
+        st.doc.celdas[clave] = _cqCopiaCelda(en.celda || {});
         pegadas++;
     });
 
@@ -2305,6 +2444,27 @@ function _cqLeyenda() {
 }
 
 // ── VISTA 2: ocupación del campo (4 espacios × franjas de 15 min) ────
+// Mapa franja→espacio→[ítems] de unos ítems { a, b, esp } (ver la nota v835
+// dentro de _cqHtmlEspacios). Fuera de ella desde v838: el selector de campos
+// lo usa también para marcar con ⚠️ el campo que tiene choques.
+function _cqMapaOcupacion(items, ini, fin) {
+    const ocup = {};
+    items.forEach(it => {
+        it.esp.forEach(e => {
+            for (let t = ini; t < fin; t += CQ_PASO_MIN) {
+                if (it.a >= t + CQ_PASO_MIN || it.b <= t) continue;
+                const k = t + '|' + e;
+                (ocup[k] = ocup[k] || []).push(it);
+            }
+        });
+    });
+    return ocup;
+}
+function _cqHayChoque(items, ini, fin) {
+    const ocup = _cqMapaOcupacion(items, ini, fin);
+    return Object.keys(ocup).some(k => ocup[k].length > 1);
+}
+
 function _cqHtmlEspacios(lunes) {
     const st = window._cqState, d = st.doc;
     const filas = _cqFilasVisibles(d.filas);
@@ -2331,9 +2491,51 @@ function _cqHtmlEspacios(lunes) {
     }
     html += '</div>';
 
+    // ════════════════════════════════════════════════════════════════
+    //  🏟️ v838 · LA PARRILLA ES DE UN CAMPO
+    //
+    //  Los cuatro espacios son los de UN campo: con varios, se elige cuál se
+    //  mira, y sólo chocan los equipos del MISMO campo. El selector dice en
+    //  cada campo cuántas actividades hay ese día y si alguno tiene choques,
+    //  para que un rojo del Campo 2 no pase desapercibido mirando el 1.
+    // ════════════════════════════════════════════════════════════════
+    const activos = _cqCamposActivos();
+    const porCampo = {};                  // campoId → ítems del día que ocupan
+    filas.forEach(f => {
+        const c = d.celdas[f.id + '|' + fecha];
+        if (!c || !_cqOcupaCampo(c, nEsp)) return;
+        const a = _cqMin(c.ini), b = _cqMin(c.fin);
+        if (a == null || b == null || b <= a) return;
+        const k = _cqCampoDe(c);
+        (porCampo[k] = porCampo[k] || []).push({ fila: f, c, a, b, esp: _cqEspaciosDe(c, nEsp) });
+    });
+    // Los activos, más un campo retirado que todavía tenga algo ese día: si
+    // no se ofreciera, esas actividades no se verían en ninguna parrilla.
+    const camposVista = activos.slice();
+    _cqCamposTodos().forEach(x => { if (x.baja && porCampo[x.id]) camposVista.push(x); });
+    const campoSel = camposVista.some(x => x.id === st.campoVista) ? st.campoVista : camposVista[0].id;
+
+    if (camposVista.length > 1) {
+        html += '<div style="display:flex;gap:0.3rem;flex-wrap:wrap;align-items:center;margin-bottom:0.7rem;">' +
+                '<span style="font-size:0.7rem;font-weight:700;color:var(--text-muted);margin-right:0.2rem;">🏟️ Campo:</span>';
+        camposVista.forEach(x => {
+            const act = (x.id === campoSel);
+            const n = (porCampo[x.id] || []).length;
+            const choca = _cqHayChoque(porCampo[x.id] || [], ini, fin);
+            html += '<button onclick="cqCampoVista(\'' + _cqA(x.id) + '\')" style="padding:0.35rem 0.75rem;border-radius:8px;cursor:pointer;' +
+                'font-size:0.7rem;font-weight:700;border:1px solid ' +
+                (choca ? 'rgba(255,88,88,0.6);' : act ? 'rgba(88,166,255,0.5);' : 'rgba(255,255,255,0.1);') +
+                (act ? 'background:rgba(88,166,255,0.15);color:#58a6ff;' : 'background:transparent;color:#8b949e;') + '">' +
+                (choca ? '⚠️ ' : '') + _cqE(_cqNombreCampo(x.id)) +
+                ' <span style="font-weight:400;opacity:0.8;">(' + n + ')</span></button>';
+        });
+        html += '</div>';
+    }
+
     html += '<div style="font-size:0.66rem;color:var(--text-muted);margin-bottom:0.7rem;">' +
             '🕐 Franja de ' + _cqE(horaIni) + ' a ' + _cqE(CQ_HORA_FIN) +
             (st.dia >= 5 ? ' · el fin de semana empieza por la mañana para que quepan los partidos' : '') +
+            (camposVista.length > 1 ? ' · <strong>' + _cqE(_cqNombreCampo(campoSel)) + '</strong>' : '') +
             '</div>';
 
     // Asignaciones del día, repartidas en CUATRO grupos. Cada uno se enseña de
@@ -2354,6 +2556,10 @@ function _cqHtmlEspacios(lunes) {
         // 🏟️ v605 · El que juega fuera sale del reparto ANTES que nada, sin
         // mirar horas ni espacios: no está en el campo del club.
         if (meta.ocupa === false) { visitante.push(item); return; }
+
+        // 🏟️ v838 · Lo de otro campo no es de esta parrilla: ni se pinta ni
+        // choca. Se ve pulsando su campo arriba.
+        if (_cqCampoDe(c) !== campoSel) return;
 
         if (a == null || b == null || b <= a || b <= ini || a >= fin) { fuera.push(item); return; }
         // 🏟️ v607 · Los espacios EFECTIVOS: un partido en casa sin marcar ocupa
@@ -2380,16 +2586,7 @@ function _cqHtmlEspacios(lunes) {
     //  pero los cuadrantes guardados antes pueden traer 18:16 y tienen que
     //  avisar igual.
     // ════════════════════════════════════════════════════════════════
-    const ocup = {};
-    dentro.forEach(it => {
-        it.esp.forEach(e => {
-            for (let t = ini; t < fin; t += CQ_PASO_MIN) {
-                if (it.a >= t + CQ_PASO_MIN || it.b <= t) continue;
-                const k = t + '|' + e;
-                (ocup[k] = ocup[k] || []).push(it);
-            }
-        });
-    });
+    const ocup = _cqMapaOcupacion(dentro, ini, fin);
 
     // ════════════════════════════════════════════════════════════════
     //  🔴 v606 · LA CELDA ROJA DICE QUÉ EQUIPOS CHOCAN
@@ -2433,7 +2630,8 @@ function _cqHtmlEspacios(lunes) {
     if (conflictos.length) {
         html += '<div style="font-size:0.72rem;color:#ff5858;background:rgba(255,88,88,0.08);border:1px solid rgba(255,88,88,0.3);' +
                 'border-radius:8px;padding:0.5rem 0.75rem;margin-bottom:0.7rem;line-height:1.6;">' +
-                '⚠️ Hay <strong>' + conflictos.length + '</strong> conflicto(s) con <strong>dos o más equipos en el mismo espacio</strong>. ' +
+                '⚠️ Hay <strong>' + conflictos.length + '</strong> conflicto(s) con <strong>dos o más equipos en el mismo espacio</strong>' +
+                (camposVista.length > 1 ? ' del <strong>' + _cqE(_cqNombreCampo(campoSel)) + '</strong>' : '') + '. ' +
                 'Se marcan en rojo: no se bloquea el guardado, pero revísalo antes de enviarlo.' +
                 // La lista explícita: quién, dónde y cuándo. Es lo que se
                 // necesita para resolverlo sin ir casilla por casilla.
@@ -2617,6 +2815,7 @@ window.cqFijarPartidos = function () {
 
 window.cqVista = function (v) { window._cqState.vista = v; _cqPintar(); };
 window.cqDia   = function (i) { window._cqState.dia   = i; _cqPintar(); };
+window.cqCampoVista = function (id) { window._cqState.campoVista = String(id || ''); _cqPintar(); };
 
 window.cqMoverFila = function (idx, delta) {
     const st = window._cqState;
@@ -2751,7 +2950,20 @@ window.cqEditarCelda = function (filaId, fecha) {
             '</div>' +
             (ajuste ? '<div style="font-size:0.68rem;color:#f0883e;margin-top:-0.3rem;">⏱️ Hora ajustada al cuarto de hora más cercano: ' +
                           _cqE(ajuste) + '. Pulsa <strong>Aplicar</strong> para guardarla así.</div>' : '') +
-            '<div id="cq-ce-espbloque"><label style="font-size:0.72rem;color:var(--text-muted);display:block;margin-bottom:0.35rem;">🏟️ Espacios del campo que ocupa</label>' +
+            // 🏟️ v838 · Primero el CAMPO, después sus espacios (como la
+            // «Cancha / pista» de Basket). El gestor de nombres se despliega
+            // aquí mismo: abrir otra ventana cerraría ésta con lo escrito.
+            '<div id="cq-ce-espbloque">' +
+                '<div style="display:flex;justify-content:space-between;align-items:center;gap:0.5rem;margin-bottom:0.25rem;">' +
+                    '<label for="cq-ce-campo" style="font-size:0.72rem;color:var(--text-muted);">🏟️ Campo / instalación</label>' +
+                    '<button type="button" onclick="cqGestorCamposEnEditor()" title="Añadir campos o cambiarles el nombre" ' +
+                        'style="background:none;border:none;color:#58a6ff;cursor:pointer;font-size:0.68rem;font-weight:700;padding:0;">✏️ Campos y nombres</button>' +
+                '</div>' +
+                '<select id="cq-ce-campo" style="width:100%;padding:0.5rem;border-radius:8px;background:var(--glass);color:white;border:1px solid var(--glass-border);font-size:0.82rem;margin-bottom:0.6rem;">' +
+                    _cqOpcionesCampo(_cqCampoDe(c)) + '</select>' +
+                '<div id="cq-ce-campos-gestor" style="display:none;margin:-0.2rem 0 0.7rem;padding:0.6rem 0.7rem;border-radius:8px;' +
+                    'border:1px solid rgba(88,166,255,0.35);background:rgba(88,166,255,0.05);"></div>' +
+                '<label style="font-size:0.72rem;color:var(--text-muted);display:block;margin-bottom:0.35rem;">Espacios del campo que ocupa</label>' +
                 '<div style="display:flex;gap:0.4rem;flex-wrap:wrap;">' + casillas.join('') + '</div>' +
                 '<div id="cq-ce-espnota" style="font-size:0.66rem;color:var(--text-muted);margin-top:0.3rem;">Puede ocupar 1, 2 o los ' + nEsp + '.</div></div>' +
             '<div><label style="font-size:0.72rem;color:var(--text-muted);display:block;margin-bottom:0.25rem;">Rótulo (lo que se lee en la casilla)</label>' +
@@ -2789,6 +3001,9 @@ window.cqTipoCambiado = function () {
     bloque.style.opacity = juegaFuera ? '0.4' : '1';
     // ⚠️ `disabled` de verdad, no sólo opacidad: la lección de v548 es que
     // apagar algo únicamente con CSS deja la acción viva para quien pulse igual.
+    // 🏟️ v838 · El que juega fuera no está en ningún campo del club.
+    const selCampo = document.getElementById('cq-ce-campo');
+    if (selCampo) selCampo.disabled = juegaFuera;
     let alguno = false;
     document.querySelectorAll('.cq-esp').forEach(x => {
         x.disabled = juegaFuera;
@@ -2827,12 +3042,184 @@ window.cqAplicarCelda = function (filaId, fecha) {
         _cqToast('⚠️ La hora de fin tiene que ser posterior a la de inicio.', 4000);
         return;
     }
-    st.doc.celdas[filaId + '|' + fecha] = {
+    const celda = {
         tipo, ini, fin, esp,
         txt:  g('cq-ce-txt').trim(),
         nota: g('cq-ce-nota').trim(),
     };
+    // 🏟️ v838 · El campo elegido; un partido fuera no lleva (como los espacios).
+    const campo = g('cq-ce-campo');
+    if (metaT.ocupa !== false && campo) celda.campo = campo;
+    st.doc.celdas[filaId + '|' + fecha] = celda;
     st.sucio = true; _cqHistPush('editar casilla'); cqCerrarOverlay(); _cqPintar();
+};
+
+// ════════════════════════════════════════════════════════════════════
+//  🏟️ v838 · GESTOR DE CAMPOS / INSTALACIONES
+//
+//  Dos puertas al mismo gestor: el botón «🏟️ CAMPOS» de la barra (ventana
+//  propia) y «✏️ Campos y nombres» dentro del editor de la casilla (se
+//  despliega en el sitio, para no perder lo que se está escribiendo).
+//
+//  🔑 SE GUARDA AL PULSAR «Guardar campos», APARTE DEL CUADRANTE. Los campos
+//  son del club, no de esta semana: no pasan por el «● Sin guardar» ni por
+//  deshacer, igual que no pasa la lista de equipos al guardarse (v612).
+//
+//  Se trabaja sobre una copia (`st._camposEdit`): cancelar no deja nada a
+//  medias, y los textos escritos se recogen antes de cada repintado.
+// ════════════════════════════════════════════════════════════════════
+function _cqOpcionesCampo(sel) {
+    const lista = _cqCamposActivos().slice();
+    // Una casilla en un campo retirado lo conserva en la lista: si no, al
+    // pulsar Aplicar saltaría sin aviso al primer campo.
+    const actual = _cqCamposTodos().find(x => x.id === sel);
+    if (actual && actual.baja) lista.push(actual);
+    return lista.map(x => '<option value="' + _cqA(x.id) + '"' + (x.id === sel ? ' selected' : '') +
+        ' style="background:#161b22;">' + _cqE(_cqNombreCampo(x.id)) + '</option>').join('');
+}
+
+function _cqContGestorCampos() {
+    return document.getElementById('cq-ce-campos-gestor') || document.getElementById('cq-campos-gestor');
+}
+
+function _cqIniciarEdicionCampos() {
+    window._cqState._camposEdit = _cqCamposTodos().map(x => Object.assign({}, x));
+}
+
+// Recoge lo escrito en las cajas antes de añadir, quitar o guardar.
+function _cqRecogerNombresCampos() {
+    const ed = window._cqState._camposEdit || [];
+    document.querySelectorAll('.cq-campo-nom').forEach(inp => {
+        const x = ed.find(k => k.id === inp.getAttribute('data-id'));
+        if (x) x.nombre = String(inp.value || '').slice(0, CQ_CAMPO_MAX_NOM);
+    });
+}
+
+function _cqHtmlGestorCampos(enEditor) {
+    const ed = (window._cqState._camposEdit || []).filter(x => !x.baja);
+    return '<div style="font-size:0.7rem;color:var(--text-muted);line-height:1.5;margin-bottom:0.5rem;">' +
+            'Los campos o instalaciones ' + _cqPalabraEntidad() + '. Cada uno se divide en ' +
+            CQ_ESPACIOS + ' espacios y los choques se miden dentro de cada campo.</div>' +
+        ed.map((x, i) =>
+            '<div style="display:flex;gap:0.4rem;align-items:center;margin-bottom:0.35rem;">' +
+                '<span style="font-size:0.7rem;color:var(--text-muted);min-width:1.2rem;text-align:right;">' + (i + 1) + '.</span>' +
+                '<input type="text" class="cq-campo-nom" data-id="' + _cqA(x.id) + '" value="' + _cqA(x.nombre) + '" ' +
+                    'maxlength="' + CQ_CAMPO_MAX_NOM + '" placeholder="Nombre del campo" ' +
+                    'style="flex:1;min-width:0;padding:0.4rem 0.5rem;border-radius:7px;background:var(--glass);color:white;' +
+                    'border:1px solid var(--glass-border);font-size:0.8rem;box-sizing:border-box;">' +
+                (ed.length > 1
+                    ? '<button type="button" onclick="cqCampoQuitar(\'' + _cqA(x.id) + '\')" title="Quitar este campo" ' +
+                      'style="background:none;border:none;color:#ff5858;cursor:pointer;font-size:0.9rem;padding:0 4px;">✕</button>'
+                    : '') +
+            '</div>').join('') +
+        '<div style="display:flex;gap:0.4rem;flex-wrap:wrap;justify-content:space-between;margin-top:0.45rem;">' +
+            '<button type="button" class="btn" onclick="cqCampoAnadir()" style="padding:0.35rem 0.8rem;font-size:0.7rem;">➕ Añadir campo</button>' +
+            (enEditor
+                ? '<span style="display:inline-flex;gap:0.35rem;">' +
+                    '<button type="button" class="btn" onclick="cqGestorCamposEnEditor(false)" style="padding:0.35rem 0.8rem;font-size:0.7rem;">Cerrar</button>' +
+                    '<button type="button" class="btn" onclick="cqGuardarCampos()" style="padding:0.35rem 0.8rem;font-size:0.7rem;font-weight:700;' +
+                        'background:rgba(63,185,80,0.15);border:1px solid rgba(63,185,80,0.4);color:#3fb950;">💾 Guardar campos</button>' +
+                  '</span>'
+                : '') +
+        '</div>';
+}
+
+function _cqPintarGestorCampos() {
+    const cont = _cqContGestorCampos();
+    if (!cont) return;
+    cont.innerHTML = _cqClaro(_cqHtmlGestorCampos(cont.id === 'cq-ce-campos-gestor'));
+}
+
+window.cqAbrirCampos = function () {
+    _cqIniciarEdicionCampos();
+    _cqOverlay('🏟️ Campos / instalaciones',
+        '<div id="cq-campos-gestor"></div>',
+        '<button class="btn" onclick="cqCerrarOverlay()" style="padding:0.45rem 1rem;font-size:0.75rem;">Cancelar</button>' +
+        '<button class="btn" onclick="cqGuardarCampos()" style="padding:0.45rem 1.1rem;font-size:0.75rem;font-weight:700;background:rgba(63,185,80,0.15);border:1px solid rgba(63,185,80,0.4);color:#3fb950;">💾 Guardar campos</button>');
+    _cqPintarGestorCampos();
+};
+
+// Despliega (o recoge, con `false`) el gestor dentro del editor de la casilla.
+window.cqGestorCamposEnEditor = function (abrir) {
+    const cont = document.getElementById('cq-ce-campos-gestor');
+    if (!cont) return;
+    const mostrar = (abrir === false) ? false : cont.style.display === 'none';
+    cont.style.display = mostrar ? 'block' : 'none';
+    if (mostrar) { _cqIniciarEdicionCampos(); _cqPintarGestorCampos(); }
+    else cont.innerHTML = '';
+};
+
+window.cqCampoAnadir = function () {
+    const st = window._cqState;
+    _cqRecogerNombresCampos();
+    const ed = st._camposEdit || (st._camposEdit = []);
+    // El id siguiente al mayor que haya existido (también los retirados): un
+    // campo nuevo nunca hereda las casillas de uno quitado.
+    let max = 0;
+    ed.forEach(x => { const n = parseInt(String(x.id).replace(/^c/, ''), 10); if (n > max) max = n; });
+    const activos = ed.filter(x => !x.baja).length;
+    ed.push({ id: 'c' + (max + 1), nombre: 'Campo ' + (activos + 1), nuevo: true });
+    _cqPintarGestorCampos();
+};
+
+window.cqCampoQuitar = function (id) {
+    const st = window._cqState;
+    _cqRecogerNombresCampos();
+    const ed = st._camposEdit || [];
+    const x = ed.find(k => k.id === id);
+    if (!x) return;
+    if (ed.filter(k => !k.baja).length <= 1) { _cqToast('⚠️ Tiene que quedar al menos un campo.'); return; }
+    if (x.nuevo) {
+        st._camposEdit = ed.filter(k => k.id !== id);
+    } else {
+        const usos = Object.keys((st.doc && st.doc.celdas) || {})
+            .filter(k => _cqOcupaCampo(st.doc.celdas[k]) && _cqCampoDe(st.doc.celdas[k]) === id).length;
+        if (!confirm('¿Quitar «' + x.nombre + '»?' +
+                     (usos ? '\n\n⚠️ Esta semana tiene ' + usos + ' actividad(es) en ese campo. No se borran: ' +
+                             'seguirán diciendo «' + x.nombre + ' (retirado)» hasta que las cambies de campo.' : '') +
+                     '\n\nNo se aplica hasta pulsar «Guardar campos».')) return;
+        x.baja = true;
+    }
+    _cqPintarGestorCampos();
+};
+
+window.cqGuardarCampos = async function () {
+    const st = window._cqState;
+    const me = window._cronosCurrentUser || {};
+    const clubId = window._testRoleClubId || me.clubId || '';
+    if (!clubId) return;
+    _cqRecogerNombresCampos();
+    const ed = (st._camposEdit || []).map(x => ({ id: x.id, nombre: String(x.nombre || '').trim(), baja: !!x.baja }));
+    const activos = ed.filter(x => !x.baja);
+    if (!activos.length) { _cqToast('⚠️ Tiene que quedar al menos un campo.'); return; }
+    if (activos.some(x => !x.nombre)) { _cqToast('⚠️ Ponle nombre a todos los campos.', 4000); return; }
+    const vistos = {};
+    const repetido = activos.find(x => { const k = x.nombre.toLowerCase(); if (vistos[k]) return true; vistos[k] = true; return false; });
+    if (repetido) { _cqToast('⚠️ Hay dos campos llamados «' + repetido.nombre + '».', 4000); return; }
+
+    if (typeof showSpinner === 'function') showSpinner('Guardando los campos…');
+    try {
+        await _cqGuardarCamposClub(clubId, ed);
+        if (typeof hideSpinner === 'function') hideSpinner();
+        st._camposEdit = null;
+        _cqToast('✅ Campos guardados.');
+        // Dentro del editor: se rehace el desplegable conservando el campo
+        // elegido (o el primero, si ése se acaba de quitar) y se recoge el
+        // gestor. Desde la barra: se cierra la ventana.
+        const sel = document.getElementById('cq-ce-campo');
+        if (sel) {
+            const antes = sel.value;
+            const sigue = _cqCamposActivos().some(x => x.id === antes);
+            sel.innerHTML = _cqClaro(_cqOpcionesCampo(sigue ? antes : _cqCamposActivos()[0].id));
+            window.cqGestorCamposEnEditor(false);
+        } else {
+            cqCerrarOverlay();
+        }
+        _cqPintar();
+    } catch (e) {
+        if (typeof hideSpinner === 'function') hideSpinner();
+        _cqToast('⚠️ No se pudieron guardar los campos: ' + (e && e.message ? e.message : e), 5000);
+    }
 };
 
 window.cqBorrarCelda = function (filaId, fecha) {
@@ -3016,7 +3403,8 @@ window.cqExportar = function () {
             const papel = CQ_PAPEL[c.tipo] || CQ_PAPEL.entreno;
             const horas = (c.ini && c.fin) ? (c.ini + ' a ' + c.fin) : (c.ini || '');
             const espL  = _cqEspaciosDe(c, nEsp);
-            const esp   = _cqNombreEspacios(espL, nEsp);
+            const campo = espL.length ? _cqRotuloCampo(c) : '';   // 🏟️ v838
+            const esp   = (campo ? campo + ' · ' : '') + _cqNombreEspacios(espL, nEsp);
             matriz += '<td style="border:1px solid ' + papel.bd + ';background:' + papel.bg + ';color:' + papel.fg + ';' +
                     'padding:4px 3px;text-align:center;vertical-align:top;font-size:8.5px;line-height:1.4;' +
                     'overflow-wrap:break-word;word-break:normal;">' +
@@ -3080,6 +3468,7 @@ window.cqExportar = function () {
                         '<td style="border:1px solid #e5e7eb;padding:3px 5px;text-align:center;">' +
                             _cqE((o.c.ini || '—') + (o.c.fin ? ' – ' + o.c.fin : '')) + '</td>' +
                         '<td style="border:1px solid #e5e7eb;padding:3px 5px;text-align:center;font-weight:700;">' +
+                            (_cqMostrarCampo(o.c) ? _cqE(_cqRotuloCampo(o.c)) + '<br>' : '') +
                             _cqE(_cqNombreEspacios(o.esp, nEsp)) + '</td>' +
                         '<td style="border:1px solid #e5e7eb;padding:3px 5px;">' + _cqE(o.f.label) + '</td>' +
                         '<td style="border:1px solid #e5e7eb;padding:3px 5px;">' +
@@ -3114,8 +3503,11 @@ window.cqExportar = function () {
         '</div>' +
         '<div style="font-size:8.5px;color:#6b7280;margin-bottom:10px;line-height:1.5;">' +
             'El total suma la <strong>duración real</strong> de cada sesión, de su hora de inicio a su hora de ' +
-            'fin: una sesión de hora y media ocupa hora y media, use un sector del campo o los cuatro. El campo ' +
-            'se considera dividido en <strong>' + nEsp + ' sectores</strong>.' +
+            'fin: una sesión de hora y media ocupa hora y media, use un sector del campo o los cuatro. ' +
+            (_cqCamposActivos().length > 1
+                ? 'Instalaciones: <strong>' + _cqCamposActivos().map(x => _cqE(x.nombre)).join(', ') + '</strong>; cada campo ' +
+                  'se considera dividido en <strong>' + nEsp + ' sectores</strong>.'
+                : 'El campo se considera dividido en <strong>' + nEsp + ' sectores</strong>.') +
             (hayVisitas ? ' Los partidos disputados fuera de casa <strong>no computan</strong>: se juegan en ' +
                           'instalaciones ajenas y se listan sólo como referencia.' : '') +
         '</div>';
@@ -3399,6 +3791,8 @@ window.cqEnviar = async function () {
             espacios: st.doc.espacios || CQ_ESPACIOS,
             filas:    Array.isArray(st.doc.filas) ? st.doc.filas.slice() : [],
             celdas:   JSON.parse(JSON.stringify(st.doc.celdas || {})),
+            // 🏟️ v838 · Con sus nombres: el entrenador no lee el doc del club.
+            campos:   _cqCamposTodos(),
             publicadoEn:  st.doc.publicadoEn,
             publicadoPor: st.doc.publicadoPor,
             publicadoA:   st.doc.publicadoA.slice(),
@@ -3434,8 +3828,9 @@ function _cqResumenDe(filaIds, lunes) {
             const esp  = !espL.length ? ''
                        : _cqEspacioImplicito(c) ? ' · campo completo'
                        : ' · espacio ' + espL.join(' y ');
+            const campo = espL.length ? _cqRotuloCampo(c) : '';   // 🏟️ v838
             const hora = c.ini ? (' ' + c.ini + (c.fin ? '-' + c.fin : '')) : '';
-            partes.push(CQ_DIAS[i] + ': ' + (c.txt || meta.label) + hora + esp + (c.nota ? ' · ' + c.nota : ''));
+            partes.push(CQ_DIAS[i] + ': ' + (c.txt || meta.label) + hora + (campo ? ' · ' + campo : '') + esp + (c.nota ? ' · ' + c.nota : ''));
         });
     }
     return partes.length ? partes.join('\n') : 'Sin actividades asignadas esta semana.';
@@ -3510,8 +3905,14 @@ window.cronosCuadranteClubDeMiEquipo = async function (weekKey, forzar) {
             // panel del entrenador no puede repetir la regla del campo completo
             // —sería la cuarta copia— y sin ellos su partido en casa aparecería
             // sin espacio mientras la parrilla del club dice que ocupa todo.
+            // 🏟️ v838 · `campoNombre` también resuelto, con la copia de los
+            // campos que viaja en lo publicado (vacío si sólo hay uno o si se
+            // envió antes de v838).
+            const espEf = c ? _cqEspaciosDe(c, d.espacios || CQ_ESPACIOS) : [];
+            const camposPub = Array.isArray(d.campos) ? d.campos : [];
             dias.push(c ? { dia: CQ_DIAS[i], fecha, ...c,
-                            espEfectivos: _cqEspaciosDe(c, d.espacios || CQ_ESPACIOS),
+                            espEfectivos: espEf,
+                            campoNombre:  (espEf.length && camposPub.length) ? _cqRotuloCampo(c, camposPub) : '',
                             espCompleto:  _cqEspacioImplicito(c),
                             tipoLabel: (CQ_TIPOS[c.tipo] || CQ_TIPOS.entreno).label,
                             color: (CQ_TIPOS[c.tipo] || CQ_TIPOS.entreno).color }
@@ -3680,8 +4081,8 @@ window.cronosPintarDirectrizClub = async function (weekKey, contenedorId) {
         info.dias.filter(d => !d.vacio).map(d => {
             const espL = Array.isArray(d.espEfectivos) ? d.espEfectivos : (Array.isArray(d.esp) ? d.esp : []);
             const esp  = !espL.length ? ''
-                       : d.espCompleto ? ' · 🏟️ campo completo'
-                       : ' · 🏟️ ' + espL.slice().sort().join('·');
+                       : ' · 🏟️ ' + (d.campoNombre ? d.campoNombre + ' · ' : '') +
+                         (d.espCompleto ? 'campo completo' : espL.slice().sort().join('·'));
             const hora = d.ini ? (d.ini + (d.fin ? '–' + d.fin : '')) : '';
             const rgb  = (typeof window._cronosHexRgb === 'function') ? window._cronosHexRgb(d.color) : '88,166,255';
             return '<div style="border-radius:8px;padding:0.4rem 0.5rem;' +

@@ -572,7 +572,9 @@ console.log('\n14) 🏟️ v605 · Quien juega FUERA no ocupa el campo (punto 1)
     // (`item.esp`), no con `c.esp` a pelo: ver la sección 19.
     ok('14f · el mapa de ocupación se construye SÓLO con los que ocupan',
        /if \(!item\.esp\.length\) \{ sinEspacio\.push\(item\); return; \}/.test(CQ_COD) &&
-       /dentro\.forEach\(it => \{\s*it\.esp\.forEach/.test(CQ_COD));
+       // v838 · el mapa se construye en _cqMapaOcupacion, y sólo con `dentro`.
+       /const ocup = _cqMapaOcupacion\(dentro, ini, fin\);/.test(CQ_COD) &&
+       /items\.forEach\(it => \{\s*it\.esp\.forEach/.test(CQ_COD));
 
     ok('14g · y al guardar, un partido fuera se escribe SIN espacios',
        /const esp = \(metaT\.ocupa === false\) \? \[\] :/.test(CQ),
@@ -940,7 +942,9 @@ console.log('\n19) 🏟️ v607 · El partido en casa se pinta en la ocupación 
        /class="cq-esp" onchange="cqTipoCambiado\(\)"/.test(CQ_COD));
 
     ok('19n · 🔑 el entrenador recibe los espacios YA resueltos, sin repetir la regla',
-       /espEfectivos: _cqEspaciosDe\(c, d\.espacios \|\| CQ_ESPACIOS\)/.test(CQ_COD) &&
+       // v838 · resueltos en `espEf` (lo usa también `campoNombre`).
+       /const espEf = c \? _cqEspaciosDe\(c, d\.espacios \|\| CQ_ESPACIOS\) : \[\];/.test(CQ_COD) &&
+       /espEfectivos: espEf,/.test(CQ_COD) &&
        /espCompleto:  _cqEspacioImplicito\(c\)/.test(CQ_COD),
        'sería la cuarta copia de la misma regla');
 
