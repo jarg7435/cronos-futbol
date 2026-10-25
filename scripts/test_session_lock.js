@@ -128,6 +128,7 @@ function aparato(nube, op) {
         location: { hostname: o.host || 'cronos-futbol-app.web.app' },
         setInterval: (fn) => { temporizadores.push(fn); return temporizadores.length; },
         clearInterval: () => {},
+        setTimeout, clearTimeout,   // 🧊 v837 · los topes de red de la plaza
         navigator: { userAgent: o.nombre === 'iPad' ? 'iPad; CPU OS 17 Safari' : 'Windows NT 10.0 Chrome',
                      maxTouchPoints: o.nombre === 'iPad' ? 5 : 0 },
         localStorage: {
@@ -1048,7 +1049,8 @@ const vueltas = async (n) => { for (let i = 0; i < (n || 5); i++) await new Prom
     ok('🔑 v730 · CONTINUAR AL PARTIDO pide el equipo',
        /function confirmSetup\(\)[\s\S]{0,1600}cronosSesionAlAbrirPartido\(\)/.test(setupModal));
     ok('🔑 v730 · RECUPERAR PARTIDO también',
-       /openLiveMatchRecovery\(\)[\s\S]{0,600}cronosSesionAlAbrirPartido\(\)/.test(setupModal));
+       /_openLiveMatchRecoveryCuerpo\(\)[\s\S]{0,600}cronosSesionAlAbrirPartido\(\)/.test(setupModal) &&   // 🧊 v837 · el cuerpo, tras el envoltorio del botón
+       /async function openLiveMatchRecovery\(btn\)[\s\S]{0,900}await _openLiveMatchRecoveryCuerpo\(\)/.test(setupModal));
     ok('🔑 v730 · cambiar de equipo suelta la plaza del que se deja',
        /_cronosCambiarEquipo[\s\S]{0,3000}cronosSesionSincroniza\(\)/.test(setupModal));
     ok('salir a los roles suelta la plaza',

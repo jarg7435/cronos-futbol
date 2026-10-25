@@ -691,7 +691,7 @@ function openSetupModal() {
                                border:none; cursor:pointer; text-transform:uppercase;">
                         ▶️ CONTINUAR AL PARTIDO
                     </button>
-                    <button class="btn" onclick="openLiveMatchRecovery()"
+                    <button class="btn" onclick="openLiveMatchRecovery(this)"
                         title="Recuperar un partido en curso que quedó interrumpido"
                         style="width:100%; padding:0.9rem; font-size:1rem; font-weight:900;
                                letter-spacing:0.3px; border-radius:10px;
@@ -1894,7 +1894,51 @@ window._recuperacionSeparaDudosas = _recuperacionSeparaDudosas;
 //  Consulta live_matches en Firestore filtrando por coachUid actual
 //  y status === 'active'. Muestra un panel para retomar el partido.
 // ════════════════════════════════════════════════════════════════════
-async function openLiveMatchRecovery() {
+// 🧊 v837 · «LA PRIMERA VEZ TARDA MUCHÍSIMO» (iPad y móvil). Lo mismo que
+// Evento Perdido (v836): esperas de red SIN TOPE. La primera pulsación
+// reclama la plaza del equipo (session-lock.js) y su setDoc, con la caché
+// persistente, no vuelve hasta que el servidor confirma; después venía la
+// consulta de live_matches, también sin tope. Y durante todo eso el botón
+// no cambiaba: parecía muerto y se volvía a pulsar. Ahora el botón se
+// bloquea y dice «Cargando…» al instante, una segunda pulsación no lanza
+// otra carga, y la nube tiene tope (sin respuesta: lo del aparato, o un
+// aviso con «Reintentar»).
+const _RECUPERAR_TOPE_MS = 12000;
+let _recuperandoAhora = false;
+function _recuperarConTope(promesa, ms) {
+    let reloj = null;
+    const tope = new Promise((_, rej) => {
+        reloj = setTimeout(() => rej({ code: 'cronos/tope', message: 'la nube no ha respondido a tiempo' }), ms);
+    });
+    return Promise.race([promesa, tope]).finally(() => clearTimeout(reloj));
+}
+
+async function openLiveMatchRecovery(btn) {
+    if (_recuperandoAhora) return;
+    _recuperandoAhora = true;
+    const boton = (btn && btn.tagName === 'BUTTON') ? btn : null;
+    const rotulo = boton ? boton.innerHTML : '';
+    if (boton) {
+        boton.disabled = true;
+        boton.style.opacity = '0.7';
+        boton.style.cursor = 'wait';
+        boton.innerHTML = '⏳ Cargando…';
+    }
+    try { await _openLiveMatchRecoveryCuerpo(); }
+    finally {
+        _recuperandoAhora = false;
+        // Si el panel sustituyó al menú, el botón ya no está; si no (conflicto
+        // de plaza rechazado, sin sesión), vuelve a su estado.
+        if (boton && boton.isConnected) {
+            boton.disabled = false;
+            boton.style.opacity = '';
+            boton.style.cursor = 'pointer';
+            boton.innerHTML = rotulo;
+        }
+    }
+}
+
+async function _openLiveMatchRecoveryCuerpo() {
     // 🔒 v730 · La OTRA puerta al partido en vivo. Misma razón que en
     // `confirmSetup`: recuperar un partido es ponerse a escribirlo, así que
     // aquí sí se pide el equipo. Si está abierto en otro aparato, no se entra.
@@ -2109,16 +2153,18 @@ async function openLiveMatchRecovery() {
 
     // 2. Cargar partidos activos desde Firestore y combinarlos con el local
     try {
-        const { collection, getDocs, query, where } = await import(
-            'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
-
-        const q = query(
-            collection(fa.db, 'live_matches'),
-            where('createdBy', '==', me.uid),
-            where('status', '==', 'active')
-        );
-
-        const snap = await getDocs(q);
+        // 🧊 v837 · el módulo y la consulta, con UN tope: sin respuesta se va
+        // al catch, que enseña los partidos del aparato (los que no necesitan red).
+        const snap = await _recuperarConTope((async () => {
+            const { collection, getDocs, query, where } = await import(
+                'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
+            const q = query(
+                collection(fa.db, 'live_matches'),
+                where('createdBy', '==', me.uid),
+                where('status', '==', 'active')
+            );
+            return getDocs(q);
+        })(), _RECUPERAR_TOPE_MS);
         const list = document.getElementById('live-recovery-list');
         if (!list) return;
 
@@ -2453,7 +2499,14 @@ async function openLiveMatchRecovery() {
             </div>`;
             }).join('');
         } else {
-            if (list) list.innerHTML = `<div style="color:#ff5858;text-align:center;padding:2rem;">⚠️ Error al cargar: ${err.message}</div>`;
+            // 🧊 v837 · sin respuesta de la nube: se dice y se ofrece reintentar.
+            const _msg = (err && err.code === 'cronos/tope')
+                ? '📶 La nube no ha respondido (conexión lenta o sin cobertura).'
+                : '⚠️ Error al cargar: ' + (typeof escapeHtml === 'function' ? escapeHtml(String((err && err.message) || err)) : String((err && err.message) || err));
+            if (list) list.innerHTML = `<div style="color:#ff5858;text-align:center;padding:2rem;">${_msg}
+                <div style="margin-top:0.9rem;"><button class="btn" onclick="openLiveMatchRecovery(this)"
+                    style="padding:0.5rem 1.2rem;border-radius:8px;background:rgba(240,136,62,0.15);color:#f0883e;
+                           border:1px solid rgba(240,136,62,0.5);font-weight:800;cursor:pointer;">🔄 Reintentar</button></div></div>`;
         }
         console.error('[Recovery] Error cargando live_matches:', err);
     }

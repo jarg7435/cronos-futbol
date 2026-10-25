@@ -2801,8 +2801,16 @@
 // v835 · EL CUADRANTE EN CLARO Y DE CUARTO EN CUARTO: fondo blanco (y su
 //        cabecera) para leerlo bien; horas sólo :00/:15/:30/:45, las viejas se
 //        redondean al abrirlas, y un 18:16 ya no esquiva el aviso de conflicto.
-const VERSION = 'v835';
-const CACHE_NAME = 'cronos-cache-v835';
+// v836 · EVENTO PERDIDO YA NO SE QUEDA CONGELADO: toda espera de red lleva
+//        tope (escrituras que vencen = en cola, no fallo), el modal sale al
+//        momento, Guardar dice qué hace y no admite doble pulsación, la lista
+//        de partidos va por páginas y la subida de vídeo atascada se cancela.
+// v837 · «RECUPERAR PARTIDO» YA NO SE QUEDA PENSANDO: el botón se bloquea y
+//        dice «Cargando…» al instante; la marca de la plaza (session-lock) y
+//        la consulta de live_matches llevan tope; sin nube, lo del aparato o
+//        un aviso con «Reintentar».
+const VERSION = 'v837';
+const CACHE_NAME = 'cronos-cache-v837';
 
 const ASSETS = [
     './',

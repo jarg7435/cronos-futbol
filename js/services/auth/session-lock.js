@@ -53,6 +53,20 @@
     var LATIDO_MS   = 10000;   // cada cuánto se refresca la marca
     var TTL_MS      = 30000;   // sin refresco pasado esto, la plaza está libre
     var GRACIA_OCULTA_MS = 5000;   // marca de una pestaña oculta
+    // 🧊 v837 · NINGUNA ESPERA DE RED SIN TOPE al entrar en el partido. Con la
+    // caché persistente un setDoc no termina hasta que el servidor confirma:
+    // con cobertura mala «Recuperar Partido» (y «Continuar») se quedaban
+    // esperando la marca de la plaza sin enseñar nada. Si vence una LECTURA,
+    // es «sin comprobar» (fail-open, la política del módulo); si vence la
+    // ESCRITURA, la marca ya está en la cola local y sube sola: vale como hecha.
+    var TOPE_RED_MS = 8000;
+    function _conTope(promesa, ms) {
+        var reloj = null;
+        var tope = new Promise(function (_, rej) {
+            reloj = setTimeout(function () { rej({ code: 'cronos/tope' }); }, ms || TOPE_RED_MS);
+        });
+        return Promise.race([promesa, tope]).finally(function () { clearTimeout(reloj); });
+    }
     window.CRONOS_SESION_TIEMPOS = { latido: LATIDO_MS, ttl: TTL_MS, oculta: GRACIA_OCULTA_MS };
     var _latido     = null;
     var _paraEscucha = null;
@@ -306,7 +320,7 @@
         var op = opciones || {};
         var yo = _deviceId();
         var f;
-        try { f = await _fs(); } catch (e) { f = null; }
+        try { f = await _conTope(_fs()); } catch (e) { f = null; }   // 🧊 v837 · el módulo de gstatic también puede tardar
         // Sin Firestore cargado (o sin red): se deja entrar. Ver la nota de
         // arriba sobre por qué aquí el fail-open es lo correcto.
         if (!f || !clave) return { ok: true, sinComprobar: true };
@@ -314,7 +328,7 @@
         var ref = f.m.doc(f.db, COLECCION, clave);
         var previo = null;
         try {
-            var snap = await f.m.getDoc(ref);
+            var snap = await _conTope(f.m.getDoc(ref));   // 🧊 v837
             previo = snap.exists() ? (snap.data() || null) : null;
         } catch (e) {
             // ════════════════════════════════════════════════════════════
@@ -370,7 +384,8 @@
         catch (e) { _eq = null; }
 
         try {
-            await f.m.setDoc(ref, {
+            // 🧊 v837 · con tope: si vence, la marca ya va en la cola local.
+            await _conTope(f.m.setDoc(ref, {
                 uid:        _uid,
                 clave:      clave,
                 deviceId:   yo,
@@ -389,7 +404,7 @@
                 lastSeen:   Date.now(),
                 oculta:     _oculta(),
                 liberada:   false
-            });
+            })).catch(function (e) { if (!(e && e.code === 'cronos/tope')) throw e; });
             _guardaCredenciales(f);
         } catch (e) {
             // Escribir la marca puede fallar (reglas aún sin desplegar, sin
@@ -760,9 +775,10 @@
         _claveActual = null;
         if (!clave) return;
         try {
-            var f = await _fs();
+            // 🧊 v837 · soltar la plaza tampoco puede dejar esperando: con tope.
+            var f = await _conTope(_fs());
             if (!f) return;
-            var snap = await f.m.getDoc(f.m.doc(f.db, COLECCION, clave));
+            var snap = await _conTope(f.m.getDoc(f.m.doc(f.db, COLECCION, clave)));
             // Sólo se borra si la marca sigue siendo MÍA: si otro tomó el
             // control, borrarla le dejaría la plaza libre para un tercero.
             // 🪟 v733 · «Mía» = de ESTA PESTAÑA. Con el criterio por aparato,
@@ -776,11 +792,11 @@
             // por muerta y el siguiente la sobrescribe con la suya. Sólo se
             // tocan `lastSeen` y `liberada` (el `uid` va por la regla).
             if (snap.exists() && _esMia(snap.data() || {})) {
-                await f.m.setDoc(f.m.doc(f.db, COLECCION, clave),
+                await _conTope(f.m.setDoc(f.m.doc(f.db, COLECCION, clave),
                                  { uid: (window._cronosCurrentUser || {}).uid ||
                                         (snap.data() || {}).uid || '',
                                    lastSeen: 0, liberada: true, oculta: false },
-                                 { merge: true });
+                                 { merge: true }));
             }
         } catch (e) { /* la marca caducará sola */ }
     };
