@@ -85,7 +85,7 @@ function entornoModal({ enCurso = null, permiso = null } = {}) {
         console: { log() {}, warn() {}, error() {} },
         escapeHtml: (s) => String(s == null ? '' : s),
         showToast: (m) => toasts.push(String(m)),
-        Promise, String, Number, Array, Object, Date, JSON, Math, parseInt, isNaN,
+        Promise, String, Number, Array, Object, Date, JSON, Math, parseInt, isNaN, setTimeout, clearTimeout,   // 🧊 v836 · los topes de red
         _registerMatchEvent: (...a) => registrados.push(a),
         document: {
             getElementById: (id) => id === 'cronos-retroactive-modal' ? (els[id] || null) : el(id),

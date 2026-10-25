@@ -279,6 +279,9 @@ console.log('\n── PARTE 4 · [E][F] el gol retroactivo corrige el INFORME �
 // ═══════════════════════════════════════════════════════════════════════════
 {
     const fn = trozo(RETRO, 'async function _corrigeInformesDelPartido(cambio)');
+        // 🧊 v836 · la función usa los topes de red del módulo: van con ella.
+        const _topesSrc = RETRO.slice(RETRO.indexOf('    const _TOPE_LECTURA'), RETRO.indexOf('    const _esTope = (e) =>')) +
+                          "const _esTope = (e) => !!(e && e.code === 'cronos/tope');\n";
     ok('4a · se encuentra la corrección de informes', !!fn);
 
     if (fn) {
@@ -297,7 +300,7 @@ console.log('\n── PARTE 4 · [E][F] el gol retroactivo corrige el INFORME �
             const escrituras = [];
             let lotes = 0, commits = 0;
             const ctx = {
-                console: { warn() {}, log() {} }, String, Number, Object, Date, Promise, Map, _targetMatchData: null, // v817
+                console: { warn() {}, log() {} }, String, Number, Object, Date, Promise, Map, setTimeout, clearTimeout, _targetMatchData: null, // v817
                 _targetMatchId: o.sinPartido ? null : 'M',
                 window: { _cronos_auth: { db: {} }, _CRONOS_DEBUG: false },
             };
@@ -316,7 +319,7 @@ console.log('\n── PARTE 4 · [E][F] el gol retroactivo corrige el INFORME �
                 arrayUnion: (x) => ({ __arrayUnion: x }),
             });
             vm.createContext(ctx);
-            vm.runInContext(fn.replace(/\bimport\s*\(/g, '__imp(') +
+            vm.runInContext(_topesSrc + fn.replace(/\bimport\s*\(/g, '__imp(') +
                             ';\n;globalThis.corrige = _corrigeInformesDelPartido;', ctx);
             return { ctx, escrituras, lotes: () => lotes, commits: () => commits };
         };

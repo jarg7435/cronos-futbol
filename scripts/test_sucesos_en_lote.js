@@ -41,7 +41,7 @@ function entorno({ confirma = true } = {}) {
         escapeHtml: (s) => String(s == null ? '' : s),
         showToast: (m) => toasts.push(String(m)),
         confirm: (m) => { preguntas.push(String(m)); return confirma; },
-        Promise, String, Number, Array, Object, Date, JSON, Math, parseInt, isNaN,
+        Promise, String, Number, Array, Object, Date, JSON, Math, parseInt, isNaN, setTimeout, clearTimeout,   // 🧊 v836 · los topes de red
         _registerMatchEvent: (...a) => registrados.push(a),
         document: {
             getElementById: (id) => id === 'cronos-retroactive-modal' ? (els[id] || null) : el(id),
@@ -218,6 +218,9 @@ function apunta(E, tipo, half, minute, campos) {
             return '';
         };
         const fn = trozo(RETRO, 'async function _corrigeInformesDelPartido(cambio)');
+            // 🧊 v836 · la función usa los topes de red del módulo: van con ella.
+            const _topesSrc = RETRO.slice(RETRO.indexOf('    const _TOPE_LECTURA'), RETRO.indexOf('    const _esTope = (e) =>')) +
+                              "const _esTope = (e) => !!(e && e.code === 'cronos/tope');\n";
         const docs = [
             { id: 'M_staff_p9',  data: { playerNumber: '9', goals: 1, scoreHome: 1, scoreAway: 0, staffReport: true, history: [] } },
             { id: 'M_parent_p9', data: { playerNumber: '9', goals: 1, scoreHome: 1, scoreAway: 0, type: 'parent_player_report' } },
@@ -225,7 +228,7 @@ function apunta(E, tipo, half, minute, campos) {
             { id: 'M_staff_p1',  data: { playerNumber: '1', goals: 0, scoreHome: 1, scoreAway: 0, cards: null, staffReport: true } },
         ];
         const escrituras = []; let lotes = 0, commits = 0;
-        const ctx = { console: { warn() {}, log() {} }, String, Number, Object, Date, Array, Promise, Map, _targetMatchData: null, // v817
+        const ctx = { console: { warn() {}, log() {} }, String, Number, Object, Date, Array, Promise, Map, setTimeout, clearTimeout, _targetMatchData: null, // v817
                       _targetMatchId: 'M', window: { _cronos_auth: { db: {} } } };
         ctx.__imp = async () => ({
             collection: () => ({}), where: () => ({}), query: () => ({}),
@@ -234,7 +237,7 @@ function apunta(E, tipo, half, minute, campos) {
             arrayUnion: (...x) => ({ __au: x }),
         });
         vm.createContext(ctx);
-        vm.runInContext(fn.replace(/\bimport\s*\(/g, '__imp(') + ';\n;globalThis.corrige = _corrigeInformesDelPartido;', ctx);
+        vm.runInContext(_topesSrc + fn.replace(/\bimport\s*\(/g, '__imp(') + ';\n;globalThis.corrige = _corrigeInformesDelPartido;', ctx);
         const r = await ctx.corrige([
             { tipo: 'goal',   ladoGol: 'home', dorsal: '9', apunte: { type: 'goal', minute: 10, retro: true } },
             { tipo: 'goal',   ladoGol: 'home', dorsal: '9', apunte: { type: 'goal', minute: 30, retro: true } },

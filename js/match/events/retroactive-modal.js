@@ -41,6 +41,35 @@
     const _MAX_PARTIDOS = 12;
 
     // ════════════════════════════════════════════════════════════════════
+    //  🧊 v836 · «SE QUEDA CONGELADO EN EL IPAD Y EN EL MÓVIL»
+    //
+    //  Reporte del autor (2026-10-25): al pulsar en Evento Perdido, cargar un
+    //  vídeo o cualquier dato, a veces la pantalla se queda quieta y no hace
+    //  caso. 🔑 NO era el procesador: eran ESPERAS DE RED SIN TOPE. Con la
+    //  caché persistente de Firestore una escritura (setDoc / commit) NO
+    //  termina hasta que el servidor la confirma: con cobertura mala de campo
+    //  el `await` no volvía NUNCA, y el botón Guardar no decía nada. Lo mismo
+    //  las lecturas al abrir el modal y la subida del vídeo.
+    //
+    //  Ahora toda espera de red lleva tope. Si vence una LECTURA, se trata
+    //  como fallo (aviso + reintentar). Si vence una ESCRITURA, NO es un fallo:
+    //  ya está en la cola local del SDK y sube sola al volver la red — y
+    //  reintentarla duplicaría goles y marcador. Se avisa de que va en cola.
+    // ════════════════════════════════════════════════════════════════════
+    const _TOPE_LECTURA = 12000;
+    const _TOPE_ESCRITURA = 15000;
+    let _quedoEnCola = false;    // alguna escritura de este guardado venció su tope
+    let _guardando = false;      // un guardado en marcha: no se lanza otro encima
+    function _conTope(promesa, ms) {
+        let reloj = null;
+        const tope = new Promise((_, rej) => {
+            reloj = setTimeout(() => rej({ code: 'cronos/tope', message: 'sin respuesta en ' + Math.round(ms / 1000) + ' s' }), ms);
+        });
+        return Promise.race([promesa, tope]).finally(() => clearTimeout(reloj));
+    }
+    const _esTope = (e) => !!(e && e.code === 'cronos/tope');
+
+    // ════════════════════════════════════════════════════════════════════
     //  v531 · LOS JUGADORES SALEN DEL PARTIDO DESTINO
     //
     //  Reporte del autor (implementar.txt, 2026-08-14): en un partido ya
@@ -122,7 +151,7 @@
             const fa = window._cronos_auth;
             if (!fa || !fa.db || !matchId) return null;
             const fs = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
-            const snap = await fs.getDoc(fs.doc(fa.db, 'live_matches', matchId));
+            const snap = await _conTope(fs.getDoc(fs.doc(fa.db, 'live_matches', matchId)), _TOPE_LECTURA);
             return snap.exists() ? { id: snap.id, ...snap.data() } : null;
         } catch (e) {
             console.warn('[v434] No se pudo leer el partido destino:', e && e.message);
@@ -266,8 +295,8 @@
         if (!fa || !fa.db || !matchId || !me.uid) return null;
         try {
             const fsm = await import(_FS_URL);
-            const snap = await fsm.getDocs(fsm.query(fsm.collection(fa.db, 'cronos_player_reports'),
-                fsm.where('coachUid', '==', me.uid), fsm.where('matchId', '==', String(matchId))));
+            const snap = await _conTope(fsm.getDocs(fsm.query(fsm.collection(fa.db, 'cronos_player_reports'),
+                fsm.where('coachUid', '==', me.uid), fsm.where('matchId', '==', String(matchId)))), _TOPE_LECTURA);
             if (snap.empty) return null;
             const porDorsal = new Map();
             let base = null;
@@ -320,12 +349,33 @@
         } catch (e) { eq = ''; }
         try {
             const fsm = await import(_FS_URL);
-            const [snap, permisos] = await Promise.all([
-                fsm.getDocs(fsm.query(fsm.collection(fa.db, 'cronos_player_reports'),
-                    fsm.where('coachUid', '==', me.uid), fsm.orderBy('createdAt', 'desc'), fsm.limit(500))),
-                fsm.getDocs(fsm.query(fsm.collection(fa.db, 'cronos_match_unlocks'),
-                    fsm.where('coachUid', '==', me.uid))).catch(() => null),
-            ]);
+            // 🧊 v836 · POR PÁGINAS, NO 500 DE GOLPE. Hay una copia por jugador
+            // y destinatario: 500 informes completos eran varios MB que el iPad
+            // tenía que bajar, descodificar y meter en su caché en cada apertura
+            // del modal, con la pantalla parada. Se piden de 60 en 60 y se para
+            // en cuanto salen los _MAX_PARTIDOS partidos (el tope de 500 sigue).
+            const permisosP = _conTope(fsm.getDocs(fsm.query(fsm.collection(fa.db, 'cronos_match_unlocks'),
+                fsm.where('coachUid', '==', me.uid))), _TOPE_LECTURA).catch(() => null);
+            const _PAGINA = 60;
+            const docs = [];
+            const mids = new Set();
+            let ultimo = null;
+            while (docs.length < 500) {
+                const filtros = [fsm.where('coachUid', '==', me.uid), fsm.orderBy('createdAt', 'desc')];
+                if (ultimo) filtros.push(fsm.startAfter(ultimo));
+                filtros.push(fsm.limit(_PAGINA));
+                const pag = await _conTope(fsm.getDocs(fsm.query(fsm.collection(fa.db, 'cronos_player_reports'), ...filtros)), _TOPE_LECTURA);
+                pag.forEach(d => {
+                    docs.push(d);
+                    const r = d.data() || {};
+                    // Sólo cuentan los del equipo seleccionado (el mismo filtro de abajo).
+                    if (r.matchId && (!eq || !r.teamId || String(r.teamId) === eq)) mids.add(String(r.matchId));
+                });
+                if (pag.size < _PAGINA || mids.size > _MAX_PARTIDOS + 2) break;
+                ultimo = pag.docs[pag.docs.length - 1];
+            }
+            const snap = { forEach: (fn) => docs.forEach(fn) };
+            const permisos = await permisosP;
             const unl = new Map();
             if (permisos) permisos.forEach(d => unl.set(d.id, d.data() || {}));
             const vistos = new Set(lista.map(p => p.id));
@@ -351,6 +401,7 @@
             });
         } catch (e) {
             console.warn('[v797] No se pudieron listar los partidos del equipo:', e && e.message);
+            lista._sinRed = true;   // 🧊 v836 · que la nota lo diga, no «no hay partidos»
         }
         return lista;
     }
@@ -484,7 +535,10 @@
     }
     async function _adjuntaPermiso() {
         if (!_hayQueLeerPermiso()) return;
-        _targetMatchData._cronosUnlock = await window.CronosUnlocks.leer(_targetMatchId);
+        // 🧊 v836 · con tope: sin respuesta, el partido sigue cerrado (lo seguro).
+        const d = _targetMatchData;
+        try { d._cronosUnlock = await _conTope(Promise.resolve(window.CronosUnlocks.leer(_targetMatchId)), _TOPE_LECTURA); }
+        catch (e) { console.warn('[v836] Permiso de desbloqueo sin respuesta:', e && e.message); }
     }
 
     // ── 🔓 v797 · Elegir (o volver a comprobar) el partido destino ─────────
@@ -570,42 +624,16 @@
         if (sel) sel.innerHTML = _opcionesPartidos();
         const nota = document.getElementById('retro-match-note');
         if (nota) {
-            nota.textContent = lista.length
+            nota.textContent = lista._sinRed
+                ? '⚠️ No se ha podido cargar la lista (conexión lenta o sin cobertura). Cierra y vuelve a abrir para reintentarlo.'
+                : lista.length
                 ? 'Últimos partidos de tu equipo seleccionado.'
                 : 'No se han encontrado partidos recientes de tu equipo seleccionado.';
         }
     }
 
-    window.openRetroactiveEventModal = async function(matchId, matchData) {
-        // 🔓 v797 · SIN partido explícito NO se elige ninguno: antes caía en
-        // la global `liveMatchId`. Ahora lo elige el entrenador en el
-        // desplegable (encargo del autor). Los listados de Partidos Terminados
-        // sí lo pasan, y llega ya seleccionado.
-        _tokEleccion++;
-        _targetMatchId = matchId ? String(matchId) : null;
-        _targetMatchData = matchData || null;
-        _soloInformes = !!(_targetMatchData && _targetMatchData._soloInformes);
-        _partidosLista = [];
-
-        // Si el destino NO es el partido que se está jugando, se lee su estado.
-        // Así la puerta funciona para cualquier punto de llamada sin que tenga
-        // que cooperar pasando los datos — incluidos los que se añadan después.
-        if (!_targetMatchData && _targetMatchId && _targetMatchId !== _idEnCurso()) {
-            _targetMatchData = await _cargarPartido(_targetMatchId);
-            if (!_targetMatchData) {
-                _targetMatchData = await _partidoDesdeInformes(_targetMatchId);
-                _soloInformes = !!_targetMatchData;
-            }
-        }
-
-        // v434 · PUERTA DE ENTRADA, 🔓 v797 · AHORA ABRE CON EL AVISO. Un
-        // partido cerrado ya no cierra el modal con un toast: lo abre con el
-        // formulario apagado, el motivo y el botón para pedir el permiso.
-        // ⚠️ El `await` SÓLO si hay permiso que leer: un partido en curso o en
-        // su ventana se pinta en el acto, sin esperar a la red.
-        if (_hayQueLeerPermiso()) await _adjuntaPermiso();
-        _calculaListo();
-
+    // El contenedor del modal (se crea una vez y se reutiliza).
+    function _modalBase() {
         let modal = document.getElementById('cronos-retroactive-modal');
         if (!modal) {
             modal = document.createElement('div');
@@ -618,6 +646,57 @@
             `;
             document.body.appendChild(modal);
         }
+        return modal;
+    }
+
+    window.openRetroactiveEventModal = async function(matchId, matchData) {
+        // 🔓 v797 · SIN partido explícito NO se elige ninguno: antes caía en
+        // la global `liveMatchId`. Ahora lo elige el entrenador en el
+        // desplegable (encargo del autor). Los listados de Partidos Terminados
+        // sí lo pasan, y llega ya seleccionado.
+        const tokAbrir = ++_tokEleccion;
+        _targetMatchId = matchId ? String(matchId) : null;
+        _targetMatchData = matchData || null;
+        _soloInformes = !!(_targetMatchData && _targetMatchData._soloInformes);
+        _partidosLista = [];
+
+        // 🧊 v836 · EL MODAL SALE EN EL ACTO. Antes no aparecía hasta que
+        // respondía la red: con cobertura mala el toque «no hacía nada» durante
+        // mucho rato. Si hay que leer, se enseña ya un «Cargando…» con su ✕, y
+        // cerrar mientras carga cancela la apertura.
+        if ((!_targetMatchData && _targetMatchId && _targetMatchId !== _idEnCurso()) || _hayQueLeerPermiso()) {
+            const espera = _modalBase();
+            espera.innerHTML = '<div class="modal-content" style="width:min(94vw, 420px); box-sizing:border-box; background:#0d1117; border:1px solid rgba(88,166,255,0.3); border-radius:14px; padding:1.2rem; display:flex; align-items:center; justify-content:space-between; gap:1rem;">' +
+                '<span style="font-size:0.9rem; color:#c9d1d9;">⏳ Cargando el partido…</span>' +
+                '<button type="button" onclick="window.closeRetroactiveEventModal()" aria-label="Cerrar" style="background:none; border:none; color:#7d8590; font-size:1.4rem; cursor:pointer; min-width:2.5rem; min-height:2.5rem;">✕</button></div>';
+            espera.style.display = 'flex';
+        }
+
+        // Si el destino NO es el partido que se está jugando, se lee su estado.
+        // Así la puerta funciona para cualquier punto de llamada sin que tenga
+        // que cooperar pasando los datos — incluidos los que se añadan después.
+        if (!_targetMatchData && _targetMatchId && _targetMatchId !== _idEnCurso()) {
+            _targetMatchData = await _cargarPartido(_targetMatchId);
+            if (tokAbrir !== _tokEleccion) return;
+            if (!_targetMatchData) {
+                _targetMatchData = await _partidoDesdeInformes(_targetMatchId);
+                if (tokAbrir !== _tokEleccion) return;
+                _soloInformes = !!_targetMatchData;
+            }
+        }
+
+        // v434 · PUERTA DE ENTRADA, 🔓 v797 · AHORA ABRE CON EL AVISO. Un
+        // partido cerrado ya no cierra el modal con un toast: lo abre con el
+        // formulario apagado, el motivo y el botón para pedir el permiso.
+        // ⚠️ El `await` SÓLO si hay permiso que leer: un partido en curso o en
+        // su ventana se pinta en el acto, sin esperar a la red.
+        if (_hayQueLeerPermiso()) {
+            await _adjuntaPermiso();
+            if (tokAbrir !== _tokEleccion) return;
+        }
+        _calculaListo();
+
+        const modal = _modalBase();
 
         // v690 · El tipo elegido NO sobrevive de la vez anterior: tras un
         // "Cambio", reabrir enseñaba "Gol" y guardaba un cambio.
@@ -856,13 +935,15 @@
             const fa = window._cronos_auth;
             if (!fa || !fa.db) return false;
             const fsm = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
-            await fsm.setDoc(fsm.doc(fa.db, 'live_matches', _targetMatchId), {
+            await _conTope(fsm.setDoc(fsm.doc(fa.db, 'live_matches', _targetMatchId), {
                 players:  _targetMatchData.players,
                 homeTeam: _targetMatchData.homeTeam,
                 awayTeam: _targetMatchData.awayTeam,
-            }, { merge: true });
+            }, { merge: true }), _TOPE_ESCRITURA);
             return true;
         } catch (e) {
+            // 🧊 v836 · sin confirmación a tiempo = en la cola local, no perdida.
+            if (_esTope(e)) { _quedoEnCola = true; return true; }
             console.warn('[v531] No se pudo corregir la ficha del partido destino:',
                          e && e.message);
             return false;
@@ -936,7 +1017,7 @@
             // Sin club ni sesión conocidos, la de siempre (que sólo el SuperAdmin pasa).
             if (!consultas.length) consultas.push(fsm.getDocs(fsm.query(col,
                 fsm.where('matchId', '==', String(_targetMatchId)))));
-            const res = await Promise.allSettled(consultas);
+            const res = await Promise.allSettled(consultas.map(c => _conTope(c, _TOPE_LECTURA)));
             const buenas = res.filter(r => r.status === 'fulfilled');
             res.filter(r => r.status === 'rejected').forEach(r =>
                 console.warn('[v817] Consulta de informes rechazada:', r.reason && (r.reason.code || r.reason.message)));
@@ -981,7 +1062,10 @@
                 if (Object.keys(upd).length) { lote.update(d.ref, upd); escrituras++; }
             });
             if (!escrituras) return true;
-            await lote.commit();
+            // 🧊 v836 · el lote con tope. Si vence, YA está en la cola local y
+            // sube solo: devolver «fallo» ofrecería reintentar y SUMARÍA dos veces.
+            try { await _conTope(lote.commit(), _TOPE_ESCRITURA); }
+            catch (e) { if (!_esTope(e)) throw e; _quedoEnCola = true; }
             if (window._CRONOS_DEBUG) {
                 console.log('[v715] Informes corregidos:', escrituras, 'documentos de', _targetMatchId);
             }
@@ -1231,13 +1315,14 @@
         for (let i = 0; i < conClip.length; i++) {
             const it = conClip[i];
             _toast('🎬 Subiendo vídeo ' + (i + 1) + ' de ' + conClip.length + '…', 2500);
+            _estadoGuardar('⏳ Subiendo vídeo ' + (i + 1) + ' de ' + conClip.length + '…');
             const r = await window.CronosClips.subir({
                 file: it.clip, duracion: it.clipDuracion, matchId: _targetMatchId,
                 teamId: eq.teamId, category: eq.category, subcategory: eq.subcategory,
                 tipo: it.tipo, half: it.half, minute: it.minute,
                 rotulo: [_NOMBRE_TIPO[it.tipo] || 'Jugada', it.resumen, it.half + ' ' + it.minute + "'"].filter(Boolean).join(' · '),
                 paraFamilias: it.clipFamilias,
-            });
+            }, (f) => _estadoGuardar('⏳ Subiendo vídeo ' + (i + 1) + ' de ' + conClip.length + ' · ' + Math.round(f * 100) + ' %'));
             if (r.ok) ok++; else mal++;
         }
         return { ok, mal };
@@ -1313,6 +1398,7 @@
             !_confirma('Tienes ' + _lote.length + ' suceso(s) en la lista SIN GUARDAR.\n\n¿Cerrar y descartarlos?')) return;
         _lote = [];
         _informePendiente = null;
+        _tokEleccion++;   // 🧊 v836 · una carga en vuelo ya no reabre ni repinta
         const modal = document.getElementById('cronos-retroactive-modal');
         if (modal) modal.style.display = 'none';
     };
@@ -1523,7 +1609,36 @@
     }
 
     // ── Guardar: el lote entero, o el suceso del formulario si no hay lote ──
+    // 🧊 v836 · EL BOTÓN DICE QUÉ PASA mientras se guarda, y no admite una
+    // segunda pulsación: antes no cambiaba nada y parecía colgado, y pulsar
+    // otra vez lanzaba un segundo guardado encima del primero.
+    function _estadoGuardar(texto) {
+        const btn = document.getElementById('retro-save-btn');
+        const add = document.getElementById('retro-add-btn');
+        if (texto) {
+            if (btn) { btn.disabled = true; btn.textContent = texto; btn.style.opacity = '0.75'; btn.style.cursor = 'wait'; }
+            if (add) add.disabled = true;
+        } else {
+            if (add) add.disabled = false;
+            _pintaLote();               // devuelve el rótulo del botón
+            _pintaEstadoYFormulario();  // y su estado según el partido
+        }
+    }
+
     window.submitRetroactiveEvent = async function() {
+        if (_guardando) return;
+        _guardando = true;
+        _quedoEnCola = false;
+        _estadoGuardar('⏳ Guardando…');
+        try { await _guarda(); }
+        catch (e) {
+            console.warn('[v836] Guardado del evento perdido interrumpido:', e && e.message);
+            _toast('⚠️ No se ha podido completar el guardado. Revisa la conexión e inténtalo otra vez.', 6000);
+        }
+        finally { _guardando = false; _estadoGuardar(null); }
+    };
+
+    async function _guarda() {
         // 🔓 v797 · Sin partido elegido no se guarda nada: es justo lo que el
         // desplegable obligatorio viene a impedir.
         if (!_targetMatchId) {
@@ -1611,17 +1726,21 @@
         }
         if (_vid.ok)  aviso += ' · 🎬 ' + _vid.ok + (_vid.ok === 1 ? ' vídeo subido' : ' vídeos subidos');
         if (_vid.mal) { aviso += ' · ⚠️ ' + _vid.mal + (_vid.mal === 1 ? ' vídeo no se pudo subir' : ' vídeos no se pudieron subir'); ms = 7000; }
+        if (_quedoEnCola) { aviso += ' · 📶 Conexión lenta: los cambios se terminarán de enviar solos al recuperar cobertura (no cierres la app).'; ms = 8000; }
         _toast(aviso, ms);
 
         // Si el informe falló, el modal se queda con el botón de reintentar.
         if (_informePendiente) { _pintaLote(); return; }
         window.closeRetroactiveEventModal(true);
-    };
+    }
 
     // Reintenta SÓLO la corrección del informe (los sucesos ya están dentro).
     window._retroReintentarInforme = async function () {
-        if (!_informePendiente) return;
-        const okInf = await _corrigeInformesDelPartido(_informePendiente);
+        if (!_informePendiente || _guardando) return;
+        _guardando = true;
+        let okInf = false;
+        try { okInf = await _corrigeInformesDelPartido(_informePendiente); }
+        finally { _guardando = false; }
         if (okInf) {
             _informePendiente = null;
             _toast('✅ Informe del partido actualizado.', 3500);

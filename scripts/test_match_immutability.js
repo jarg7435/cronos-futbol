@@ -151,9 +151,10 @@ console.log('\n── PARTE 2 · puertas en el navegador (interfaz) ──');
     // en `_calculaListo`, que la apertura llama antes de pintar.
     ok('2e · el modal comprueba el candado al ABRIR',
        /function _calculaListo\(\)[\s\S]{0,300}canAddEvent\(_targetMatchData\)/.test(RETRO) &&
-       /openRetroactiveEventModal = async function[\s\S]{0,3000}_calculaListo\(\);[\s\S]{0,200}let modal/.test(RETRO));
+       /openRetroactiveEventModal = async function[\s\S]{0,4500}_calculaListo\(\);[\s\S]{0,200}(let|const) modal/.test(RETRO));
     ok('2f · y REVALIDA al guardar',
-       /submitRetroactiveEvent = async function[\s\S]{0,900}canAddEvent\(_targetMatchData\)/.test(RETRO),
+       /async function _guarda\(\)[\s\S]{0,900}canAddEvent\(_targetMatchData\)/.test(RETRO) &&   // 🧊 v836 · el cuerpo del guardado
+       /submitRetroactiveEvent = async function[\s\S]{0,400}await _guarda\(\)/.test(RETRO),
        'dejar el modal abierto seria la forma de saltarse la congelacion');
     ok('2g · lee el partido del SERVIDOR y no de la pantalla',
        /async function _cargarPartido[\s\S]{0,500}getDoc\(/.test(RETRO));

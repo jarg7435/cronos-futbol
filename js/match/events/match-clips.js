@@ -39,6 +39,7 @@
     const MAX_BYTES = 50 * 1024 * 1024;
     const MAX_SEG = 30;
     const VIDA_MS = 24 * 60 * 60 * 1000;
+    const ATASCO_MS = 45 * 1000;   // 🧊 v836 · subida sin avanzar ni un byte en este rato = fallo
     const EXTRA = 'modulo_videos';
 
     const ROLES_STAFF = ['user', 'coach', 'director', 'coordinator', 'club_admin',
@@ -133,15 +134,18 @@
             if (noEsVideo(file)) return res({ ok: false, motivo: 'El fichero no es un vídeo.' });
             if (file.size > MAX_BYTES) return res({ ok: false, motivo: 'El vídeo pesa ' + (file.size / 1048576).toFixed(0) + ' MB y el máximo es 50 MB. Recórtalo o grábalo más corto o en menor calidad (1080p).' });
             const tipo = tipoVideo(file);
-            let url = '', hecho = false, reloj = null;
+            let url = '', hecho = false, reloj = null, v = null;
             const fin = (r) => {
                 if (hecho) return; hecho = true;
                 try { clearTimeout(reloj); } catch (e) {}
+                // 🧊 v836 · se suelta el reproductor: iOS tiene pocos descodificadores
+                // y un <video> que se queda con su fuente los va agotando.
+                try { if (v) { v.onloadedmetadata = v.onerror = null; v.removeAttribute('src'); v.load(); } } catch (e) {}
                 try { if (url) URL.revokeObjectURL(url); } catch (e) {}
                 res(Object.assign({ tipo }, r));
             };
             try {
-                const v = document.createElement('video');
+                v = document.createElement('video');
                 url = URL.createObjectURL(file);
                 v.preload = 'metadata';
                 v.muted = true;
@@ -179,19 +183,33 @@
             const storage = st.getStorage(db.app);
             const ref = st.ref(storage, 'clips/' + clubId + '/' + clipId);
             await new Promise((res, rej) => {
+                // 🧊 v836 · SUBIDA ATASCADA = FALLO. Sin red el SDK reintenta hasta
+                // 10 min con la pantalla esperando: si en 45 s no avanza ni un
+                // byte, se cancela y se avisa (el suceso ya está guardado).
+                let ultimoAvance = Date.now(), vigia = null;
+                const acaba = (fn, x) => { clearInterval(vigia); fn(x); };
                 const tarea = st.uploadBytesResumable(ref, d.file, {
                     contentType: tipoVideo(d.file),
                     // Storage sólo consulta 2 documentos por petición: quién puede
                     // verlo viaja en el propio fichero (inmutable tras subirlo).
                     customMetadata: { uploader: me.uid, clipId: clipId, audiencia: audiencia, categoria: categoria },
                 });
+                let subidos = -1;
+                vigia = setInterval(() => {
+                    if (Date.now() - ultimoAvance > ATASCO_MS) { clearInterval(vigia); try { tarea.cancel(); } catch (e) {} rej({ code: 'cronos/subida-atascada' }); }
+                }, 5000);
                 tarea.on('state_changed',
-                    (s) => { if (alProgreso && s.totalBytes) alProgreso(s.bytesTransferred / s.totalBytes); },
-                    rej, res);
+                    (s) => {
+                        if (s.bytesTransferred !== subidos) { subidos = s.bytesTransferred; ultimoAvance = Date.now(); }
+                        if (alProgreso && s.totalBytes) alProgreso(s.bytesTransferred / s.totalBytes);
+                    },
+                    (e) => acaba(rej, e), () => acaba(res));
             });
             const fs = await import(FS_URL);
             const ahora = Date.now();
-            await fs.setDoc(fs.doc(db, COL, clipId), {
+            // 🧊 v836 · la ficha con tope: si no confirma a tiempo, ya va en la
+            // cola local de Firestore y sube sola al volver la red.
+            const ficha = fs.setDoc(fs.doc(db, COL, clipId), {
                 clipId, clubId,
                 path: 'clips/' + clubId + '/' + clipId,
                 contentType: tipoVideo(d.file),
@@ -212,6 +230,9 @@
                 createdAt: fs.Timestamp.fromMillis(ahora),
                 expiresAt: fs.Timestamp.fromMillis(ahora + VIDA_MS),
             });
+            let reloj = null;
+            await Promise.race([ficha, new Promise((r) => { reloj = setTimeout(r, 15000); })]);
+            clearTimeout(reloj);
             return { ok: true, clipId, audiencia };
         } catch (e) {
             console.warn('[v804] Subida de vídeo fallida:', e && (e.code || e.message));
