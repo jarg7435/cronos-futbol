@@ -2821,8 +2821,11 @@
 //        día pintan al instante con lo del aparato y traen la nube por detrás
 //        («⟳ Actualizando…»); una respuesta tardía no pisa un toque recién
 //        dado y el repintado conserva el desplazamiento.
-const VERSION = 'v840';
-const CACHE_NAME = 'cronos-cache-v840';
+// v841 · GESTIONAR PLANTILLA ALINEADA: la cabecera tenía 4 columnas y las
+//        filas 5 (faltaba la de ORIGEN de las plazas de apoyo), así que
+//        «★ Alias» caía sobre un hueco; el ID y el dorsal ya no salen cortados.
+const VERSION = 'v841';
+const CACHE_NAME = 'cronos-cache-v841';
 
 const ASSETS = [
     './',

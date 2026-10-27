@@ -280,10 +280,10 @@ function _cronosSupportRowHtml(p, i) {
             data-origin-sub="${esc(p.originSubcategory || '')}"
             data-origin-ficha="${esc(p.originPlayerId || '')}"
             style="background:rgba(210,168,255,0.06); outline:1px solid rgba(210,168,255,0.28);">
-            <td><input type="text" class="r-id" value="${esc(p.id || '')}" readonly tabindex="-1"
-                title="${puesto ? 'Ficha de origen — no se reescribe' : 'Se rellena al elegir jugador'}"
-                style="width:45px; background:transparent; border:none; color:#d2a8ff; font-size:0.7rem; font-weight:bold; text-align:center;"></td>
-            <td><input type="number" class="r-num" value="${esc(p.number == null ? '' : p.number)}" style="width:40px;"></td>
+            <td title="${puesto ? 'Ficha de origen — no se reescribe' : 'Se rellena al elegir jugador'}"
+                style="white-space:nowrap; color:#d2a8ff; font-size:0.7rem; font-weight:bold;"
+                ><input type="hidden" class="r-id" value="${esc(p.id || '')}">${esc(p.id || '')}</td>
+            <td><input type="number" class="r-num" value="${esc(p.number == null ? '' : p.number)}" style="width:3.4rem; text-align:center;"></td>
             <td style="display:flex; align-items:center; gap:0.4rem;">
                 <input type="text" class="r-name" value="${esc(p.name || '')}" readonly
                     placeholder="Sin jugador asignado"
@@ -402,10 +402,16 @@ function openRosterManager() {
                 <table class="roster-table">
                     <thead>
                         <tr>
-                            <th style="width:50px;">ID</th>
-                            <th style="width:44px;">#</th>
+                            <!-- 🧱 v841 · CINCO CABECERAS PARA CINCO COLUMNAS. Las filas
+                                 llevan una 4ª celda (el ORIGEN de las plazas de apoyo)
+                                 cuya cabecera se perdió: «★ Alias» caía encima de ella
+                                 y las casillas de alias quedaban una columna más allá.
+                                 Va al 1 % de ancho: vacía, no ocupa; con un invitado
+                                 crece lo justo para su etiqueta. -->
+                            <th style="width:1%; white-space:nowrap;">ID</th>
+                            <th style="width:1%;">#</th>
                             <th>Nombre</th>
-                            
+                            <th style="width:1%; white-space:nowrap;">${roster[mode].some((p, i) => i >= limit && p.isGuest) ? 'Origen' : ''}</th>
                             <th style="color:var(--primary);">★ Alias <span style="font-size:0.65rem;font-weight:400;color:var(--text-muted);">(en ficha)</span></th>
                         </tr>
                     </thead>
@@ -413,9 +419,13 @@ function openRosterManager() {
                         ${roster[mode].map((p, i) => i < limit
                             ? `
                             <tr>
-                                <td><input type="text" class="r-id" value="${p.id}" readonly tabindex="-1"
-                                    style="width:45px; background:transparent; border:none; color:var(--text-muted); font-size:0.7rem; font-weight:bold; text-align:center;"></td>
-                                <td><input type="number" class="r-num" value="${p.number}" style="width:40px;"></td>
+                                <!-- 🧱 v841 · El código se ENSEÑA como texto (con una
+                                     casilla oculta para el guardado): en una casilla de
+                                     45 px «RGB01» salía cortado, y en táctil —donde toda
+                                     casilla sube a 16 px contra el zoom de iOS— peor. -->
+                                <td style="white-space:nowrap; color:var(--text-muted); font-size:0.7rem; font-weight:bold;"
+                                    ><input type="hidden" class="r-id" value="${p.id}">${p.id}</td>
+                                <td><input type="number" class="r-num" value="${p.number}" style="width:3.4rem; text-align:center;"></td>
                                 <td><input type="text" class="r-name" value="${p.name}"></td>
                                 <td></td>
                                 <td><input type="text" class="r-alias" value="${p.alias}"></td>
