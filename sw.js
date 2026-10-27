@@ -2828,8 +2828,12 @@
 //        tipo y hora de inicio de cada casilla pasan a la Planificación
 //        Semanal de los equipos elegidos (lugar, equipaciones y duración no se
 //        tocan) y el entrenador los ve en su tabla sin recargar.
-const VERSION = 'v842';
-const CACHE_NAME = 'cronos-cache-v842';
+// v843 · ASISTENCIA EN DIRECTO PARA DIRECCIÓN: el árbol y el parte mensual
+//        del Director/Coordinador escuchan los partes del mes y se repintan
+//        en cuanto el entrenador marca (antes era una foto al abrir la
+//        pestaña), conservando ramas abiertas y desplazamiento.
+const VERSION = 'v843';
+const CACHE_NAME = 'cronos-cache-v843';
 
 const ASSETS = [
     './',

@@ -451,6 +451,8 @@ window.switchStaffTab = async (tab) => {
     if (btn) btn.classList.add('active');
 
     const container = document.getElementById('staff-dashboard-content');
+    // 📡 v843 · La escucha de asistencia vive mientras se mira la asistencia.
+    if (tab !== 'asistencia' && typeof window._sdSoltarAsistencia === 'function') window._sdSoltarAsistencia();
     // ☀️ v835 · Claro SÓLO en el Cuadrante. El contenedor es el mismo para
     // todas las secciones: sin quitarle la clase, la siguiente heredaría el
     // fondo blanco con sus textos pensados para oscuro.
@@ -908,6 +910,20 @@ async function _sdLoadAsistencia() {
         }
     } catch (e) { plantillas = {}; }
 
+    window._sdAsistCtx = { clubId, mes, docs, sesionHoy, plantillas, hoyKey, esMesActual };
+    _sdPintarAsistencia(container, window._sdAsistCtx);
+    _sdEscucharAsistencia(clubId, mes);
+}
+
+// Pasos 4-7: con lo ya descargado (`ctx`), arma el árbol y `_sdAsistDatos`.
+// 📡 v843 · Separado de la descarga para que la escucha en vivo repinte sin
+// volver a leer cuadrante ni plantillas. Con `container` null sólo rehace
+// `_sdAsistDatos` (el parte abierto se repinta aparte).
+function _sdPintarAsistencia(container, ctx) {
+    const { clubId, mes, docs, sesionHoy, plantillas, esMesActual } = ctx;
+    const ea = (s) => (typeof escapeHtml === 'function') ? escapeHtml(s == null ? '' : s) : String(s == null ? '' : s);
+    const hoyKey = ctx.hoyKey;
+
     // ── 4. Unión de las tres fuentes ────────────────────────────────
     const equipos = new Map();   // teamId -> { teamId, cat, sub, doc, hoy }
     const anota = (teamId, cat, sub) => {
@@ -975,7 +991,7 @@ async function _sdLoadAsistencia() {
     const _asAlcance = (typeof window._cronosCoordScope === 'function')
         ? window._cronosCoordScope(window._cronosCurrentUser) : '';
 
-    let html = '<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:0.6rem;margin-bottom:1rem;">' +
+    let html = '<div data-sd-asist="1" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:0.6rem;margin-bottom:1rem;">' +
         '<div><div style="font-size:1rem;font-weight:700;color:white;">✅ Asistencia del club' +
         (_asAlcance ? ' · <span style="color:#d2a8ff;">' + ea(window._cronosCoordScopeLabel(_asAlcance)) + '</span>' : '') +
         '</div>' +
@@ -991,7 +1007,7 @@ async function _sdLoadAsistencia() {
                 '<div style="font-size:2.5rem;margin-bottom:0.5rem;">🗓️</div>' +
                 'Todavía no hay ningún equipo con actividad registrada.<br>' +
                 '<span style="font-size:0.8rem;">Los entrenadores pasan lista desde <strong>Gestionar Plantilla → ✅ ASISTENCIA</strong>.</span></div>';
-        container.innerHTML = html;
+        if (container) container.innerHTML = html;
         return;
     }
 
@@ -1007,7 +1023,7 @@ async function _sdLoadAsistencia() {
                 'Ningún equipo de <strong>' + ea(window._cronosCoordScopeLabel(_asAlcance)) +
                 '</strong> tiene actividad registrada este mes.<br>' +
                 '<span style="font-size:0.8rem;">Los equipos de la otra modalidad los lleva su coordinador y el Director Deportivo.</span></div>';
-        container.innerHTML = html;
+        if (container) container.innerHTML = html;
         return;
     }
 
@@ -1109,7 +1125,115 @@ async function _sdLoadAsistencia() {
     lista.forEach(e => { _datos.equipos[e.teamId] = e; });
     window._sdAsistDatos = _datos;
 
-    container.innerHTML = html;
+    if (container) container.innerHTML = html;
+}
+
+// ════════════════════════════════════════════════════════════════════
+//  📡 v843 · LA ASISTENCIA, EN DIRECTO PARA DIRECCIÓN
+// ════════════════════════════════════════════════════════════════════
+//  Encargo del autor (implementar.txt 2026-10-27, capturas 11743-11745): el
+//  entrenador pasó lista del 5/10 a las 14:09 y a las 14:12 el Director seguía
+//  viendo la columna vacía, con los dos en pantalla a la vez.
+//
+//  🔑 EL ENTRENADOR YA ESCRIBÍA AL MOMENTO: cada toque es un `updateDoc` de
+//  ruta punteada (attendance-store.js, `_subirMarca`), sin botón ni cola
+//  propia, y sin cobertura lo reintenta el SDK con su caché persistente. Lo
+//  que fallaba era ESTE lado: la pestaña hacía UN `getDocs` al abrirse y el
+//  parte mensual pintaba esa foto (`_sdAsistDatos`). Nada volvía a preguntar.
+//
+//  Ahora, mientras el árbol o el parte de un equipo estén en pantalla, se
+//  escucha la MISMA consulta (`month == mes`, mismas reglas) y cada cambio se
+//  repinta con lo ya descargado: ni cuadrante ni plantillas se vuelven a leer.
+//
+//  ⚠️ UNA ESCUCHA, LA DEL MES QUE SE MIRA (lección de v719). Se suelta al
+//  cambiar de pestaña o de mes, y también sola si llega un aviso y la
+//  asistencia ya no está en pantalla.
+//  ⚠️ El repintado CONSERVA las ramas abiertas y el desplazamiento: un árbol
+//  que se pliega solo cada vez que un entrenador marca a un jugador sería
+//  inutilizable justo cuando más se mira (en plena sesión).
+let _sdAsistBaja  = null;
+let _sdAsistClave = '';
+let _sdAsistTimer = null;
+
+function _sdSoltarAsistencia() {
+    if (typeof _sdAsistBaja === 'function') { try { _sdAsistBaja(); } catch (_) {} }
+    _sdAsistBaja = null;
+    _sdAsistClave = '';
+    if (_sdAsistTimer) { clearTimeout(_sdAsistTimer); _sdAsistTimer = null; }
+}
+window._sdSoltarAsistencia = _sdSoltarAsistencia;
+
+function _sdEscucharAsistencia(clubId, mes) {
+    if (typeof window.cronosEscuchaConsultaClub !== 'function' || !clubId || !mes) return;
+    const clave = 'asistencia:' + clubId + '|' + mes;
+    // Ya escuchando ESTE mes y la escucha sigue viva: nada que hacer. Si se
+    // cayó (permission-denied, v717), club-live-sync ya soltó su clave y se
+    // vuelve a abrir aquí.
+    const vivas = (typeof window.cronosEscuchasClubAbiertas === 'function') ? window.cronosEscuchasClubAbiertas() : [];
+    if (_sdAsistClave === clave && _sdAsistBaja && vivas.indexOf('q:' + clave) >= 0) return;
+    _sdSoltarAsistencia();
+    _sdAsistClave = clave;
+    _sdAsistBaja = window.cronosEscuchaConsultaClub(clave,
+        (fs) => fs.query(fs.collection(fs.db, 'clubs', clubId, 'attendance'), fs.where('month', '==', mes)),
+        (filas) => _sdLlegaAsistencia(mes, filas));
+}
+
+function _sdAsistEnPantalla(container) {
+    if (!container || typeof container.querySelector !== 'function') return '';
+    if (window._sdParteEquipo && container.querySelector('[data-sd-parte]')) return 'parte';
+    if (container.querySelector('[data-sd-asist]')) return 'arbol';
+    return '';
+}
+
+function _sdLlegaAsistencia(mes, filas) {
+    const container = document.getElementById('staff-dashboard-content');
+    const ctx = window._sdAsistCtx;
+    if (!ctx || ctx.mes !== mes || window._sdAsistMes !== mes || !_sdAsistEnPantalla(container)) {
+        _sdSoltarAsistencia();
+        return;
+    }
+    const docs = (filas || []).map(f => { const o = Object.assign({}, f); delete o._id; return o; });
+    // El primer aviso es la misma foto que acaba de leer getDocs.
+    if (JSON.stringify(docs) === JSON.stringify(ctx.docs)) return;
+    ctx.docs = docs;
+    // «TODOS PRESENTES» son 25 escrituras seguidas: se repinta una vez.
+    if (_sdAsistTimer) clearTimeout(_sdAsistTimer);
+    _sdAsistTimer = setTimeout(() => { _sdAsistTimer = null; _sdRepintarAsistenciaViva(); }, 350);
+}
+
+function _sdRepintarAsistenciaViva() {
+    const container = document.getElementById('staff-dashboard-content');
+    const ctx = window._sdAsistCtx;
+    const donde = _sdAsistEnPantalla(container);
+    if (!ctx || !donde) return;
+
+    // Desplazamiento del contenedor (es él quien hace scroll) y, en el parte,
+    // el horizontal de la tabla.
+    const caja  = container;
+    const top   = caja.scrollTop || 0;
+    const tabla = container.querySelector('table');
+    const envol = tabla && tabla.parentNode;
+    const izq   = envol ? envol.scrollLeft : 0;
+
+    if (donde === 'parte') {
+        const tid = window._sdParteEquipo;
+        _sdPintarAsistencia(null, ctx);
+        // (Sin `window.` delante: los guards localizan la definición por ese texto.)
+        if (window._sdAsistDatos && window._sdAsistDatos.equipos[tid]) _sdAbrirParteMensual(tid, { vivo: true });
+    } else {
+        // Ramas abiertas, por posición: el árbol recorre el catálogo entero,
+        // así que la estructura es la misma antes y después.
+        const nodos = Array.prototype.slice.call(container.querySelectorAll('.ct-tree-cat, .ct-tree-sub'));
+        const abiertas = nodos.map(n => n.classList.contains('ct-tree-open'));
+        _sdPintarAsistencia(container, ctx);
+        Array.prototype.slice.call(container.querySelectorAll('.ct-tree-cat, .ct-tree-sub')).forEach((n, i) => {
+            if (abiertas[i]) n.classList.add('ct-tree-open');
+        });
+    }
+
+    caja.scrollTop = top;
+    const tabla2 = container.querySelector('table');
+    if (tabla2 && tabla2.parentNode) tabla2.parentNode.scrollLeft = izq;
 }
 
 // ════════════════════════════════════════════════════════════════════
@@ -1121,7 +1245,9 @@ async function _sdLoadAsistencia() {
 //
 //  ⚠️ Sin PASAR LISTA: el director no es quien pasa lista. Esa acción se
 //  queda en la pantalla del entrenador, que es su dueño.
-window._sdAbrirParteMensual = function (teamId) {
+window._sdAbrirParteMensual = function (teamId, opts) {
+    // 📡 v843 · `vivo`: lo repinta la escucha de asistencia con el parte nuevo.
+    const vivo = !!(opts && opts.vivo);
     const container = document.getElementById('staff-dashboard-content');
     const d = window._sdAsistDatos;
     if (!container || !d) return;
@@ -1159,7 +1285,17 @@ window._sdAbrirParteMensual = function (teamId) {
     // meses de atrás de ESTE equipo. Se pinta ya con «…» y se repinta al
     // llegar (sólo si el director sigue en el mismo equipo y mes).
     const _clave = teamId + '|' + d.mes;
-    const _ex = (window._sdParteExtra && window._sdParteExtra.clave === _clave) ? window._sdParteExtra.datos : null;
+    let _ex = (window._sdParteExtra && window._sdParteExtra.clave === _clave) ? window._sdParteExtra.datos : null;
+    // 📡 v843 · Con los meses de atrás ya traídos, el % pre-partido y el de
+    // temporada se rehacen con el parte de ESTE mes tal como está ahora: si no,
+    // seguirían diciendo lo que decían antes de que el entrenador marcara.
+    const _hist = (window._sdParteHist && window._sdParteHist.clave === _clave) ? window._sdParteHist.porMes : null;
+    if (_hist && typeof window.CronosAttendance.periodosExtra === 'function') {
+        const porMes = Object.assign({}, _hist);
+        porMes[d.mes] = { sesiones: window.CronosAttendance.sesionesDeParte(parte), marks: parte.marks || {} };
+        _ex = window.CronosAttendance.periodosExtra({ mes: d.mes, porMes: porMes });
+        window._sdParteExtra = { clave: _clave, datos: _ex };
+    }
     const pinta = (extra) => {
         const cuerpo = window.CronosAttendance.parteMensualHtml({
             mes:        d.mes,
@@ -1182,7 +1318,8 @@ window._sdAbrirParteMensual = function (teamId) {
     // la última vez); lo guardado sólo sirve para pintar ya la primera vez.
     const _sigueAqui = () => window._sdParteEquipo === teamId && window._sdAsistDatos &&
         window._sdAsistDatos.mes === d.mes && container.querySelector('[data-sd-parte]');
-    if (typeof window.CronosAttendance.unirSesiones === 'function') {
+    // En vivo sólo han cambiado las marcas: el cuadrante ya está y no se relee.
+    if (typeof window.CronosAttendance.unirSesiones === 'function' && !(vivo && _cq)) {
         _sdParteCuadrante(teamId, d.mes).then(planificadas => {
             if (!planificadas) return;
             window._sdParteCq = { clave: _claveCq, sesiones: planificadas };
@@ -1229,6 +1366,9 @@ async function _sdParteCargarHistorico(teamId, mes, parteMes) {
             }
             porMes[m] = { sesiones: window.CronosAttendance.sesionesDeParte(p), marks: p.marks || {} };
         }));
+        // 📡 v843 · Se guardan los meses: la escucha en vivo rehace los % con
+        // el parte nuevo de este mes sin volver a leer los de atrás.
+        window._sdParteHist = { clave: teamId + '|' + mes, porMes: porMes };
         return window.CronosAttendance.periodosExtra({ mes: mes, porMes: porMes });
     } catch (err) {
         console.warn('[Dirección] % pre-partido / temporada:', err);
