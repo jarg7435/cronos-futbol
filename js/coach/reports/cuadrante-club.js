@@ -3787,6 +3787,19 @@ window.cqEnviar = async function () {
         //  habría ido creciendo y **una casilla borrada seguiría publicada**
         //  después de reenviar. Es la misma trampa que ya documentaba
         //  `_cqGuardar` para `celdas`, una capa más abajo.
+        // 📥 v842 · Tipo y hora de cada casilla, a la Planificación Semanal de
+        // los equipos elegidos. ANTES de publicar: cuando el aviso en vivo
+        // llega al entrenador, su planificación ya está escrita. Si falla, el
+        // envío sigue — el cuadrante a la derecha le llega igual.
+        let volcado = true;
+        try {
+            const equipos = elegidos.map(x => _cqIdFilaEquipo(clubId, x.cat, x.sub));
+            await _cqVolcarEnPlanificacion(fs, clubId, st.doc.weekKey, equipos, st.doc.filas, st.doc.celdas);
+        } catch (e) {
+            volcado = false;
+            console.warn('[Cuadrante] no se pudo volcar en la Planificación Semanal:', e && e.message ? e.message : e);
+        }
+
         st.doc.publicado = {
             espacios: st.doc.espacios || CQ_ESPACIOS,
             filas:    Array.isArray(st.doc.filas) ? st.doc.filas.slice() : [],
@@ -3803,7 +3816,10 @@ window.cqEnviar = async function () {
 
         if (typeof hideSpinner === 'function') hideSpinner();
         cqCerrarOverlay();
-        _cqToast('✅ Cuadrante enviado a ' + n + ' entrenador' + (n === 1 ? '' : 'es') + '.', 4000);
+        _cqToast(volcado
+            ? '✅ Cuadrante enviado a ' + n + ' entrenador' + (n === 1 ? '' : 'es') + '. Tipo y hora ya están en su Planificación Semanal.'
+            : '✅ Cuadrante enviado a ' + n + ' entrenador' + (n === 1 ? '' : 'es') + ', pero no se pudo rellenar su Planificación Semanal.',
+            volcado ? 4000 : 6000);
         _cqPintar();
     } catch (e) {
         if (typeof hideSpinner === 'function') hideSpinner();
@@ -3834,6 +3850,105 @@ function _cqResumenDe(filaIds, lunes) {
         });
     }
     return partes.length ? partes.join('\n') : 'Sin actividades asignadas esta semana.';
+}
+
+// ════════════════════════════════════════════════════════════════════
+//  📥 v842 · EL CUADRANTE RELLENA TIPO Y HORA DE LA PLANIFICACIÓN SEMANAL
+// ════════════════════════════════════════════════════════════════════
+//  Encargo del autor (implementar.txt 2026-10-27, capturas 11736-11740):
+//  hasta aquí el cuadrante sólo se veía en la ventana de la derecha y el
+//  entrenador tenía que copiar a mano tipo y hora en su tabla.
+//
+//  Decisiones del autor:
+//   · Tipo y hora del cuadrante SOBRESCRIBEN lo que hubiera ese día: es la
+//     pauta del club. Lugar, equipaciones y duración NO se tocan.
+//   · Un día que el cuadrante no tiene se deja como esté.
+//   · Partido (casa o fuera) → «partido liga», salvo que el rótulo diga
+//     amistoso. «Otra actividad» no tiene tipo equivalente: sólo la hora.
+//
+//  🔑 POR RUTA PUNTEADA, CAMPO A CAMPO (`teams.<eq>.<día>.tipo`). Así no se
+//  pisan lugar ni equipaciones, ni la planificación de otros equipos.
+//
+//  ⚠️ EL NODO DEL EQUIPO PUEDE NO EXISTIR: los días del legado viven sueltos
+//  en la raíz y TrainingSync los lee de ahí mientras no haya `teams.<eq>`. Si
+//  se creara el nodo sólo con tipo y hora, el entrenador dejaría de ver lo que
+//  tenía. En ese caso el nodo nace con una copia de esos días.
+//
+//  ⚠️ Sólo los equipos ELEGIDOS en el envío: a quien no se avisa no se le
+//  cambia la semana por sorpresa.
+const CQ_RE_DIA = /^\d{4}-\d{2}-\d{2}$/;
+
+function _cqTipoPlanificacion(c) {
+    if (!c) return '';
+    if (c.tipo === 'entreno') return 'entrenamiento';
+    if (c.tipo === 'partido_casa' || c.tipo === 'partido_fuera') {
+        return /amist/i.test(String(c.txt || '') + ' ' + String(c.nota || '')) ? 'partido amistoso' : 'partido liga';
+    }
+    return '';
+}
+
+async function _cqVolcarEnPlanificacion(fs, clubId, weekKey, teamIds, filas, celdas) {
+    if (!clubId || !weekKey) return 0;
+    const norm = (t) => (typeof window.cronosTeamIdNorm === 'function') ? window.cronosTeamIdNorm(t) : String(t || '');
+    // id canónico (el de la planificación) → id de la fila tal cual se guardó
+    // (el de las claves de `celdas`; las filas antiguas pueden llevar modalidad).
+    const filaDe = {};
+    (filas || []).forEach(f => { if (f && f.id && f.tipo !== 'libre') filaDe[norm(f.id)] = f.id; });
+    const equipos = Array.from(new Set((teamIds || []).map(norm).filter(t => t && filaDe[t])));
+    if (!equipos.length) return 0;
+
+    // Lo que hay que escribir, por equipo y día.
+    const lunes = new Date(weekKey + 'T12:00:00');
+    const cambios = {};
+    equipos.forEach(t => {
+        for (let i = 0; i < 7; i++) {
+            const fecha = _cqFechaKey(new Date(lunes.getTime() + i * 86400000));
+            const c = (celdas || {})[filaDe[t] + '|' + fecha];
+            if (!c) continue;
+            const tipo = _cqTipoPlanificacion(c);
+            const hora = /^\d{2}:\d{2}$/.test(String(c.ini || '')) ? c.ini : '';
+            if (!tipo && !hora) continue;
+            (cambios[t] = cambios[t] || {})[fecha] = Object.assign({}, tipo ? { tipo } : {}, hora ? { hora } : {});
+        }
+    });
+    const conCambios = Object.keys(cambios);
+    if (!conCambios.length) return 0;
+
+    const ref  = fs.doc(fs.db, 'trainingPlans', clubId, 'weeks', weekKey);
+    const snap = await fs.getDoc(ref);
+    const plan = snap.exists() ? (snap.data() || {}) : {};
+    const legado = {};
+    Object.keys(plan).forEach(k => { if (CQ_RE_DIA.test(k)) legado[k] = plan[k]; });
+
+    const patch = {};
+    conCambios.forEach(t => {
+        const nodo = plan.teams && plan.teams[t];
+        if (nodo && typeof nodo === 'object') {
+            Object.keys(cambios[t]).forEach(fecha => {
+                Object.keys(cambios[t][fecha]).forEach(campo => {
+                    patch['teams.' + t + '.' + fecha + '.' + campo] = cambios[t][fecha][campo];
+                });
+            });
+        } else {
+            const nuevo = JSON.parse(JSON.stringify(legado));
+            Object.keys(cambios[t]).forEach(fecha => {
+                nuevo[fecha] = Object.assign({}, nuevo[fecha] || {}, cambios[t][fecha]);
+            });
+            patch['teams.' + t] = nuevo;
+        }
+    });
+    // Sin `lastModified` nuevo, el arranque del entrenador (syncFromFirestore)
+    // daría por buena su copia local y no bajaría el cambio.
+    patch.lastModified = fs.serverTimestamp();
+
+    if (snap.exists()) {
+        await fs.updateDoc(ref, patch);
+    } else {
+        const inicial = { teams: {}, lastModified: fs.serverTimestamp(), createdBy: (window._cronosCurrentUser || {}).uid || '' };
+        conCambios.forEach(t => { inicial.teams[t] = patch['teams.' + t]; });
+        await fs.setDoc(ref, inicial, { merge: true });
+    }
+    return conCambios.length;
 }
 
 // ════════════════════════════════════════════════════════════════════
@@ -4011,6 +4126,36 @@ function _cqEscuchaDirectriz(clubId, weekKey, contenedorId) {
         });
 }
 
+// 📥 v842 · LA OTRA MITAD DEL VOLCADO: el envío escribió tipo y hora en la
+// planificación de Firestore (`_cqVolcarEnPlanificacion`), pero la pantalla del
+// entrenador lee su copia LOCAL, que sólo se baja entera al arrancar. Una vez
+// por publicación y semana se trae esa semana y se ponen tipo y hora en las
+// casillas ya pintadas — sólo esas dos y sólo en los días del cuadrante: lo
+// que el entrenador esté escribiendo en lugar o equipaciones no se pierde.
+const _cqPlanTraido = {};
+
+async function _cqTraerPlanificacion(weekKey, info) {
+    if (!info || !info.publicadoEn || !weekKey) return;
+    const clave = weekKey + '|' + info.publicadoEn;
+    if (_cqPlanTraido[clave]) return;
+    _cqPlanTraido[clave] = true;
+
+    const TS = window.TrainingSync;
+    if (!TS || typeof TS.refreshWeeks !== 'function' || typeof TS.readWeekDays !== 'function') return;
+    const cambio = await TS.refreshWeeks([weekKey]);
+    if (!cambio) return;
+
+    const dias = TS.readWeekDays(weekKey) || {};
+    (info.dias || []).filter(d => !d.vacio).forEach(d => {
+        const dd = dias[d.fecha];
+        if (!dd) return;
+        ['tipo', 'hora'].forEach(campo => {
+            const el = document.querySelector('#setup-modal [data-day="' + d.fecha + '"][data-field="' + campo + '"]');
+            if (el && dd[campo] && el.value !== dd[campo]) el.value = dd[campo];
+        });
+    });
+}
+
 window.cronosPintarDirectrizClub = async function (weekKey, contenedorId) {
     const cont = document.getElementById(contenedorId || 'cq-directriz');
     if (!cont) return;
@@ -4028,6 +4173,8 @@ window.cronosPintarDirectrizClub = async function (weekKey, contenedorId) {
     if (!document.body.contains(cont)) return;
 
     const hay = !!(info && info.hayAlgo);
+    if (hay) _cqTraerPlanificacion(weekKey, info).catch(e =>
+        console.warn('[Cuadrante] planificación del envío:', e && e.message ? e.message : e));
 
     // El botón dice si hay algo que ver ANTES de pulsarlo. Un botón que
     // siempre parece igual obliga a abrirlo para descubrir que está vacío.

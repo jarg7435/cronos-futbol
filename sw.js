@@ -2824,8 +2824,12 @@
 // v841 · GESTIONAR PLANTILLA ALINEADA: la cabecera tenía 4 columnas y las
 //        filas 5 (faltaba la de ORIGEN de las plazas de apoyo), así que
 //        «★ Alias» caía sobre un hueco; el ID y el dorsal ya no salen cortados.
-const VERSION = 'v841';
-const CACHE_NAME = 'cronos-cache-v841';
+// v842 · EL CUADRANTE RELLENA LA PLANIFICACIÓN: al «Enviar a entrenadores»,
+//        tipo y hora de inicio de cada casilla pasan a la Planificación
+//        Semanal de los equipos elegidos (lugar, equipaciones y duración no se
+//        tocan) y el entrenador los ve en su tabla sin recargar.
+const VERSION = 'v842';
+const CACHE_NAME = 'cronos-cache-v842';
 
 const ASSETS = [
     './',

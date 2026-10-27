@@ -134,8 +134,12 @@ console.log('\n1) ⚠️⚠️ La ubicación del documento — la decisión que 
     ok('1d · vive en la subcolección que las reglas YA abren al club',
        /'trainingPlans', clubId, 'weeks', _cqDocId\(/.test(CQ));
 
-    ok('1e · 🔑 NO se escribe ni una línea de teams.<teamId> (eso es del entrenador)',
-       !/teams\s*[.\[]/.test(CQ.replace(/^\s*\/\/.*$/gm, '')),
+    // v842 · Por encargo del autor, ENVIAR rellena tipo y hora de la
+    // planificación. Ese volcado es el ÚNICO sitio que toca teams.<teamId>
+    // (ver test_cuadrante_a_planificacion_v842.js); el resto del módulo, no.
+    const _sinVolcado = CQ.replace(/async function _cqVolcarEnPlanificacion[\s\S]*?\n\}\n/, '');
+    ok('1e · 🔑 fuera del volcado de v842 NO se escribe ni una línea de teams.<teamId> (eso es del entrenador)',
+       _sinVolcado !== CQ && !/teams\s*[.\[]/.test(_sinVolcado.replace(/^\s*\/\/.*$/gm, '')),
        'el cuadrante del club y la planificación del entrenador no se pisan');
 }
 
