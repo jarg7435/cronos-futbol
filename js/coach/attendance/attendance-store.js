@@ -280,7 +280,15 @@
         if (window.TrainingSync && typeof window.TrainingSync.readWeekDays === 'function') {
             dias = window.TrainingSync.readWeekDays(weekKey) || {};
         }
-        return Object.keys(dias).sort().map(function (fecha) {
+        return sesionesDeDias(dias);
+    }
+
+    // Mapa de días del cuadrante { 'YYYY-MM-DD': {tipo,hora,lugar} } → sesiones.
+    // Pura: la usa también Dirección con los días que lee de la nube.
+    function sesionesDeDias(dias) {
+        dias = dias || {};
+        return Object.keys(dias).filter(function (k) { return /^\d{4}-\d{2}-\d{2}$/.test(k); })
+            .sort().map(function (fecha) {
             var dd = dias[fecha] || {};
             return {
                 fecha: fecha,
@@ -294,23 +302,70 @@
 
     // Sesiones de un mes entero. Recorre los lunes que tocan ese mes: una
     // semana puede empezar en el mes anterior y acabar en este.
+    //
+    // 🔴 v839 · OCTUBRE SE CORTABA EN EL 23. El bucle avanzaba de lunes en
+    // lunes sumando 7×86400000 ms desde las 00:00. El domingo 25-10-2026 se
+    // retrasa la hora y ese día dura 25 h: lunes 19 00:00 + 168 h = domingo
+    // 25 a las 23:00. La «semana» pedida pasaba a ser '2026-10-25', que no
+    // existe, y la del lunes 26 no se leía nunca. Lo mismo cada octubre.
     function sesionesDeMes(mes) {
+        var out = [];
+        semanasDeMes(mes).forEach(function (wk) {
+            sesionesDeSemana(wk).forEach(function (s) {
+                if (mesDe(s.fecha) === mes) out.push(s);
+            });
+        });
+        out.sort(function (a, b) { return a.fecha < b.fecha ? -1 : (a.fecha > b.fecha ? 1 : 0); });
+        return out;
+    }
+
+    // Claves de los lunes de las semanas que tocan el mes 'YYYY-MM' (la
+    // primera puede empezar en el mes anterior).
+    // ⚠️ Se avanza con setDate y no sumando 7×24 h: con el cambio de hora de
+    // finales de octubre una semana dura 169 h y la suma se queda en el
+    // domingo a las 23:00, cuya clave ya no es un lunes.
+    function semanasDeMes(mes) {
         var y = parseInt(String(mes).slice(0, 4), 10);
         var m = parseInt(String(mes).slice(5, 7), 10);
         if (!y || !m) return [];
-
-        var primero = new Date(y, m - 1, 1, 12, 0, 0);
-        var ultimo  = new Date(y, m, 0, 12, 0, 0);
-        var cursor  = lunesDe(primero);
+        var ultimo = new Date(y, m, 0, 12, 0, 0);
+        var cursor = lunesDe(new Date(y, m - 1, 1, 12, 0, 0));
+        cursor.setHours(12, 0, 0, 0);
         var out = [];
         while (cursor.getTime() <= ultimo.getTime()) {
-            sesionesDeSemana(_clave(cursor)).forEach(function (s) {
-                if (mesDe(s.fecha) === mes) out.push(s);
-            });
-            cursor = new Date(cursor.getTime() + 7 * 86400000);
+            out.push(_clave(cursor));
+            cursor.setDate(cursor.getDate() + 7);
         }
-        out.sort(function (a, b) { return a.fecha < b.fecha ? -1 : (a.fecha > b.fecha ? 1 : 0); });
         return out;
+    }
+
+    // 🔄 v839 · Baja de la nube el cuadrante de las semanas del mes. Resuelve
+    // true si cambió algo de MI equipo (quien pinta debe repintar).
+    function refrescarCuadranteMes(mes) {
+        return refrescarCuadranteSemanas(semanasDeMes(mes));
+    }
+    function refrescarCuadranteSemanas(weekKeys) {
+        if (!window.TrainingSync || typeof window.TrainingSync.refreshWeeks !== 'function') {
+            return Promise.resolve(false);
+        }
+        return window.TrainingSync.refreshWeeks(weekKeys).catch(function (e) {
+            console.warn('[Asistencia] no se pudo refrescar el cuadrante:', e && e.message ? e.message : e);
+            return false;
+        });
+    }
+
+    // Une dos listas de sesiones por fecha; si coinciden manda la PRIMERA.
+    // Normaliza el tipo (un parte antiguo pudo congelar 'partido liga').
+    function unirSesiones(a, b) {
+        var out = {};
+        (a || []).concat(b || []).forEach(function (s) {
+            if (!s || !s.fecha || out[s.fecha]) return;
+            var t = _tipoDeSesion(s);
+            if (!t) return;
+            out[s.fecha] = { fecha: s.fecha, tipo: t, tipoRaw: s.tipoRaw || s.tipo,
+                             hora: s.hora || '', lugar: s.lugar || '' };
+        });
+        return Object.keys(out).sort().map(function (f) { return out[f]; });
     }
 
     // ══════════════════════════════════════════════════════════════════
@@ -1327,6 +1382,12 @@
         jugadores: jugadores,
         sesionesDeSemana: sesionesDeSemana,
         sesionesDeMes: sesionesDeMes,
+        // 🔄 v839 · semanas del mes, cuadrante fresco y unión de sesiones
+        semanasDeMes: semanasDeMes,
+        sesionesDeDias: sesionesDeDias,
+        unirSesiones: unirSesiones,
+        refrescarCuadranteMes: refrescarCuadranteMes,
+        refrescarCuadranteSemanas: refrescarCuadranteSemanas,
         cargarMes: cargarMes,
         marcar: marcar,
         desmarcar: desmarcar,

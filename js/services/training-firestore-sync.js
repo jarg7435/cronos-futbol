@@ -203,6 +203,47 @@ const TrainingSync = (() => {
   }
 
   /**
+   * 🔄 v839 · Trae de Firestore las semanas indicadas y las deja en local.
+   * Devuelve true si los días de MI equipo cambiaron en alguna.
+   *
+   * 🔑 POR QUÉ EXISTE. `syncFromFirestore` sólo corre UNA vez, al arrancar.
+   * Una semana planificada después en otro aparato (el móvil en el campo, el
+   * iPad) no llegaba nunca a esta sesión, y el Parte Mensual —que sale de
+   * aquí— se quedaba cortado en la última semana que sí había bajado.
+   *
+   * ⚠️ NO se usa `loadWeek` en paralelo: cada llamada lee localStorage ANTES
+   * de su await y lo escribe DESPUÉS, así que la última pisaría a las demás.
+   * Aquí se espera a todas y se escribe una sola vez sobre una lectura fresca.
+   *
+   * Una semana que no existe en la nube NO borra la local: puede ser un
+   * guardado que todavía no ha subido.
+   */
+  async function refreshWeeks(weekKeys) {
+    const claves = (weekKeys || []).filter(k => _RE_DIA.test(String(k)));
+    if (!claves.length || !_isInitialized || !_currentClubId || !window.saFS) return false;
+
+    let fs;
+    try { fs = await window.saFS(); } catch (e) { return false; }
+    const leidas = await Promise.all(claves.map(k =>
+      fs.getDoc(fs.doc(fs.db, 'trainingPlans', _currentClubId, 'weeks', k))
+        .then(s => ({ k: k, data: s.exists() ? s.data() : null }), () => null)
+    ));
+
+    const teamId = _miEquipoId();
+    const allWeeks = JSON.parse(localStorage.getItem(LOCAL_STORAGE_KEY) || '{}');
+    let cambio = false;
+    leidas.forEach(r => {
+      if (!r || !r.data) return;
+      const antes   = JSON.stringify(_diasDeEquipo(allWeeks[r.k], teamId));
+      const despues = JSON.stringify(_diasDeEquipo(r.data, teamId));
+      allWeeks[r.k] = r.data;
+      if (antes !== despues) cambio = true;
+    });
+    localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(allWeeks));
+    return cambio;
+  }
+
+  /**
    * Obtiene todas las semanas (documentos crudos, tal cual están guardados).
    */
   function getAllWeeks() {
@@ -412,6 +453,7 @@ const TrainingSync = (() => {
     init: init,
     saveWeek: saveWeek,
     loadWeek: loadWeek,
+    refreshWeeks: refreshWeeks,
     readWeekDays: readWeekDays,
     getAllWeeks: getAllWeeks,
     deleteWeek: deleteWeek,

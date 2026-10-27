@@ -1136,7 +1136,14 @@ window._sdAbrirParteMensual = function (teamId) {
     }
 
     const parte    = e.doc || {};
-    const sesiones = window.CronosAttendance.sesionesDeParte(parte);
+    // 🔄 v839 · El parte guardado sólo trae los días en que YA se pasó lista;
+    // las columnas del resto del mes salen del cuadrante del equipo, que se
+    // une en cuanto llega (ver _sdParteCuadrante).
+    const _claveCq = teamId + '|' + d.mes;
+    const _cq = (window._sdParteCq && window._sdParteCq.clave === _claveCq) ? window._sdParteCq.sesiones : null;
+    let sesiones   = (typeof window.CronosAttendance.unirSesiones === 'function')
+        ? window.CronosAttendance.unirSesiones(window.CronosAttendance.sesionesDeParte(parte), _cq || [])
+        : window.CronosAttendance.sesionesDeParte(parte);
     const marks    = parte.marks || {};
     // La plantilla viene indexada por 'categoria|subcategoria', que es como la
     // dejó cronosFetchAllTeamRosters en la carga del árbol.
@@ -1165,11 +1172,27 @@ window._sdAbrirParteMensual = function (teamId) {
             cambiarMes: '_sdParteCambiarMes',
             acciones:   '<button class="btn" onclick="_sdParteVolver()" style="padding:0.35rem 0.7rem; font-size:0.68rem;">← VOLVER</button>'
         });
-        container.innerHTML = '<div style="display:flex; flex-direction:column;">' + cuerpo + '</div>';
+        container.innerHTML = '<div data-sd-parte="1" style="display:flex; flex-direction:column;">' + cuerpo + '</div>';
     };
 
     window._sdParteEquipo = teamId;
     pinta(_ex);
+
+    // Se vuelve a pedir SIEMPRE (el entrenador puede haber planificado desde
+    // la última vez); lo guardado sólo sirve para pintar ya la primera vez.
+    const _sigueAqui = () => window._sdParteEquipo === teamId && window._sdAsistDatos &&
+        window._sdAsistDatos.mes === d.mes && container.querySelector('[data-sd-parte]');
+    if (typeof window.CronosAttendance.unirSesiones === 'function') {
+        _sdParteCuadrante(teamId, d.mes).then(planificadas => {
+            if (!planificadas) return;
+            window._sdParteCq = { clave: _claveCq, sesiones: planificadas };
+            if (JSON.stringify(planificadas) === JSON.stringify(_cq || []) || !_sigueAqui()) return;
+            sesiones = window.CronosAttendance.unirSesiones(
+                window.CronosAttendance.sesionesDeParte(parte), planificadas);
+            const ex = (window._sdParteExtra && window._sdParteExtra.clave === _clave) ? window._sdParteExtra.datos : null;
+            pinta(ex);
+        });
+    }
     if (_ex || typeof window.CronosAttendance.periodosExtra !== 'function') return;
 
     // La tabla ya está en pantalla; los meses de atrás llegan aparte.
@@ -1209,6 +1232,35 @@ async function _sdParteCargarHistorico(teamId, mes, parteMes) {
         return window.CronosAttendance.periodosExtra({ mes: mes, porMes: porMes });
     } catch (err) {
         console.warn('[Dirección] % pre-partido / temporada:', err);
+        return null;
+    }
+}
+
+// 🔄 v839 · Las sesiones PLANIFICADAS de un equipo en un mes, leídas de su
+// cuadrante (trainingPlans/{club}/weeks/{lunes} → teams.<teamId>). Una
+// lectura por semana, en paralelo. Sólo el nodo del equipo: los días sueltos
+// de la raíz (legado) no dicen de qué equipo son y no se atribuyen a nadie.
+// Devuelve null si no se pudo leer nada.
+async function _sdParteCuadrante(teamId, mes) {
+    try {
+        const me = window._cronosCurrentUser;
+        const clubId = window._testRoleClubId || me?.clubId || '';
+        if (!clubId) return null;
+        const { db, doc, getDoc } = await _sdFS();
+        const semanas = window.CronosAttendance.semanasDeMes(mes);
+        let leidas = 0;
+        const dias = {};
+        await Promise.all(semanas.map(async (wk) => {
+            try {
+                const snap = await getDoc(doc(db, 'trainingPlans', clubId, 'weeks', wk));
+                leidas++;
+                const nodo = snap.exists() ? (((snap.data() || {}).teams || {})[teamId] || {}) : {};
+                Object.keys(nodo).forEach(f => { if (f.slice(0, 7) === mes) dias[f] = nodo[f]; });
+            } catch (_) {}
+        }));
+        return leidas ? window.CronosAttendance.sesionesDeDias(dias) : null;
+    } catch (err) {
+        console.warn('[Dirección] cuadrante del parte:', err);
         return null;
     }
 }

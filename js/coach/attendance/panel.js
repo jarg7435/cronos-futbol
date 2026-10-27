@@ -78,20 +78,42 @@ async function openAttendancePanel() {
     var modal = document.getElementById('setup-modal');
     if (modal) modal.style.display = 'flex';
 
-    // Sesión por defecto: HOY si hay, si no la primera de la semana.
-    var sesiones = window.CronosAttendance.sesionesDeSemana(
-        window._cronosLocalDateKey(_attLunes(window._attWeekOffset || 0)));
+    var weekKey = window._cronosLocalDateKey(_attLunes(window._attWeekOffset || 0));
     var hoyKey = window._cronosLocalDateKey(new Date());
-    if (!window._attDayKey || !sesiones.some(function (s) { return s.fecha === window._attDayKey; })) {
-        var deHoy = sesiones.filter(function (s) { return s.fecha === hoyKey; })[0];
-        window._attDayKey = deHoy ? deHoy.fecha : (sesiones[0] ? sesiones[0].fecha : null);
-    }
+    _attElegirDiaPorDefecto(weekKey, hoyKey);
 
     // El mes que hace falta es el de la sesión elegida, no el natural: una
     // semana a caballo entre dos meses tiene sesiones en documentos distintos.
     var mes = window.CronosAttendance.mesDe(window._attDayKey || hoyKey);
     window._attMes = await window.CronosAttendance.cargarMes(mes, eq);
     _attRenderSemana();
+
+    // 🔄 v839 · Igual que en el parte mensual: la semana puede haberse
+    // planificado en otro aparato después de abrir la app.
+    if (typeof window.CronosAttendance.refrescarCuadranteSemanas === 'function') {
+        window.CronosAttendance.refrescarCuadranteSemanas([weekKey]).then(async function (cambio) {
+            if (!cambio) return;
+            if (window._cronosLocalDateKey(_attLunes(window._attWeekOffset || 0)) !== weekKey) return;
+            if (typeof navCurrent === 'function' && navCurrent() !== 'openAttendancePanel') return;
+            var antes = window._attDayKey;
+            _attElegirDiaPorDefecto(weekKey, hoyKey);
+            var mesNuevo = window.CronosAttendance.mesDe(window._attDayKey || hoyKey);
+            if (window._attDayKey !== antes && mesNuevo !== window.CronosAttendance.mesDe(antes || hoyKey)) {
+                window._attMes = await window.CronosAttendance.cargarMes(mesNuevo, eq);
+            }
+            _attRenderSemana();
+        });
+    }
+}
+
+// Sesión por defecto: HOY si hay, si no la primera de la semana. Respeta la
+// que ya estuviera elegida mientras siga siendo una sesión de esa semana.
+function _attElegirDiaPorDefecto(weekKey, hoyKey) {
+    var sesiones = window.CronosAttendance.sesionesDeSemana(weekKey);
+    if (!window._attDayKey || !sesiones.some(function (s) { return s.fecha === window._attDayKey; })) {
+        var deHoy = sesiones.filter(function (s) { return s.fecha === hoyKey; })[0];
+        window._attDayKey = deHoy ? deHoy.fecha : (sesiones[0] ? sesiones[0].fecha : null);
+    }
 }
 
 function _attRenderSemana() {
@@ -577,6 +599,18 @@ async function openAttendanceMonth() {
     window._attMes = await window.CronosAttendance.cargarMes(window._attMonth, eq);
     _attRenderMes();
 
+    // 🔄 v839 · El cuadrante local sólo se baja al arrancar la app: una semana
+    // planificada después (otro aparato) no salía en el parte. Se pinta ya con
+    // lo local y se repinta si la nube trae días nuevos para este mes.
+    var mesCuadrante = window._attMonth;
+    if (typeof window.CronosAttendance.refrescarCuadranteMes === 'function') {
+        window.CronosAttendance.refrescarCuadranteMes(mesCuadrante).then(function (cambio) {
+            if (!cambio || window._attMonth !== mesCuadrante) return;
+            if (typeof navCurrent === 'function' && navCurrent() !== 'openAttendanceMonth') return;
+            _attRenderMes();
+        });
+    }
+
     // 📊 v823 · % pre-partido y % de temporada: necesitan los meses de atrás.
     // La tabla ya está pintada (con «…»); se repinta al llegar, y sólo si el
     // entrenador sigue en ESTE mes.
@@ -617,7 +651,14 @@ function _attRenderMes() {
     var cuerpo = window.CronosAttendance.parteMensualHtml({
         mes:        window._attMonth,
         equipo:     _attNombreEquipo(),
-        sesiones:   window.CronosAttendance.sesionesDeMes(window._attMonth),
+        // 🔄 v839 · Cuadrante + días ya marcados en el parte: una sesión con
+        // marcas no desaparece porque luego se quitara de la planificación
+        // (es lo mismo que ya cuentan el % pre-partido y el de temporada).
+        sesiones:   (typeof window.CronosAttendance.unirSesiones === 'function')
+            ? window.CronosAttendance.unirSesiones(
+                  window.CronosAttendance.sesionesDeMes(window._attMonth),
+                  window.CronosAttendance.sesionesDeParte(window._attMes || {}))
+            : window.CronosAttendance.sesionesDeMes(window._attMonth),
         plantel:    window.CronosAttendance.jugadores(),
         marks:      (window._attMes && window._attMes.marks) || {},
         // 📊 v823 · los periodos de ESTE mes, o «…» mientras llegan

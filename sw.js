@@ -2812,8 +2812,13 @@
 // v838 · CAMPO / INSTALACIÓN EN EL CUADRANTE: al programar una actividad se
 //        elige el campo (nombres personalizables del club, 🏟️ CAMPOS) y
 //        dentro de él sus 4 espacios; los choques se miden por campo.
-const VERSION = 'v838';
-const CACHE_NAME = 'cronos-cache-v838';
+// v839 · EL PARTE MENSUAL DE OCTUBRE YA NO SE CORTA EN EL 23: las semanas
+//        del mes se recorrían sumando 168 h y el cambio de hora del 25-10
+//        saltaba la del 26. Además el cuadrante se refresca de la nube al
+//        abrir el parte / pasar lista, y Dirección ve también los días
+//        planificados (no sólo los ya marcados).
+const VERSION = 'v839';
+const CACHE_NAME = 'cronos-cache-v839';
 
 const ASSETS = [
     './',
