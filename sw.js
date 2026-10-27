@@ -2817,8 +2817,12 @@
 //        saltaba la del 26. Además el cuadrante se refresca de la nube al
 //        abrir el parte / pasar lista, y Dirección ve también los días
 //        planificados (no sólo los ya marcados).
-const VERSION = 'v839';
-const CACHE_NAME = 'cronos-cache-v839';
+// v840 · ASISTENCIA SIN ESPERAS: Pasar Lista, Parte Mensual y el cambio de
+//        día pintan al instante con lo del aparato y traen la nube por detrás
+//        («⟳ Actualizando…»); una respuesta tardía no pisa un toque recién
+//        dado y el repintado conserva el desplazamiento.
+const VERSION = 'v840';
+const CACHE_NAME = 'cronos-cache-v840';
 
 const ASSETS = [
     './',

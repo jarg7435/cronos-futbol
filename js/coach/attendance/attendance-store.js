@@ -397,18 +397,34 @@
     // ══════════════════════════════════════════════════════════════════
     //  LECTURA DEL MES
     // ══════════════════════════════════════════════════════════════════
+    // ⚡ v840 · Lo que hay EN EL APARATO del mes, al instante y sin red. Las
+    // pantallas pintan con esto y luego llaman a `cargarMes` por detrás.
+    function mesLocal(mes, equipoOpc) {
+        var eq = equipoOpc || _miEquipo();
+        if (!eq) return { sessions: {}, marks: {}, _sinEquipo: true };
+        return _mesLocal(docId(eq.teamId, mes));
+    }
+
+    // ⚡ v840 · Cuántas veces se ha marcado/desmarcado en cada mes. Ahora la
+    // lectura de la nube va POR DETRÁS y el entrenador puede marcar mientras
+    // llega: si se marcó entre la petición y la respuesta, la respuesta ya es
+    // vieja y NO puede pisar la caché local (se perdería el toque recién dado).
+    var _versionMarcas = {};
+
     async function cargarMes(mes, equipoOpc) {
         var eq = equipoOpc || _miEquipo();
         if (!eq) return { sessions: {}, marks: {}, _sinEquipo: true };
 
         var id = docId(eq.teamId, mes);
         var local = _mesLocal(id);
+        var version = _versionMarcas[id] || 0;
 
         try {
             var fa = window._cronos_auth;
             if (!fa || !fa.db) return local;
             var mod = await import(FS_URL);
             var snap = await mod.getDoc(mod.doc(fa.db, 'clubs', eq.clubId, 'attendance', id));
+            if ((_versionMarcas[id] || 0) !== version) return _mesLocal(id);
             if (snap.exists()) {
                 var v = snap.data() || {};
                 var datos = { sessions: v.sessions || {}, marks: v.marks || {} };
@@ -455,6 +471,7 @@
             datos.sessions[fecha] = { tipo: sesion.tipo, hora: sesion.hora || '' };
         }
         _ponerMesLocal(id, datos);
+        _versionMarcas[id] = (_versionMarcas[id] || 0) + 1;
 
         // 2. Subida en segundo plano.
         _subirMarca(eq, id, mes, fecha, ficha, marca, sesion);
@@ -517,6 +534,7 @@
         var datos = _mesLocal(id);
         if (datos.marks && datos.marks[fecha]) delete datos.marks[fecha][ficha];
         _ponerMesLocal(id, datos);
+        _versionMarcas[id] = (_versionMarcas[id] || 0) + 1;
 
         (async function () {
             try {
@@ -1079,8 +1097,10 @@
         var eq = equipoOpc || _miEquipo();
         if (!eq) return null;
         var meses = mesesHistorico(mes);
+        // ⚡ v840 · El mes mostrado TAMBIÉN se pide: la pantalla ya no lo espera
+        // antes de pintar, así que aquí no se puede dar por fresco.
         await Promise.all(meses.map(function (m) {
-            return (m === mes) ? Promise.resolve() : cargarMes(m, eq).catch(function () {});
+            return cargarMes(m, eq).catch(function () {});
         }));
         var porMes = {};
         meses.forEach(function (m) {
@@ -1389,6 +1409,7 @@
         refrescarCuadranteMes: refrescarCuadranteMes,
         refrescarCuadranteSemanas: refrescarCuadranteSemanas,
         cargarMes: cargarMes,
+        mesLocal: mesLocal,   // ⚡ v840 · pintar sin esperar a la red
         marcar: marcar,
         desmarcar: desmarcar,
         resumenJugador: resumenJugador,

@@ -85,13 +85,12 @@ async function openAttendancePanel() {
     // El mes que hace falta es el de la sesión elegida, no el natural: una
     // semana a caballo entre dos meses tiene sesiones en documentos distintos.
     var mes = window.CronosAttendance.mesDe(window._attDayKey || hoyKey);
-    window._attMes = await window.CronosAttendance.cargarMes(mes, eq);
-    _attRenderSemana();
+    _attAbrirMesSemana(mes, eq);
 
     // 🔄 v839 · Igual que en el parte mensual: la semana puede haberse
     // planificado en otro aparato después de abrir la app.
     if (typeof window.CronosAttendance.refrescarCuadranteSemanas === 'function') {
-        window.CronosAttendance.refrescarCuadranteSemanas([weekKey]).then(async function (cambio) {
+        window.CronosAttendance.refrescarCuadranteSemanas([weekKey]).then(function (cambio) {
             if (!cambio) return;
             if (window._cronosLocalDateKey(_attLunes(window._attWeekOffset || 0)) !== weekKey) return;
             if (typeof navCurrent === 'function' && navCurrent() !== 'openAttendancePanel') return;
@@ -99,11 +98,95 @@ async function openAttendancePanel() {
             _attElegirDiaPorDefecto(weekKey, hoyKey);
             var mesNuevo = window.CronosAttendance.mesDe(window._attDayKey || hoyKey);
             if (window._attDayKey !== antes && mesNuevo !== window.CronosAttendance.mesDe(antes || hoyKey)) {
-                window._attMes = await window.CronosAttendance.cargarMes(mesNuevo, eq);
+                _attAbrirMesSemana(mesNuevo, eq);
+            } else {
+                _attRepintar(_attRenderSemana);
             }
-            _attRenderSemana();
         });
     }
+}
+
+// ════════════════════════════════════════════════════════════════════
+//  ⚡ v840 · PINTAR YA, TRAER DE LA NUBE DESPUÉS
+// ════════════════════════════════════════════════════════════════════
+//  🔴 POR QUÉ IBA A SALTOS. Cada pantalla de asistencia hacía
+//  `await cargarMes()` —una lectura de Firestore— ANTES de pintar nada. Con
+//  buena red son unos cientos de ms; en el campo, con el móvil a una raya,
+//  varios segundos con el botón «muerto». El pintado en sí NO era el
+//  problema: el parte más grande posible (40 jugadores × 31 días) se genera
+//  en ~3 ms.
+//
+//  Ahora se pinta al momento con lo que hay EN EL APARATO (`mesLocal`) y la
+//  lectura va por detrás con un aviso discreto «Actualizando…». Al llegar se
+//  repinta SÓLO si los datos cambiaron, el entrenador sigue en la misma
+//  pantalla y en el mismo mes, y conservando el desplazamiento.
+//  ⚠️ Si se marca mientras llega la respuesta, `cargarMes` la descarta (ver
+//  `_versionMarcas` en attendance-store.js): un toque nunca se pierde.
+function _attRefrescarMes(mes, eq, pantalla, sigue, repintar) {
+    var token = (window._attCargaToken || 0) + 1;
+    window._attCargaToken = token;
+    window._attCargando = true;
+    _attPintarIndicador();
+    var fin = function () {
+        if (window._attCargaToken !== token) return;
+        window._attCargando = false;
+        _attPintarIndicador();
+    };
+    // Sin red, getDoc puede tardar en rendirse: el aviso no se queda colgado.
+    setTimeout(fin, 12000);
+    return window.CronosAttendance.cargarMes(mes, eq).then(function (datos) {
+        if (window._attCargaToken !== token) return;   // hay una petición más nueva
+        fin();
+        if (typeof navCurrent === 'function' && navCurrent() !== pantalla) return;
+        if (!sigue()) return;
+        if (JSON.stringify(datos) === JSON.stringify(window._attMes)) return;
+        window._attMes = datos;
+        _attRepintar(repintar);
+    });
+}
+
+// Pasar lista con el mes `mes`: lo local al instante, la nube por detrás.
+function _attAbrirMesSemana(mes, eq) {
+    window._attMes = window.CronosAttendance.mesLocal(mes, eq);
+    _attRenderSemana();
+    var hoyKey = window._cronosLocalDateKey(new Date());
+    _attRefrescarMes(mes, eq, 'openAttendancePanel', function () {
+        return window.CronosAttendance.mesDe(window._attDayKey || hoyKey) === mes;
+    }, _attRenderSemana);
+}
+
+// Repinta sin devolver al entrenador arriba del todo: guarda el
+// desplazamiento del modal y el horizontal de la tabla del parte.
+function _attRepintar(fn) {
+    var modal = document.getElementById('setup-modal');
+    var caja  = modal && modal.querySelector('.modal-content');
+    var tabla = modal && modal.querySelector('table');
+    var envol = tabla && tabla.parentNode;
+    var top = caja ? caja.scrollTop : 0;
+    var izq = envol ? envol.scrollLeft : 0, arr = envol ? envol.scrollTop : 0;
+    fn();
+    caja  = modal && modal.querySelector('.modal-content');
+    tabla = modal && modal.querySelector('table');
+    envol = tabla && tabla.parentNode;
+    if (caja) caja.scrollTop = top;
+    if (envol) { envol.scrollLeft = izq; envol.scrollTop = arr; }
+}
+
+// Aviso ligero mientras llega la nube: «· ⟳ Actualizando…» detrás del nombre
+// del equipo, bajo el título. Ahí no tapa los botones de la derecha ni empuja
+// la tabla. Cada pintado lo recrea, por eso lo llaman los dos render.
+function _attPintarIndicador() {
+    var sub = document.querySelector('#setup-modal .modal-content h2 + p');
+    if (!sub) return;
+    var viejo = sub.querySelector('#att-cargando');
+    if (!window._attCargando) { if (viejo) viejo.remove(); return; }
+    if (viejo) return;
+    var el = document.createElement('span');
+    el.id = 'att-cargando';
+    el.setAttribute('role', 'status');
+    el.textContent = ' · ⟳ Actualizando…';
+    el.style.cssText = 'color:#58a6ff; opacity:0.8;';
+    sub.appendChild(el);
 }
 
 // Sesión por defecto: HOY si hay, si no la primera de la semana. Respeta la
@@ -360,6 +443,7 @@ function _attRenderSemana() {
     html += '</div>';
 
     modal.innerHTML = html;
+    _attPintarIndicador();
 }
 
 // ── Acciones ────────────────────────────────────────────────────────
@@ -393,9 +477,10 @@ window._attElegirDia = async function (fecha) {
     var mesAntes = window.CronosAttendance.mesDe(window._attDayKey || '');
     window._attDayKey = fecha;
     // Cambiar de día puede cambiar de MES, y el mes es otro documento.
+    // ⚡ v840 · Sin esperar a la red: lo local ya, la nube por detrás.
     if (window.CronosAttendance.mesDe(fecha) !== mesAntes) {
-        var eq = window.cronosMyTeam();
-        window._attMes = await window.CronosAttendance.cargarMes(window.CronosAttendance.mesDe(fecha), eq);
+        _attAbrirMesSemana(window.CronosAttendance.mesDe(fecha), window.cronosMyTeam());
+        return;
     }
     _attRenderSemana();
 };
@@ -596,8 +681,13 @@ async function openAttendanceMonth() {
         window._attMonth = window.CronosAttendance.mesDe(
             window._attDayKey || window._cronosLocalDateKey(new Date()));
     }
-    window._attMes = await window.CronosAttendance.cargarMes(window._attMonth, eq);
+    // ⚡ v840 · Se pinta YA con lo del aparato; la nube llega por detrás.
+    var mesVisto = window._attMonth;
+    window._attMes = window.CronosAttendance.mesLocal(mesVisto, eq);
     _attRenderMes();
+    _attRefrescarMes(mesVisto, eq, 'openAttendanceMonth', function () {
+        return window._attMonth === mesVisto;
+    }, _attRenderMes);
 
     // 🔄 v839 · El cuadrante local sólo se baja al arrancar la app: una semana
     // planificada después (otro aparato) no salía en el parte. Se pinta ya con
@@ -607,7 +697,7 @@ async function openAttendanceMonth() {
         window.CronosAttendance.refrescarCuadranteMes(mesCuadrante).then(function (cambio) {
             if (!cambio || window._attMonth !== mesCuadrante) return;
             if (typeof navCurrent === 'function' && navCurrent() !== 'openAttendanceMonth') return;
-            _attRenderMes();
+            _attRepintar(_attRenderMes);
         });
     }
 
@@ -619,7 +709,7 @@ async function openAttendanceMonth() {
         window.CronosAttendance.cargarHistorico(mesPedido, eq).then(function (ex) {
             if (window._attMonth !== mesPedido) return;
             window._attExtra = ex;
-            if (document.querySelector('#setup-modal [data-att-periodos]')) _attRenderMes();
+            if (document.querySelector('#setup-modal [data-att-periodos]')) _attRepintar(_attRenderMes);
         }).catch(function (e) {
             console.warn('[Asistencia] % pre-partido / temporada:', e && e.message ? e.message : e);
         });
@@ -674,4 +764,5 @@ function _attRenderMes() {
         '<div class="modal-content" style="width:min(98vw,1200px); max-height:94vh; display:flex; flex-direction:column; overflow-y:auto; padding:' + (isMobile ? '0.6rem' : '1.3rem') + ';">' +
         cuerpo +
         '</div>';
+    _attPintarIndicador();
 }
