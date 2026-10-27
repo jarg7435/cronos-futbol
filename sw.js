@@ -2832,8 +2832,8 @@
 //        del Director/Coordinador escuchan los partes del mes y se repintan
 //        en cuanto el entrenador marca (antes era una foto al abrir la
 //        pestaña), conservando ramas abiertas y desplazamiento.
-const VERSION = 'v843';
-const CACHE_NAME = 'cronos-cache-v843';
+const VERSION = 'v844';
+const CACHE_NAME = 'cronos-cache-v844';
 
 const ASSETS = [
     './',

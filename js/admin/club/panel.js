@@ -1895,14 +1895,51 @@ async function openClubAdminPanel(preClubId = null) {
         if (!confirm(`¿Reenviar solicitud de ${email} como ${ROLE_LABELS[role]||role} al SuperAdmin?`)) return;
         try {
             const { db: fDb, doc: fDoc, updateDoc: fUpdateDoc, setDoc: fSetDoc, getDoc: fGetDoc, deleteDoc: fDeleteDoc } = await saFS();
-            
-            // 1. Read current user doc to check if user already has active roles
-            const userSnap = await fGetDoc(fDoc(fDb, 'users', uid));
-            const userData = userSnap.exists() ? userSnap.data() : {};
-            const hasOtherActiveRoles = (userData.isAuthorized === true) && userSnap.exists();
-            
-            // 1. Intentar actualizar el doc del usuario (informativo, puede fallar por reglas)
+
+            // ═══════════════════════════════════════════════════════════════
+            //  🔴 v844 · EL PERFIL DEL SOLICITANTE PUEDE NO SER LEGIBLE
+            //
+            //  Reportado por el autor (CD Doramas, captura 5173): «Reenviar al
+            //  SA» → "Missing or insufficient permissions" y la solicitud de
+            //  un Coordinador colgada. Esta lectura iba FUERA de todo
+            //  try/catch y era lo primero que se hacía.
+            //
+            //  🔑 Y ES CORRECTO QUE LAS REGLAS LA DENIEGUEN: `users/{uid}` se
+            //  lee por el `clubId` de la RAÍZ del documento. Quien ya tiene
+            //  cuenta en OTRO club (o en un ente) y pide aquí un rol nuevo
+            //  conserva su raíz allí: el alta de este club sólo vive en su
+            //  `allRoles` y en la solicitud. Abrir la regla para esto dejaría
+            //  al admin leer el perfil entero de otra entidad (correo, plazas
+            //  y equipos ajenos). Por eso el arreglo es de aquí: el perfil es
+            //  un dato de apoyo, y lo que manda es la SOLICITUD, que el admin
+            //  sí puede leer (consulta por clubId + userUid, ver v474).
+            // ═══════════════════════════════════════════════════════════════
+            let userSnap = null;
+            try { userSnap = await fGetDoc(fDoc(fDb, 'users', uid)); }
+            catch (readErr) {
+                console.warn('[caForwardToSA] El perfil del usuario no es legible desde este club (' + readErr.message + '); se reenvía con los datos de su solicitud.');
+            }
+            const userData = (userSnap && userSnap.exists()) ? userSnap.data() : {};
+            const hasOtherActiveRoles = (userData.isAuthorized === true) && !!userSnap && userSnap.exists();
+
+            // Las solicitudes de este usuario EN ESTE CLUB: dan los datos del
+            // reenvío cuando el perfil no se puede leer, y son las que se
+            // retiran al final (paso 3).
+            let _origDocs = null;
             try {
+                const { getDocs: _gds, collection: _col, query: _q, where: _w } = await saFS();
+                const origPRSnap = await _gds(_q(_col(fDb, 'platform_requests'),
+                    _w('clubId', '==', cid), _w('userUid', '==', uid)));
+                _origDocs = [];
+                origPRSnap.forEach(d => _origDocs.push({ id: d.id, data: d.data() }));
+            } catch(e) { console.warn('[caForwardToSA] No se pudieron listar las solicitudes originales:', e.message); }
+            const _origReq = ((_origDocs || []).find(o =>
+                    (o.data.status === 'pending_club_admin' || o.data.status === 'pending') &&
+                    o.data.requestedRole === role &&
+                    (!cat || !o.data.requestedCategory || o.data.requestedCategory === cat)) || {}).data || {};
+
+            // 1. Intentar actualizar el doc del usuario (informativo, puede fallar por reglas)
+            if (userSnap) try {
                 if (hasOtherActiveRoles) {
                     const allRoles = userData.allRoles || [];
                     // 🔑 v540 · por PLAZA: con dos equipos, buscar sólo por rol
@@ -1938,20 +1975,20 @@ async function openClubAdminPanel(preClubId = null) {
                 ? '_' + window.cronosTeamSlug(String(cat) + '-' + (sub || '')) : '';
             const fwdReqId = 'fwd_' + cid + '_' + uid + '_' + role + _sufFwd;
 
-            const realEmail = (email && email !== '–' && email !== '-') ? email 
-                            : (userData.email || userData.requestedEmail || '');
-            const realName  = userData.displayName || 
-                             [userData.firstName, userData.lastName].filter(Boolean).join(' ') || 
-                             userData.requestedName || '';
+            const realEmail = (email && email !== '–' && email !== '-') ? email
+                            : (userData.email || userData.requestedEmail || _origReq.requestedEmail || '');
+            const realName  = userData.displayName ||
+                             [userData.firstName, userData.lastName].filter(Boolean).join(' ') ||
+                             userData.requestedName || _origReq.requestedName || '';
 
             // Obtener categorías si existen (del doc del usuario, allRoles, o de la solicitud original)
             // 🔑 v540 · la categoría que llega con la llamada MANDA: es la del
             // equipo que el administrador ha pulsado. La raíz del perfil sólo
             // puede guardar una, y con dos equipos sería la del otro.
-            let userCatFwd    = cat || userData.requestedCategory || userData.category || null;
-            let userSubcatFwd = (cat ? (sub || null) : null) || userData.requestedSubcategory || userData.subcategory || null;
-            let userCoordTypeFwd = userData.requestedCoordinatorType || userData.coordinatorType || null;
-            const userSlotFwd = userData.requestedSlot     || null;
+            let userCatFwd    = cat || userData.requestedCategory || userData.category || _origReq.requestedCategory || null;
+            let userSubcatFwd = (cat ? (sub || null) : null) || userData.requestedSubcategory || userData.subcategory || _origReq.requestedSubcategory || null;
+            let userCoordTypeFwd = userData.requestedCoordinatorType || userData.coordinatorType || _origReq.requestedCoordinatorType || null;
+            const userSlotFwd = userData.requestedSlot     || _origReq.requestedSlot || null;
             // Buscar también en allRoles si no se encontró en el doc raíz
             if (!userCatFwd && userData.allRoles) {
                 const roleEntry = userData.allRoles.find(r => r.role === role && (r.clubId || null) === (cid || null));
@@ -1989,14 +2026,12 @@ async function openClubAdminPanel(preClubId = null) {
             //    produccion: usuarios con su `fwd_*` ya aprobado y el `self_reg_*`
             //    original todavia en pending_club_admin, apareciendo como pendientes.
             //    Los borrados se ESPERAN, como en caRejectRequest.
-            try {
-                const { getDocs: _gds, collection: _col, query: _q, where: _w } = await saFS();
-                const origPRSnap = await _gds(_q(_col(fDb, 'platform_requests'),
-                    _w('clubId', '==', cid), _w('userUid', '==', uid)));
+            //    v844 · la consulta se hace ya arriba (paso 1); aquí se reutiliza.
+            if (_origDocs) {
                 const _viejas = [];
-                origPRSnap.forEach(d => {
+                _origDocs.forEach(d => {
                     if (d.id === fwdReqId) return;
-                    const _dd = d.data();
+                    const _dd = d.data;
                     if (_dd.status !== 'pending_club_admin' && _dd.status !== 'pending') return;
                     // ⚠️ v540 · NO ARRASTRAR LA SOLICITUD DEL OTRO EQUIPO. Un
                     // entrenador puede tener dos pendientes (su F7 y su F11);
@@ -2016,7 +2051,7 @@ async function openClubAdminPanel(preClubId = null) {
                     try { await fDeleteDoc(fDoc(fDb, 'platform_requests', _vid)); }
                     catch (e) { console.warn('[caForwardToSA] No se pudo retirar la solicitud original ' + _vid + ':', e.message); }
                 }
-            } catch(e) { console.warn('[caForwardToSA] No se pudieron listar las solicitudes originales:', e.message); }
+            }
 
             showToast('✅ Solicitud de ' + email + ' reenviada al SuperAdmin.', 4000);
             // Refresco tras la acción. Antes iba SIN clubId, así que al
