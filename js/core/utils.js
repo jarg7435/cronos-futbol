@@ -104,11 +104,8 @@ if (typeof window._cronosStableSlug !== 'function') {
 if (typeof window._cronosBuildLiveMatchId !== 'function') {
     window._cronosBuildLiveMatchId = function(opts) {
         opts = opts || {};
-        // Reutilizar ID existente si seguimos en el mismo partido (idempotencia
-        // real: reiniciar el sync NO cambia el ID). Se acepta tanto el valor
-        // pasado explícitamente (binding léxico `liveMatchId` de los scripts
-        // clásicos, que NO es window.liveMatchId) como window.liveMatchId.
-        const existing = opts.existing || (typeof window.liveMatchId === 'string' ? window.liveMatchId : '');
+        // `opts.existing` se sigue aceptando (lo pasan los llamadores) pero ya
+        // no se usa: v846 quita la variable muerta que lo leía (aviso de lint).
         // v266: NUNCA reutilizar el ID existente. Siempre generar uno nuevo
         // con la hora actual para que cada partido tenga un ID Único.
         // Antes, si existing tenía valor, reutilizaba el ID del partido
@@ -1200,11 +1197,8 @@ if (typeof window._cronosStableSlug !== 'function') {
 if (typeof window._cronosBuildLiveMatchId !== 'function') {
     window._cronosBuildLiveMatchId = function(opts) {
         opts = opts || {};
-        // Reutilizar ID existente si seguimos en el mismo partido (idempotencia
-        // real: reiniciar el sync NO cambia el ID). Se acepta tanto el valor
-        // pasado explícitamente (binding léxico `liveMatchId` de los scripts
-        // clásicos, que NO es window.liveMatchId) como window.liveMatchId.
-        const existing = opts.existing || (typeof window.liveMatchId === 'string' ? window.liveMatchId : '');
+        // `opts.existing` se sigue aceptando (lo pasan los llamadores) pero ya
+        // no se usa: v846 quita la variable muerta que lo leía (aviso de lint).
         // v266: NUNCA reutilizar el ID existente. Siempre generar uno nuevo
         // con la hora actual para que cada partido tenga un ID Único.
         // Antes, si existing tenía valor, reutilizaba el ID del partido

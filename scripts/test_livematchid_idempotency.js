@@ -106,9 +106,11 @@ console.log('\n── PARTE C · anti-regresión (por qué NO restaurar el guard
 // C1: la vía (a) NAÏVE (`if (existing) return existing;`) produce un id
 // malformado con DOBLE sufijo -HHmm-HHmm, porque el llamador añade el hour
 // FUERA de la función.
+// v846: la variable muerta `existing` ya no está en utils.js; el guard naïve
+// se inyecta entero tras `opts = opts || {};` (primera aparición = la función).
 const winNaive = loadWin(code => code.replace(
-    "const existing = opts.existing || (typeof window.liveMatchId === 'string' ? window.liveMatchId : '');",
-    "const existing = opts.existing || (typeof window.liveMatchId === 'string' ? window.liveMatchId : '');\n        if (existing) return existing; // vía(a) naïve"
+    "opts = opts || {};",
+    "opts = opts || {};\n        const existing = opts.existing || (typeof window.liveMatchId === 'string' ? window.liveMatchId : '');\n        if (existing) return existing; // vía(a) naïve"
 ));
 const naiveResync = callerBuild(winNaive, { ...MATCH, when: new Date(2026,6,9,14,50), existing: liveMatchId });
 ok('C1 · vía(a) naïve produce id malformado con doble sufijo -HHmm-HHmm', /-\d{4}-\d{4}$/.test(naiveResync),
