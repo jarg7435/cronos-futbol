@@ -344,21 +344,35 @@
 
             const ov = document.createElement('div');
             ov.id = 'rx-visor';
-            ov.style.cssText = 'position:fixed;inset:0;z-index:99999;background:#ffffff;' +
-                'display:flex;flex-direction:column;';
+            // v845 · encargo del autor (implementar.txt 29-10 + IMG_0674): en el
+            //  iPad la barra salía difuminada e imposible de pulsar. La app instalada usa
+            //  `black-translucent` + `viewport-fit=cover`, así que la barra de
+            //  estado de iOS se pinta ENCIMA de lo que esté en `top:0`: hay que
+            //  bajar la barra con `env(safe-area-inset-top)`. Y el z-index
+            //  99999 quedaba por debajo de los modales de la app (2147482000):
+            //  el visor tiene que estar encima de todo lo que lo abre.
+            ov.style.cssText = 'position:fixed;inset:0;z-index:2147483100;background:#ffffff;' +
+                'display:flex;flex-direction:column;opacity:1;filter:none;' +
+                'padding-bottom:env(safe-area-inset-bottom, 0px);';
 
             const barra = document.createElement('div');
-            barra.style.cssText = 'display:flex;align-items:center;gap:0.5rem;padding:0.55rem 0.7rem;' +
-                'background:#161b22;border-bottom:1px solid rgba(255,255,255,0.12);flex-shrink:0;';
+            barra.style.cssText = 'display:flex;align-items:center;gap:0.5rem;' +
+                'padding:calc(0.55rem + env(safe-area-inset-top, 0px)) ' +
+                    'calc(0.7rem + env(safe-area-inset-right, 0px)) 0.55rem ' +
+                    'calc(0.7rem + env(safe-area-inset-left, 0px));' +
+                'background:#161b22;border-bottom:1px solid rgba(255,255,255,0.12);flex-shrink:0;' +
+                'position:relative;z-index:1;opacity:1;';
+            // Botones de 44 px de alto (el mínimo táctil de Apple), opacos.
+            const btn = 'min-height:44px;padding:0.5rem 0.9rem;border-radius:8px;font-size:0.8rem;' +
+                'font-weight:700;cursor:pointer;opacity:1;touch-action:manipulation;' +
+                '-webkit-tap-highlight-color:transparent;';
             barra.innerHTML =
                 '<div style="flex:1;min-width:0;color:#c9d1d9;font-size:0.78rem;font-weight:700;' +
                     'overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + _rxEsc(titulo) + '</div>' +
-                '<button type="button" id="rx-visor-print" style="padding:0.45rem 0.8rem;border-radius:8px;' +
-                    'border:1px solid #2563eb;background:#2563eb;color:#fff;font-size:0.74rem;' +
-                    'font-weight:700;cursor:pointer;">🖨️ Imprimir / Guardar como PDF</button>' +
-                '<button type="button" id="rx-visor-close" style="padding:0.45rem 0.8rem;border-radius:8px;' +
-                    'border:1px solid rgba(248,81,73,0.5);background:rgba(248,81,73,0.15);color:#f85149;' +
-                    'font-size:0.74rem;font-weight:700;cursor:pointer;">✕ Cerrar</button>';
+                '<button type="button" id="rx-visor-print" style="' + btn +
+                    'border:1px solid #2563eb;background:#2563eb;color:#fff;">🖨️ Imprimir / Guardar como PDF</button>' +
+                '<button type="button" id="rx-visor-close" style="' + btn +
+                    'border:1px solid #f85149;background:#3d1a1a;color:#ff7b72;">✕ Cerrar</button>';
 
             const marco = document.createElement('iframe');
             marco.title = titulo;
@@ -584,7 +598,18 @@
     //  (lo usa la app en pantalla) pero aquí se ignora.
     window.rxImprimirConvocatoria = function (c) {
         c = c || {};
-        const jug = (c.jugadores || []).filter(function (j) { return j && (j.name || j.num); });
+        // v845 · encargo del autor (implementar.txt 29-10): el papel salía en el
+        //  orden de la cuadrícula de selección (18, 6, 5, 13…). Se ordena por
+        //  DORSAL de menor a mayor; el dorsal repetido (por jornada puede
+        //  pasar) desempata por nombre y el que no tiene número va al final.
+        //  Aquí, y no en quien llama: entrenador y Dirección pasan por este motor.
+        const _rxNum = function (j) { const n = parseInt(String(j.num == null ? '' : j.num), 10); return isNaN(n) ? Infinity : n; };
+        const jug = (c.jugadores || []).filter(function (j) { return j && (j.name || j.num); })
+            .slice().sort(function (a, b) {
+                const na = _rxNum(a), nb = _rxNum(b);
+                if (na !== nb) return na < nb ? -1 : 1;
+                return String(a.name || '').localeCompare(String(b.name || ''), 'es');
+            });
         // v792 · encargo del autor: el rival va LIMPIO («DORAMAS», no «vs
         //  DORAMAS»), en el título y en los datos. Se quita también un «vs»
         //  que el entrenador haya escrito a mano en el campo Rival.
