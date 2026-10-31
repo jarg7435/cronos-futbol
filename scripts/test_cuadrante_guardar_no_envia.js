@@ -49,6 +49,19 @@ const EQ   = 'club_dia__regional__b';
 // este guard mirando un documento que ya no existe.
 const DOCID = (CQ.match(/function _cqDocId\(weekKey\) \{ return '([^']+)'/) || [])[1] + SEM;
 
+// ── ⏱️ v847 · Un reloj QUIETO, no el del sistema ───────────────────────────
+// La reauditoría del 30-10 vio este guard fallar 1 de cada 5 pasadas (1e). La
+// causa: el módulo sellaba cada guardado con la hora, y enviar + guardar en el
+// mismo milisegundo daba dos sellos iguales — el cambio nuevo pasaba por ya
+// enviado. Que ocurriera dependía de lo rápida que fuera la máquina. Con el
+// reloj parado, TODO cae en el mismo milisegundo en cada pasada: el peor caso
+// deja de ser cuestión de suerte y el resultado ya no depende del sistema.
+const INSTANTE = Date.parse('2026-09-21T10:00:00.000Z');
+class RelojQuieto extends Date {
+    constructor(...a) { if (a.length) super(...a); else super(INSTANTE); }
+    static now() { return INSTANTE; }
+}
+
 // ── Un club con su semana, en memoria ─────────────────────────────────────
 function montar(docInicial) {
     const docs = {};
@@ -76,7 +89,7 @@ function montar(docInicial) {
 
     const sb = {
         console: { log() {}, warn() {}, error() {} },
-        String, Array, Number, Object, Date, parseInt, parseFloat, isNaN, RegExp, Math, JSON,
+        String, Array, Number, Object, Date: RelojQuieto, parseInt, parseFloat, isNaN, RegExp, Math, JSON,
         Promise, Set, Error, setTimeout: (f) => { try { f(); } catch (e) {} return 1; },
         clearTimeout: () => {},
         document: {
@@ -178,6 +191,14 @@ console.log('\n══ v734 · el cuadrante se guarda y se envía por separado �
            (await loQueVeElEntrenador(sb)) === 'ENTRENO B (borrador)');
         ok('1g · …y ya no hay nada pendiente de enviar',
            vm.runInContext('window.__p._cqHayCambiosSinEnviar(window._cqState.doc)', sb) === false);
+
+        // ⏱️ v847 · Con el reloj parado, dos guardados seguidos caen en el
+        // mismo milisegundo: el sello tiene que distinguirlos igual.
+        const s1 = sb.__docs[DOCID].actualizado;
+        await vm.runInContext('window.__p._cqGuardar(' + JSON.stringify(CLUB) + ', window._cqState.doc)', sb);
+        const s2 = sb.__docs[DOCID].actualizado;
+        ok('1h · ⏱️ dos guardados en el mismo milisegundo llevan sellos distintos y en orden',
+           !!s1 && !!s2 && s2 > s1, s1 + ' → ' + s2);
     }
 
     // ═════════════════════════════════════════════════════════════════

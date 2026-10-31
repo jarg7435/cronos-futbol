@@ -879,6 +879,18 @@ function _cqRamaPublicada(datos) {
     };
 }
 
+//  ⏱️ v847 · EL SELLO DE CADA GUARDADO ES ÚNICO, NO «LA HORA».
+//  `actualizado` hace de IDENTIDAD del borrador: `_cqHayCambiosSinEnviar` lo
+//  compara con el `selloOrigen` de lo publicado y el eco del onSnapshot con
+//  `selloPropio`. Con la hora a secas, dos guardados en el mismo milisegundo
+//  (enviar y volver a guardar seguidos) daban el MISMO sello y el cambio nuevo
+//  pasaba por ya enviado. Es lo que hacía intermitente el guard v734 (1e) en
+//  la reauditoría del 30-10. Se fuerza a ir siempre por delante del anterior.
+function _cqSelloNuevo(previo) {
+    const antes = Date.parse(previo || '') || 0;
+    return new Date(Math.max(Date.now(), antes + 1)).toISOString();
+}
+
 //  `opciones.sellarPublicacion` (v734): lo pide el ENVÍO. Marca la rama
 //  publicada con el sello del borrador que se está escribiendo en esta misma
 //  llamada, para no necesitar una segunda escritura — que además tendría que
@@ -938,7 +950,7 @@ async function _cqGuardar(clubId, datos, opciones) {
         publicadoEn:  datos.publicadoEn  || '',
         publicadoPor: datos.publicadoPor || '',
         publicadoA:   datos.publicadoA   || [],
-        actualizado:  new Date().toISOString(),
+        actualizado:  _cqSelloNuevo(datos.actualizado),
         actualizadoPor: me.uid || '',
         actualizadoPorNombre: me.displayName || me.email || '',
     };
