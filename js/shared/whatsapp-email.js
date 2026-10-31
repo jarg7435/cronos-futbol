@@ -541,19 +541,10 @@ function openConvocationMessage(target) {
         }).catch(() => {});
     }
 
-    // 🆕 v747 · Las plazas del mensaje de convocatoria, por la regla única
-    // (`cronosCupoConvocatoria`): Regional y Nacional llevan 20. Era el último
-    // de los cinco sitios donde el número estaba escrito a mano.
-    // ⚠️ Cupo de COMPETICIÓN a propósito: aquí se dibujan huecos, y en un
-    // amistoso «sin tope» no se puede dibujar.
-    let maxSlots = mode === 'f7' ? 14 : 18;
-    if (typeof window.cronosCupoConvocatoria === 'function') {
-        const _cat = (window.CronosSubRules && typeof window.CronosSubRules.categoriaActual === 'function')
-            ? window.CronosSubRules.categoriaActual()
-            : (window._currentMatchCategory || '');
-        const _cupo = window.cronosCupoConvocatoria(mode, 'liga', _cat);
-        if (_cupo && _cupo.maxConvocados) maxSlots = _cupo.maxConvocados;
-    }
+    // v848 · Aquí se calculaba un `maxSlots` (14/18, y desde v747 por
+    // `cronosCupoConvocatoria`) que este mensaje NUNCA ha usado: lista a los
+    // seleccionados, no dibuja huecos. Retirado; el cupo vivo lo aplican la
+    // pantalla de convocatoria y la puerta de IR AL PARTIDO.
 
     // Saved convocation config
     const saved = JSON.parse(localStorage.getItem('cronos_conv_config') || '{}');

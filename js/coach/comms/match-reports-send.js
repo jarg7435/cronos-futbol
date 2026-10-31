@@ -58,7 +58,6 @@
 // ════════════════════════════════════════════════════════════════════
 async function sendMatchReportsToParents() {
     const isSetupMode = !window.players || !window.players.length;
-    let selectedPlayerIds = [];
     let mergedContacts = [];
     let filterCriteria = { ids: [], numbers: [] };
 

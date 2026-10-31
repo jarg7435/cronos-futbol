@@ -62,20 +62,13 @@ async function openParentPanel(initialTab) {
     // la función existe y que depende del plan del club.
     //
     // ⚠️ v591 · LA BARRA DE PESTAÑAS YA NO EXISTE (el autor la retiró: se entra
-    //    por el tablero). Estos dos helpers SE CONSERVAN porque siguen siendo
-    //    la forma de leer si un extra está contratado, que es lo que consulta
-    //    el tablero; lo que se ha ido es el marcado que los interpolaba.
-    //    La restricción que sí sigue viva:
-    //    NADA de backticks aquí dentro: estos helpers se interpolan en el
-    //    template literal del innerHTML y un backtick lo cerraría, rompiendo
-    //    el fichero entero. Pagado dos veces el 2026-08-20 en club-reports.js.
-    const _ppTabOn = (extraKey) => (typeof window._cronosExtraEnabled !== 'function')
-        || window._cronosExtraEnabled(extraKey);
-    const _ppTabAttrs = (tab, extraKey, title) => _ppTabOn(extraKey)
-        ? 'onclick="ppTab(\'' + tab + '\',this)" title="' + title + '"'
-        : 'disabled title="' + title + ' · no disponible en el plan de tu club"' +
-          ' style="opacity:0.45;cursor:not-allowed;filter:grayscale(0.7);"';
-    const _ppTabLock = (extraKey) => _ppTabOn(extraKey) ? '' : '🔒 ';
+    //    por el tablero). v848 · Sus helpers (`_ppTabOn/_ppTabAttrs/_ppTabLock`)
+    //    se retiran: nadie los interpolaba ya y el tablero consulta el extra
+    //    con `window._cronosExtraEnabled` directamente.
+    //    La restricción que sigue viva para lo que se interpole aquí:
+    //    NADA de backticks dentro de un helper que vaya al template literal del
+    //    innerHTML: un backtick lo cerraría y rompería el fichero entero.
+    //    Pagado dos veces el 2026-08-20 en club-reports.js.
 
     panel.innerHTML = `
     <style>

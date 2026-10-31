@@ -1351,7 +1351,6 @@ exports.autoSetClaimsOnApproval = functions.firestore
     const after = change.after.data() || {};
 
     // GUARD ANTI-LOOP #1: si el único cambio es claimsSetAt, abortar
-    const beforeKeys = Object.keys(before).sort();
     const afterKeys = Object.keys(after).sort();
     const changedKeys = afterKeys.filter(
       (k) => JSON.stringify(before[k]) !== JSON.stringify(after[k])
@@ -1579,6 +1578,31 @@ exports.auditUserStatusChange = functions.firestore
 /*     para que el cliente pueda usar el fallback mailto               */
 /*   - Logging detallado para diagnóstico                              */
 /* ==================================================================== */
+
+/* ==================================================================== */
+/* 🛡️ v848 · LOS REGISTROS NO GUARDAN CORREOS NI ENLACES DE INVITACION  */
+/*                                                                      */
+/* Reauditoria del 31-10 (revision de PII en logs). Cloud Logging        */
+/* conserva estas lineas y las lee cualquiera con acceso al proyecto:    */
+/*  - el correo del invitado es un dato personal que la traza no necesita*/
+/*    entero: basta la inicial y el dominio para casar un aviso;          */
+/*  - la URL de invitacion lleva el token opaco de UN SOLO USO: escrita   */
+/*    en el registro, es una credencial que alguien podria canjear antes  */
+/*    que el invitado. No se escribe nunca.                               */
+/* Lo que identifica el evento es el uid de quien invita y el messageId. */
+/* ==================================================================== */
+function _correoEnLog(correo) {
+  const c = String(correo || '');
+  const at = c.lastIndexOf('@');
+  if (at < 1) return '(sin correo)';
+  return c.charAt(0) + '***' + c.slice(at);
+}
+/* Los errores SMTP suelen repetir la direccion rechazada en el texto. */
+function _sinCorreosEnLog(texto) {
+  return String(texto == null ? '' : texto)
+    .replace(/[^\s<>"'@,;:]+@([^\s<>"'@,;:]+)/g, (m, dom) => m.charAt(0) + '***@' + dom);
+}
+
 exports.sendInviteEmail = functions
   .runWith({ secrets: ['EMAIL_USER', 'EMAIL_PASS'] })
   .https.onCall(async (data, context) => {
@@ -1776,7 +1800,7 @@ exports.sendInviteEmail = functions
   const emailUser = process.env.EMAIL_USER || null;
   const emailPass = process.env.EMAIL_PASS || null;
 
-  console.log('[sendInviteEmail] Iniciando. Destino:', to, '| emailUser configurado:', !!emailUser);
+  console.log('[sendInviteEmail] Iniciando. Destino:', _correoEnLog(to), '| uid:', context.auth.uid, '| emailUser configurado:', !!emailUser);
 
   /* ---- Etiquetas legibles para roles ---- */
   const roleLabels = {
@@ -1950,7 +1974,7 @@ exports.sendInviteEmail = functions
   /* alguien las configure en testeo, esta rama no llega a crear el          */
   /* transporte. Misma respuesta que sin credenciales, mas `testeo: true`.   */
   if (ES_TESTEO) {
-    console.log('[sendInviteEmail] 🧪 TESTEO: correo NO enviado. Destino:', to, '| URL:', inviteUrl);
+    console.log('[sendInviteEmail] 🧪 TESTEO: correo NO enviado. Destino:', _correoEnLog(to));
     return {
       success: false,
       noCredentials: true,
@@ -1989,7 +2013,7 @@ exports.sendInviteEmail = functions
       html: htmlBody,
     });
 
-    console.log('[sendInviteEmail] ✅ Email enviado a:', to, '| MessageId:', info.messageId, '| URL:', inviteUrl);
+    console.log('[sendInviteEmail] ✅ Email enviado a:', _correoEnLog(to), '| MessageId:', info.messageId);
 
     return {
       success: true,
@@ -1998,7 +2022,7 @@ exports.sendInviteEmail = functions
       inviteUrl: inviteUrl,
     };
   } catch (error) {
-    console.error('[sendInviteEmail] ❌ Error Nodemailer:', error.message);
+    console.error('[sendInviteEmail] ❌ Error Nodemailer:', _sinCorreosEnLog(error.message));
     /* Devolver inviteUrl para que el cliente use mailto como fallback */
     return {
       success: false,

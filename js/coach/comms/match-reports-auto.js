@@ -113,14 +113,9 @@ async function autoDispatchMatchReports() {
         const contacts = (typeof emailConfig !== 'undefined' && emailConfig.contacts) ? emailConfig.contacts : [];
 
         // --- MEJORA: COMPROBAR PRE-SELECCIÓN DEL PARTIDO ---
+        // El filtro por destinatario lo aplica `_cronosResolveParentReportTargets`
+        // (v217) con esta misma preselección; aquí sólo se lee.
         const preSelectionIds = JSON.parse(localStorage.getItem('cronos_match_rpt_selection') || 'null');
-        
-        function isRecipientAuthorized(contact) {
-            if (preSelectionIds) {
-                return preSelectionIds.includes(contact.id);
-            }
-            return (contact.tags || []).includes('rpt');
-        }
 
         // --- FASE A: INFORME GLOBAL (STAFF + ENTRENADOR) ---
         const globalText = `📊 *INFORME GLOBAL DE PARTIDO*\n` +

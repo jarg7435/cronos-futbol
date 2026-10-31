@@ -84,26 +84,24 @@ function globalesDelProyecto() {
 //  `window.X = window.X`, escapes de más y `obj.hasOwnProperty`; en v831,
 //  `userRow` y `_slotKey` de club/panel.js (muertos desde el 25-06: tres
 //  guards los leían en lugar de la fila viva y por eso no vieron que «➖
-//  Quitar del equipo» no pasaba la plaza). `npm run lint` lleva
-//  `--max-warnings 28`: un aviso NUEVO corta la puerta igual que un error.
+//  Quitar del equipo» no pasaba la plaza).
 //
-//  LOS 28 QUE QUEDAN SON DELIBERADOS (no tocar sin leer esto):
-//   · 16 no-redeclare · superadmin.panel.js (borrado de usuario): `var` en
-//     ramas hermanas de la misma función. Legal y sin efecto en ejecución.
-//   · 2 · utils.js `existing`: lo usa el contrafactual de
-//     test_livematchid_idempotency (C1) para demostrar por qué NO reutilizar.
-//   · 1 · individual-reports.js `miDismissed`: fijado por su guard (2l).
-//   · 2 · parent/panel.js `_ppTabAttrs`/`_ppTabLock`: conservados a propósito
-//     (ver el comentario v591 de ese fichero).
-//   · 1 · auth.js `_showMultiRolePicker`: conservado a propósito (ver
-//     test_sa_cambiar_rol / test_role_launch_module).
-//   · 4 · posibles funciones a medio cablear, a revisar con el autor, NO a
-//     borrar a ciegas: extras.js `fallaBajas` (¿avisar en pantalla?),
-//     whatsapp-email.js `maxSlots` (cupo de convocados calculado y no
-//     aplicado), match-reports-send.js `selectedPlayerIds`,
-//     match-reports-auto.js `isRecipientAuthorized`.
-//   · 1 · sprint3-tests.js `passed`: contador de un autotest de consola.
-//   · 1 · functions/index.js `beforeKeys`: tocar functions exige desplegarlas.
+//  ✅ v848 (reauditoría del 31-10) · 27 → 0, y el tope pasa a
+//  `--max-warnings 0`: cualquier aviso NUEVO corta la puerta igual que un
+//  error. Los 27 se revisaron uno a uno; ninguno se silenció con
+//  `eslint-disable`:
+//   · 16 no-redeclare · superadmin.panel.js: el `var` repetido del camino B
+//     pasa a asignación (con `var` es lo mismo en ejecución).
+//   · Código muerto retirado: functions `beforeKeys`, club-reports `ea`,
+//     match-reports-send `selectedPlayerIds`, match-reports-auto
+//     `isRecipientAuthorized` (el filtro real es
+//     `_cronosResolveParentReportTargets`), parent/panel `_ppTab*`,
+//     auth.js `_showMultiRolePicker`, individual-reports `miDismissed` y
+//     whatsapp-email `maxSlots` (el mensaje nunca dibujó huecos). Los guards
+//     que fijaban esas líneas (2l, 3d-3f de categoría Nacional) se reescriben.
+//   · extras.js `fallaBajas` SE CABLEA: si las bajas no se pueden leer, el
+//     panel del SA lo dice en vez de enseñar «No hay solicitudes».
+//   · sprint3-tests `passed`: el autotest de consola imprime su recuento.
 // ─────────────────────────────────────────────────────────────────────────
 
 // Estéticas o inofensivas en ejecución: se ven, pero no cortan.

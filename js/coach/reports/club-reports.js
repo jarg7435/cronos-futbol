@@ -835,7 +835,6 @@ async function _sdLoadAsistencia() {
     if (!container) return;
     const me = window._cronosCurrentUser;
     const clubId = window._testRoleClubId || me?.clubId || '';
-    const ea = (s) => (typeof escapeHtml === 'function') ? escapeHtml(s == null ? '' : s) : String(s == null ? '' : s);
 
     if (!window._sdAsistMes) {
         const hoy = new Date();

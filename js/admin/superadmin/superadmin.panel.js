@@ -725,22 +725,22 @@ window.saSetClubUserStatus = async function saSetClubUserStatus(uid, email, newS
 
             // ── CAMINO B: borrado TOTAL del usuario ──────
             // 2. Actualizar slots del club para CADA rol
-            var _sk = function(role) {
+            _sk = function(role) {
                 if (role === 'director') return 'usedSlots.directors';
                 if (role === 'coordinator') return 'usedSlots.coordinators';
                 if (role === 'parent') return 'usedSlots.parents';
                 return 'usedSlots.users';
             };
-            for (var ri = 0; ri < allRoles.length; ri++) {
-                var rcid = allRoles[ri].clubId || clubId;
+            for (ri = 0; ri < allRoles.length; ri++) {
+                rcid = allRoles[ri].clubId || clubId;
                 if (rcid) {
-                    var rk = _sk(allRoles[ri].role);
+                    rk = _sk(allRoles[ri].role);
                     try {
-                        var cs = await getDoc(doc(db, 'clubs', rcid));
+                        cs = await getDoc(doc(db, 'clubs', rcid));
                         if (cs.exists()) {
-                            var sub = rk.split('.')[1];
-                            var cur = ((cs.data().usedSlots || {})[sub]) || 1;
-                            var upd = {}; upd[rk] = Math.max(0, cur - 1);
+                            sub = rk.split('.')[1];
+                            cur = ((cs.data().usedSlots || {})[sub]) || 1;
+                            upd = {}; upd[rk] = Math.max(0, cur - 1);
                             await updateDoc(doc(db, 'clubs', rcid), upd);
                         }
                     } catch (_) {}
@@ -771,8 +771,8 @@ window.saSetClubUserStatus = async function saSetClubUserStatus(uid, email, newS
             }
 
             // 4. Eliminar documentos secundarios
-            for (var si2 = 0; si2 < allRoles.length; si2++) {
-                var secId = realUid + '_' + allRoles[si2].role + '_' + (allRoles[si2].clubId || 'global');
+            for (si2 = 0; si2 < allRoles.length; si2++) {
+                secId = realUid + '_' + allRoles[si2].role + '_' + (allRoles[si2].clubId || 'global');
                 if (secId !== realUid) {
                     try { await deleteDoc(doc(db, 'users', secId)); } catch (_) {}
                 }
@@ -786,16 +786,16 @@ window.saSetClubUserStatus = async function saSetClubUserStatus(uid, email, newS
 
             // 5. Eliminar enlaces de jugador
             try {
-                var linksSnap = await getDocs(query(collection(db, 'cronos_player_links'), where('parentUid', '==', realUid)));
-                var linksArr = []; linksSnap.forEach(function(ld) { linksArr.push(ld); });
-                for (var li = 0; li < linksArr.length; li++) {
+                linksSnap = await getDocs(query(collection(db, 'cronos_player_links'), where('parentUid', '==', realUid)));
+                linksArr = []; linksSnap.forEach(function(ld) { linksArr.push(ld); });
+                for (li = 0; li < linksArr.length; li++) {
                     try { await deleteDoc(doc(db, 'cronos_player_links', linksArr[li].id)); } catch (_) {}
                 }
             } catch (_) {}
             try {
-                var linksSnap2 = await getDocs(query(collection(db, 'cronos_player_links'), where('parentEmail', '==', realEmail)));
-                var linksArr2 = []; linksSnap2.forEach(function(ld) { linksArr2.push(ld); });
-                for (var li2 = 0; li2 < linksArr2.length; li2++) {
+                linksSnap2 = await getDocs(query(collection(db, 'cronos_player_links'), where('parentEmail', '==', realEmail)));
+                linksArr2 = []; linksSnap2.forEach(function(ld) { linksArr2.push(ld); });
+                for (li2 = 0; li2 < linksArr2.length; li2++) {
                     try { await deleteDoc(doc(db, 'cronos_player_links', linksArr2[li2].id)); } catch (_) {}
                 }
             } catch (_) {}

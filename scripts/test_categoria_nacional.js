@@ -198,18 +198,20 @@ console.log('\n3) LOS CINCO SITIOS PIDEN EL CUPO A LA MISMA REGLA');
     ok('3c · las fichas que se crean sin convocatoria salen de la regla',
        /cronosCupoConvocatoria\(currentMode,\s*'liga',\s*_cat\)/.test(EVL),
        'un Regional que arranca sin convocatoria tiene que poder colocar a los veinte');
-    ok('3d · y las plazas del mensaje de convocatoria, también',
-       /cronosCupoConvocatoria\(mode,\s*'liga',\s*_cat\)/.test(WAPP));
-    //  ⚠️ Lo que queda escrito a mano en esas cuatro líneas es el RESPALDO
-    //  estricto por si utils.js no hubiera cargado, nunca el camino normal.
-    ok('3e · ⚠️ sus respaldos siguen siendo el tope ESTRICTO',
-       /let maxSlots = mode === 'f7' \? 14 : 18;/.test(WAPP) &&
+    //  v848 · El mensaje de convocatoria (whatsapp-email.js) calculaba un
+    //  `maxSlots` que no ha usado nunca —lista a los seleccionados, no dibuja
+    //  huecos— y se retiró en la limpieza de lint. Lo que se fija es que no
+    //  vuelva un cupo calculado sin lector, que aparenta aplicar la regla.
+    ok('3d · v848 · el mensaje de convocatoria ya no calcula un cupo que no usa',
+       !/\b(?:let|const|var)\s+maxSlots\b/.test(WAPP));
+    //  ⚠️ Lo que queda escrito a mano es el RESPALDO estricto por si utils.js
+    //  no hubiera cargado, nunca el camino normal.
+    ok('3e · ⚠️ su respaldo sigue siendo el tope ESTRICTO',
        /let defaultTotalCount = currentMode === 'f7' \? 14 : 18;/.test(EVL),
        '«no sé» no puede significar «sin límite» (v617)');
     ok('3f · 🚨 y la categoría se resuelve con la cascada QUE YA EXISTE',
        /CronosSubRules[\s\S]{0,80}categoriaActual\(\)/.test(IMPORT) &&
-       /CronosSubRules[\s\S]{0,80}categoriaActual\(\)/.test(EVL) &&
-       /CronosSubRules[\s\S]{0,80}categoriaActual\(\)/.test(WAPP),
+       /CronosSubRules[\s\S]{0,80}categoriaActual\(\)/.test(EVL),
        'dos cascadas para el mismo dato ya produjeron un fallo en v562');
 }
 

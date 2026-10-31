@@ -222,6 +222,31 @@
         }
     };
 
+    // 📦 v848 · rxDescargarJSON(nombre, texto): la misma entrega que el CSV
+    // (menú del sistema en táctil, `<a download>` en PC), para la exportación
+    // de portabilidad. En UTF-8 y SIN BOM: es lo que exige el estándar JSON
+    // (RFC 8259) y lo que espera otra plataforma al importarlo; el truco del
+    // UTF-16 de arriba es sólo para que Excel lea las tildes de un CSV.
+    window.rxDescargarJSON = function (nombre, texto) {
+        try {
+            const bytes = new TextEncoder().encode(String(texto == null ? '' : texto));
+            if (_rxCompartirFichero(nombre, bytes, 'application/json')) return true;
+            const blob = new Blob([bytes], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = nombre;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            setTimeout(function () { URL.revokeObjectURL(url); }, 4000);
+            return true;
+        } catch (e) {
+            _rxToast('⚠️ No se pudo descargar: ' + (e && e.message ? e.message : e), 4000);
+            return false;
+        }
+    };
+
     // ── DOCUMENTO IMPRIMIBLE ─────────────────────────────────────────
     const RX_CSS =
         '@page { size: A4 SIZE; margin: 12mm 10mm; }' +

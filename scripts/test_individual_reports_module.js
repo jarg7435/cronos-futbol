@@ -541,9 +541,10 @@ const inCol = (written, col) => written.filter(w => w.col === col);
         ok('2k · la cabecera cuenta partidos e informes',
             /2 partidos · 2 informes de jugadores/.test(h), h.slice(0, 120));
     }
-    ok('2l · ⚠️ miDismissed se lee de localStorage y NO SE USA NUNCA (los ocultados en local no se filtran)',
-        /const miDismissed = JSON\.parse\(localStorage\.getItem\('cronos_mi_dismissed_info'/.test(BLOCK)
-        && (BLOCK.match(/\bmiDismissed\b/g) || []).length === 1);
+    // v848 · La lectura muerta se retiró (aviso de lint de la reauditoría del
+    // 31-10). Lo que se fija ahora es que no vuelva como lectura sin lector.
+    ok('2l · v848 · openMisInformes ya no lee cronos_mi_dismissed_info para no usarlo',
+        !/const miDismissed\b/.test(BLOCK));
     {
         const t = buildSandbox({ getDocsThrows: 'sin permisos' });
         await t.w.openMisInformes();

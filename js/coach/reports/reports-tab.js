@@ -801,6 +801,10 @@ async function _sdLoadReports() {
         // rellena al pintar cada cabecera de subcategoría y se consume al
         // pulsar un botón de descarga.
         window._sdStatsData = {};
+        // 📦 v848 · La portabilidad (js/admin/shared/portabilidad.js) trabaja
+        // sobre lo que esta pestaña YA leyó: todos los partidos del club, para
+        // encontrar las colaboraciones de un jugador con otros equipos.
+        window._sdPartidosClub = sorted;
 
         // ⚠️ LA TARJETA DE UN INFORME, EN UN SOLO SITIO (fase 5). La consumen la
         // lista plana y las hojas del árbol; duplicarla haría que las dos vistas
@@ -920,6 +924,19 @@ async function _sdLoadReports() {
             </div>`;
         };
 
+        // 📦 v848 · PORTABILIDAD (RGPD art. 20) de un jugador de este equipo.
+        // Aparte de la barra del resumen: un equipo con plantilla y sin
+        // partidos también tiene datos que entregar (su asistencia). Sólo para
+        // los roles del lado del responsable y si el módulo ha cargado.
+        const _sdPuedePorta = typeof window.cronosPortabilidadAbrir === 'function' &&
+                              typeof window._sdPuedeAtenderDerechos === 'function' &&
+                              window._sdPuedeAtenderDerechos(me);
+        const _sdPortaBar = (catId, subId) => !_sdPuedePorta ? '' : `
+            <div class="sd-exp-bar">
+                <span class="sd-exp-lbl">📦 Datos de un jugador (derecho de portabilidad)</span>
+                <button class="sd-exp-btn" onclick="cronosPortabilidadAbrir('${catId}|${subId}')">🧾 JSON / CSV</button>
+            </div>`;
+
         if (_sdUsaArbol) {
             // Índice de entrenadores para completar los informes históricos a los
             // que _cMatchSubcatFor dejó la subcategoría vacía. Sale de los
@@ -937,6 +954,8 @@ async function _sdLoadReports() {
             // ⚡ v800 · la lectura se lanzó al principio, en paralelo.
             try { _sdPlantillas = (await _sdPlantillasP) || {}; }
             catch (_) { _sdPlantillas = {}; }
+            // 📦 v848 · La lista de jugadores de la portabilidad sale de aquí.
+            window._sdPlantillasData = _sdPlantillas;
 
             // Descarga global: TODOS los equipos del club en un solo documento.
             // Sólo en el camino del árbol — en la lista plana no hay tabla de
@@ -1003,7 +1022,7 @@ async function _sdLoadReports() {
                     // las columnas ▲R / ▼P. El árbol ya la tiene resuelta y
                     // normalizada aquí mismo: no hay que deducirla de nada.
                     // La regla vive en `ctCategoriaRegistraPR` (category-tree.js).
-                    return _sdStatsBar(arr, catId, subId) + window.ctRenderStatsTable(
+                    return _sdStatsBar(arr, catId, subId) + _sdPortaBar(catId, subId) + window.ctRenderStatsTable(
                         _filas, { matchCount: arr.length, guestRows: _inv, categoria: catId,
                                   // 🔵🔴 v821 · P/R del equipo, también las colectivas.
                                   teamPR: (typeof window.ctAccumulateTeamPR === 'function')

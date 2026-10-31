@@ -136,6 +136,6 @@ prueba E2E fechada:
 | Storage rechaza club, audiencia o uploader incorrectos | Cubierto por reglas y guards (`test_clips_video`, `scripts/ops/testeo_rol_storage_firestore.js`). **Sin E2E en navegador**: en P3 testeo no tenía clips |
 | Partido completo con pérdida de red y recuperación | Cubierto por la batería (reloj, cola de sucesos, *replay*). **Sin prueba de campo continuada** con dispositivos reales |
 | Restauración de Firestore y Auth desde copias externas | PITR y copia diaria activos. **Simulacro de restauración pendiente** (Fase 5) |
-| Logs sin datos personales innecesarios | **Sin revisión formal** |
+| Logs sin datos personales innecesarios | **v848 · Backend revisado** (66 llamadas de `functions/`): `sendInviteEmail` escribía el correo del invitado y la URL con el token de invitación; ahora correo enmascarado (`a***@dominio`), sin URL, y el error SMTP filtrado. Lo fija `test_logs_sin_pii.js` sobre TODAS las llamadas. **Pendiente**: fijar la retención de Cloud Logging y revisar la consola del navegador (no se almacena en servidor) |
 | Monitorización y alertas (App Check, errores, correo) | **Pendiente** (P1 de la reauditoría) |
 | Pentest independiente | Fuera del alcance de este informe |

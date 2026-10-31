@@ -38,9 +38,10 @@
 //  disponible". miDescargarInforme es ahora autocontenido.
 //
 //  ⚠️ DEFECTO PREEXISTENTE QUE SE PRESERVA A PROPÓSITO:
-//   1. `miDismissed` se lee de localStorage y no se usa jamás, mientras que
-//      el catch de miEliminarInforme sí escribe esa clave: lo ocultado en
-//      local cuando falla Firestore no se vuelve a filtrar al recargar.
+//   1. El catch de miEliminarInforme escribe `cronos_mi_dismissed_info`,
+//      pero openMisInformes no la lee (v848 retiró la lectura muerta): lo
+//      ocultado en local cuando falla Firestore no se vuelve a filtrar al
+//      recargar.
 //  Y `realDelete` se declara y nunca se lee: el borrado es SIEMPRE lógico
 //  (dismissedBy), que es justo lo que pretendía el FIX v2.
 //
@@ -441,8 +442,9 @@ window.openMisInformes = async function openMisInformes() {
         //  Se conservan LOS DOS nombres: `id` lo usa el resto de esta pantalla.
         snap.forEach(d => reports.push({ id: d.id, _id: d.id, ...d.data() }));
 
-        // Filtrar informes eliminados localmente
-        const miDismissed = JSON.parse(localStorage.getItem('cronos_mi_dismissed_info') || '[]');
+        // v848 · Aquí se leía `cronos_mi_dismissed_info` y no se usaba nunca.
+        // Se retira la lectura muerta, sin cambiar lo que se pinta (guard 2l;
+        // el defecto que describe la cabecera sigue igual).
 
         if (!reports.length) {
             document.getElementById('mis-informes-body').innerHTML = `

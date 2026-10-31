@@ -152,7 +152,10 @@ window.runSprint3Tests = function() {
   // ══════════════════════════════════════════════════════════════════
   // RESUMEN
   // ══════════════════════════════════════════════════════════════════
-  
+
+  // Sólo corre a mano desde la consola (`runSprint3Tests()`): el recuento es
+  // lo que quien lo lanza quiere ver.
+  console.log('[Sprint3] ' + passed + ' OK · ' + failed + ' fallidos');
   if (failed === 0) {
     return true;
   } else {

@@ -7,7 +7,7 @@
     "dev": "firebase serve --only hosting,functions",
     "build": "node scripts/build.js",
     "verify": "npm run build && npm run lint && npm test",
-    "lint": "node node_modules/eslint/bin/eslint.js --max-warnings 28 js/ functions/",
+    "lint": "node node_modules/eslint/bin/eslint.js --max-warnings 0 js/ functions/",
     "lint:fix": "node node_modules/eslint/bin/eslint.js js/ functions/ --fix",
     "format": "prettier --write \"js/**/*.js\" \"functions/**/*.js\" \"*.json\" \"*.html\"",
     "format:check": "prettier --check \"js/**/*.js\" \"functions/**/*.js\"",

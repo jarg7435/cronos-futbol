@@ -2832,8 +2832,8 @@
 //        del Director/Coordinador escuchan los partes del mes y se repintan
 //        en cuanto el entrenador marca (antes era una foto al abrir la
 //        pestaña), conservando ramas abiertas y desplazamiento.
-const VERSION = 'v847';
-const CACHE_NAME = 'cronos-cache-v847';
+const VERSION = 'v848';
+const CACHE_NAME = 'cronos-cache-v848';
 
 const ASSETS = [
     './',
@@ -2980,6 +2980,7 @@ const ASSETS = [
     './js/coach/reports/finished-matches-tab.js',
     './js/coach/reports/reports-tab.js',
     './js/coach/reports/reports-export.js',
+    './js/admin/shared/portabilidad.js',
     './js/coach/reports/match-purge.js',
     './js/coach/training/panel.js',
     './js/coach/attendance/attendance-store.js',

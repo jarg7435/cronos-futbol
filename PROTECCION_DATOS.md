@@ -208,7 +208,7 @@ recrean al moverlas, así que hay que planificarlo.
 | Rectificación | paneles |
 | Supresión | baja con purga en cascada |
 | Oposición / limitación | por solicitud, gestionada por el club |
-| Portabilidad | exportación (pendiente: formato JSON/CSV estructurado) |
+| Portabilidad | **v848**: Dirección / Admin de Club → Informes → equipo → «📦 Datos de un jugador»: JSON estructurado (`chronos.portabilidad.jugador/1`) + CSV de partidos + CSV de asistencia. Excluye datos de terceros y los contactos de la familia (lo dice el propio JSON). Guard `test_portabilidad_jugador.js` |
 | Decisiones automatizadas | no aplica: la app no perfila |
 
 ---

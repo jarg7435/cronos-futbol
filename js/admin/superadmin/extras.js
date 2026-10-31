@@ -366,6 +366,12 @@
                 var delReqs = snapD_all.filter(function (d) { return d.status === 'pending'; });
 
                 var resetBtn = '<div style="margin-top:1rem;padding-top:0.8rem;border-top:1px solid rgba(255,255,255,0.07);"><button onclick="saExtResetUser()" style="width:100%;padding:0.6rem;background:rgba(88,166,255,0.06);border:1px solid rgba(88,166,255,0.25);border-radius:8px;color:#58a6ff;font-size:0.8rem;cursor:pointer;font-weight:600;text-align:left;">🔄 Resetear / limpiar usuario por email (solicitudes atascadas)</button></div>';
+                // v848 · Si las bajas no se pudieron leer, se dice: sin esto,
+                // «✅ No hay solicitudes pendientes» podía tapar bajas reales.
+                if (fallaBajas) {
+                    var _escB = (typeof escapeHtml === 'function') ? escapeHtml : function (s) { return String(s).replace(/[&<>"']/g, ''); };
+                    resetBtn = '<div style="margin-top:0.8rem;background:rgba(240,136,62,0.08);border:1px solid rgba(240,136,62,0.35);border-radius:8px;padding:0.6rem 0.9rem;font-size:0.8rem;color:#f0883e;">⚠️ No se pudieron leer las solicitudes de baja (' + _escB(fallaBajas) + '). Recarga el panel para volver a intentarlo.</div>' + resetBtn;
+                }
                 // ⚠️ El badge cuenta también cuota y sucesión: si sólo hubiera
                 // de ésas, decir "no hay solicitudes pendientes" con el badge
                 // en 2 sería el mismo desfase de antes con otra cara.
