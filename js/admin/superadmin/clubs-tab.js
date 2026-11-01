@@ -389,6 +389,15 @@ window.saQuickApprove = async function(uid, email, clubId) {
         const uSnap = await getDoc(doc(db, 'users', uid));
         if (!uSnap.exists()) { _saHideSpinner(); _saToast('⚠️ Usuario no encontrado', 3000); return; }
         const uData = uSnap.data();
+        // 👨‍👩‍👧🔒 v849 · Un familiar no se aprueba si su entidad no tiene el rol
+        // de Familias contratado (utils.js, `cronosMotivoAltaFamiliaBloqueada`).
+        if (typeof window.cronosMotivoAltaFamiliaBloqueada === 'function') {
+            const _rolesQA = [uData.role].concat((uData.allRoles || [])
+                .filter(r => r && r.status !== 'active').map(r => r.role));
+            const _motivoQA = await window.cronosMotivoAltaFamiliaBloqueada(_rolesQA,
+                clubId || uData.clubId || uData.individualEntityId || uData.individualOwnerId);
+            if (_motivoQA) { _saHideSpinner(); _saToast('⛔ ' + _motivoQA, 6000); return; }
+        }
         const isUnderIndividual = !!(uData.individualEntityId || uData.individualOwnerId)
             || (uData.clubId && (await getDoc(doc(db, 'clubs', uData.clubId))).data()?.type === 'individual');
 

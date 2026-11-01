@@ -1303,24 +1303,53 @@ async function _renderUnifiedMessagingView(role, tab, targetContainerId) {
     await _loadUnifiedContactList(tab);
 
     // ══════════════════════════════════════════════════════════════
-    //  🔴 v744 · ENTRAR AQUÍ ES LEER: el contador de la tarjeta se va a cero.
+    //  🔴 v849 · ENTRAR YA NO ES LEER: el aviso se va al ABRIR la conversación.
     //
-    //  Regla del autor (implementar.txt 2026-09-19): «en el momento exacto en
-    //  que el usuario entra en la sección de mensajería y visualiza los chats,
-    //  el contador debe marcar cero».
+    //  Regla NUEVA del autor (implementar.txt 2026-11-01, punto 3): el
+    //  contador «se mantenga visible hasta que el usuario abra y lea
+    //  efectivamente la conversación en su rol correspondiente». Sustituye a
+    //  la de v744 («entrar en la sección pone el contador a cero»), que se
+    //  llamaba aquí con `ubMarcarTodoLeido()`.
     //
-    //  🔑 VA DESPUÉS DE PINTAR LA LISTA, no antes: la lista señala con su
-    //  propio número qué chats traen novedades, y marcarlo todo primero la
-    //  dejaría muda. Y va SIN `await`, porque el panel ya está en pantalla y
-    //  nadie tiene que esperar a que se guarde una marca.
+    //  🔑 Ahora cada hilo se apaga en `_loadUnifiedThreadMessages` (al abrirlo)
+    //  y el Canal Club en su oyente (club-chat.js, al verlo). No queda ningún
+    //  número sin salida: desde v796 sólo cuentan los hilos que esta bandeja
+    //  puede abrir.
+    //
+    //  📡 Y aquí se deja puesto el vigía en vivo: con la bandeja abierta, lo
+    //  que llega se ve sin pulsar «Actualizar» (`_umAlCambiarHilos`).
     //
     //  ⚠️ Este es el ÚNICO punto por el que pasan los seis roles (las seis
-    //  funciones open*Messaging no hacen otra cosa que llamar aquí), así que
-    //  la regla se cumple para todos con una sola línea — y un séptimo rol la
-    //  heredaría sin que nadie se acuerde de añadirla.
+    //  funciones open*Messaging no hacen otra cosa que llamar aquí).
     // ══════════════════════════════════════════════════════════════
-    if (typeof window.ubMarcarTodoLeido === 'function') window.ubMarcarTodoLeido();
+    if (typeof window.ubVigilar === 'function') window.ubVigilar();
 }
+
+// ══════════════════════════════════════════════════════════════════════
+//  📡 v849 · LLEGA UN MENSAJE CON LA BANDEJA ABIERTA
+// ══════════════════════════════════════════════════════════════════════
+//  Lo llama el vigía de unread-badge.js con los hilos cuyo último mensaje es
+//  de OTRA persona (lo que escribo yo ya lo repinta `_sendUnifiedMessage`).
+//  · Si es la conversación que tengo abierta, se recarga — y al recargarse
+//    queda leída, que es lo que se espera de un chat que estás mirando.
+//  · La lista de la izquierda se repinta para que el contacto enseñe su
+//    número y su último mensaje.
+//  ⚠️ El Canal Club tiene su propio oyente (club-chat.js): aquí no se toca.
+function _umAlCambiarHilos(ids) {
+    const st = window._umState;
+    if (!st || !Array.isArray(ids) || !ids.length) return;
+    if (!document.getElementById('um-contact-list')) return;     // bandeja cerrada
+    if (st.activeTab === 'club') return;
+    const me = window._getEffectiveUser ? window._getEffectiveUser() : window._cronosCurrentUser;
+    if (!me || !me.uid) return;
+    const c = st.selectedContact;
+    if (c && c.uid && document.getElementById('um-messages-container')) {
+        const tid = _cThreadId(me.uid, c.uid, _getCanonicalContext(st.role, st.activeTab));
+        if (ids.indexOf(tid) !== -1) _loadUnifiedThreadMessages(tid, c);
+    }
+    _loadUnifiedContactList(st.activeTab);
+}
+window._umAlCambiarHilos = _umAlCambiarHilos;
 
 async function _loadThreadMessages(threadId, perspective) {
     const contact = (window._umState && window._umState.selectedContact) || (window._umState && window._umState.contacts && window._umState.contacts[0]) || { uid: '', name: 'Contacto' };
@@ -1566,6 +1595,14 @@ async function _loadUnifiedContactList(tabId) {
         const threadsSnap = await getDocs(query(collection(db, 'cronos_messages'), where('clubId', '==', clubId))).catch(() => ({ forEach: ()=>{} }));
         const threadsMap = {};
         threadsSnap.forEach(d => { threadsMap[d.id] = { _id: d.id, ...d.data() }; });
+        // 📡 v849 · Y los hilos que ya trae el vigía en vivo (unread-badge.js),
+        // que son MÍOS aunque el remitente los sellara con OTRO clubId (p. ej.
+        // quien escribe desde una cuenta que además es de un ente individual).
+        // Sin esto el contacto saldría «— Sin mensajes —» y sin su número.
+        const _vigia = window._ubState && window._ubState.vigia;
+        if (_vigia && _vigia.uid === me.uid && Array.isArray(_vigia.hilos)) {
+            _vigia.hilos.forEach(h => { threadsMap[h.id] = { _id: h.id, ...(h.data || {}) }; });
+        }
         window._umState.threadsMap = threadsMap;
 
         // 🔴 v744 · Las marcas de lectura, EN MEMORIA antes de pintar la lista.
@@ -2164,21 +2201,56 @@ async function _loadUnifiedContactList(tabId) {
             // El SuperAdmin NO pertenece al club, así que no sale de clubUsers:
             // hay que buscarlo por rol en toda la colección.
             if (tabId === 'superadmin') {
-                const byUid = new Map();
+                // ══════════════════════════════════════════════════════
+                //  🔴 v849 · UNA PERSONA, UN HILO (implementar.txt 2026-11-01,
+                //  punto 1, captura 11781): la pestaña enseñaba DOS
+                //  conversaciones idénticas con jarg7435@gmail.com.
+                //
+                //  🔑 La lista salía de un contacto POR DOCUMENTO de `users`
+                //  con role 'superadmin', y en producción hay dos documentos
+                //  con ese correo (dos uid). Cada uid es un hilo `sa_…`
+                //  distinto, así que se veían dos. Ahora se agrupa por CORREO
+                //  y se queda UNO, por este orden:
+                //   1. el que ya tiene conversación conmigo (no se pierde el
+                //      historial);
+                //   2. el que entró más recientemente (`lastLogin`): es la
+                //      cuenta viva, la que lee la bandeja del SuperAdmin
+                //      (que busca sus hilos por SU uid de sesión).
+                //  ⚠️ No se borra ni se toca ningún documento: sólo se elige.
+                // ══════════════════════════════════════════════════════
+                const porCorreo = new Map();
+                const _ms = (v) => {
+                    if (!v) return 0;
+                    if (typeof v.toMillis === 'function') return v.toMillis();
+                    if (typeof v.seconds === 'number') return v.seconds * 1000;
+                    const n = Date.parse(v); return isNaN(n) ? 0 : n;
+                };
+                const _hiloCon = (uid) => {
+                    const t = threadsMap[_cThreadId(me.uid, uid, _getCanonicalContext(window._umState.role, 'superadmin'))];
+                    return t && Array.isArray(t.messages) && t.messages.length ? 1 : 0;
+                };
                 try {
                     const saSnap = await getDocs(query(collection(db, 'users'), where('role', '==', 'superadmin')));
                     saSnap.forEach(d => {
-                        const u = d.data();
-                        byUid.set(d.id, {
+                        const u = d.data() || {};
+                        const clave = String(u.email || d.id).trim().toLowerCase();
+                        const cand = {
                             id: d.id, uid: d.id,
-                            name: u.displayName || u.email || 'SuperAdmin',
+                            name: (typeof window.cronosNombreSinRol === 'function'
+                                ? window.cronosNombreSinRol(u.displayName) : u.displayName) || u.email || 'SuperAdmin',
                             subtitle: `SuperAdmin · ${u.email || ''}`,
                             email: u.email || '', phone: u.phone || '',
-                            roleTag: 'superadmin', icon: '👑'
-                        });
+                            roleTag: 'superadmin', icon: '👑',
+                            _peso: [_hiloCon(d.id), _ms(u.lastLogin)]
+                        };
+                        const ya = porCorreo.get(clave);
+                        if (!ya || cand._peso[0] > ya._peso[0] ||
+                            (cand._peso[0] === ya._peso[0] && cand._peso[1] > ya._peso[1])) {
+                            porCorreo.set(clave, cand);
+                        }
                     });
                 } catch (_) { /* sin permiso o sin red: lista vacía, no se rompe */ }
-                contacts = Array.from(byUid.values());
+                contacts = Array.from(porCorreo.values()).map(c => { delete c._peso; return c; });
                 filterText = '👑 Canal directo con el SuperAdmin de la plataforma';
             }
             // Director Deportivo del club (sólo Administrador de Club).
@@ -2222,6 +2294,27 @@ async function _loadUnifiedContactList(tabId) {
                 });
                 contacts = Array.from(byUid.values());
             }
+        }
+
+        // ══════════════════════════════════════════════════════════════
+        //  🪪 v849 · EL NOMBRE ES EL NOMBRE; EL ROL VA EN SU SITIO
+        //  (implementar.txt 2026-11-01, punto 2, captura 11782)
+        //
+        //  🔑 MEDIDO: «Administrador Individual JOSÉ ALBERTO» no lo compone
+        //  la bandeja — está GUARDADO así en `displayName`. El alta del ente
+        //  individual lo escribe con el puesto delante (services/auth.js, en
+        //  la migración y en el registro). Cuando esa misma persona es además
+        //  Coordinador de un club, el chat lo presentaba con su etiqueta del
+        //  ente y el rol de verdad quedaba en letra pequeña.
+        //  Se limpia AL PINTAR, en un único punto para todas las pestañas, y
+        //  sin tocar ningún dato: el rol de ESTA relación ya viaja en el
+        //  subtítulo («Coordinador (F711) · correo») y es lo que se resalta.
+        // ══════════════════════════════════════════════════════════════
+        if (typeof window.cronosNombreSinRol === 'function') {
+            contacts.forEach(c => {
+                const limpio = window.cronosNombreSinRol(c.name);
+                c.name = limpio || c.email || c.name;
+            });
         }
 
         window._umState.contacts = contacts;
@@ -2287,7 +2380,7 @@ async function _loadUnifiedContactList(tabId) {
                         ${unread > 0 ? `<span style="background:var(--primary);color:#0a0e14;border-radius:8px;padding:1px 6px;font-size:0.6rem;font-weight:800;margin-left:4px;">${unread}</span>` : ''}
                     </div>
                     <div style="font-size:0.68rem;color:var(--text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
-                        ${typeof escapeHtml==='function'?escapeHtml(c.subtitle):c.subtitle}
+                        ${_umSubtituloHtml(c.subtitle)}
                     </div>
                     <div style="font-size:0.72rem;color:${unread ? 'var(--primary)' : 'var(--text-muted)'};white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:0.1rem;">
                         ${unread ? `<strong>🔵 ${typeof escapeHtml==='function'?escapeHtml(lastMsg):lastMsg}</strong>` : (typeof escapeHtml==='function'?escapeHtml(lastMsg):lastMsg)}
@@ -2301,6 +2394,18 @@ async function _loadUnifiedContactList(tabId) {
         console.error('Error cargando contactos unificados:', err);
         listEl.innerHTML = `<div style="text-align:center;color:#ff5858;padding:2rem;">⚠️ Error al cargar destinatarios.</div>`;
     }
+}
+
+// 🪪 v849 · El subtítulo «Rol · correo» con el ROL destacado: es el puesto
+// que esa persona ocupa EN ESTA relación (Coordinador, Entrenador…), y el
+// encargo pide que se lea por encima de cualquier etiqueta genérica.
+function _umSubtituloHtml(s) {
+    const esc = (v) => (typeof escapeHtml === 'function' ? escapeHtml(v) : String(v == null ? '' : v));
+    const txt = String(s == null ? '' : s);
+    const i = txt.indexOf(' · ');
+    if (i <= 0) return esc(txt);
+    return '<strong style="color:#58a6ff;font-weight:700;">' + esc(txt.slice(0, i)) + '</strong>' +
+           ' · ' + esc(txt.slice(i + 3));
 }
 
 // ── Maestro-detalle móvil: lista <-> chat ────────────────────────────
@@ -2359,7 +2464,7 @@ async function _selectUnifiedContact(uid) {
                     ${typeof escapeHtml==='function'?escapeHtml(contact.name):contact.name}
                 </div>
                 <div style="font-size:0.72rem;color:var(--text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
-                    ${typeof escapeHtml==='function'?escapeHtml(contact.subtitle):contact.subtitle}
+                    ${_umSubtituloHtml(contact.subtitle)}
                 </div>
             </div>
         </div>

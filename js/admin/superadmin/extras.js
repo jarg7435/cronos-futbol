@@ -530,6 +530,19 @@
                                 }
                             }
                         }
+                        // 👨‍👩‍👧🔒 v849 · Ni un familiar sin el rol de Familias
+                        // contratado en su entidad (utils.js,
+                        // `cronosMotivoAltaFamiliaBloqueada`). Rechazar, sí.
+                        if (approve && typeof window.cronosMotivoAltaFamiliaBloqueada === 'function') {
+                            var _motivoFamX = await window.cronosMotivoAltaFamiliaBloqueada(
+                                [role, r.requestedRole],
+                                r.clubId || clubId || r.individualEntityId || r.individualOwnerId || null);
+                            if (_motivoFamX) {
+                                alert('🚫 No se puede aprobar a ' + email + '.\n\n' + _motivoFamX + '\n\nNo se ha aprobado nada.');
+                                if (typeof saRequests === 'function') saRequests();
+                                return;
+                            }
+                        }
                         var me = (window._cronosCurrentUser || {}).email || 'superadmin';
                         if (!approve) {
                             // ══════════════════════════════════════════════════

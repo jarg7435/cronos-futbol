@@ -2832,8 +2832,14 @@
 //        del Director/Coordinador escuchan los partes del mes y se repintan
 //        en cuanto el entrenador marca (antes era una foto al abrir la
 //        pestaña), conservando ramas abiertas y desplazamiento.
-const VERSION = 'v848';
-const CACHE_NAME = 'cronos-cache-v848';
+// v849 · MENSAJERÍA: un solo hilo con el SuperAdmin aunque haya dos
+//        documentos con su correo; el nombre sin «Administrador Individual»
+//        delante y el rol de la relación destacado; la insignia de no leídos
+//        sube EN VIVO, cuenta el primer mensaje de una conversación nueva y
+//        sigue hasta ABRIRLA (entrar en la bandeja ya no la pone a cero); y
+//        ninguna aprobación activa a un familiar sin Familias contratado.
+const VERSION = 'v849';
+const CACHE_NAME = 'cronos-cache-v849';
 
 const ASSETS = [
     './',

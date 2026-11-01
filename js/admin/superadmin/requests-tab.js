@@ -380,6 +380,29 @@ window.saApproveRequest = async function saApproveRequest(id, type, approve) {
         const { db, fa, doc, getDoc, setDoc, updateDoc, httpsCallable } = await saFS();
         const me = window._cronosCurrentUser?.email || 'superadmin';
 
+        // 👨‍👩‍👧🔒 v849 · ANTES de activar nada: un familiar no se aprueba si su
+        // entidad no tiene el rol de Familias contratado (el mismo criterio
+        // que el candado de la pantalla de acceso; ver utils.js,
+        // `cronosMotivoAltaFamiliaBloqueada`). Rechazar sigue permitido.
+        if (approve && (type === 'direct_user' || type === 'user_request') &&
+            typeof window.cronosMotivoAltaFamiliaBloqueada === 'function') {
+            let _rolesF = [], _entF = null;
+            if (type === 'direct_user') {
+                const _s = await getDoc(doc(db, 'users', id));
+                const _u = _s.exists() ? (_s.data() || {}) : {};
+                _rolesF = [_u.role].concat((_u.allRoles || [])
+                    .filter(r => r && r.status !== 'active').map(r => r.role));
+                _entF = _u.clubId || _u.individualEntityId || _u.individualOwnerId || null;
+            } else {
+                const _s = await getDoc(doc(db, 'platform_requests', id));
+                const _r = _s.exists() ? (_s.data() || {}) : {};
+                _rolesF = [_r.requestedRole, _r.role];
+                _entF = _r.clubId || _r.individualEntityId || _r.individualOwnerId || null;
+            }
+            const _motivoF = await window.cronosMotivoAltaFamiliaBloqueada(_rolesF, _entF);
+            if (_motivoF) { _saHideSpinner(); _saToast('⛔ ' + _motivoF, 6000); return; }
+        }
+
         if (type === 'direct_user') {
             const uSnap = await getDoc(doc(db,'users',id));
             if (!uSnap.exists()) throw new Error('Usuario no encontrado');

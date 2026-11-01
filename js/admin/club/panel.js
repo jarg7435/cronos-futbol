@@ -1576,6 +1576,12 @@ async function openClubAdminPanel(preClubId = null) {
 
     // ── Confirmar acceso (paso 2: club admin confirma tras SA) ──────────
     window.caConfirmClubAccess = async (uid, role, email) => {
+        // 👨‍👩‍👧🔒 v849 · Sin el rol de Familias contratado no se remata el alta
+        // de un familiar (ver `cronosMotivoAltaFamiliaBloqueada`, utils.js).
+        if (typeof window.cronosMotivoAltaFamiliaBloqueada === 'function') {
+            const _motivoFam = await window.cronosMotivoAltaFamiliaBloqueada(role, clubId);
+            if (_motivoFam) { showToast('⛔ ' + _motivoFam, 6000); return; }
+        }
         const si = slotOf(role);
         if (si.full) {
             showToast(`⛔ No hay slots libres para ${role}. Solicita ampliación al SuperAdmin.`, 4000);

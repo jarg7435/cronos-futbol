@@ -279,9 +279,13 @@ function _ccNombreDe(u) {
     const compuesto = (o) => limpio(o.displayName) ||
         [limpio(o.firstName), limpio(o.lastName)].filter(Boolean).join(' ') ||
         limpio(o.name);
-    let n = compuesto(u);
+    //  🪪 v849 · Sin el rótulo del ente pegado delante («Administrador
+    //  Individual …»): en el canal del club la burbuja ya dice el puesto real.
+    const sinRol = (v) => (typeof window.cronosNombreSinRol === 'function')
+        ? window.cronosNombreSinRol(v) : v;
+    let n = sinRol(compuesto(u));
     if (!n && Array.isArray(u.allRoles)) {
-        for (const r of u.allRoles) { n = r ? compuesto(r) : ''; if (n) break; }
+        for (const r of u.allRoles) { n = r ? sinRol(compuesto(r)) : ''; if (n) break; }
     }
     if (n) return n;
     // Sin NINGÚN nombre registrado se cae al correo SIN dominio. No es lo que
@@ -359,7 +363,9 @@ function _ccNombreCorto(m) {
     const dir = (window._ccState.directorio && window._ccState.directorio.nombres) || {};
     const vivo = dir[m && m.senderUid];
     if (vivo) return vivo;
-    const n = String(m && m.senderName || '').trim();
+    let n = String(m && m.senderName || '').trim();
+    // 🪪 v849 · Los mensajes ya sellados con el rótulo del ente delante.
+    if (typeof window.cronosNombreSinRol === 'function') n = window.cronosNombreSinRol(n) || n;
     if (!n) return 'Alguien';
     return n.indexOf('@') > 0 ? n.slice(0, n.indexOf('@')) : n;
 }

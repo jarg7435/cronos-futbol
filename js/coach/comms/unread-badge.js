@@ -294,8 +294,11 @@ function ubNoLeidosDeHilo(threadId, t) {
     const yo = _ubYo();
     const st = window._ubState;
     if (!yo || !yo.uid || !t || !st.marcas || st.marcas.uid !== yo.uid) return 0;
-    const marca = (st.marcas.threads || {})[threadId];
-    if (!marca) return 0;                       // hilo sin marca = hilo sembrado
+    //  🔴 v849 · Un hilo sin marca propia se mide contra el SUELO de la
+    //  persona (ver `_ubMarcaHilo`): una conversación NUEVA avisa ya desde su
+    //  primer mensaje.
+    const marca = _ubMarcaHilo(st.marcas, threadId);
+    if (!marca) return 0;                       // sin marca ni suelo = hilo sembrado
     const msgs = Array.isArray(t.messages) ? t.messages : [];
     const plaza = _ubPlazaHilo(yo);
     if (!_ubHiloVisible(threadId, t, plaza)) return 0;   // v796
@@ -310,11 +313,35 @@ function ubNoLeidosDeHilo(threadId, t) {
 window.ubNoLeidosDeHilo = ubNoLeidosDeHilo;
 
 // ════════════════════════════════════════════════════════════════════
+//  🔴🔴 v849 · EL PRIMER MENSAJE DE UNA CONVERSACIÓN NUEVA TAMBIÉN AVISA
+// ════════════════════════════════════════════════════════════════════
+//  Encargo del autor (implementar.txt 2026-11-01, punto 3): «los indicadores
+//  numéricos de mensajes pendientes no se actualizan al enviar un mensaje».
+//
+//  🔑 MEDIDO EN EL CÓDIGO: la regla de v744 «hilo sin marca = hilo antiguo,
+//  se siembra y no cuenta» no distinguía un hilo VIEJO de uno RECIÉN NACIDO.
+//  El primer mensaje que alguien te manda crea un documento nuevo, que por
+//  definición no tiene marca tuya — así que se sembraba como leído y la
+//  insignia no se encendía NUNCA para una conversación que empieza. Es el
+//  caso de su captura 11782 (el coordinador escribe por primera vez al
+//  director).
+//
+//  🔑 LA CORRECCIÓN: un SUELO por persona (`suelo`, ISO), escrito una sola
+//  vez —la primera vez que este código ve las marcas— y quieto desde
+//  entonces. Un hilo sin marca propia se mide contra él: lo anterior al
+//  suelo es el histórico que v744 prohibió anunciar (se siembra igual que
+//  antes); lo posterior es correo nuevo y CUENTA.
+function _ubMarcaHilo(marcas, threadId) {
+    const propia = marcas && marcas.threads ? marcas.threads[threadId] : '';
+    return String(propia || (marcas && marcas.suelo) || '');
+}
+
+// ════════════════════════════════════════════════════════════════════
 //  LAS MARCAS DE LECTURA
 // ════════════════════════════════════════════════════════════════════
 async function ubMarcas() {
     const yo = _ubYo();
-    const vacio = () => ({ threads: {}, staffChannel: '', staffChannelByPlaza: {} });
+    const vacio = () => ({ threads: {}, staffChannel: '', staffChannelByPlaza: {}, suelo: '' });
     if (!yo || !yo.uid) return vacio();
     const st = window._ubState;
     if (st.marcas && st.marcas.uid === yo.uid) return st.marcas;
@@ -329,12 +356,28 @@ async function ubMarcas() {
                       // `_ubPlazaDe`). El campo viejo se conserva y se sigue
                       // escribiendo: es el punto de partida de una plaza que
                       // todavía no tiene el suyo.
-                      staffChannelByPlaza: d.staffChannelByPlaza || {} };
+                      staffChannelByPlaza: d.staffChannelByPlaza || {},
+                      suelo: d.suelo || '' };
         }
     } catch (_) { /* sin marcas no se bloquea nada: se sembrará al contar */ }
     datos.uid = yo.uid;
     st.marcas = datos;
+    //  🔴 v849 · El suelo nace AHORA, una sola vez, y se guarda: todo lo que
+    //  llegue a partir de aquí en un hilo sin marca es correo nuevo.
+    if (!datos.suelo) {
+        datos.suelo = new Date().toISOString();
+        _ubGuardarDiferido();
+    }
     return datos;
+}
+
+// Lo que se escribe en users/{uid}/cronos_data/chat_reads. Una sola forma para
+// los dos guardados (diferido y al esconder la página).
+function _ubDocMarcas(m) {
+    return { threads: m.threads || {}, staffChannel: m.staffChannel || '',
+             staffChannelByPlaza: m.staffChannelByPlaza || {},
+             suelo: m.suelo || '',
+             updatedAt: new Date().toISOString() };
 }
 window.ubMarcas = ubMarcas;
 
@@ -366,10 +409,7 @@ function _ubGuardarDiferido() {
         if (!m || !m.uid) return;
         _ubFS().then(({ db, doc, setDoc }) =>
             setDoc(doc(db, 'users', m.uid, 'cronos_data', UB_DOC_MARCAS),
-                   { threads: m.threads || {}, staffChannel: m.staffChannel || '',
-                     staffChannelByPlaza: m.staffChannelByPlaza || {},
-                     updatedAt: new Date().toISOString() },
-                   { merge: true })
+                   _ubDocMarcas(m), { merge: true })
         ).catch(() => { /* una marca que no se guarda sólo repite el aviso */ });
     }, 2500);
 }
@@ -393,10 +433,7 @@ function _ubGuardarYa() {
     if (!m || !m.uid) return;
     _ubFS().then(({ db, doc, setDoc }) =>
         setDoc(doc(db, 'users', m.uid, 'cronos_data', UB_DOC_MARCAS),
-               { threads: m.threads || {}, staffChannel: m.staffChannel || '',
-                 staffChannelByPlaza: m.staffChannelByPlaza || {},
-                 updatedAt: new Date().toISOString() },
-               { merge: true })
+               _ubDocMarcas(m), { merge: true })
     ).catch(() => { /* sin red, Firestore la reenvía al reconectar */ });
 }
 if (!window._ubState.oyenteSalida && typeof document !== 'undefined' &&
@@ -420,6 +457,9 @@ async function ubMarcarHiloLeido(threadId, hasta) {
     m.threads[threadId] = nueva;
     window._ubState.cache = null;                             // el badge cambia
     _ubGuardarDiferido();
+    //  🔴 v849 · Y se repinta lo que esté en pantalla: leer un hilo es lo que
+    //  apaga su aviso, y con el vigía en vivo la cuenta no cuesta red.
+    if (window._ubState.vigia) ubRepintarBadges();
 }
 window.ubMarcarHiloLeido = ubMarcarHiloLeido;
 
@@ -559,12 +599,20 @@ async function ubContarNoLeidos(forzar) {
         //  ninguno puede tumbar la consulta entera (la lección de v674).
         //  Es además la MISMA forma que ya usa el panel del SuperAdmin.
         try {
-            const snap = await getDocs(query(collection(db, UB_COL_HILOS),
-                where('participants', 'array-contains', yo.uid)));
+            //  🔴 v849 · Con el vigía en vivo (`ubVigilar`) los hilos ya están
+            //  en memoria y al día: contar no cuesta ni una lectura. Sin él
+            //  (primera pintura, o sin `onSnapshot`), la consulta de siempre.
+            const hilos = _ubHilosVivos(yo) || _ubLista(await getDocs(query(
+                collection(db, UB_COL_HILOS),
+                where('participants', 'array-contains', yo.uid))));
             const siembra = [];
-            snap.forEach(d => {
-                const t = d.data() || {};
-                const marca = marcas.threads ? marcas.threads[d.id] : '';
+            hilos.forEach(d => {
+                const t = d.data || {};
+                const propia = marcas.threads ? marcas.threads[d.id] : '';
+                //  🔴 v849 · Sin marca propia se mide contra el SUELO de la
+                //  persona: así cuenta el primer mensaje de una conversación
+                //  NUEVA, y lo anterior al suelo sigue sin anunciarse.
+                const marca = _ubMarcaHilo(marcas, d.id);
                 if (!marca) {
                     //  🔴 v744 · HILO SIN MARCA = HILO ANTIGUO, Y NO CUENTA.
                     //  «No debe contar hilos antiguos» (encargo). Se anota su
@@ -578,13 +626,18 @@ async function ubContarNoLeidos(forzar) {
                 //  abrir NO cuenta: sería un número sin nada detrás.
                 if (!_ubHiloVisible(d.id, t, plazaHilo)) return;
                 const msgs = Array.isArray(t.messages) ? t.messages : [];
+                let n = 0;
                 for (const m of msgs) {
                     if (!_ubEsTexto(m)) continue;          // v796 · sólo texto real
                     //  🔑 La plaza de los CHATS PARTICULARES, que no es la del
                     //  canal: aquí firma `_umState.role` (ver `_ubPlazaHilo`).
                     if (!_ubEsDeOtro(m, yo, plazaHilo)) continue;
-                    if (String((m && m.timestamp) || '') > marca) privados++;
+                    if (String((m && m.timestamp) || '') > marca) n++;
                 }
+                privados += n;
+                //  Un hilo sin marca propia y sin nada nuevo sobre el suelo es
+                //  histórico: se siembra como siempre (v744).
+                if (!propia && !n) siembra.push([d.id, _ubUltimoDe(t)]);
             });
             //  La siembra va DESPUÉS del recorrido y en una sola tanda: tocar
             //  el mapa de marcas mientras se recorre haría que el siguiente
@@ -604,7 +657,9 @@ async function ubContarNoLeidos(forzar) {
             try {
                 //  ⚠️ `limit` SIEMPRE con `orderBy` (v508), y es el índice que
                 //  el canal ya tiene declarado: clubId ASC + createdAt DESC.
-                const snap = await getDocs(query(collection(db, UB_COL_CANAL),
+                const vivos = _ubCanalVivo(yo);
+                const snap = vivos ? { forEach: (f) => vivos.forEach(d => f({ id: d.id, data: () => d.data })) }
+                    : await getDocs(query(collection(db, UB_COL_CANAL),
                     where('clubId', '==', yo.clubId),
                     orderBy('createdAt', 'desc'),
                     limit(UB_TOPE_CANAL)));
@@ -648,6 +703,128 @@ async function ubContarNoLeidos(forzar) {
 window.ubContarNoLeidos = ubContarNoLeidos;
 
 // ════════════════════════════════════════════════════════════════════
+//  📡 v849 · EL VIGÍA EN VIVO: LA INSIGNIA SUBE SOLA
+// ════════════════════════════════════════════════════════════════════
+//  Encargo del autor (implementar.txt 2026-11-01, punto 3): «el contador de
+//  no leídos debe incrementarse en tiempo real».
+//
+//  🔑 MEDIDO EN EL CÓDIGO: la cuenta era una FOTO (`getDocs`) tomada al pintar
+//  el tablero, y nada volvía a pedirla: con el panel abierto, un mensaje
+//  nuevo no movía el número hasta salir y volver a entrar. Es la misma
+//  familia que v708 y v795 («una foto no escucha»).
+//
+//  🔑 UN SOLO VIGÍA POR CUENTA, no uno por tarjeta: dos oyentes —tus hilos
+//  (`participants array-contains`, la MISMA consulta que ya se lanzaba) y la
+//  ventana de 100 del canal (la misma también)— y sus documentos se quedan en
+//  memoria para que contar no cueste red. Cada mensaje nuevo cuesta UNA
+//  lectura por oyente, en vez de las N+100 que costaba cada repintado.
+//
+//  ⚠️ Se suelta solo si cambia la cuenta o falla el permiso (cerrar sesión):
+//  un oyente con el `uid` de otro sería el fallo de v720 por otra puerta.
+function _ubLista(snap) {
+    const out = [];
+    if (snap && typeof snap.forEach === 'function') {
+        snap.forEach(d => out.push({ id: d.id, data: (d.data && d.data()) || {} }));
+    }
+    return out;
+}
+
+function _ubHilosVivos(yo) {
+    const v = window._ubState.vigia;
+    return (v && yo && v.uid === yo.uid && Array.isArray(v.hilos)) ? v.hilos : null;
+}
+
+function _ubCanalVivo(yo) {
+    const v = window._ubState.vigia;
+    return (v && yo && v.uid === yo.uid && v.clubId === (yo.clubId || '') &&
+            Array.isArray(v.canal)) ? v.canal : null;
+}
+
+function _ubParaVigia() {
+    const st = window._ubState;
+    const v = st.vigia;
+    st.vigia = null;
+    if (v && Array.isArray(v.bajas)) {
+        v.bajas.forEach(b => { try { b(); } catch (_) { /* ya estaba suelto */ } });
+    }
+}
+
+// Lo que pasa cuando el vigía trae algo nuevo: la cuenta se rehace (sin red)
+// y, si llegó correo de OTRO, la bandeja abierta se entera (comms/panel.js).
+function _ubAlCambiar(ajenos) {
+    const st = window._ubState;
+    st.cache = null;
+    if (st.avisoVivo) clearTimeout(st.avisoVivo);
+    st.avisoVivo = setTimeout(() => {
+        st.avisoVivo = null;
+        ubRepintarBadges();
+        if (ajenos && ajenos.length && typeof window._umAlCambiarHilos === 'function') {
+            try { window._umAlCambiarHilos(ajenos); } catch (_) { /* la bandeja no rompe el vigía */ }
+        }
+    }, 300);
+}
+
+function ubVigilar() {
+    const st = window._ubState;
+    const yo = _ubYo();
+    if (!yo || !yo.uid) { _ubParaVigia(); return; }
+    const clubId = yo.clubId || '';
+    if (st.vigia && st.vigia.uid === yo.uid && st.vigia.clubId === clubId) return;
+    _ubParaVigia();
+    const v = { uid: yo.uid, clubId, bajas: [], hilos: null, canal: null };
+    st.vigia = v;
+    _ubFS().then(f => {
+        if (st.vigia !== v || typeof f.onSnapshot !== 'function') return;
+        const caido = () => { if (st.vigia === v) _ubParaVigia(); };
+        const sigueSiendoYo = () => {
+            const ahora = _ubYo();
+            if (st.vigia !== v) return false;
+            if (!ahora || ahora.uid !== v.uid) { _ubParaVigia(); return false; }
+            return true;
+        };
+
+        v.bajas.push(f.onSnapshot(
+            f.query(f.collection(f.db, UB_COL_HILOS), f.where('participants', 'array-contains', v.uid)),
+            (snap) => {
+                if (!sigueSiendoYo()) return;
+                const primera = v.hilos === null;
+                v.hilos = _ubLista(snap);
+                //  Sólo se avisa a la bandeja de los hilos cuyo ÚLTIMO mensaje
+                //  es de otro: lo que escribo yo ya lo repinta el propio envío.
+                const ajenos = [];
+                if (!primera && typeof snap.docChanges === 'function') {
+                    const yoAhora = _ubYo() || yo;
+                    const plaza = _ubPlazaHilo(yoAhora);
+                    snap.docChanges().forEach(ch => {
+                        if (!ch || ch.type === 'removed' || !ch.doc) return;
+                        const t = (ch.doc.data && ch.doc.data()) || {};
+                        const msgs = Array.isArray(t.messages) ? t.messages : [];
+                        const ult = msgs[msgs.length - 1];
+                        if (ult && _ubEsDeOtro(ult, yoAhora, plaza)) ajenos.push(ch.doc.id);
+                    });
+                }
+                _ubAlCambiar(ajenos);
+            }, caido));
+
+        const veCanal = (typeof window.ccPuedeVerCanal === 'function') ? window.ccPuedeVerCanal(yo) : false;
+        if (veCanal && clubId) {
+            v.bajas.push(f.onSnapshot(
+                f.query(f.collection(f.db, UB_COL_CANAL),
+                    f.where('clubId', '==', clubId),
+                    f.orderBy('createdAt', 'desc'),
+                    f.limit(UB_TOPE_CANAL)),
+                (snap) => {
+                    if (!sigueSiendoYo()) return;
+                    v.canal = _ubLista(snap);
+                    _ubAlCambiar([]);
+                }, () => { v.canal = null; }));   // sin el canal, los privados siguen vivos
+        }
+    }).catch(() => { /* sin SDK no hay vigía: queda la foto de siempre */ });
+}
+window.ubVigilar = ubVigilar;
+window._ubParaVigia = _ubParaVigia;
+
+// ════════════════════════════════════════════════════════════════════
 //  PINTARLO
 // ════════════════════════════════════════════════════════════════════
 //  El tablero se pinta de golpe y en seco (`innerHTML = ...`) mientras la
@@ -661,6 +838,9 @@ window.ubContarNoLeidos = ubContarNoLeidos;
 async function ubPintarBadge(elId) {
     const el = document.getElementById(elId);
     if (!el) return;
+    //  📡 v849 · Pintar una tarjeta deja el vigía puesto: a partir de aquí el
+    //  número se mueve solo (idempotente: uno por cuenta).
+    ubVigilar();
     let n = 0;
     try { n = (await ubContarNoLeidos()).total; } catch (_) { return; }
     const vivo = document.getElementById(elId);

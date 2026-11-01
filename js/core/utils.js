@@ -2198,6 +2198,51 @@ if (typeof window.cronosHayPadres !== 'function') {
     };
 }
 
+// ════════════════════════════════════════════════════════════════════
+//  👨‍👩‍👧🔒 v849 · TAMPOCO SE DA DE ALTA UNA FAMILIA SIN EL ROL CONTRATADO
+// ════════════════════════════════════════════════════════════════════
+//  Encargo del autor (implementar.txt 2026-11-01, punto 4, captura 11779):
+//  el candado visual de la tarjeta «Familiar / Jugador» funciona; hay que
+//  asegurar que la misma regla se respeta AL PROCESAR altas y solicitudes.
+//
+//  🔑 MEDIDO EN EL CÓDIGO: la invitación ya lo respetaba (Secretaría filtra
+//  los roles con `cronosSecretariaRoles`), pero las APROBACIONES —las del
+//  SuperAdmin y la confirmación final del club— activaban la plaza de
+//  familiar sin mirar el plan: se creaba una cuenta activa que luego chocaba
+//  con el candado al entrar, y consumía una plaza del club.
+//
+//  🔑 MISMA LECTURA QUE EL CANDADO DE ENTRADA (role-launch.js,
+//  `_cargarExtrasEntidad`): `clubs/{id}` y, si no existe, `individuals/{id}`;
+//  y el mismo criterio que `cronosHayPadres`: sólo `rol_padres === false`
+//  apaga. ⚠️ Si la lectura falla se deja pasar: la barrera de la entrada
+//  sigue en pie, y bloquear una aprobación por un fallo de red sería peor.
+const CRONOS_ROLES_FAMILIA = ['parent', 'padre', 'parent_individual', 'padre_individual'];
+window.cronosEsRolFamilia = function (rol) {
+    return CRONOS_ROLES_FAMILIA.indexOf(String(rol || '').trim().toLowerCase()) !== -1;
+};
+window.cronosFamiliasContratadas = async function (entityId) {
+    if (!entityId) return true;
+    try {
+        const { doc, getDoc } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
+        const db = window._cronos_auth && window._cronos_auth.db;
+        if (!db) return true;
+        let snap = await getDoc(doc(db, 'clubs', entityId));
+        if (!snap.exists()) snap = await getDoc(doc(db, 'individuals', entityId));
+        const extras = snap.exists() ? ((snap.data() || {}).extras || {}) : {};
+        return extras.rol_padres !== false;
+    } catch (e) { return true; }
+};
+// Devuelve el MOTIVO si hay que frenar el alta ('' si puede seguir). `roles`
+// puede ser un rol o una lista (el rol raíz y las plazas pendientes).
+window.cronosMotivoAltaFamiliaBloqueada = async function (roles, entityId) {
+    const lista = Array.isArray(roles) ? roles : [roles];
+    if (!lista.some(window.cronosEsRolFamilia)) return '';
+    if (await window.cronosFamiliasContratadas(entityId)) return '';
+    return ((window.CRONOS_ROL_EXTRA_MOTIVO || {}).rol_padres
+            || 'El acceso de Familias no está contratado en el plan de este club.') +
+           ' La solicitud no se puede aprobar mientras el plan no lo incluya.';
+};
+
 if (typeof window.isParentReportEnabledForCategory !== 'function') {
     window.isParentReportEnabledForCategory = function(category, subcategory) {
         // ⛔ Sin colectivo de familias no hay informe a familias que valga, y
@@ -3615,6 +3660,28 @@ window.cronosEsRetro       = cronosEsRetro;
 window.CRONOS_COLOR_RETRO  = CRONOS_COLOR_RETRO;
 window.CRONOS_FILTRO_RETRO = CRONOS_FILTRO_RETRO;
 window.cronosIconoRetro    = cronosIconoRetro;
+
+// ════════════════════════════════════════════════════════════════════
+//  🪪 v849 · EL NOMBRE DE UNA PERSONA, SIN EL PUESTO PEGADO DELANTE
+// ════════════════════════════════════════════════════════════════════
+//  Encargo del autor (implementar.txt 2026-11-01, punto 2, captura 11782):
+//  el chat del Director presentaba a un Coordinador como «Administrador
+//  Individual JOSÉ ALBERTO».
+//
+//  🔑 Ese texto está GUARDADO así: el alta del ente individual escribe
+//  `displayName = 'Administrador Individual ' + nombre` (services/auth.js),
+//  y la misma persona puede ser además Coordinador o Entrenador de un club.
+//  Fuera del ente, esa etiqueta es mentira. Aquí se quita AL PINTAR —sin
+//  tocar ningún documento— y el rol de cada relación lo pone quien pinta.
+//  Sólo se quitan los rótulos que el propio código antepone; un nombre que
+//  sea solo el rótulo («Administrador Individual» a secas) devuelve '' para
+//  que quien llama caiga a su respaldo (el correo).
+const CRONOS_ROTULOS_DE_NOMBRE = /^\s*(?:administrador|entrenador|familiar\s*\/\s*jugador|directivo\s*\/\s*empleado)\s+individual\b[\s:·\-–—]*/i;
+function cronosNombreSinRol(nombre) {
+    const s = String(nombre == null ? '' : nombre).trim();
+    return s.replace(CRONOS_ROTULOS_DE_NOMBRE, '').trim();
+}
+window.cronosNombreSinRol = cronosNombreSinRol;
 
 // ════════════════════════════════════════════════════════════════════
 //  ⚽❌ v789 · UN GOL ANULADO SE LLEVA SU GOL

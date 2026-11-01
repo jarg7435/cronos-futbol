@@ -384,23 +384,29 @@ parte('\n4) LAS MARCAS SE ESCRIBEN Y AGRUPAN', async () => {
        v._ubState.marcas.threads.h1 === '2026-09-19T10:00:00.000Z' &&
        v._ubState.marcas.threads.h2 === '2026-09-19T10:30:00.000Z',
        JSON.stringify(v._ubState.marcas.threads));
-    ok('4j · 🚨 el panel lo llama DESPUÉS de pintar la lista, no antes',
-       /await _loadUnifiedContactList\(tab\);[\s\S]{0,1400}ubMarcarTodoLeido\(\)/.test(PANEL) &&
-       !/ubMarcarTodoLeido\(\)[\s\S]{0,200}await _loadUnifiedContactList\(tab\)/.test(PANEL),
-       'marcarlo todo primero dejaría la bandeja sin señalar qué chat traía novedades');
-    //  ⚠️ SE MIDE POR POSICIÓN, NO CON UNA VENTANA DE N CARACTERES. El cuerpo
-    //  de `_renderUnifiedMessagingView` son miles de caracteres de plantilla,
-    //  y una ventana a ojo se queda corta en cuanto la función crece: el guard
-    //  se pondría rojo con el código intacto, que es lo que le pasó al 4f de
-    //  test_chat_club_canal.js en v743.
+    //  ══════════════════════════════════════════════════════════════════
+    //  🔴 v849 · LA REGLA CAMBIÓ: entrar en la bandeja YA NO pone a cero.
+    //  Encargo del autor (implementar.txt 2026-11-01, punto 3): el contador
+    //  «se mantiene visible hasta que el usuario abra y lea efectivamente la
+    //  conversación». `ubMarcarTodoLeido` sigue existiendo (4h-4i miden que
+    //  funciona), pero el render de la bandeja ya NO la llama.
+    //  🚨 SE MIDE SOBRE EL CÓDIGO SIN COMENTARIOS: la versión anterior de
+    //  estas aserciones buscaba el texto `ubMarcarTodoLeido()` y lo
+    //  encontraba DENTRO DEL COMENTARIO que explica su retirada — verde falso.
+    //  ⚠️ Y POR POSICIÓN, no con una ventana de N caracteres (lección del 4f
+    //  de test_chat_club_canal.js en v743).
+    const _sinComentarios = (s) => s.split('\n').map(l => l.replace(/\/\/.*$/, '')).join('\n');
     const _cuerpoRender = (() => {
         const i = PANEL.indexOf('async function _renderUnifiedMessagingView');
         if (i < 0) return '';
         const j = PANEL.indexOf('\nasync function ', i + 10);
-        return PANEL.slice(i, j > 0 ? j : PANEL.length);
+        return _sinComentarios(PANEL.slice(i, j > 0 ? j : PANEL.length));
     })();
-    ok('4k · 🔑 y está en el ÚNICO punto por el que pasan los seis roles',
-       _cuerpoRender.length > 1000 && /ubMarcarTodoLeido\(\)/.test(_cuerpoRender),
+    ok('4j · 🔴 v849 · entrar en la bandeja NO marca todo como leído',
+       _cuerpoRender.length > 1000 && !/ubMarcarTodoLeido\s*\(/.test(_cuerpoRender),
+       'la insignia tiene que seguir hasta que se ABRA la conversación');
+    ok('4k · 📡 y en su lugar deja puesto el vigía en vivo, en el ÚNICO punto de los seis roles',
+       /await _loadUnifiedContactList\(tab\);[\s\S]*?ubVigilar\(\)/.test(_cuerpoRender),
        'las seis funciones open*Messaging no hacen otra cosa que llamar ahí');
 
     ok('4e · 🔑 leer un hilo marca ADEMÁS la marca propia (no sustituye a la vieja)',
