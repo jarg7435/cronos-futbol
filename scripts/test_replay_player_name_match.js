@@ -49,8 +49,9 @@ ok('1c · [FIX] ya NO queda ningún `.includes(p.name)` (matching por subcadena)
 // ESTRUCTURADO playerName y sólo cae al texto para eventos antiguos. Los otros
 // cuatro tipos conservan el formato ' · ' y su resolución por texto.
 // v789 · y goal_cancelled (GOL ANULADO · X), que resta lo que sumó el gol.
-ok('1d · [FIX] goal/goal_cancelled/yellow/red/injury (5 tipos) siguen resolviendo por texto',
-   (src.match(/_findPlayerByEventText\(playersMap, ev\.text\)/g) || []).length === 5,
+// v850 · y card_cancelled (TARJETA ANULADA · X), que quita la tarjeta en la repetición.
+ok('1d · [FIX] goal/goal_cancelled/yellow/red/card_cancelled/injury (6 tipos) siguen resolviendo por texto',
+   (src.match(/_findPlayerByEventText\(playersMap, ev\.text\)/g) || []).length === 6,
    'ocurrencias: ' + ((src.match(/_findPlayerByEventText\(playersMap, ev\.text\)/g) || []).length));
 ok('1d-bis · 🔑 y las sustituciones prefieren el campo estructurado, no el texto',
    /function _playerNameFromEvent\(ev\)[\s\S]{0,200}?if \(ev && ev\.playerName\) return/.test(src) &&

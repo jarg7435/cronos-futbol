@@ -45,7 +45,9 @@
         sub:    [[700,0,0.10],[900,0.12,0.12]],                    // dos notas suaves
         injury: [[300,0,0.25],[260,0.27,0.35]],                    // tono descendente
         // v789 · gol anulado: la fanfarria del gol al REVÉS (descendente).
-        goal_cancelled: [[1175,0,0.12],[880,0.12,0.12],[660,0.24,0.22]]
+        goal_cancelled: [[1175,0,0.12],[880,0.12,0.12],[660,0.24,0.22]],
+        // v850 · tarjeta anulada: el pitido de la amarilla, bajando.
+        card_cancelled: [[520,0,0.14],[390,0.16,0.20]]
     };
     const REPS = 3;      // repeticiones fijas
     const GAP  = 0.06;   // pausa entre repeticiones

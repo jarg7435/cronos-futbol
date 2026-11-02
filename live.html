@@ -1835,18 +1835,18 @@
      así los envoltorios lo resuelven en cada llamada y no al cargar, para que
      un cambio de orden no los deje mirando a `undefined` para siempre.
      ══════════════════════════════════════════════════════════════════ -->
-<script src="js/shared/live-feed.js?v=v849"></script>
+<script src="js/shared/live-feed.js?v=v850"></script>
 <!-- 🔊 v709 · Las melodías de cada suceso (gol, amarilla, roja, cambio,
      lesión), compartidas con el panel en vivo del Área de Familias. Este visor
      le presta su AudioContext, que es el que lleva el keep-alive de iOS. -->
-<script src="js/shared/live-sound.js?v=v849"></script>
+<script src="js/shared/live-sound.js?v=v850"></script>
 <!-- 🔴🔴🔴 v721 · El caché en disco de Firestore es de UNA sola cuenta (ver
      js/shared/fs-cache-mode.js). El visor lo comparte con la app, así que
      tiene que decidir con la MISMA regla y antes de crear su instancia. -->
-<script src="js/shared/fs-cache-mode.js?v=v849"></script>
+<script src="js/shared/fs-cache-mode.js?v=v850"></script>
 <!-- 📈 v778 · Las reglas de categoría de las estadísticas avanzadas, las
      MISMAS que usa el panel del entrenador (una lista, no dos). -->
-<script src="js/shared/advanced-stats-report.js?v=v849"></script>
+<script src="js/shared/advanced-stats-report.js?v=v850"></script>
 
 <!-- ══ FIREBASE ══════════════════════════════════════════════════ -->
 <script type="module">
@@ -2667,6 +2667,10 @@ const EVENT_META = {
     // ⚽❌ v789 · GOL ANULADO (implementar.txt 2026-10-08): se avisa igual que
     // se avisó el gol, para que el marcador no baje sin explicación.
     goal_cancelled: { icon: "❌", cls: "ev-sub", title: "GOL ANULADO", flash: "rgba(125,133,144,0.22)", vib: [200,80,200] },
+    // 🟨🔁 v850 · TARJETA ANULADA (rectificación arbitral desde el ciclo del
+    // botón Amarilla): se avisa igual que la tarjeta, para que no desaparezca
+    // sin explicación.
+    card_cancelled: { icon: "❌", cls: "ev-sub", title: "TARJETA ANULADA", flash: "rgba(125,133,144,0.22)", vib: [200] },
     // 💬 v690 · No se anuncia (ver detectAndAlert): este meta sólo da el icono
     // si algún día llega por la vía del aviso, en vez de caer en el de CAMBIO.
     comment: { icon: "💬", cls: "ev-sub",   title: "COMENTARIO",    flash: "rgba(210,168,255,0.14)", vib: [] }
@@ -2705,6 +2709,7 @@ function _formateaLineaEvento(type, texto) {
     const color =
         type === 'goal'   ? EVENT_KEYWORD_COLOR.GOL :
         type === 'goal_cancelled' ? EVENT_KEYWORD_COLOR.GOL_ANULADO :
+        type === 'card_cancelled' ? EVENT_KEYWORD_COLOR.GOL_ANULADO :   // v850 · gris: ya no computa
         type === 'yellow' ? EVENT_KEYWORD_COLOR.TARJETA_AMR :
         type === 'red'    ? EVENT_KEYWORD_COLOR.TARJETA_ROJ :
         type === 'injury' ? EVENT_KEYWORD_COLOR.LESION :
@@ -7949,9 +7954,9 @@ setInterval(function() {
 }
 </style>
 <!-- v434 · Inmutabilidad: antes de retroactive-modal.js, que la consulta. -->
-<script src="js/match/immutability.js?v=v849"></script>
-<script src="js/match/replay/replay-player.js?v=v849"></script>
-<script src="js/match/events/retroactive-modal.js?v=v849"></script>
+<script src="js/match/immutability.js?v=v850"></script>
+<script src="js/match/replay/replay-player.js?v=v850"></script>
+<script src="js/match/events/retroactive-modal.js?v=v850"></script>
 
 <!-- ══════════════════════════════════════════════════════════════════
      🟩 v577 · FRANJA DE VERSIÓN TAMBIÉN EN EL VISOR
@@ -7964,7 +7969,7 @@ setInterval(function() {
      El sello lo escribe `scripts/cache-bust.js` a partir del CACHE_NAME de
      sw.js, nunca a mano: un número puesto a mano miente en cuanto alguien
      olvida cambiarlo (v527 lo encontró mintiendo 185 versiones seguidas). -->
-<div id="cronos-version-badge" data-version="v849" style="position:fixed;bottom:calc(4px + env(safe-area-inset-bottom, 0px));right:6px;z-index:2147483000;pointer-events:none;background:rgba(0,0,0,0.55);color:#2ea043;font-family:monospace;font-size:0.6rem;font-weight:700;letter-spacing:0.5px;padding:2px 6px;border-radius:4px;">CHRONOS v849</div>
+<div id="cronos-version-badge" data-version="v850" style="position:fixed;bottom:calc(4px + env(safe-area-inset-bottom, 0px));right:6px;z-index:2147483000;pointer-events:none;background:rgba(0,0,0,0.55);color:#2ea043;font-family:monospace;font-size:0.6rem;font-weight:700;letter-spacing:0.5px;padding:2px 6px;border-radius:4px;">CHRONOS v850</div>
 <script>
 /* 🧪 v577 · Y DE QUÉ ENTORNO ES ESA VERSIÓN.
    El problema real del autor no era no ver la versión: era no saber si la

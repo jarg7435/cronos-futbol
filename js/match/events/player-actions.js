@@ -845,12 +845,24 @@ function closePlayerActionModal() {
     // el único envío al directo lleve ya al jugador fuera del campo.
     const _exp = (typeof _aplicaTarjetaVentana === 'function') ? _aplicaTarjetaVentana() : null;
     let _expulsado = null;
-    if (_exp) {
+    if (_exp && _exp.expulsa) {
         _expulsado = _borradorAlReal();
+        if (_expulsado) {
+            // 🟨🔁 v850 · DÓNDE ESTABA antes de la tarjeta: si la expulsión se
+            // anula después, vuelve ahí (ver _restauraTrasAnular).
+            _expulsado.preExpulsion = { status: _expulsado.status, x: _expulsado.x, y: _expulsado.y,
+                                        sale: _expulsado.status === 'field' && !!isRunning };
+        }
         if (_expulsado && _expulsado.status === 'field') {
             _expulsado.status = 'bench'; _expulsado.x = 0; _expulsado.y = 0;
             if (isRunning) logMovement(_expulsado, undefined, 'field');   // v425: transicion real campo->banquillo
         }
+    }
+    // 🟨🔁 v850 · Anulada una expulsión: de vuelta a su sitio ANTES del único
+    // envío al directo (lo hace _confirmarEventosModal).
+    let _vuelta = null;
+    if (_exp && _exp.anulada && _exp.restaurar) {
+        _vuelta = _restauraTrasAnular(_borradorAlReal());
     }
     _confirmarEventosModal();
     activeActionPlayerId = null;
@@ -858,8 +870,22 @@ function closePlayerActionModal() {
     renderPlayers(); // redibujar para mostrar cambios (lesión, tarjeta, goles)
     renderStaffInBench();
 
+    // 🟨🔁 v850 · La anulación, ya confirmada: se dice qué ha pasado con él.
+    if (_exp && _exp.anulada) {
+        const _que = _exp.segunda ? 'la 2ª amarilla' : 'la tarjeta';
+        if (_vuelta && (_vuelta.estado === 'campo_lleno' || _vuelta.estado === 'sin_dato')) {
+            alert(`↩️ Anulada ${_que} de ${_exp.nombre}.\n\n` +
+                  (_vuelta.estado === 'campo_lleno'
+                    ? 'Su equipo ya tiene el campo completo: sigue en el banquillo. Haz el cambio arrastrándolo.'
+                    : 'Sigue en el banquillo: si estaba en el campo, arrástralo a su posición.'));
+        } else if (typeof showToast === 'function') {
+            showToast(`↩️ Anulada ${_que} de ${_exp.nombre}` +
+                      (_vuelta && _vuelta.estado === 'campo' ? ' · vuelve al campo' : ''), 3500);
+        }
+    }
+
     // La expulsión, ya confirmada: límite del equipo o aviso.
-    if (_exp && _expulsado) {
+    if (_exp && _exp.expulsa && _expulsado) {
         const limit = currentMode === 'f7' ? 3 : 5;
         const teamReds = players.filter(x => x.team === _expulsado.team && x.cards === 'roja').length;
         if (teamReds >= limit) {
@@ -947,28 +973,65 @@ function toggleInjury() {
 //  se avisa y, si expulsa, se manda al banquillo, se cuenta el límite de
 //  expulsiones y se avisa al usuario. LIMPIAR la descarta con todo lo demás.
 //
-//  ⚠️ Un jugador YA expulsado al abrir no se toca desde aquí: eso está
-//  registrado y se corrige con «Revertir tarjeta roja» (rectificación
-//  arbitral, con su confirmación y su rastro en el informe).
+//  ⚠️ Un jugador YA expulsado con ROJA DIRECTA al abrir no se toca desde
+//  aquí: se corrige con «Revertir tarjeta roja» (rectificación arbitral).
+//  La DOBLE AMARILLA sí: desde v850 el botón Amarilla es un ciclo (abajo).
 // ════════════════════════════════════════════════════════════════════
-var _tarjetaVentana = null;   // null | 'amarilla' | 'roja'
+// ════════════════════════════════════════════════════════════════════
+//  🟨🔁 v850 · EL BOTÓN AMARILLA ES UN CICLO (implementar.txt 2026-11-02,
+//  capturas 11787-11790)
+//
+//  v802 dejaba alternar la tarjeta SÓLO dentro de la ventana: una amarilla
+//  confirmada con HECHO ya no había forma ágil de quitarla (al reabrir, el
+//  botón sólo ofrecía la 2ª). Ahora el botón recorre el estado DEL JUGADOR,
+//  no sólo el de la ventana:
+//
+//      sin tarjeta ──▶ 1ª amarilla ──▶ 2ª (doble amarilla = EXPULSIÓN) ──▶ sin tarjeta
+//
+//  · Todo sigue siendo BORRADOR hasta HECHO (v801/v802): LIMPIAR lo descarta.
+//  · Volver a cero una tarjeta YA CONFIRMADA es una rectificación arbitral:
+//    se pide confirmación al pulsar (decisión del autor) y, en HECHO, se
+//    quitan sus apuntes del historial (las amarillas se CUENTAN del historial
+//    en informes y acumulados: dejarlos sería seguir contándolas), se deja la
+//    nota «TARJETA ANULADA (rectificación arbitral)» —sin la palabra
+//    «amarilla», para que ningún contador la tome por una—, se avisa al
+//    directo (`card_cancelled`) y queda en la auditoría.
+//  · Si se anula una EXPULSIÓN por doble amarilla, el jugador vuelve a donde
+//    estaba antes de la tarjeta (`preExpulsion`, que se sella al expulsar).
+//  · La roja DIRECTA confirmada no entra en el ciclo: sigue con «Revertir
+//    tarjeta roja (rectificación arbitral)».
+// ════════════════════════════════════════════════════════════════════
+var _tarjetaVentana = null;   // null (sin cambios) | 'ninguna' | 'amarilla' | 'doble' | 'roja'
+
+var _AMARILLAS_DE = { ninguna: 0, amarilla: 1, doble: 2 };
+
+function _estadoTarjeta(cards, yellow) {
+    if (cards === 'roja' || cards === 'red') return (yellow >= 2) ? 'doble' : 'roja';
+    if (cards === 'amarilla' || cards === 'yellow') return 'amarilla';
+    return 'ninguna';
+}
 
 function _baseTarjeta() {
     var b = _modalBaseline || {};
-    return { cards: b.cards || 'ninguna', yellow: (typeof b.yellowCards === 'number') ? b.yellowCards : 0 };
+    var cards = b.cards || 'ninguna';
+    var yellow = (typeof b.yellowCards === 'number') ? b.yellowCards : 0;
+    return { cards: cards, yellow: yellow, estado: _estadoTarjeta(cards, yellow) };
+}
+
+// El estado que enseña la ventana: lo marcado o, si nada, lo que ya tenía.
+function _estadoVentana() {
+    return _tarjetaVentana || _baseTarjeta().estado;
 }
 
 // Pone en el borrador la tarjeta elegida en esta ventana (o la quita).
 function _ponTarjetaEnBorrador(p) {
     var b = _baseTarjeta();
-    if (_tarjetaVentana === 'amarilla') {
-        if (b.cards === 'amarilla' && b.yellow >= 1) { p.cards = 'roja'; p.yellowCards = 2; }
-        else { p.cards = 'amarilla'; p.yellowCards = 1; }
-    } else if (_tarjetaVentana === 'roja') {
-        p.cards = 'roja'; p.yellowCards = 0;   // roja directa → NO es doble amarilla
-    } else {
-        p.cards = b.cards; p.yellowCards = b.yellow;
-    }
+    var e = _tarjetaVentana;
+    if (!e) { p.cards = b.cards; p.yellowCards = b.yellow; return; }
+    if (e === 'amarilla')     { p.cards = 'amarilla'; p.yellowCards = 1; }
+    else if (e === 'doble')   { p.cards = 'roja';     p.yellowCards = 2; }
+    else if (e === 'roja')    { p.cards = 'roja';     p.yellowCards = 0; }   // roja directa → NO es doble amarilla
+    else                      { p.cards = 'ninguna';  p.yellowCards = 0; }
 }
 
 function _badge(btn, texto, fondo, titulo) {
@@ -993,16 +1056,26 @@ function _pintaBotonesTarjeta() {
         btn.style.outline = ''; btn.style.boxShadow = '';
     });
     if (btnAm) {
-        var tieneUna = b.cards === 'amarilla' && b.yellow >= 1;
-        if (_tarjetaVentana === 'amarilla') {
-            btnAm.style.outline   = tieneUna ? '3px solid #ff5858' : '3px solid #fff';
+        // 🟨🔁 v850 · el botón enseña el estado del CICLO y qué hará el siguiente toque.
+        var e = _estadoVentana();
+        var marcado = !!_tarjetaVentana;   // cambia algo respecto a lo registrado
+        var CICLO = 'Pulsa para avanzar: 1ª amarilla → 2ª (expulsión) → sin tarjeta. Se aplica al pulsar HECHO.';
+        if (e === 'amarilla') {
+            btnAm.style.outline   = marcado ? '3px solid #fff' : '3px solid #f1c40f';
+            btnAm.style.boxShadow = marcado ? '0 0 12px rgba(241,196,15,0.95)' : '0 0 10px rgba(241,196,15,0.9)';
+            _badge(btnAm, marcado ? '✓' : '1ª', marcado ? '#fff' : '#f1c40f',
+                   (marcado ? '1ª amarilla marcada. ' : 'Ya tiene 1ª amarilla. ') + 'Siguiente toque = 2ª (EXPULSIÓN). ' + CICLO);
+        } else if (e === 'doble') {
+            btnAm.style.outline   = '3px solid #ff5858';
             btnAm.style.boxShadow = '0 0 12px rgba(241,196,15,0.95)';
-            _badge(btnAm, tieneUna ? '2ª → EXPULSIÓN' : '✓', tieneUna ? '#ff9b93' : '#fff',
-                   'Marcada en esta ventana. Vuelve a pulsar para quitarla. Se aplica al pulsar HECHO.');
-        } else if (tieneUna) {
-            btnAm.style.outline   = '3px solid #f1c40f';
-            btnAm.style.boxShadow = '0 0 10px rgba(241,196,15,0.9)';
-            _badge(btnAm, '1ª', '#f1c40f', 'Ya tiene 1ª amarilla — marcar otra = EXPULSIÓN al pulsar HECHO');
+            _badge(btnAm, marcado ? '2ª → EXPULSIÓN' : '2ª · EXPULSADO', '#ff9b93',
+                   'Doble amarilla. Siguiente toque = SIN TARJETA' + (b.estado !== 'ninguna' ? ' (rectificación arbitral)' : '') + '. ' + CICLO);
+        } else if (e === 'ninguna' && marcado) {
+            // Anulación de una tarjeta YA confirmada: que se vea antes de HECHO.
+            btnAm.style.outline   = '3px dashed #ff5858';
+            btnAm.style.boxShadow = '';
+            _badge(btnAm, '✕ ANULADA', '#ff9b93',
+                   'Se anulará la tarjeta registrada al pulsar HECHO (rectificación arbitral). Siguiente toque = 1ª amarilla.');
         }
     }
     if (btnRo) {
@@ -1024,16 +1097,74 @@ function assignCard(type) {
     if (!p) return;
     if (type !== 'amarilla' && type !== 'roja') return;
 
-    // ── Jugador ya expulsado AL ABRIR ─────────────────────────────
-    if (_baseTarjeta().cards === 'roja') {
-        alert(`⛔ ${p.name} ya está expulsado.\n\nSi se trata de un error, usa "Revertir tarjeta roja (rectificación arbitral)".`);
-        return;
+    const base = _baseTarjeta().estado;
+    const actual = _estadoVentana();
+    let siguiente;
+
+    if (type === 'roja') {
+        // ── Jugador ya expulsado AL ABRIR ─────────────────────────────
+        if (base === 'roja' || base === 'doble') {
+            alert(`⛔ ${p.name} ya está expulsado.\n\nSi se trata de un error, ` +
+                  (base === 'doble' ? 'pulsa Amarilla para anular la doble amarilla, o usa ' : 'usa ') +
+                  '"Revertir tarjeta roja (rectificación arbitral)".');
+            return;
+        }
+        // La roja se alterna: otra vez = vuelve a lo que tenía al abrir.
+        siguiente = (actual === 'roja') ? base : 'roja';
+    } else {
+        // La roja DIRECTA confirmada no entra en el ciclo de la amarilla.
+        if (base === 'roja') {
+            alert(`⛔ ${p.name} ya está expulsado con roja directa.\n\nSi se trata de un error, usa "Revertir tarjeta roja (rectificación arbitral)".`);
+            return;
+        }
+        // 🟨🔁 v850 · EL CICLO: ninguna → 1ª → 2ª (expulsión) → ninguna.
+        // Desde una roja directa marcada en esta ventana, la amarilla la
+        // SUSTITUYE (son excluyentes, v802) por la amarilla que toque.
+        siguiente = actual === 'ninguna'  ? 'amarilla'
+                  : actual === 'amarilla' ? 'doble'
+                  : actual === 'doble'    ? 'ninguna'
+                  : (base === 'amarilla' ? 'doble' : 'amarilla');
+        // Volver a cero una tarjeta YA CONFIRMADA = rectificación arbitral.
+        if (siguiente === 'ninguna' && base !== 'ninguna') {
+            const que = base === 'doble' ? 'la DOBLE AMARILLA (y su expulsión)' : 'la TARJETA AMARILLA';
+            if (!confirm(`↩️ RECTIFICACIÓN ARBITRAL\n\n¿Anular ${que} de ${p.name}?\n\n` +
+                         'Se quitará del registro del partido al pulsar HECHO' +
+                         (base === 'doble' ? ' y el jugador volverá a donde estaba antes de la expulsión' : '') +
+                         '. Quedará constancia en la auditoría.')) {
+                return;
+            }
+        }
     }
 
-    // Alternar: la misma tarjeta otra vez la QUITA; la otra la SUSTITUYE.
-    _tarjetaVentana = (_tarjetaVentana === type) ? null : type;
+    _tarjetaVentana = (siguiente === base) ? null : siguiente;
     _ponTarjetaEnBorrador(p);
     _pintaBotonesTarjeta();
+}
+
+// Quita el ÚLTIMO apunte que cumpla `re` antes de `limite`. Devuelve si lo quitó.
+function _quitaUltimoApunte(hist, re, limite) {
+    if (!Array.isArray(hist)) return false;
+    for (var i = Math.min(limite, hist.length) - 1; i >= 0; i--) {
+        if (typeof hist[i] === 'string' && re.test(hist[i])) { hist.splice(i, 1); return true; }
+    }
+    return false;
+}
+
+// 🟨🔁 v850 · Quita de los DOS historiales (el borrador y la ficha real) los
+// apuntes de la tarjeta anulada. Las amarillas se cuentan del historial en
+// informes, acumulados y TXT: dejarlos sería seguir contándolas.
+function _quitaApuntesTarjeta(p, quitaDoble, quitaPrimera) {
+    var real = null;
+    try { real = players.find(function (x) { return x.id === p.id; }) || null; } catch (e) {}
+    var res = [/^DOBLE AMARILLA/, /^TARJETA AMARILLA/].filter(function (re, i) {
+        return i === 0 ? quitaDoble : quitaPrimera;
+    });
+    res.forEach(function (re) {
+        // En el borrador sólo la parte que ya estaba al abrir (lo nuevo de la
+        // ventana lo cribará _borradorAlReal a partir de _modalHistBase).
+        if (_quitaUltimoApunte(p.history, re, _modalHistBase)) _modalHistBase--;
+        if (real && real !== p) _quitaUltimoApunte(real.history, re, (real.history || []).length);
+    });
 }
 
 // ── HECHO · la tarjeta de la ventana se hace REAL ──────────────────
@@ -1046,22 +1177,80 @@ function _aplicaTarjetaVentana() {
     var p = _jugadorDelModal();
     if (!t || !p) return null;
     var b = _baseTarjeta();
+    if (t === b.estado) return null;
     var antes = { card: b.cards, yellowCards: b.yellow };
-    if (t === 'amarilla' && p.cards === 'amarilla') {
-        logEvent(p, 'TARJETA AMARILLA'); _registerMatchEvent('yellow', 'TARJETA AMARILLA · ' + p.name, '🟨', undefined, _datosEquipoDe(p));
-        _criticoAccion('card_yellow', { playerId: p.id, playerName: p.name, playerNumber: p.number, value: 1 });
-        _auditaAccion(p.id, p.name, p.number, 'card', 'amarilla_1',
-            { card: { before: antes.card, after: 'amarilla' }, yellowCards: { before: antes.yellowCards, after: 1 } });
-        return null;
+
+    // La roja directa y la doble amarilla salen por UNA sola emisión.
+    var expulsa = function (doble) {
+        logEvent(p, doble ? 'DOBLE AMARILLA → EXPULSADO' : 'TARJETA ROJA');
+        _registerMatchEvent('red', 'TARJETA ROJA · ' + p.name + (doble ? ' (doble amarilla)' : ''), '🟥', undefined, _datosEquipoDe(p));
+        _criticoAccion('card_red', { playerId: p.id, playerName: p.name, playerNumber: p.number,
+                                     value: doble ? 'doble_amarilla' : 'roja_directa' });
+        _auditaAccion(p.id, p.name, p.number, 'card', doble ? 'doble_amarilla' : 'roja_directa',
+            { card: { before: antes.card, after: 'roja' }, yellowCards: { before: antes.yellowCards, after: doble ? 2 : 0 } });
+        return { expulsa: true, doble: doble, nombre: p.name };
+    };
+
+    // ── Roja directa ──────────────────────────────────────────────
+    if (t === 'roja') return expulsa(false);
+
+    var nAntes = _AMARILLAS_DE[b.estado] || 0;   // (desde 'roja' no se llega aquí)
+    var nDespues = _AMARILLAS_DE[t] || 0;
+
+    // ── Se SUMAN amarillas (0→1, 1→2 y 0→2 en la misma ventana) ───
+    if (nDespues > nAntes) {
+        if (nDespues === 1 || nAntes === 0) {
+            // La 1ª se apunta SIEMPRE: las amarillas se cuentan del historial,
+            // y una doble amarilla tiene que dejar DOS apuntes.
+            logEvent(p, 'TARJETA AMARILLA');
+        }
+        if (nDespues === 1) {
+            _registerMatchEvent('yellow', 'TARJETA AMARILLA · ' + p.name, '🟨', undefined, _datosEquipoDe(p));
+            _criticoAccion('card_yellow', { playerId: p.id, playerName: p.name, playerNumber: p.number, value: 1 });
+            _auditaAccion(p.id, p.name, p.number, 'card', 'amarilla_1',
+                { card: { before: antes.card, after: 'amarilla' }, yellowCards: { before: antes.yellowCards, after: 1 } });
+            return null;
+        }
+        return expulsa(true);
     }
-    var doble = (t === 'amarilla');
-    logEvent(p, doble ? 'DOBLE AMARILLA → EXPULSADO' : 'TARJETA ROJA');
-    _registerMatchEvent('red', 'TARJETA ROJA · ' + p.name + (doble ? ' (doble amarilla)' : ''), '🟥', undefined, _datosEquipoDe(p));
-    _criticoAccion('card_red', { playerId: p.id, playerName: p.name, playerNumber: p.number,
-                                 value: doble ? 'doble_amarilla' : 'roja_directa' });
-    _auditaAccion(p.id, p.name, p.number, 'card', doble ? 'doble_amarilla' : 'roja_directa',
-        { card: { before: antes.card, after: 'roja' }, yellowCards: { before: antes.yellowCards, after: doble ? 2 : 0 } });
-    return { doble: doble, nombre: p.name };
+
+    // ── 🟨🔁 v850 · Se ANULAN amarillas ya confirmadas (rectificación) ──
+    //  2→0 (el ciclo completo), 1→0 y 2→1 (anular y volver a marcar la 1ª).
+    _quitaApuntesTarjeta(p, nAntes === 2, nDespues === 0);
+    var segunda = (nDespues === 1);
+    logEvent(p, (segunda ? 'SEGUNDA TARJETA ANULADA' : 'TARJETA ANULADA') + ' (rectificación arbitral)');
+    _registerMatchEvent('card_cancelled',
+        (segunda ? '2ª AMARILLA ANULADA · ' : 'TARJETA ANULADA · ') + p.name, '❌', undefined, _datosEquipoDe(p));
+    _criticoAccion('card_cancelled', { playerId: p.id, playerName: p.name, playerNumber: p.number,
+        value: nAntes === 2 ? (segunda ? 'segunda_amarilla' : 'doble_amarilla') : 'amarilla' });
+    _auditaAccion(p.id, p.name, p.number, 'card', 'tarjeta_anulada_rectificacion',
+        { card: { before: antes.card, after: p.cards }, yellowCards: { before: antes.yellowCards, after: nDespues } });
+    return { anulada: true, restaurar: nAntes === 2, nombre: p.name, segunda: segunda };
+}
+
+// 🟨🔁 v850 · Anulada una EXPULSIÓN por doble amarilla: el jugador vuelve a
+// donde estaba ANTES de la tarjeta (lo sella closePlayerActionModal al
+// expulsar). Si estaba en el banquillo, ahí sigue. Si el campo de su equipo
+// ya está completo, o la expulsión es de antes de v850 (sin el sello), se
+// queda en el banquillo y se le dice al entrenador.
+function _restauraTrasAnular(p) {
+    if (!p) return null;
+    var pre = p.preExpulsion || null;
+    try { delete p.preExpulsion; } catch (e) { p.preExpulsion = null; }
+    if (p.status !== 'bench') return { estado: 'igual' };
+    if (!pre) return { estado: 'sin_dato' };
+    if (pre.status !== 'field') return { estado: 'igual' };
+    var limite = (typeof currentMode !== 'undefined' && currentMode === 'f7') ? 7 : 11;
+    var enCampo = players.filter(function (x) { return x.team === p.team && x.status === 'field'; }).length;
+    if (enCampo >= limite) return { estado: 'campo_lleno' };
+    var x = (typeof pre.x === 'number') ? pre.x : 50;
+    var y = (typeof pre.y === 'number') ? pre.y : 50;
+    if (typeof resolveOverlaps === 'function') { try { resolveOverlaps(x, y, p.id); } catch (e) {} }
+    p.status = 'field'; p.x = x; p.y = y;
+    // Si la expulsión apuntó su «Sale», la vuelta apunta su «Entra»: el tramo
+    // de campo del informe queda cerrado y reabierto, no colgando.
+    if (pre.sale && typeof logMovement === 'function') logMovement(p, undefined, 'bench');
+    return { estado: 'campo' };
 }
 
 // ════════════════════════════════════════════════════════════════════

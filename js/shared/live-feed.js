@@ -56,7 +56,8 @@
         sub_in:  '🔄',
         sub_out: '🔄',
         injury:  '🚑',
-        goal_cancelled: '❌'   // v789
+        goal_cancelled: '❌',  // v789
+        card_cancelled: '❌'   // v850 · tarjeta anulada (rectificación arbitral)
     };
 
     function _esc(s) {
@@ -98,6 +99,11 @@
         // ⚽❌ v789 · el icono solo (❌) no dice QUÉ se anuló: se nombra.
         if (ev.type === 'goal_cancelled') {
             return 'Gol anulado · ' + (trasSeparador(ev.text) || '');
+        }
+        // 🟨🔁 v850 · lo mismo con la tarjeta anulada.
+        if (ev.type === 'card_cancelled') {
+            const s = String(ev.text || '');
+            return (/^2ª/.test(s) ? '2ª amarilla anulada · ' : 'Tarjeta anulada · ') + (trasSeparador(s) || '');
         }
         return String(ev.text || '');
     }

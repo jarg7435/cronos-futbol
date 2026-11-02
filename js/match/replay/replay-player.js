@@ -901,6 +901,15 @@
                 const p = _findPlayerByEventText(playersMap, ev.text);
                 if (p) p.cards = 'roja';
             }
+            // 🟨🔁 v850 · TARJETA ANULADA (rectificación arbitral): la
+            // repetición tiene que acabar con las MISMAS tarjetas que el partido.
+            if (ev.type === 'card_cancelled') {
+                const p = _findPlayerByEventText(playersMap, ev.text);
+                if (p) {
+                    if (/^2ª/.test(String(ev.text || ''))) { p.yellowCards = 1; p.cards = 'amarilla'; }
+                    else { p.yellowCards = 0; p.cards = 'ninguna'; }
+                }
+            }
 
             // Sustituciones
             if (ev.type === 'sub_in') {
