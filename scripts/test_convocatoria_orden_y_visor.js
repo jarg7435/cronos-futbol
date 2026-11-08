@@ -101,8 +101,9 @@ if (ov) {
     const barra = ov.children[0];
     ok('B2 · la barra baja con safe-area-inset-top',
         /padding:calc\([^;]*env\(safe-area-inset-top/.test(barra.style.cssText), barra.style.cssText);
+    // v851 · tres botones: Imprimir, 📄 Guardar PDF (nuevo) y Cerrar.
     ok('B3 · botones de 44 px y opacos',
-        (barra.innerHTML.match(/min-height:44px/g) || []).length === 2 && !/rgba\(248,81,73,0\.15\)/.test(barra.innerHTML));
+        (barra.innerHTML.match(/min-height:44px/g) || []).length === 3 && !/rgba\(248,81,73,0\.15\)/.test(barra.innerHTML));
     ok('B4 · siguen los dos botones', /id="rx-visor-print"/.test(barra.innerHTML) && /id="rx-visor-close"/.test(barra.innerHTML));
 }
 

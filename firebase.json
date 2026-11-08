@@ -37,6 +37,7 @@
       "rules_test/**",
       "*.txt",
       "INFORME_TECNICO_CRONOS_FUTBOL.html",
+      "PLAN_DE_NEGOCIO*.html",
       "presentacion*.html",
       "presentación*.html",
       "package.json",

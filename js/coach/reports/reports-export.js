@@ -362,7 +362,199 @@
     //  atributo es pedir un escapado que fallará el día que un nombre de equipo
     //  traiga una comilla.
     // ════════════════════════════════════════════════════════════════
-    function _rxVisorEnLaApp(doc, titulo) {
+    // ════════════════════════════════════════════════════════════════
+    //  📄 v851 · EL PDF DE VERDAD, SIN DIÁLOGO DE IMPRESIÓN
+    //
+    //  Encargo del autor (implementar.txt 08-11 + IMG_5233-5235): en el iPhone
+    //  «Imprimir / Guardar como PDF» del Cuadrante NO HACÍA NADA. La app va
+    //  instalada en la pantalla de inicio (`display: standalone`, se ve la
+    //  barra de estado encima de la del visor) y 🔑🔑 **en una web app de
+    //  pantalla de inicio de iOS `window.print()` existe pero no abre nada**:
+    //  ni diálogo, ni error, ni evento. El `try/catch` de antes no tenía nada
+    //  que atrapar, por eso tampoco salía ningún aviso.
+    //
+    //  🔑 LA SALIDA NO DEPENDE DEL NAVEGADOR: el documento se fotografía
+    //  (html2canvas) a ancho de A4 en un iframe fuera de la pantalla, se trocea
+    //  en hojas A4 cortando ENTRE filas y bloques —nunca por la mitad de una
+    //  línea— y se monta un PDF (jsPDF). El fichero se entrega por el menú del
+    //  sistema (`navigator.share`), que trae «Guardar en Archivos», correo,
+    //  WhatsApp **e Imprimir**: así también se imprime en el iPhone.
+    //
+    //  ⚠️ Las dos bibliotecas van ALOJADAS en js/vendor/pdfgen (no CDN: la
+    //  lección de pdf.js) y se cargan SÓLO al abrir el visor, fuera del
+    //  precache atómico del SW (misma razón que pdf.js y tesseract).
+    //
+    //  ⚠️ `navigator.share` EXIGE GESTO y lo pierde con cualquier espera. Por
+    //  eso el PDF se PREPARA al abrir el visor en táctil: cuando el usuario
+    //  pulsa, el fichero ya está hecho y se comparte en la misma pulsación. Si
+    //  aún no lo estuviera, el botón pasa a «Compartir PDF» y basta otro toque.
+    // ════════════════════════════════════════════════════════════════
+    const RX_PDF_LIBS = ['js/vendor/pdfgen/html2canvas.min.js', 'js/vendor/pdfgen/jspdf.umd.min.js'];
+    let _rxPdfLibsPromesa = null;
+
+    function _rxCargarLibsPdf() {
+        const listas = function () { return typeof window.html2canvas === 'function' && window.jspdf && window.jspdf.jsPDF; };
+        if (listas()) return Promise.resolve();
+        if (_rxPdfLibsPromesa) return _rxPdfLibsPromesa;
+        const uno = function (src) {
+            return new Promise(function (resolve, reject) {
+                const s = document.createElement('script');
+                s.src = src + '?v=' + (window.CRONOS_VERSION || 'v851');
+                s.onload = function () { resolve(); };
+                s.onerror = function () { reject(new Error('no se pudo cargar ' + src.split('/').pop())); };
+                (document.head || document.body).appendChild(s);
+            });
+        };
+        _rxPdfLibsPromesa = Promise.all(RX_PDF_LIBS.map(uno)).then(function () {
+            if (!listas()) throw new Error('el generador de PDF no se registró');
+        }).catch(function (e) { _rxPdfLibsPromesa = null; throw e; });
+        return _rxPdfLibsPromesa;
+    }
+
+    // ¿Web app de la pantalla de inicio de iOS? Ahí `print()` es mudo.
+    function _rxPrintMudo() {
+        try { return window.navigator && window.navigator.standalone === true; }
+        catch (e) { return false; }
+    }
+
+    // _rxPuntosDeCorte(doc, win) → { suaves[], forzados[] } en px CSS desde
+    //  arriba del body. Suaves: el final de cada fila, bloque, párrafo… (donde
+    //  se puede cortar sin partir texto). Forzados: los `page-break-before`.
+    function _rxPuntosDeCorte(d, w) {
+        const suaves = [], forzados = [];
+        const top0 = d.body.getBoundingClientRect().top;
+        const sel = 'tr,.rx-block,.rx-head,.rx-pie,.rx-block-title,p,li,h1,h2,h3,h4,table,.rx-vacio';
+        const nodos = d.body.querySelectorAll(sel);
+        for (let i = 0; i < nodos.length; i++) {
+            const r = nodos[i].getBoundingClientRect();
+            suaves.push(r.bottom - top0);
+            let cs = null;
+            try { cs = w.getComputedStyle(nodos[i]); } catch (e) { cs = null; }
+            const bb = cs ? (cs.breakBefore || cs.pageBreakBefore || '') : '';
+            if (/page|always/.test(bb) && r.top - top0 > 1) forzados.push(r.top - top0);
+        }
+        suaves.sort(function (a, b) { return a - b; });
+        forzados.sort(function (a, b) { return a - b; });
+        return { suaves: suaves, forzados: forzados };
+    }
+
+    // _rxGenerarPdf(docHtml, { apaisado }) → Promise<Blob application/pdf>
+    function _rxGenerarPdf(docHtml, opts) {
+        opts = opts || {};
+        const apaisado = !!opts.apaisado;
+        // Ancho de A4 a 96 ppp: 794 px en vertical, 1123 en apaisado.
+        const ANCHO = apaisado ? 1123 : 794;
+        let marco = null;
+        const limpiar = function () { if (marco && marco.parentNode) marco.parentNode.removeChild(marco); };
+
+        return _rxCargarLibsPdf().then(function () {
+            marco = document.createElement('iframe');
+            marco.setAttribute('aria-hidden', 'true');
+            marco.style.cssText = 'position:fixed;left:-20000px;top:0;width:' + ANCHO + 'px;height:1200px;' +
+                'border:0;opacity:0;pointer-events:none;';
+            document.body.appendChild(marco);
+            const d = marco.contentDocument;
+            d.open(); d.write(docHtml); d.close();
+            const w = marco.contentWindow;
+            // Que acaben de llegar fuentes e imágenes antes de fotografiar.
+            const fuentes = (d.fonts && d.fonts.ready) ? d.fonts.ready.catch(function () {}) : Promise.resolve();
+            return fuentes.then(function () {
+                return new Promise(function (r) { setTimeout(r, 250); });
+            }).then(function () {
+                const alto = Math.max(d.body.scrollHeight, d.documentElement.scrollHeight);
+                marco.style.height = alto + 'px';
+                const cortes = _rxPuntosDeCorte(d, w);
+                // iOS no pinta lienzos de más de ~16,7 Mpx: se baja la escala si hace falta.
+                const escala = Math.max(0.6, Math.min(2, Math.sqrt(16000000 / (ANCHO * alto))));
+                return window.html2canvas(d.body, {
+                    scale: escala, backgroundColor: '#ffffff', logging: false, useCORS: true,
+                    width: ANCHO, height: alto, windowWidth: ANCHO, windowHeight: alto,
+                    scrollX: 0, scrollY: 0,
+                }).then(function (lienzo) { return { lienzo: lienzo, cortes: cortes, alto: alto, escala: escala }; });
+            });
+        }).then(function (r) {
+            const PDF = window.jspdf.jsPDF;
+            const pdf = new PDF({ orientation: apaisado ? 'landscape' : 'portrait', unit: 'mm', format: 'a4' });
+            const pagW = pdf.internal.pageSize.getWidth();
+            const pagH = pdf.internal.pageSize.getHeight();
+            const M = 8;                          // margen en mm
+            const anchoMm = pagW - 2 * M;
+            const altoUtilMm = pagH - 2 * M - 4;  // 4 mm para «1/3»
+            const pxPorMm = ANCHO / anchoMm;      // px CSS por mm de papel
+            const altoPagPx = altoUtilMm * pxPorMm;
+
+            // Trocear en hojas.
+            const tramos = [];
+            let ini = 0;
+            while (ini < r.alto - 2) {
+                let fin = ini + altoPagPx;
+                const forz = r.cortes.forzados.filter(function (y) { return y > ini + 20 && y < fin; });
+                if (forz.length) {
+                    fin = forz[0];
+                } else if (fin < r.alto) {
+                    // El corte suave más bajo que deje la hoja al menos a un 35 %.
+                    const cand = r.cortes.suaves.filter(function (y) { return y > ini + altoPagPx * 0.35 && y <= fin; });
+                    if (cand.length) fin = cand[cand.length - 1];
+                }
+                fin = Math.min(fin, r.alto);
+                tramos.push([ini, fin]);
+                ini = fin;
+            }
+
+            const lienzo = r.lienzo, k = r.escala;
+            tramos.forEach(function (t, i) {
+                if (i > 0) pdf.addPage();
+                const hPx = Math.max(1, Math.round((t[1] - t[0]) * k));
+                const trozo = document.createElement('canvas');
+                trozo.width = lienzo.width;
+                trozo.height = hPx;
+                const cx = trozo.getContext('2d');
+                cx.fillStyle = '#ffffff';
+                cx.fillRect(0, 0, trozo.width, trozo.height);
+                cx.drawImage(lienzo, 0, Math.round(t[0] * k), lienzo.width, hPx, 0, 0, lienzo.width, hPx);
+                pdf.addImage(trozo.toDataURL('image/jpeg', 0.92), 'JPEG', M, M, anchoMm, (t[1] - t[0]) / pxPorMm);
+                pdf.setFontSize(8);
+                pdf.setTextColor(150);
+                pdf.text((i + 1) + ' / ' + tramos.length, pagW - M, pagH - M / 2, { align: 'right' });
+                trozo.width = trozo.height = 0;   // devolver la memoria del lienzo en iOS
+            });
+            lienzo.width = lienzo.height = 0;
+            limpiar();
+            return pdf.output('blob');
+        }).catch(function (e) { limpiar(); throw e; });
+    }
+
+    // Publicado para poder probarlo en un navegador real (y reutilizarlo).
+    window.rxGenerarPdf = _rxGenerarPdf;
+
+    // Entrega el PDF: menú del sistema en táctil (SÍNCRONO: consume el gesto),
+    // `<a download>` en PC o donde no se pueda compartir.
+    function _rxEntregarPdf(blob, nombre) {
+        try {
+            if (_rxEsTactil() && typeof File === 'function' && navigator.share && navigator.canShare) {
+                const f = new File([blob], nombre, { type: 'application/pdf' });
+                if (navigator.canShare({ files: [f] })) {
+                    navigator.share({ files: [f], title: nombre }).catch(function (e) {
+                        if (e && e.name === 'AbortError') return;   // cerró el menú: no es un fallo
+                        _rxToast('⚠️ No se pudo compartir el PDF: ' + (e && e.message ? e.message : e), 4000);
+                    });
+                    return true;
+                }
+            }
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url; a.download = nombre;
+            document.body.appendChild(a); a.click(); document.body.removeChild(a);
+            setTimeout(function () { URL.revokeObjectURL(url); }, 4000);
+            return true;
+        } catch (e) {
+            _rxToast('⚠️ No se pudo guardar el PDF: ' + (e && e.message ? e.message : e), 4000);
+            return false;
+        }
+    }
+
+    function _rxVisorEnLaApp(doc, titulo, extra) {
+        extra = extra || {};
         try {
             const previo = document.getElementById('rx-visor');
             if (previo && previo.parentNode) previo.parentNode.removeChild(previo);
@@ -395,7 +587,11 @@
                 '<div style="flex:1;min-width:0;color:#c9d1d9;font-size:0.78rem;font-weight:700;' +
                     'overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + _rxEsc(titulo) + '</div>' +
                 '<button type="button" id="rx-visor-print" style="' + btn +
-                    'border:1px solid #2563eb;background:#2563eb;color:#fff;">🖨️ Imprimir / Guardar como PDF</button>' +
+                    'border:1px solid #2563eb;background:#2563eb;color:#fff;">🖨️ Imprimir</button>' +
+                // v851 · El PDF generado aquí mismo: no depende del diálogo de
+                // impresión, que en la app instalada del iPhone no se abre.
+                '<button type="button" id="rx-visor-pdf" style="' + btn +
+                    'border:1px solid #3fb950;background:#1a3d24;color:#7ee787;">📄 Guardar PDF</button>' +
                 '<button type="button" id="rx-visor-close" style="' + btn +
                     'border:1px solid #f85149;background:#3d1a1a;color:#ff7b72;">✕ Cerrar</button>';
 
@@ -416,10 +612,79 @@
             barra.querySelector('#rx-visor-close').onclick = function () {
                 if (ov.parentNode) ov.parentNode.removeChild(ov);
             };
+            // ── 📄 v851 · PDF generado ─────────────────────────────────
+            const bPdf = barra.querySelector('#rx-visor-pdf');
+            const nombrePdf = (window.rxSlug ? window.rxSlug(titulo) : 'documento') + '_' +
+                (window.rxHoy ? window.rxHoy() : '') + '.pdf';
+            let pdfListo = null, pdfEnCurso = null, pidioPdf = false;
+            const etiquetaPdf = function (txt, ocupado) {
+                if (!bPdf) return;
+                bPdf.textContent = txt;
+                if (bPdf.style) bPdf.style.opacity = ocupado ? '0.7' : '1';
+            };
+            const prepararPdf = function () {
+                if (pdfListo) return Promise.resolve(pdfListo);
+                if (pdfEnCurso) return pdfEnCurso;
+                pdfEnCurso = _rxGenerarPdf(doc, { apaisado: extra.apaisado }).then(function (b) {
+                    pdfListo = b; pdfEnCurso = null;
+                    if (pidioPdf) etiquetaPdf('📤 Compartir PDF', false);
+                    return b;
+                }, function (e) {
+                    pdfEnCurso = null;
+                    if (pidioPdf) {
+                        etiquetaPdf('📄 Guardar PDF', false);
+                        _rxToast('⚠️ No se pudo generar el PDF: ' + (e && e.message ? e.message : e), 5000);
+                    }
+                    throw e;
+                });
+                return pdfEnCurso;
+            };
+            const pulsarPdf = function () {
+                pidioPdf = true;
+                if (pdfListo) {
+                    // Ya hecho: se entrega en ESTA pulsación (conserva el gesto).
+                    _rxEntregarPdf(pdfListo, nombrePdf);
+                    return;
+                }
+                etiquetaPdf('⏳ Preparando PDF…', true);
+                _rxToast('⏳ Preparando el PDF… en unos segundos pulsa «Compartir PDF».', 3500);
+                prepararPdf().then(function () {
+                    // En PC (sin menú de compartir) la descarga no necesita gesto.
+                    if (!_rxEsTactil()) { _rxEntregarPdf(pdfListo, nombrePdf); etiquetaPdf('📄 Guardar PDF', false); }
+                }, function () {});
+            };
+            if (bPdf) bPdf.onclick = pulsarPdf;
+            // En táctil se prepara ya, para que el primer toque baste.
+            if (_rxEsTactil()) {
+                setTimeout(function () {
+                    if (ov.parentNode) prepararPdf().catch(function () {});
+                }, 400);
+            }
+
             barra.querySelector('#rx-visor-print').onclick = function () {
+                // 🔑 v851 · En la app instalada del iPhone `print()` no hace
+                // NADA: se va directo al PDF, cuyo menú trae «Imprimir».
+                if (_rxPrintMudo()) { pulsarPdf(); return; }
                 // Se imprime EL IFRAME, no la app que hay debajo.
+                let abrio = false;
+                const marca = function () { abrio = true; };
+                const ventanas = [marco.contentWindow, window];
+                ventanas.forEach(function (v) {
+                    try { if (v && v.addEventListener) v.addEventListener('beforeprint', marca); } catch (e) { /* sin eventos */ }
+                });
                 try { marco.contentWindow.focus(); marco.contentWindow.print(); }
                 catch (e) { _rxToast('⚠️ No se pudo abrir la impresión: ' + (e && e.message ? e.message : e), 4000); }
+                // Si el navegador no abrió el diálogo (ningún `beforeprint`),
+                // se dice y se señala la otra vía en vez de quedarse mudo.
+                setTimeout(function () {
+                    ventanas.forEach(function (v) {
+                        try { if (v && v.removeEventListener) v.removeEventListener('beforeprint', marca); } catch (e) { /* nada */ }
+                    });
+                    if (abrio || !ov.parentNode) return;
+                    _rxToast('ℹ️ Este navegador no abrió la impresión. Pulsa «📄 Guardar PDF»: ' +
+                             'desde su menú también puedes imprimir.', 6000);
+                    if (bPdf && bPdf.style) bPdf.style.boxShadow = '0 0 0 3px #7ee787';
+                }, 1500);
             };
             return true;
         } catch (e) {
@@ -456,7 +721,7 @@
         const docVisor = opts.docVisor || opts.doc || '';
         if (!docVisor && !opts.doc) return false;
 
-        if (_rxEsTactil()) return _rxVisorEnLaApp(docVisor, titulo);
+        if (_rxEsTactil()) return _rxVisorEnLaApp(docVisor, titulo, { apaisado: !!opts.apaisado });
 
         const w = window.open('', '_blank', opts.ventana || '');
         if (!w) {
@@ -465,7 +730,7 @@
             // teniendo que ir a los ajustes del navegador. Ahora se le enseña
             // por el mismo visor del táctil, que no depende de emergentes.
             _rxToast('⚠️ El navegador bloqueó la ventana emergente: el documento se abre aquí mismo', 5000);
-            return _rxVisorEnLaApp(docVisor, titulo);
+            return _rxVisorEnLaApp(docVisor, titulo, { apaisado: !!opts.apaisado });
         }
         w.document.open();
         w.document.write(opts.doc || docVisor);
@@ -540,6 +805,7 @@
             titulo:   titulo,
             doc:      montarDoc(true),    // ventana nueva: con auto-print
             docVisor: montarDoc(false),   // visor interno: sin él
+            apaisado: !!opts.apaisado,    // v851 · orientación del PDF generado
         });
     };
 
