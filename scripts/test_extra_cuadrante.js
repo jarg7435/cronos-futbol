@@ -199,7 +199,10 @@ async function rutaCuadrante(extras) {
         // El panel del ente no se puede ejecutar entero (arrastra Firestore), así
         // que aquí se fija la FORMA, con anclas estrechas. Las dos puertas:
         ok('4c · el ente resuelve el extra con _cronosExtraEnabled (la MISMA lectura que el resto de la app)',
-            /_indCuadranteOn\s*=\s*\(typeof window\._cronosExtraEnabled !== 'function'\)[\s\S]{0,120}_cronosExtraEnabled\('cuadrante'\)/.test(indSrc),
+            // v852 · ahora por funciones (se recalculan al repintar): el
+            // helper común `_indExtraOn` y `_indCuadranteOn = () => …('cuadrante')`.
+            /_indExtraOn\s*=\s*\(k\)\s*=>\s*\(typeof window\._cronosExtraEnabled !== 'function'\)[\s\S]{0,120}_cronosExtraEnabled\(k\)/.test(indSrc)
+            && /_indCuadranteOn\s*=\s*\(\)\s*=>\s*_indExtraOn\('cuadrante'\)/.test(indSrc),
             'leer `extras` a mano abriría una segunda regla que puede divergir');
         ok('4d · puerta VISIBLE: la tarjeta del tablero lleva `bloqueado`',
             /titulo: 'Cuadrante'[\s\S]{0,400}?bloqueado: _indCuadranteMotivo/.test(indSrc));
@@ -222,8 +225,8 @@ async function rutaCuadrante(extras) {
                 sb.console = { warn() {}, log() {}, error() {} };
                 sb.document = { getElementById: () => ({ innerHTML: '' }) };
                 sb.sec = 'cuadrante';
-                sb._indCuadranteOn = false;              // extra APAGADO
-                sb._indCuadranteMotivo = 'motivo de prueba';
+                sb._indCuadranteOn = () => false;        // extra APAGADO (v852: función)
+                sb._indCuadranteMotivo = () => 'motivo de prueba';
                 sb._sdLoadCuadrante = () => { sb.testigo++; };
                 sb.window._sdLoadCuadrante = sb._sdLoadCuadrante;
                 try {
@@ -242,8 +245,8 @@ async function rutaCuadrante(extras) {
                 sb.console = { warn() {}, log() {}, error() {} };
                 sb.document = { getElementById: () => ({ innerHTML: '' }) };
                 sb.sec = 'cuadrante';
-                sb._indCuadranteOn = true;               // extra ACTIVO
-                sb._indCuadranteMotivo = '';
+                sb._indCuadranteOn = () => true;         // extra ACTIVO (v852: función)
+                sb._indCuadranteMotivo = () => '';
                 sb._sdLoadCuadrante = () => { sb.testigo++; };
                 sb.window._sdLoadCuadrante = sb._sdLoadCuadrante;
                 try { vm.runInContext('(function(){' + bloqueRuta + '})();', sb, { timeout: 5000 }); }

@@ -997,7 +997,11 @@ function _launchWithRole(role) {
             // precargó no se vuelve a leer el documento, y `me.extras` no puede
             // decir una cosa distinta de la que decidió el candado de la tarjeta.
             (async () => {
-                const clubId2 = roleEntry.clubId || me.clubId;
+                // 🔒 v852 · También el ENTE: una plaza de ente puede llevar
+                // sólo `individualEntityId`, y sin él no se cargaba ningún
+                // extra (todo «ausente = activo»).
+                const clubId2 = roleEntry.clubId || roleEntry.individualEntityId
+                    || me.clubId || me.individualEntityId;
                 if (!clubId2) return;
                 const _ex = await _cargarExtrasEntidad(clubId2);
                 // ⚠️ null = la lectura FALLÓ. Se deja `me.extras` como estaba en

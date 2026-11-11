@@ -2838,8 +2838,8 @@
 //        sube EN VIVO, cuenta el primer mensaje de una conversación nueva y
 //        sigue hasta ABRIRLA (entrar en la bandeja ya no la pone a cero); y
 //        ninguna aprobación activa a un familiar sin Familias contratado.
-const VERSION = 'v851';
-const CACHE_NAME = 'cronos-cache-v851';
+const VERSION = 'v852';
+const CACHE_NAME = 'cronos-cache-v852';
 
 const ASSETS = [
     './',

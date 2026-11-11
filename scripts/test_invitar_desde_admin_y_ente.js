@@ -153,7 +153,7 @@ console.log('\nPARTE 2 · el enlace se acuña CON el clubId');
        /titulo: 'Secretaría'[\s\S]{0,200}onclick: "indTab\('secretaria'\)"/.test(IND));
     ok('4g · Ente: bloqueada con motivo si no tiene Familias', /bloqueado: _indSecMotivo/.test(IND));
     const indSec = IND.slice(IND.indexOf("if (sec === 'secretaria')"));
-    ok('4h · Ente: segunda puerta antes de pintar', /if \(_indSecMotivo\)/.test(indSec.slice(0, 400)));
+    ok('4h · Ente: segunda puerta antes de pintar', /if \(_indSecMotivo(?:\(\))?\)/.test(indSec.slice(0, 400)));   // v852 · ahora es función
     ok('4i · Ente: pinta con su id de entidad y club fijo',
        /clubId:\s+individualEntityId \|\| '',[\s\S]{0,40}clubFijo: true/.test(indSec));
     ok('4j · Ente: roles de CRONOS_SECRETARIA_ROLES_ENTE', /CRONOS_SECRETARIA_ROLES_ENTE/.test(IND));

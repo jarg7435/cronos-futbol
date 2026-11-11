@@ -384,12 +384,31 @@ async function openStaffDashboard(initialTab) {
 }
 
 // ── Cambiar tab ──────────────────────────────────────────────────────
+// 🔒 v852 · QUÉ EXTRA DEL SUPERADMIN GOBIERNA CADA SECCIÓN DEL PANEL DE
+// DIRECCIÓN / COORDINACIÓN (implementar.txt 11-11). Una sola tabla para la
+// tarjeta del tablero y para la segunda puerta de switchStaffTab. Las que no
+// están (asistencia, desbloqueos, config) no tienen extra propio.
+// 'secretaria' tiene su propia puerta más abajo (con otro motivo).
+window.CRONOS_SD_EXTRA_DE_SECCION = {
+    cuadrante:           'cuadrante',
+    convocatorias:       'convocatorias',
+    entrenamientos:      'entrenamientos',
+    informes:            'informes',
+    mensajes:            'mensajeria',
+    partidos_terminados: 'partidos_terminados',
+};
+window.cronosSdExtraDeSeccion = function (tab) {
+    return Object.prototype.hasOwnProperty.call(window.CRONOS_SD_EXTRA_DE_SECCION, tab)
+        ? window.CRONOS_SD_EXTRA_DE_SECCION[tab] : '';
+};
+
 window.switchStaffTab = async (tab) => {
     // Pila de navegación: la pestaña activa se guarda como ARGUMENTO de la
     // raíz, no como una pantalla propia (ver la nota en openStaffDashboard).
     // Reiniciar la raíz aquí es seguro: switchStaffTab sólo puede ejecutarse
     // con el panel visible, o sea cuando la raíz ya es la cima de la pila.
     if (typeof navRootScreen === 'function') navRootScreen('openStaffDashboard', tab);
+    window._sdTabActual = tab;   // 🔒 v852 · para el oyente de extras (abajo)
 
     // 🔄 v604 · SE DA DE BAJA LA ESCUCHA EN VIVO DEL CUADRANTE AL SALIR DE ÉL.
     // Va aquí arriba, antes de decidir la pestaña, para que cubra TODAS las
@@ -461,6 +480,22 @@ window.switchStaffTab = async (tab) => {
     if (_sdMarco) _sdMarco.classList.toggle('sd-claro', tab === 'cuadrante');
     container.innerHTML = `<div style="text-align:center;padding:3rem;color:var(--text-muted);">⏳ Cargando…</div>`;
 
+    // 🔒 v852 · SEGUNDA PUERTA DE LAS SECCIONES CON EXTRA. La tarjeta con
+    // candado no impide volver aquí por la pila de navegación ni desde la
+    // consola. (Cuadrante y Secretaría tienen la suya, con su propio texto,
+    // más abajo: el Cuadrante se le deja a ella.)
+    const _sdExtra = (tab !== 'cuadrante' && typeof window.cronosSdExtraDeSeccion === 'function')
+        ? window.cronosSdExtraDeSeccion(tab) : '';
+    if (_sdExtra && ((window._cronosCurrentUser || {}).extras || {})[_sdExtra] === false) {
+        container.innerHTML = `
+            <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:4rem 2rem;text-align:center;gap:1rem;">
+                <div style="font-size:3.5rem;">🔒</div>
+                <div style="font-size:1.1rem;font-weight:700;color:white;">${_SD_TITULOS[tab] ? _SD_TITULOS[tab].replace(/^\S+\s/, '') : 'Sección'} no disponible</div>
+                <div style="font-size:0.85rem;color:#8b949e;max-width:340px;">Este extra no está activado para tu club. Habla con el administrador para habilitarlo.</div>
+            </div>`;
+        return;
+    }
+
     // ══════════════════════════════════════════════════════════════════
     //  🎛️ v590 · EL TABLERO DE ENTRADA
     //
@@ -485,6 +520,11 @@ window.switchStaffTab = async (tab) => {
         const _cqMotivo = (_extras.cuadrante !== false) ? ''
             : (window.CRONOS_EXTRA_CUADRANTE_MOTIVO
                || 'Extra no activado para tu club. Habla con el administrador.');
+        // 🔒 v852 · El candado de cada tarjeta con extra, con la MISMA regla
+        // (`!== false`) y el mismo texto que Vídeos y Partidos Terminados.
+        const _sdMotivo = (k) => (_extras[k] !== false) ? ''
+            : 'Extra no activado para tu club. Habla con el administrador.';
+        const _sdMotivoSec = (tab) => _sdMotivo(window.cronosSdExtraDeSeccion(tab));
         const _opciones = [
             // 🗓️ v603 · La PAUTA del club. Va la primera porque es el principio
             // de la cadena: el club reparte espacios y horarios, el entrenador
@@ -495,30 +535,35 @@ window.switchStaffTab = async (tab) => {
               bloqueado: _cqMotivo },
             { icono: '📋', titulo: 'Convocatorias', color: '#3fb950',
               desc: 'Las convocatorias recibidas, por categoría y subcategoría.',
-              onclick: "switchStaffTab('convocatorias')" },
+              onclick: "switchStaffTab('convocatorias')",
+              bloqueado: _sdMotivoSec('convocatorias') },
             { icono: '🕒', titulo: 'Entrenamientos', color: '#f0883e',
               desc: 'Las planificaciones semanales que envían los entrenadores.',
-              onclick: "switchStaffTab('entrenamientos')" },
+              onclick: "switchStaffTab('entrenamientos')",
+              bloqueado: _sdMotivoSec('entrenamientos') },
             { icono: '✅', titulo: 'Asistencia', color: '#58a6ff',
               desc: 'El cuadrante de asistencia diaria del club.',
               onclick: "switchStaffTab('asistencia')" },
             { icono: '📊', titulo: 'Informes', color: '#ffd700',
               desc: 'Informes de partido, por equipo y por jugador.',
-              onclick: "switchStaffTab('informes')" },
+              onclick: "switchStaffTab('informes')",
+              bloqueado: _sdMotivoSec('informes') },
             // 🔴 v743 · El aviso de mensajes sin leer se rellena DESPUÉS: hay
             // que ir a buscarlo a la nube y el tablero se pinta en seco. Ver
             // la llamada a `ubPintarBadge` justo después del innerHTML.
             { icono: '💬', titulo: 'Mensajes', color: '#b478c8',
               desc: 'Mensajería interna con el cuerpo técnico.',
               badgeId: 'sd-badge-mensajes',
-              onclick: "switchStaffTab('mensajes')" },
+              onclick: "switchStaffTab('mensajes')",
+              bloqueado: _sdMotivoSec('mensajes') },
             { icono: '🎬', titulo: 'Partidos Terminados', color: '#79c0ff',
               desc: 'Repetición y cierre de los partidos ya jugados.',
               onclick: "switchStaffTab('partidos_terminados')",
               bloqueado: _ptOn ? '' : 'Extra no activado para tu club. Habla con el administrador.' },
             { icono: '🔴', titulo: 'En Vivo', color: '#ff5858',
               desc: 'Los partidos que se están jugando ahora mismo.',
-              onclick: 'openLiveMatchesView()' },
+              onclick: "if(typeof window._cronosExtraGate==='function' && !window._cronosExtraGate('partidos_en_vivo','Partidos en Vivo'))return; openLiveMatchesView()",
+              bloqueado: _sdMotivo('partidos_en_vivo') },
             // 🔓 v797 · Pasadas las 2 h, un partido sólo admite sucesos con
             // permiso de Dirección/Coordinación. Aquí se conceden. El aviso de
             // pendientes llega tarde, como el de Mensajes (ver abajo).
@@ -592,7 +637,15 @@ window.switchStaffTab = async (tab) => {
         if (!window._sdOyeExtras && typeof window.addEventListener === 'function') {
             window._sdOyeExtras = true;
             window.addEventListener('cronos-extras-cambiados', () => {
-                if (document.getElementById('sd-badge-desbloqueos')) window.switchStaffTab('menu');
+                if (document.getElementById('sd-badge-desbloqueos')) { window.switchStaffTab('menu'); return; }
+                // 🔒 v852 · Dentro de una sección cuyo extra se acaba de
+                // apagar: se repinta para que salga el candado. Sólo en ese
+                // caso — repintar por cualquier cambio tiraría lo que se edita.
+                const t = window._sdTabActual;
+                const k = t && window.cronosSdExtraDeSeccion(t);
+                const cont = document.getElementById('staff-dashboard-content');
+                if (k && cont && cont.offsetParent !== null &&
+                    ((window._cronosCurrentUser || {}).extras || {})[k] === false) window.switchStaffTab(t);
             });
         }
         return;

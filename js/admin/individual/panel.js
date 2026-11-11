@@ -1270,11 +1270,19 @@ async function openIndividualAdminPanel(mantenerSeccion = false) {
     // función que usa el resto de la app: leer `extras` a mano aquí abriría una
     // segunda regla que puede divergir de la primera (la lección de v429).
     // Falla hacia el SÍ: sin el helper cargado, la sección queda abierta.
-    const _indCuadranteOn = (typeof window._cronosExtraEnabled !== 'function')
-        || window._cronosExtraEnabled('cuadrante');
-    const _indCuadranteMotivo = _indCuadranteOn ? ''
+    // 🔒 v852 · FUNCIONES, NO CONSTANTES (implementar.txt 11-11, captura
+    // 11817): calculadas una sola vez al abrir el panel, la tarjeta se quedaba
+    // con lo que hubiera en ese instante —casi siempre «sin extras todavía» =
+    // todo activo— y el interruptor del SuperAdmin no llegaba nunca. Ahora
+    // cada repintado (y cada `cronos-extras-cambiados`) vuelve a preguntar.
+    const _indExtraOn = (k) => (typeof window._cronosExtraEnabled !== 'function')
+        || window._cronosExtraEnabled(k);
+    const _indCuadranteOn = () => _indExtraOn('cuadrante');
+    const _indCuadranteMotivo = () => _indCuadranteOn() ? ''
         : (window.CRONOS_EXTRA_CUADRANTE_MOTIVO
            || 'Extra no activado para tu entidad. Habla con el administrador.');
+    const _indMensajeriaMotivo = () => _indExtraOn('mensajeria') ? ''
+        : 'Extra no activado para tu entidad. Habla con el administrador.';
 
     const _IND_SECCIONES = {
         cuadrante:   { titulo: '🗓️ Cuadrante',      html: _secCuadrante },
@@ -1294,16 +1302,18 @@ async function openIndividualAdminPanel(mantenerSeccion = false) {
     // ✉️ v781 · El ente invita SÓLO a familias: bajo un ente el alta no admite
     // otro rol (auth.js, ROLES_BAJO_ENTE). Y sólo si tiene el acceso de
     // Familias contratado — misma lectura de extras que el Cuadrante.
-    const _indRolesSecretaria = (typeof window.cronosSecretariaRoles === 'function')
-        ? window.cronosSecretariaRoles(window.CRONOS_SECRETARIA_ROLES_ENTE || ['parent'],
-              k => (typeof window._cronosExtraEnabled !== 'function') || window._cronosExtraEnabled(k))
+    const _indRolesSecretaria = () => (typeof window.cronosSecretariaRoles === 'function')
+        ? window.cronosSecretariaRoles(window.CRONOS_SECRETARIA_ROLES_ENTE || ['parent'], _indExtraOn)
         : ['parent'];
     const _indNombreEnte = (entityData && entityData.name) || displayName || '';
-    const _indSecMotivo = _indRolesSecretaria.length ? ''
+    // ⚠️ NO depende del extra `secretaria`: ése es la sub-opción del DIRECTOR
+    // (el ente no tiene), igual que la Secretaría del Admin de Club
+    // (test_invitar_desde_admin_y_ente.js, 4e). La puerta es `rol_padres`.
+    const _indSecMotivo = () => _indRolesSecretaria().length ? ''
         : ((window.CRONOS_ROL_EXTRA_MOTIVO || {}).rol_padres
            || 'El acceso de Familias no está contratado en tu plan.');
 
-    const _indOpciones = [
+    const _indOpciones = () => [
         // ⚽ v601 · La ida a partidos pasa por `cronosEntrarAPartidos`
         //    (role-launch.js): desde la v601 el ente aterriza con el terreno de
         //    juego OCULTO —para no verlo antes que su panel— y hay que volver a
@@ -1328,7 +1338,7 @@ async function openIndividualAdminPanel(mantenerSeccion = false) {
         { icono: '🗓️', titulo: 'Cuadrante', color: '#58a6ff',
           desc: 'Reparte los espacios del campo y los horarios de la semana de tus equipos.',
           onclick: "indTab('cuadrante')",
-          bloqueado: _indCuadranteMotivo },
+          bloqueado: _indCuadranteMotivo() },
         { icono: '⚽', titulo: 'Mi Equipo', color: '#3fb950',
           badge: _misEquipos.length,
           desc: _misEquipos.length >= 2
@@ -1351,7 +1361,7 @@ async function openIndividualAdminPanel(mantenerSeccion = false) {
         { icono: '✉️', titulo: 'Secretaría', color: '#58a6ff',
           desc: 'Invita a las familias de tus equipos con el enlace de la app.',
           onclick: "indTab('secretaria')",
-          bloqueado: _indSecMotivo },
+          bloqueado: _indSecMotivo() },
         // ⚠️ v602 · "👥 Mis Usuarios" y "📊 Resumen" YA NO SON TARJETAS. Su
         //    contenido no se ha perdido: abre "⚽ Mi Equipo", donde el cuadro de
         //    cifras es lo primero que se ve y las familias están dentro de su
@@ -1374,7 +1384,11 @@ async function openIndividualAdminPanel(mantenerSeccion = false) {
           onclick: "indTab('plan')" },
         { icono: '💬', titulo: 'Mensajes', color: '#d2a8ff',
           desc: 'Canales internos con el SuperAdmin y con tu entrenador.',
-          onclick: "if(typeof openIndividualAdminMessaging==='function') openIndividualAdminMessaging('coaches'); else if(typeof showToast==='function') showToast('⚠️ Mensajería no disponible', 3000);" },
+          // 🔒 v852 · Extra `mensajeria` (antes la tarjeta no lo miraba).
+          // El portero va también en el clic: la tarjeta pudo pintarse antes
+          // de que llegara el «apagado».
+          onclick: "if(typeof window._cronosExtraGate==='function' && !window._cronosExtraGate('mensajeria','Mensajería'))return; if(typeof openIndividualAdminMessaging==='function') openIndividualAdminMessaging('coaches'); else if(typeof showToast==='function') showToast('⚠️ Mensajería no disponible', 3000);",
+          bloqueado: _indMensajeriaMotivo() },
         // ⚠️ v598 · FALTAN DOS TARJETAS RESPECTO A LA v597, A PROPÓSITO:
         //   · 📩 Solicitar Alta        — el interesado se registra solo.
         //   · 📡 Transmitir al SuperAdmin — escribía un aviso que NADIE leía.
@@ -1383,11 +1397,11 @@ async function openIndividualAdminPanel(mantenerSeccion = false) {
 
     // ⚠️ Mismo respaldo que en el panel de Club: sin el helper cargado se
     // pintan todas las secciones seguidas en vez de dejar el panel en blanco.
-    const _indMenuHtml = (typeof window.cronosTableroHtml === 'function')
+    const _indMenuHtml = () => (typeof window.cronosTableroHtml === 'function')
         ? window.cronosTableroHtml({
             titulo: '👤 ' + displayName,
             subtitulo: 'Panel del Entrenador Administrador Individual — elige qué quieres gestionar:',
-            opciones: _indOpciones,
+            opciones: _indOpciones(),
           })
         : Object.keys(_IND_SECCIONES).map(k => _IND_SECCIONES[k].html).join('');
 
@@ -1410,7 +1424,7 @@ async function openIndividualAdminPanel(mantenerSeccion = false) {
         if (sec === 'menu' || !_IND_SECCIONES[sec]) {
             window._indSeccionActual = 'menu';
             if (barra) { barra.style.display = 'none'; barra.innerHTML = ''; }
-            cuerpo.innerHTML = _indMenuHtml;
+            cuerpo.innerHTML = _indMenuHtml();
             // 🔓 v798 · solicitudes de desbloqueo pendientes, sin esperarlas.
             if (window.CronosUnlocks && typeof window.CronosUnlocks.pintarBadge === 'function') {
                 window.CronosUnlocks.pintarBadge('ind-badge-desbloqueos', individualEntityId);
@@ -1453,9 +1467,9 @@ async function openIndividualAdminPanel(mantenerSeccion = false) {
         if (sec === 'secretaria') {
             const _sb = document.getElementById('ind-secretaria-body');
             if (!_sb) return;
-            if (_indSecMotivo) {
+            if (_indSecMotivo()) {
                 _sb.innerHTML = '<div style="text-align:center;padding:3rem;color:var(--text-muted);">🔒 ' +
-                    _indEsc(_indSecMotivo) + '</div>';
+                    _indEsc(_indSecMotivo()) + '</div>';
                 return;
             }
             if (typeof window.saSecretary !== 'function') {
@@ -1465,7 +1479,7 @@ async function openIndividualAdminPanel(mantenerSeccion = false) {
             }
             Promise.resolve(window.saSecretary({
                 contenedorId: 'ind-secretaria-body',
-                roles:    _indRolesSecretaria,
+                roles:    _indRolesSecretaria(),
                 // El NOMBRE del ente tal y como sale en la lista del alta
                 // (clubs_public), y su id para atar la invitación a él.
                 club:     _indNombreEnte,
@@ -1485,14 +1499,14 @@ async function openIndividualAdminPanel(mantenerSeccion = false) {
             // `_indSeccionActual`, que guarda la sección entre repintados: si
             // el extra se apaga con la sección abierta, el repintado la
             // recuperaría. Misma forma que switchStaffTab('cuadrante').
-            if (!_indCuadranteOn) {
+            if (!_indCuadranteOn()) {
                 const _cb = document.getElementById('ind-cuadrante-body');
                 if (_cb) _cb.innerHTML =
                     '<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;' +
                            'padding:4rem 2rem;text-align:center;gap:1rem;">' +
                       '<div style="font-size:3.5rem;">🔒</div>' +
                       '<div style="font-size:1.1rem;font-weight:700;color:white;">Cuadrante no disponible</div>' +
-                      '<div style="font-size:0.85rem;color:#8b949e;max-width:340px;">' + _indCuadranteMotivo + '</div>' +
+                      '<div style="font-size:0.85rem;color:#8b949e;max-width:340px;">' + _indCuadranteMotivo() + '</div>' +
                     '</div>';
                 return;
             }
@@ -1578,8 +1592,52 @@ async function openIndividualAdminPanel(mantenerSeccion = false) {
       </div>
     </div>`;
 
+    // ════════════════════════════════════════════════════════════════
+    //  🔒 v852 · LOS CANDADOS SIGUEN AL INTERRUPTOR DEL SUPERADMIN
+    //  (implementar.txt 11-11, capturas 11817/11821: Cuadrante y Mensajería
+    //  apagados en Extras y las tarjetas del ente abiertas).
+    //   1. El documento del ente ya está leído (`entityData`): sus extras se
+    //      aplican al usuario ANTES del primer pintado. Sin esto, si la carga
+    //      del arranque no los había traído (p. ej. el modo diagnóstico del
+    //      SA, o una plaza sin `clubId`), todo valía «ausente = activo».
+    //   2. `cronosRefrescaExtras(true)` (role-launch.js) los relee con la
+    //      misma cascada que escribe el SA (clubs → individuals) y deja la
+    //      escucha en vivo abierta.
+    //   3. Cada `cronos-extras-cambiados` repinta el menú (o la sección con
+    //      candado abierta) — el mismo aviso que ya repinta Dirección (v817).
+    // ════════════════════════════════════════════════════════════════
+    (function _indAplicaExtrasEnte() {
+        const ex = entityData && entityData.extras;
+        const vig = window._cronosCurrentUser;
+        if (!ex || typeof ex !== 'object' || !vig || !individualEntityId) return;
+        const ent = String(vig.clubId || vig.individualEntityId || '');
+        // Nunca se pisan los de OTRA entidad, ni los del SA sin entidad (su
+        // «Control Total» depende de no tener `extras`).
+        if (ent !== String(individualEntityId)) return;
+        const cache = window._cronosExtrasEntidad || (window._cronosExtrasEntidad = {});
+        cache[individualEntityId] = ex;
+        vig.extras = ex;
+    })();
+    if (!window._indOyeExtras && typeof window.addEventListener === 'function') {
+        window._indOyeExtras = true;
+        window.addEventListener('cronos-extras-cambiados', () => {
+            const s = window._indSeccionActual || 'menu';
+            if (!document.getElementById('ind-body') || typeof window.indTab !== 'function') return;
+            // El menú, siempre. Una sección abierta, SÓLO si su extra acaba de
+            // apagarse: repintarla por cualquier otro cambio tiraría lo que se
+            // estuviera editando en el cuadrante o en la invitación.
+            const on = (k) => (typeof window._cronosExtraEnabled !== 'function') || window._cronosExtraEnabled(k);
+            const cerrada = (s === 'cuadrante' && !on('cuadrante'))
+                || (s === 'secretaria' && !on('rol_padres'));
+            if (s === 'menu' || cerrada) window.indTab(s);
+        });
+    }
+
     // Pintar la sección: después del innerHTML, porque indTab busca #ind-body.
     window.indTab(window._indSeccionActual || 'menu');
+    if (typeof window.cronosRefrescaExtras === 'function') {
+        Promise.resolve(window.cronosRefrescaExtras(true)).catch(() => {});
+    }
 
     // ── Store data globally for action functions ──────────────────
     window._indData = {

@@ -394,7 +394,8 @@ console.log('\n── PARTE 10 · v602 · una sola sección, y el título comple
 
     // 10b · UNA tarjeta donde había tres. Se comprueba por el TABLERO (lo que
     //       se ve), no sólo por el mapa de secciones.
-    const tablero = (IND.match(/const _indOpciones = \[[\s\S]*?\n    \];/) || [''])[0];
+    // v852 · `_indOpciones` pasa a ser una función (se recalcula al repintar).
+    const tablero = (IND.match(/const _indOpciones = (?:\(\) => )?\[[\s\S]*?\n    \];/) || [''])[0];
     ok('10b0 · el tablero se localiza', tablero.length > 0);
     ok('10b · 🔑 el tablero ya no ofrece "Mis Usuarios" ni "Resumen" ni "Mis Equipos"',
        tablero.length > 0

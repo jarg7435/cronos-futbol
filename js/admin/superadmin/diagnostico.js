@@ -1014,6 +1014,15 @@
         // apuntando a otro sitio mientras se diagnostica a esta persona.
         window._testRoleClubId = null;
 
+        // 🔒 v852 · LOS EXTRAS DE SU ENTIDAD (captura 11817). El documento de
+        // usuario no los lleva: sin esto el diagnóstico pintaba TODO activo
+        // (Cuadrante y Mensajes abiertos con el interruptor apagado) y sólo
+        // Vídeos —«ausente = apagado»— salía con candado. Mismo camino que el
+        // usuario real: relectura + escucha en vivo + aviso a los paneles.
+        if (typeof window.cronosRefrescaExtras === 'function') {
+            Promise.resolve(window.cronosRefrescaExtras(true)).catch(function () {});
+        }
+
         // Se cierra el panel del SuperAdmin — de verdad. Ver _cerrarPanelSA.
         _cerrarPanelSA();
         if (typeof window._navReset === 'function') window._navReset();
