@@ -636,6 +636,11 @@
                 return String(a.u.email || a.id).localeCompare(String(b.u.email || b.id));
             });
             window._saDiagUsuarios = lista;
+            // ⏸️ v853 · Las suspensiones activas, para la insignia y el botón
+            // de cada ficha. Sin ellas se pinta igual (todas «sin suspender»).
+            if (window.CronosSuspension) {
+                try { await window.CronosSuspension.cargarActivas(); } catch (eS) { /* se pinta igual */ }
+            }
             _pintarListaDiag('');
         } catch (e) {
             cont.innerHTML = '<div style="text-align:center;padding:3rem;color:#ff5858;">' +
@@ -762,9 +767,12 @@
             '<div style="display:flex;justify-content:space-between;align-items:center;gap:0.6rem;flex-wrap:wrap;">' +
               '<div style="min-width:0;">' +
                 '<div style="font-weight:700;color:white;font-size:0.85rem;">' + _dE(nombre) +
-                  (bloqueado ? ' <span style="font-size:0.66rem;color:#f0883e;">🔒 BLOQUEADO</span>' : '') + '</div>' +
+                  (bloqueado ? ' <span style="font-size:0.66rem;color:#f0883e;">🔒 BLOQUEADO</span>' : '') +
+                  // ⏸️ v853 · Bloqueo temporal (js/shared/suspension.js).
+                  (window.CronosSuspension ? window.CronosSuspension.insigniaHtml(x.id) : '') + '</div>' +
                 '<div style="font-size:0.71rem;color:#8b949e;">' + _dE(u.email || x.id) + '</div>' +
               '</div>' +
+              (window.CronosSuspension ? window.CronosSuspension.botonHtml(x.id, u.email || '', u.role, false) : '') +
             '</div>' +
             (u.statusReason
                 ? '<div style="margin-top:0.45rem;font-size:0.71rem;color:#f0883e;background:rgba(240,136,62,0.07);' +

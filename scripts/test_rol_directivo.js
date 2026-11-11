@@ -15,6 +15,7 @@
 'use strict';
 
 const fs = require('fs');
+const conSuspensionMock = require('./lib/rules_mock_suspension');   // ⏸️ v853
 const https = require('https');
 const os = require('os');
 const path = require('path');
@@ -284,7 +285,7 @@ async function parte2() {
         if (c.existing) tc.resource = c.existing;
         return tc;
     });
-    const r = await post(tk, { source: { files: [{ name: 'firestore.rules', content: leer('firestore.rules') }] }, testSuite: { testCases } });
+    const r = await post(tk, { source: { files: [{ name: 'firestore.rules', content: leer('firestore.rules') }] }, testSuite: { testCases: conSuspensionMock(testCases) } });
     if (r.status !== 200) { ok('la Rules API responde 200', false, r.body.slice(0, 500)); return; }
     const res = JSON.parse(r.body);
     const graves = (res.issues || []).filter(i => i.severity === 'ERROR');

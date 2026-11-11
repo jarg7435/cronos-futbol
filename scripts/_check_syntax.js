@@ -78,6 +78,8 @@ const COBERTURA_DECLARADA = [
   // v721 · El caché de Firestore por cuenta. Lo cargan los DOS documentos
   // antes de crear su instancia.
   'js/shared/fs-cache-mode.js',
+  // ⏸️ v853 · Bloqueo temporal de usuario.
+  'js/shared/suspension.js',
 ];
 
 const files = (argFiles.length

@@ -24,6 +24,7 @@
 'use strict';
 
 const fs = require('fs');
+const conSuspensionMock = require('./lib/rules_mock_suspension');   // ⏸️ v853
 const https = require('https');
 const os = require('os');
 const path = require('path');
@@ -264,7 +265,7 @@ function parte3(rulesText) {
     }));
 
     const r = await post(`https://firebaserules.googleapis.com/v1/projects/${PROJECT}:test`,
-        token, { source: { files: [{ name: 'firestore.rules', content: rulesText }] }, testSuite: { testCases } });
+        token, { source: { files: [{ name: 'firestore.rules', content: rulesText }] }, testSuite: { testCases: conSuspensionMock(testCases) } });
     if (r.status !== 200) {
         ok('0b · la Rules API responde 200', false, { status: r.status, body: r.body.slice(0, 400) });
         console.log('\nResultado: ' + pass + '/' + (pass + fail) + '  ❌');

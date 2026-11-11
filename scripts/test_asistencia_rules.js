@@ -32,6 +32,7 @@
 'use strict';
 
 const fs    = require('fs');
+const conSuspensionMock = require('./lib/rules_mock_suspension');   // ⏸️ v853
 const https = require('https');
 const os    = require('os');
 const path  = require('path');
@@ -257,14 +258,14 @@ const CASOS = [
     });
 
     const url = 'https://firebaserules.googleapis.com/v1/projects/' + PROJECT + ':test';
-    let r = await post(url, token, { source, testSuite: { testCases } });
+    let r = await post(url, token, { source, testSuite: { testCases: conSuspensionMock(testCases) } });
 
     // El servicio devuelve internal_failure transitorio de vez en cuando:
     // se reintenta antes de culpar al cambio.
     let j = JSON.parse(r.body);
     for (let intento = 0; intento < 3 && (r.status !== 200 || !j.testResults); intento++) {
         await new Promise(s => setTimeout(s, 1500));
-        r = await post(url, token, { source, testSuite: { testCases } });
+        r = await post(url, token, { source, testSuite: { testCases: conSuspensionMock(testCases) } });
         j = JSON.parse(r.body);
     }
     if (r.status !== 200 || !j.testResults) {

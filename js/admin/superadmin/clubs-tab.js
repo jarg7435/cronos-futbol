@@ -68,6 +68,10 @@ window.saClubs = async function saClubs() {
             getDocs(collection(db,'clubs')),
             getDocs(collection(db,'users')),
         ]), 'saClubs');
+        // ⏸️ v853 · Suspensiones activas, para el botón de cada fila.
+        if (window.CronosSuspension) {
+            try { await window.CronosSuspension.cargarActivas(); } catch (eS) { /* se pinta igual */ }
+        }
         const clubs = {};
         const _indivClubIds = new Set();
         clubsSnap.forEach(d => {
@@ -238,9 +242,10 @@ window.saClubs = async function saClubs() {
                 <span title="${_escA(meta.label)}">${meta.icon}</span>
                 <div style="flex:1;min-width:0;">
                     <div style="font-size:0.81rem;color:white;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${_escH(u.email||u.id)}</div>
-                    <div style="font-size:0.68rem;color:${stColor[st]||'#8b949e'};">${meta.label} · ${stLabel[st]||st}</div>
+                    <div style="font-size:0.68rem;color:${stColor[st]||'#8b949e'};">${meta.label} · ${stLabel[st]||st}${window.CronosSuspension ? window.CronosSuspension.insigniaHtml(u.uid || u.id) : ''}</div>
                 </div>
                 <div style="display:flex;gap:0.2rem;flex-shrink:0;">
+                    ${window.CronosSuspension && st !== 'removed' ? window.CronosSuspension.botonHtml(u.uid || u.id, u.email || '', u.role, true) : ''}
                     ${st==='pending'?`<button onclick="saQuickApprove('${eid}','${em}','${ecid}')" title="Aprobar (SA)" style="padding:0.22rem 0.45rem;background:rgba(255,215,0,0.15);border:1px solid rgba(255,215,0,0.4);border-radius:5px;color:#ffd700;font-size:0.68rem;cursor:pointer;font-weight:700;">✅ SA</button>`:''}
                     ${st==='active'?`<button onclick="saSetClubUserStatus('${eid}','${em}','blocked','${ecid}')" style="padding:0.22rem 0.45rem;background:rgba(240,136,62,0.15);border:1px solid rgba(240,136,62,0.4);border-radius:5px;color:#f0883e;font-size:0.68rem;cursor:pointer;">🔒</button>`:''}
                     ${st==='blocked'?`<button onclick="saSetClubUserStatus('${eid}','${em}','active','${ecid}')" style="padding:0.22rem 0.45rem;background:rgba(63,185,80,0.15);border:1px solid rgba(63,185,80,0.4);border-radius:5px;color:#3fb950;font-size:0.68rem;cursor:pointer;">✅</button>`:''}

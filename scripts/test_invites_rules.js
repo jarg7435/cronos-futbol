@@ -29,6 +29,7 @@
 'use strict';
 
 const fs = require('fs');
+const conSuspensionMock = require('./lib/rules_mock_suspension');   // ⏸️ v853
 const https = require('https');
 const os = require('os');
 const path = require('path');
@@ -282,7 +283,7 @@ function casos() {
     });
 
     const r = await post(`https://firebaserules.googleapis.com/v1/projects/${PROJECT}:test`,
-        token, { source, testSuite: { testCases } });
+        token, { source, testSuite: { testCases: conSuspensionMock(testCases) } });
 
     if (r.status !== 200) {
         ok('0b · la Rules API responde 200', false, { status: r.status, body: r.body.slice(0, 500) });

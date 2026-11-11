@@ -6,8 +6,38 @@ service cloud.firestore {
     // FUNCIONES HELPER
     // ============================================================
 
-    function isAuth() {
+    // ══════════════════════════════════════════════════════════════════
+    //  ⏸️ v853 · BLOQUEO TEMPORAL DE USUARIO (encargo del autor 2026-11-11)
+    //
+    //  El SuperAdmin suspende el ACCESO de una cuenta sin tocar NINGÚN dato
+    //  suyo: la marca vive APARTE, en `cronos_suspensiones/{uid}` (sólo la
+    //  escribe el SA, ver su `match` al final). Con `activa == true`, isAuth()
+    //  deja de ser cierto para esa cuenta y, con él, las 177 sentencias que
+    //  pasan por isAuth() (todas salvo `clubs_public` y la lectura de una
+    //  invitación por su código, públicas a propósito). Al reactivar,
+    //  `activa` pasa a false y todo vuelve a ser exactamente como antes.
+    //
+    //  🔑 POR QUÉ NO `status: 'blocked'`: ese estado ya existe y NO es
+    //  inocuo — `syncUserChanges` descuenta la plaza del club (usedSlots) y
+    //  los paneles esconden al usuario de sus listas. Al desbloquear no todo
+    //  volvía igual. La suspensión no escribe en `users/{uid}` ni dispara
+    //  ninguna Function.
+    //
+    //  ⚠️ El SuperAdmin NO pasa por aquí (isSuperAdmin usa `_conSesion`):
+    //  una suspensión mal puesta jamás puede dejar fuera a quien la levanta.
+    //  ⚠️ exists() y get() del MISMO documento cuentan como UN acceso.
+    // ══════════════════════════════════════════════════════════════════
+    function _conSesion() {
       return request.auth != null;
+    }
+
+    function noSuspendido() {
+      return !exists(/databases/$(database)/documents/cronos_suspensiones/$(request.auth.uid))
+             || get(/databases/$(database)/documents/cronos_suspensiones/$(request.auth.uid)).data.get('activa', false) != true;
+    }
+
+    function isAuth() {
+      return _conSesion() && noSuspendido();
     }
 
     // P9: lectura de datos con PII (p.ej. live_matches) exige usuario
@@ -15,7 +45,7 @@ service cloud.firestore {
     // users/{uid} con isAuthorized == true. Asi un usuario con cuenta
     // creada pero pendiente de aprobacion tampoco puede leer la PII.
     function isRegisteredUser() {
-      return request.auth != null
+      return isAuth()   // ⏸️ v853 · incluye la suspensión
              && exists(/databases/$(database)/documents/users/$(request.auth.uid))
              && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('isAuthorized', false) == true;
     }
@@ -26,7 +56,8 @@ service cloud.firestore {
     //   2. Que cambios de email del SA requieran redeploy de reglas
     //   3. Que múltiples SAs no sean reconocidos
     function isSuperAdminEmail() {
-      return isAuth() &&
+      return _conSesion() &&   // ⏸️ v853 · el SA no se puede suspender
+
              ('email' in request.auth.token) &&
              exists(/databases/$(database)/documents/cronos_config/superadmins) &&
              ('emails' in get(/databases/$(database)/documents/cronos_config/superadmins).data) &&
@@ -35,7 +66,7 @@ service cloud.firestore {
     }
 
     function isSuperAdmin() {
-      return isAuth() &&
+      return _conSesion() &&
              ((('role' in request.auth.token) && request.auth.token.role == 'superadmin') ||
               isSuperAdminEmail());
     }
@@ -3371,6 +3402,28 @@ service cloud.firestore {
                     && resource.data.get('uid', '') == request.auth.uid
                     && request.resource.data.get('uid', '') == request.auth.uid;
       allow delete: if isAuth() && resource.data.get('uid', '') == request.auth.uid;
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    //  ⏸️ v853 · SUSPENSIONES TEMPORALES DE ACCESO (ver noSuspendido())
+    //
+    //  · Lee: el SA, y la PROPIA cuenta — por `_conSesion`, NO por isAuth():
+    //    el suspendido tiene que poder leer su marca para que la pantalla de
+    //    acceso le diga POR QUÉ no entra (con isAuth() se le denegaría).
+    //  · Escribe: SÓLO el SA, con el `uid` del documento dentro, `activa`
+    //    booleano, y nunca sobre la cuenta de otro SuperAdmin.
+    //  · Nunca se borra: reactivar es `activa: false`; el historial queda.
+    // ══════════════════════════════════════════════════════════════════
+    match /cronos_suspensiones/{uid} {
+      allow get:  if _conSesion() && (request.auth.uid == uid || isSuperAdmin());
+      allow list: if isSuperAdmin();
+      allow create, update: if isSuperAdmin()
+                    && request.auth.uid != uid
+                    && request.resource.data.get('uid', '') == uid
+                    && request.resource.data.get('activa', null) is bool
+                    && !(request.resource.data.get('email', '') in
+                         get(/databases/$(database)/documents/cronos_config/superadmins).data.get('emails', []));
+      allow delete: if false;
     }
 
     // ============================================================

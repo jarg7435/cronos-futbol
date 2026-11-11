@@ -35,6 +35,7 @@
 
 const fs    = require('fs');
 const https = require('https');
+const conSuspensionMock = require('./lib/rules_mock_suspension');   // ⏸️ v853
 const os    = require('os');
 const path  = require('path');
 
@@ -222,7 +223,7 @@ function testCase(c, esperado) {
 async function evaluar(token, fuente, esperados) {
     const r = await post(`https://firebaserules.googleapis.com/v1/projects/${PROJECT}:test`, token, {
         source: { files: [{ name: 'firestore.rules', content: fuente }] },
-        testSuite: { testCases: CASOS.map((c, i) => testCase(c, esperados[i])) },
+        testSuite: { testCases: conSuspensionMock(CASOS.map((c, i) => testCase(c, esperados[i]))) },
     });
     if (r.status !== 200) throw new Error('HTTP ' + r.status + ' · ' + r.body.slice(0, 400));
     const j = JSON.parse(r.body);

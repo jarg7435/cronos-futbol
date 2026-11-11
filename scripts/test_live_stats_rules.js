@@ -19,6 +19,7 @@
 // ─────────────────────────────────────────────────────────────────────────
 'use strict';
 const fs = require('fs');
+const conSuspensionMock = require('./lib/rules_mock_suspension');   // ⏸️ v853
 const https = require('https');
 const os = require('os');
 const path = require('path');
@@ -189,7 +190,7 @@ function casos() {
         return tc;
     });
     const cuerpo = JSON.stringify({ source: { files: [{ name: 'firestore.rules', content: reglas }] },
-                                    testSuite: { testCases } });
+                                    testSuite: { testCases: conSuspensionMock(testCases) } });
     const r = await pide(`https://firebaserules.googleapis.com/v1/projects/${PROJECT}:test`, 'POST',
         { Authorization: 'Bearer ' + tk, 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(cuerpo) }, cuerpo);
     if (r.status !== 200) {

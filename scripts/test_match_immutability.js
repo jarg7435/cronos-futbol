@@ -34,6 +34,7 @@
 // La parte 4 se SALTA con aviso si no hay sesion del CLI, para no romper CI.
 // ─────────────────────────────────────────────────────────────────────────
 const fs = require('fs');
+const conSuspensionMock = require('./lib/rules_mock_suspension');   // ⏸️ v853
 const os = require('os');
 const path = require('path');
 const vm = require('vm');
@@ -421,7 +422,7 @@ function casosReglas() {
             const r = await post(`https://firebaserules.googleapis.com/v1/projects/${PROJECT}:test`,
                                  token,
                                  { source: { files: [{ name: 'firestore.rules', content: RULES }] },
-                                   testSuite: { testCases } });
+                                   testSuite: { testCases: conSuspensionMock(testCases) } });
             const j = JSON.parse(r.body);
             const res = j.testResults || [];
 

@@ -34,6 +34,7 @@
 // Se salta con aviso si no hay sesion del CLI.
 // ─────────────────────────────────────────────────────────────────────────
 const fs = require('fs');
+const conSuspensionMock = require('./lib/rules_mock_suspension');   // ⏸️ v853
 const os = require('os');
 const path = require('path');
 const https = require('https');
@@ -223,7 +224,7 @@ function casos() {
             const r = await post(`https://firebaserules.googleapis.com/v1/projects/${PROJECT}:test`,
                                  token,
                                  { source: { files: [{ name: 'firestore.rules', content: RULES }] },
-                                   testSuite: { testCases } });
+                                   testSuite: { testCases: conSuspensionMock(testCases) } });
             const j = JSON.parse(r.body);
             const res = j.testResults || [];
             if (!res.length) {

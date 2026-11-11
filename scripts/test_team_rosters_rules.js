@@ -20,6 +20,7 @@
 //  que mira users/{uid}. Los casos de abajo lo reproducen tal cual.
 // ════════════════════════════════════════════════════════════════════
 const https = require('https');
+const conSuspensionMock = require('./lib/rules_mock_suspension');   // ⏸️ v853
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -167,11 +168,11 @@ const CASOS = [
     const source = { files: [{ name: 'firestore.rules',
         content: fs.readFileSync(path.join(ROOT, 'firestore.rules'), 'utf8') }] };
     const r = await post('https://firebaserules.googleapis.com/v1/projects/' + PROJECT + ':test', token, {
-        source, testSuite: { testCases: CASOS.map(c => {
+        source, testSuite: { testCases: conSuspensionMock(CASOS.map(c => {
             const tc = { expectation: c.exp, request: c.req, functionMocks: c.mocks, pathEncoding: 'PLAIN' };
             if (c.existing) tc.resource = { data: c.existing };
             return tc;
-        }) },
+        })) },
     });
 
     if (r.status !== 200) {

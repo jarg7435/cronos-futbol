@@ -2838,8 +2838,8 @@
 //        sube EN VIVO, cuenta el primer mensaje de una conversación nueva y
 //        sigue hasta ABRIRLA (entrar en la bandeja ya no la pone a cero); y
 //        ninguna aprobación activa a un familiar sin Familias contratado.
-const VERSION = 'v852';
-const CACHE_NAME = 'cronos-cache-v852';
+const VERSION = 'v853';
+const CACHE_NAME = 'cronos-cache-v853';
 
 const ASSETS = [
     './',
@@ -2865,6 +2865,8 @@ const ASSETS = [
     // compartido aunque haya otra cuenta abierta. Mismo aviso: un 404 aquí
     // tumba la precarga ENTERA (v452) — el fichero existe.
     './js/shared/fs-cache-mode.js',
+    // ⏸️ v853 · bloqueo temporal de usuario (lo usa auth.js al entrar).
+    './js/shared/suspension.js',
     './js/core/match-slots.js',
     './js/core/app-init.js',
     './js/core/setup-modal.js',

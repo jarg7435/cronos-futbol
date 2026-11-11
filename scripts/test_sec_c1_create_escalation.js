@@ -37,6 +37,7 @@
 // ─────────────────────────────────────────────────────────────────────────
 const fs = require('fs');
 const https = require('https');
+const conSuspensionMock = require('./lib/rules_mock_suspension');   // ⏸️ v853
 const os = require('os');
 const path = require('path');
 
@@ -150,10 +151,10 @@ const CASOS = [
 
     const source = { files: [{ name: 'firestore.rules', content: fs.readFileSync(path.join(ROOT, 'firestore.rules'), 'utf8') }] };
     const r = await post(`https://firebaserules.googleapis.com/v1/projects/${PROJECT}:test`, token, {
-        source, testSuite: { testCases: CASOS.map(c => {
+        source, testSuite: { testCases: conSuspensionMock(CASOS.map(c => {
             const tc = { expectation: c.exp, request: c.req, functionMocks: c.mocks, pathEncoding: 'PLAIN' };
             if (c.existing) tc.resource = { data: c.existing };
-            return tc; }) },
+            return tc; })) },
     });
     if (r.status !== 200) { ok('0b · la Rules API responde 200', false, { status: r.status, body: r.body.slice(0, 400) }); process.exit(1); }
     ok('0b · la Rules API responde 200', true);

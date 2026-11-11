@@ -34,6 +34,7 @@
 // tests de reglas, para no romper una ejecución en limpio.
 // ─────────────────────────────────────────────────────────────────────────
 const fs = require('fs');
+const conSuspensionMock = require('./lib/rules_mock_suspension');   // ⏸️ v853
 const https = require('https');
 const os = require('os');
 const path = require('path');
@@ -178,7 +179,7 @@ const CASOS = [
 
     const r = await post(
         `https://firebaserules.googleapis.com/v1/projects/${PROJECT}:test`, token,
-        { source: { files: [{ name: 'firestore.rules', content: rules }] }, testSuite: { testCases } });
+        { source: { files: [{ name: 'firestore.rules', content: rules }] }, testSuite: { testCases: conSuspensionMock(testCases) } });
 
     if (r.status !== 200) {
         console.log('FAIL · la API respondió ' + r.status + ': ' + r.body.slice(0, 400));

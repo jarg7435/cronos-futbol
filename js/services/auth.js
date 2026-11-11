@@ -848,6 +848,24 @@ export async function checkAuthorization(user) {
             console.warn('[Chronos] No se pudo preparar el token antes de leer:', e && e.message);
         }
 
+        // ⏸️ v853 · CUENTA SUSPENDIDA TEMPORALMENTE POR EL SUPERADMIN.
+        //  ANTES de leer users/{uid}: con la suspensión activa las reglas ya
+        //  no le dejan leerlo (isAuth() exige noSuspendido()), y caeríamos en
+        //  los reintentos de permisos de abajo con un error que no explica
+        //  nada. Su propia marca sí puede leerla. Ver js/shared/suspension.js.
+        //  El SuperAdmin no se puede suspender: ni se consulta.
+        if (!SUPERADMIN_EMAILS.includes(user.email) && window.CronosSuspension) {
+            const _susp = await window.CronosSuspension.leerPropia(user.uid);
+            if (_susp) {
+                try { await fa.signOut(fa.auth); } catch (e) { /* ya fuera */ }
+                showAuthError(window.CronosSuspension.MENSAJE);
+                return;
+            }
+            // …y desde aquí, en vivo: si el SA la suspende con la app abierta,
+            // sale al momento (sin esperar al próximo inicio de sesión).
+            window.CronosSuspension.vigilar(user.uid);
+        }
+
         // 2 · Leer, y ante DENEGACIÓN refrescar el token y volver a intentarlo.
         //     Tres intentos con espera creciente (0,8 s · 1,6 s · 3,2 s).
         let snap;
