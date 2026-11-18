@@ -2,8 +2,8 @@
 
 | | |
 |---|---|
-| **Fecha del informe** | 2026-10-19 |
-| **Versiones** | E2E sobre v824–v828 (18-19 oct) · App Check medido con v830 en testeo y v828 en producción |
+| **Fecha del informe** | 2026-10-19 · **re-medido el 2026-11-18** (ver 3.2) |
+| **Versiones** | E2E sobre v824–v828 (18-19 oct) · App Check medido con v830 en testeo y v828 en producción · re-medición con **v853** en los dos |
 | **Validado por** | José Alberto Romero García (titular), con el asistente de desarrollo |
 | **Datos** | sólo **ficticios**: dos clubes de prueba y cuentas `jarg7435+e2e…@gmail.com` |
 | **Reproducir** | E2E: `node scripts/semilla_e2e_testeo.js --escribir` · App Check: `node scripts/ops/evidencia_appcheck.js` |
@@ -123,6 +123,39 @@ Las Functions sensibles comprueban App Check en el propio código; sin token res
   - dominios: **sólo los dos de producción**;
   - sonda sin token: **403**;
   - la app responde con normalidad.
+
+### 3.2 Re-medición del 2026-11-18 (reauditoría del 17-11, punto P0-3)
+
+El auditor pide repetir la sonda **después de cada despliegue** y archivarla junto a la
+versión desplegada, porque la evidencia de 3.1 era del 19-10. Medido con las mismas
+herramientas, sólo `GET`, sobre **v853** (commit `c86b940`) en producción y testeo,
+**antes** del despliegue de la corrección de dependencias:
+
+| | Producción `cronos-futbol-app` | Testeo `cronos-futbol-test` |
+|---|---|---|
+| Firestore | **ENFORCED** | **ENFORCED** |
+| Auth (identitytoolkit) | **ENFORCED** | **ENFORCED** |
+| Proveedor | reCAPTCHA v3 · umbral 0,5 · TTL 24 h | igual |
+| Tokens de depuración | **ninguno** ✅ | ninguno ✅ |
+| Dominios autorizados de Auth | sólo `.web.app` y `.firebaseapp.com` ✅ | incluye `localhost` (esperado, `npm run dev`) |
+| Verificaciones (11→18 nov) | **9 124 VALID → permitidas**; ninguna sin token permitida | sin tráfico en la ventana |
+| Sonda anónima **sin** token | **403 PERMISSION_DENIED** ✅ | **403** ✅ |
+| `firestore.rules` vivas vs repo | **0 diferencias** (`scripts/lee_reglas_vivas.js`) | — |
+| `storage.rules` vivas vs repo | **idénticas** (release del 2026-10-12) | idénticas |
+
+### 3.3 Comprobación OBLIGATORIA tras cada despliegue a producción
+
+Rellenar una fila por despliegue. Sin esta fila, el despliegue no se da por validado.
+
+```
+node scripts/ops/evidencia_appcheck.js          # ENFORCED ×2, 0 tokens debug, sonda 403
+node scripts/lee_reglas_vivas.js firestore.rules # 0 diferencias de código
+```
+
+| Fecha | Versión · commit | Qué se desplegó | Firestore / Auth | Sonda sin token | Reglas = repo |
+|---|---|---|---|---|---|
+| 2026-11-18 | v853 · `c86b940` (antes de desplegar) | — (medición de partida) | ENFORCED / ENFORCED | 403 ✅ | ✅ |
+| _pendiente_ | _commit de fast-xml-parser 5.12.1_ | hosting + functions | | | |
 
 ---
 

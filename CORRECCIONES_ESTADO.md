@@ -1353,3 +1353,47 @@ El informe deja escrito también lo que **no** se ha cubierto:
 - simulacro de restauración;
 - revisión de logs;
 - monitorización.
+
+## 🛡️ Reauditoría del 17-11 · P0 de dependencias y evidencia postdespliegue (2026-11-18)
+
+**`npm audit --omit=dev` → 0 en la raíz y en `functions/`** (antes: 1 baja en cada uno).
+
+| Paquete | Antes | Ahora | Por dónde llega |
+|---|---|---|---|
+| `fast-xml-parser` (BAJA, CPU cuadrática con *stop-nodes* sin cerrar, GHSA-474x-hrwr-fgx4) | 5.11.1 | **5.12.1** | `firebase-admin 14.5.0 → @google-cloud/storage 8.2.0` (raíz y Functions) |
+
+- **Sin `overrides`**: `@google-cloud/storage` pide `^5.3.4`, así que la versión corregida
+  cabe; lo retenía el lockfile. `npm update fast-xml-parser` en los dos, y después
+  `npm ci` en los dos (lección v847: `audit fix` puede no tocar el disco).
+- Arrastra sólo sus propias dependencias, todas en la misma mayor: `strnum` 2.5.1,
+  `@nodable/entities` 3.1.0, `fast-xml-builder` 1.3.2, `is-unsafe` 2.0.3.
+- **Nuestro código no usa XML**; lo usa la librería de Storage para las respuestas XML
+  de Google. Probado con la 5.12.1: una respuesta de error típica se analiza igual, el
+  XML mal formado se rechaza y el caso del *advisory* (stop-node sin cerrar, 360 KB)
+  tarda 17 ms. `functions/index.js` carga.
+- **CI más estricta**: `npm audit --omit=dev --audit-level=low` (antes `high`) en raíz y
+  Functions. Cualquier vulnerabilidad nueva en lo que llega a producción para la CI.
+- **Árbol de desarrollo** (`firebase-tools`, no se publica): siguen avisos moderados
+  (`@hono/node-server`, `basic-ftp`, …). `audit fix --force` bajaría `firebase-tools` de
+  versión: no se aplica. Fuera del criterio del auditor (`--omit=dev`).
+
+**`npm run verify` (2026-11-18): build 9/9 · lint 0 avisos (`--max-warnings 0`) ·
+356/356 tests.** Entre ellos siguen en verde los guards de portabilidad
+(`test_portabilidad_jugador`), logs sin PII v848 (`test_logs_sin_pii`), aislamiento de
+clubes (`test_aislamiento_cuenta_y_equipo`, `test_multipartido_aislamiento`,
+`test_multirole_revocation_isolation`, `test_auditoria_aislamiento_alertas`), App Check
+(`test_app_check`, `test_primera_visita_appcheck`) y copias (`test_copias_seguridad`).
+
+**App Check y reglas re-medidos** en `VALIDACION_E2E_Y_APPCHECK.md` §3.2: producción y
+testeo con Firestore y Auth **ENFORCED**, sin tokens de depuración, sonda sin token
+**403**, `firestore.rules` y `storage.rules` vivas **idénticas** al repo. §3.3 es el
+registro OBLIGATORIO tras cada despliegue a producción (una fila por despliegue).
+
+**Paquete formal (P0-5).** El ZIP auditado (`APPCRONOSFÚTBOL17NOV.zip`) volvió a hacerse a
+mano, sin `PAQUETE.json`: por eso `--verificar` no pudo reproducirlo. La entrega al
+auditor debe ser **`dist/cronos-futbol_<commit>.zip`** de `npm run package`, que exige
+un commit limpio y lleva el sha256 de cada fichero.
+
+**Despliegue de esta corrección:** el lockfile de Functions sólo llega a producción
+desplegando **las functions** (`deploy:prod` sube únicamente hosting). Testeo no las
+recibe con `deploy:staging` (proyecto sin coste).
