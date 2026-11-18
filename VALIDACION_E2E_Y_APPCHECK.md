@@ -155,7 +155,7 @@ node scripts/lee_reglas_vivas.js firestore.rules # 0 diferencias de código
 | Fecha | Versión · commit | Qué se desplegó | Firestore / Auth | Sonda sin token | Reglas = repo |
 |---|---|---|---|---|---|
 | 2026-11-18 | v853 · `c86b940` (antes de desplegar) | — (medición de partida) | ENFORCED / ENFORCED | 403 ✅ | ✅ |
-| _pendiente_ | _commit de fast-xml-parser 5.12.1_ | hosting + functions | | | |
+| 2026-11-18 23:33 UTC | v853 · `6460a1e` (fast-xml-parser 5.12.1) · paquete `cronos-futbol_6460a1e.zip` sha256 `19dd829e…2051d2` | hosting + 22 functions | ENFORCED / ENFORCED · 0 tokens debug | 403 ✅ (1 `MISSING_UNKNOWN_ORIGIN` → DENY = la propia sonda) | ✅ Firestore 0 dif. · Storage idénticas |
 
 ---
 
