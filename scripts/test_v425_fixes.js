@@ -114,7 +114,7 @@ console.log('\n── PARTE 1 · 🔑 "ENTRA" sólo desde el banquillo (ejecutad
        'esa heurística fallaba justo con los titulares, que tienen history vacío');
     ok('1g · dropToField sólo registra si el jugador NO estaba ya en el campo',
        /const estabaEnCampo = \(player\.status === 'field'\)/.test(d) &&
-       /if \(isRunning && !estabaEnCampo\)/.test(d));
+       /if \(_cronosApuntaCambios\(\) && !estabaEnCampo\)/.test(d));   // 🔁 v856 · también con el reloj parado
     ok('1h · 🔑 permutar dos jugadores del CAMPO no se registra como cambio',
        /permutaEnCampo\s*=\s*\(oldDraggedStatus === 'field'\s*&&\s*dragged\.status === 'field'\)/.test(d) &&
        /if \(!permutaEnCampo && !permutaEnBanca\)/.test(d));

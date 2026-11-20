@@ -135,18 +135,61 @@ const _RP = (() => {
 
     // Devuelve el Set de índices del historial de UN jugador que son apuntes
     // automáticos de fase y por tanto NO cuentan como sustitución.
+    // ═══════════════════════════════════════════════════════════════════
+    // 🔑 v856 · EL «SALE (DESCANSO)» SUELTO ES UNA SALIDA DE VERDAD
+    // ═══════════════════════════════════════════════════════════════════
+    // Encargo del autor (implementar.txt 2026-11-20, capturas 11892-11894):
+    // TRUJILLO y TOLEDO se quedaron en el banquillo en el descanso y el
+    // cronograma les pintaba el partido entero. Un cambio hecho con el reloj
+    // PARADO arrastrando al banquillo no se apuntaba (las rutas de
+    // drag-drop.js exigían `isRunning`, corregido también en v856), así que
+    // la ÚNICA huella de esa salida era el «Sale (DESCANSO)» automático… que
+    // esta criba tiraba siempre.
+    // Mismo criterio de PAREJA que la (2ªP): el «Sale (DESCANSO)» es
+    // contabilidad sólo si el jugador VUELVE con su «Entra (2ªP)» del mismo
+    // sello, o si la salida ya está apuntada aparte en ese instante (cambio
+    // registrado durante el descanso). Si no vuelve, salió: es un cambio.
+    const _esFin = e => /\(FIN\)/i.test(String(e.note || ''));
     const indicesDeFase = (hist) => {
         const fuera = new Set();
         const tDescanso = new Set();
+        const tEntra2P = new Set();
+        const tSaleReal = new Set();
+        hist.forEach(e => {
+            if (_esEntraSegundaParte(e)) tEntra2P.add(_claveT(e));
+            if (e.type === 'sub_out' && !_esFaseInequivoca(e)) tSaleReal.add(_claveT(e));
+        });
         hist.forEach((e, i) => {
             if (!_esFaseInequivoca(e)) return;
-            fuera.add(i);
-            if (/\(DESCANSO\)/i.test(String(e.note || '')) || e.phase === true) tDescanso.add(_claveT(e));
+            if (_esFin(e)) { fuera.add(i); return; }
+            // «Sale (DESCANSO)» (o un apunte de fase sin texto, como antes).
+            tDescanso.add(_claveT(e));
+            const k = _claveT(e);
+            if (tEntra2P.has(k) || tSaleReal.has(k) || e.type !== 'sub_out') fuera.add(i);
         });
         hist.forEach((e, i) => {
             if (_esEntraSegundaParte(e) && tDescanso.has(_claveT(e))) fuera.add(i);
         });
         return fuera;
+    };
+
+    // ── ⏱️ v856 · LA DURACIÓN QUE DE VERDAD TUVO EL PARTIDO ────────────
+    //  El cronograma escalaba a la duración REGLAMENTARIA de la categoría
+    //  (Regional = 90') porque el campo `duration` del informe no lo escribe
+    //  nadie (la global `matchDuration` no existe). Un partido de 41' pintaba su
+    //  eje hasta 90' y alargaba hasta el 90 a todo el que acabó en el campo.
+    //  El final real ya viaja en cada informe: el «Sale a las MM:SS (FIN)»
+    //  que active-match.js apunta a los que terminan en el campo, con el
+    //  tiempo ACUMULADO del cronómetro. Sin ese apunte (0) se usa la tabla.
+    const _duracionReal = (m) => {
+        let fin = 0;
+        ((m && m.players) || []).forEach(p => {
+            ((p && p.history) || []).forEach(e => {
+                if (!e || typeof e !== 'object' || e.type !== 'sub_out' || !_esFin(e)) return;
+                fin = Math.max(fin, (e.minute || 0) + (e.second || 0) / 60);
+            });
+        });
+        return fin >= 1 ? fin : 0;
     };
 
     // Filtra un historial dejando SOLO las sustituciones reales.
@@ -213,8 +256,19 @@ const _RP = (() => {
     // ── Reconstruir intervalos en campo desde el historial ────────────
     // history contiene eventos {type:'sub_in'|'sub_out'|'goal'|..., minute:N, second:S, timeStr:"MM:SS"}
     const buildIvs = (player, totMin) => {
-        const rawHist = soloCambiosReales(player.history);
-        
+        // 🔑 v856 · LOS TRAMOS SE CONSTRUYEN CON TODO EL HISTORIAL, INCLUIDAS
+        // LAS MARCAS DE FASE. Que el «Sale (DESCANSO)», el «Entra (2ªP)» y el
+        // «Sale (FIN)» no sean SUSTITUCIONES (no cuentan en el cómputo ni se
+        // etiquetan) no quita que digan dónde estaba el jugador: en el campo
+        // al cerrar la 1ª, en el campo al empezar la 2ª, en el campo al final.
+        // Tirarlas aquí borraba la única prueba de un cambio de descanso no
+        // apuntado y daba la barra entera (capturas 11892/11893). Un jugador
+        // que sigue en el campo tras el descanso tiene su par Sale/Entra en el
+        // mismo sello y la criba de simultáneos de abajo lo anula: su barra
+        // sigue siendo continua.
+        const rawHist = (player.history || [])
+            .filter(e => e && typeof e === 'object' && (e.type === 'sub_in' || e.type === 'sub_out'));
+
         // Agrupar por tiempo exacto para eliminar intercambios de posición (sub_in y sub_out simultáneos del mismo jugador)
         const timeMap = {};
         rawHist.forEach(e => {
@@ -718,6 +772,10 @@ const _RP = (() => {
         const step = totMin <= 50 ? 10 : 15;
         const ticks = [];
         for (let m = 0; m <= totMin; m += step) ticks.push(m);
+        // ⏱️ v856 · con la duración REAL (p. ej. 41,3') el final ya no cae en
+        // múltiplo del paso: se quita la marca que quedaría pegada a él para
+        // que «40'» y «41'» no se monten.
+        if (ticks.length > 1 && totMin - ticks[ticks.length-1] > 0 && totMin - ticks[ticks.length-1] < step * 0.4) ticks.pop();
         if (ticks[ticks.length-1] !== totMin) ticks.push(totMin);
 
         let html = `<div style="display:flex;flex-direction:column;gap:1px;padding:2px 0;">`;
@@ -898,7 +956,7 @@ const _RP = (() => {
                     stroke="rgba(255,255,255,0.1)" stroke-width="0.7" stroke-dasharray="2,2"/>`;
                 svg += `<text x="${tx.toFixed(1)}" y="${LBL_Y}"
                     font-size="7.5" fill="rgba(255,255,255,0.28)"
-                    text-anchor="${mn===0?'start':mn===totMin?'end':'middle'}">${mn}'</text>`;
+                    text-anchor="${mn===0?'start':mn===totMin?'end':'middle'}">${Math.round(mn)}'</text>`;
             });
 
             // Iconos de evento (goles, tarjetas, lesiones) sobre su minuto exacto.
@@ -1733,6 +1791,10 @@ const _RP = (() => {
     const build = (m, me, ext) => {
         const totMin  = getTotMin(m);
         const stopMin = parseInt(m.stoppageTime) || 0;
+        // ⏱️ v856 · la ESCALA del cronograma y los tramos usan lo que duró el
+        // partido de verdad (su «Sale (FIN)»); la cabecera sigue con la
+        // duración reglamentaria y su `+N'` (buildHeader).
+        const escMin  = _duracionReal(m) || totMin;
 
         // 1. Deduplicar jugadores (quedarnos con el informe más completo/reciente)
         // 🔑 v458 · LA CLAVE ES EL DORSAL CUANDO LO HAY, Y EL ALIAS CUANDO NO.
@@ -1772,7 +1834,7 @@ const _RP = (() => {
         // presentación, así que esto REPARA TAMBIÉN LOS INFORMES YA GUARDADOS
         // (mismo efecto que el arreglo de la semilla en v425).
         const players = Object.values(uniquePlayers)
-            .map(p => ({ ...p, _pos: getPos(p), _ivs: buildIvs(p, totMin) }))
+            .map(p => ({ ...p, _pos: getPos(p), _ivs: buildIvs(p, escMin) }))
             .sort((a, b) => ((parseInt(a.playerNumber) || 99) - (parseInt(b.playerNumber) || 99)) ||
                             String(a.playerAlias || '').localeCompare(String(b.playerAlias || '')));
 
@@ -1796,7 +1858,7 @@ const _RP = (() => {
             `<div style="font-size:0.67rem;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:7px;">` +
             `Tiempos de partido · Línea individual por jugador</div>` +
             `<div style="border:1px solid rgba(255,255,255,0.07);border-radius:10px;padding:6px 4px;margin-bottom:4px;">` +
-            buildPlayerTimelines(players, subs, totMin) +
+            buildPlayerTimelines(players, subs, escMin) +
             `</div>` +
             buildLegend() +
             buildTimeSummary(players) +

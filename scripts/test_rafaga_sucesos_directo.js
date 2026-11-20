@@ -178,7 +178,7 @@ console.log('\n── PARTE 6 · sync.js: la pasada siguiente del latido no espe
     const ini = src.indexOf('const _PLAZO_LATIDO_MS');
     const fin = src.indexOf('async function _emiteLatido');
     ok('6a · se localiza el bloque de pushLiveSnapshot', ini > 0 && fin > ini);
-    const ACUSE_MS = 900, CONSTRUYE_MS = 30;
+    const ACUSE_MS = 900, CONSTRUYE_MS = 60;
     const construidas = [], acusadas = [];
     const sandbox = {
         setTimeout, clearTimeout, Promise, Date, console: { warn: () => {}, log: () => {} },
@@ -194,16 +194,18 @@ console.log('\n── PARTE 6 · sync.js: la pasada siguiente del latido no espe
     vm.runInContext(src.slice(ini, fin) + '\nthis.pushLiveSnapshot = pushLiveSnapshot;', sandbox,
                     { filename: 'sync.js(pushLiveSnapshot)' });
     const t0 = Date.now();
+    // Las tres en el MISMO turno: así el 2º y el 3º caen SIEMPRE dentro de la
+    // construcción de la 1ª, aunque la máquina vaya cargada (con esperas de
+    // 10 ms entre medias, bajo la suite completa a veces llegaban tarde y se
+    // abría una 3ª pasada legítima: el test fallaba por el reloj, no por el código).
     const p1 = sandbox.pushLiveSnapshot('active');    // gol
-    await dormir(10);
     const p2 = sandbox.pushLiveSnapshot('active');    // cambio, en plena pasada
-    await dormir(10);
     const p3 = sandbox.pushLiveSnapshot('active');    // tarjeta
     let r1 = null; p1.then(() => { r1 = Date.now(); });
     await Promise.all([p1, p2, p3]);
     await dormir(50);
-    ok('6b · 🔑 la 2ª pasada se construye SIN esperar el acuse de la 1ª (< 300 ms)',
-       construidas.length >= 2 && (construidas[1] - t0) < 300,
+    ok('6b · 🔑 la 2ª pasada se construye SIN esperar el acuse de la 1ª (< 600 ms; esperándolo serían > 900)',
+       construidas.length >= 2 && (construidas[1] - t0) < 600,
        'pasadas=' + construidas.length + ' 2ª a los ' + (construidas[1] - t0) + ' ms');
     ok('6c · las pasadas solapadas se FUSIONAN (2 escrituras para 3 peticiones, no 3)',
        construidas.length === 2, 'pasadas=' + construidas.length);

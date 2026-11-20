@@ -315,7 +315,7 @@ function dropToField(e) {
             // por eso el autor veía "▼ ENTRA: BRUNO" al recolocar a un titular.
             // Es otra vez la misma trampa: el TEXTO no puede ser el contrato de
             // datos. Ahora se mira la transición real del estado.
-            if (isRunning && !estabaEnCampo) {
+            if (_cronosApuntaCambios() && !estabaEnCampo) {
                 logMovement(player, undefined, 'bench');
             }
         }
@@ -351,7 +351,7 @@ function handleBenchDrop(e, player) {
 
     if (player.cards === 'roja' && player.status === 'field') {
         player.status = 'bench'; player.x = 0; player.y = 0;
-        if (isRunning) logMovement(player, undefined, 'field');
+        if (_cronosApuntaCambios()) logMovement(player, undefined, 'field');
         _repintaPizarra(); sortBenchUI(player.team); return;
     }
 
@@ -363,7 +363,7 @@ function handleBenchDrop(e, player) {
         const _prev = player.status;
         if (player.status !== 'bench' || player.cards === 'roja') {
             player.status = 'bench'; player.x = 0; player.y = 0;
-            if (isRunning) logMovement(player, undefined, _prev);
+            if (_cronosApuntaCambios()) logMovement(player, undefined, _prev);
         }
         _repintaPizarra(); return;
     }
@@ -411,7 +411,7 @@ function handleBenchDrop(e, player) {
             player.status = 'bench'; player.x = 0; player.y = 0;
             teamBench.push(player);
             teamBench.forEach((p, i) => p.benchOrder = i);
-            if (isRunning) logMovement(player, undefined, 'field');
+            if (_cronosApuntaCambios()) logMovement(player, undefined, 'field');
         }
     }
 
@@ -423,7 +423,7 @@ function handleSmartSwap(dragged, target, forcedSubId) {
         if (target.status === 'bench') {
             const _prevDrag = dragged.status;   // v425: no registrar si ya estaba en la banca
             dragged.status = 'bench'; dragged.x = 0; dragged.y = 0;
-            if (isRunning) logMovement(dragged, forcedSubId, _prevDrag);
+            if (_cronosApuntaCambios()) logMovement(dragged, forcedSubId, _prevDrag);
             _repintaPizarra(); sortBenchUI(dragged.team); return;
         } else {
             alert("Un jugador expulsado no puede volver al campo."); return;
@@ -520,6 +520,28 @@ function handleSmartSwap(dragged, target, forcedSubId) {
     }
     if (dragged.status === 'bench' || target.status === 'bench') sortBenchUI(dragged.team);
 }
+
+// ══════════════════════════════════════════════════════════════════════
+//  🔁 v856 · UN CAMBIO CON EL RELOJ PARADO TAMBIÉN ES UN CAMBIO
+// ══════════════════════════════════════════════════════════════════════
+//  Encargo del autor (implementar.txt 2026-11-20, capturas 11892-11894): el
+//  cronograma de «Mis Informes» pintaba la barra entera a jugadores que se
+//  quedaron en el banquillo en el descanso. Estas rutas (soltar en el
+//  banquillo, soltar en un hueco del campo) sólo apuntaban el movimiento con
+//  `isRunning`, y los cambios se hacen justo con el reloj PARADO: en el
+//  descanso o en una pausa. Sin apunte, el historial no sabía que habían
+//  salido. El intercambio directo (handleSmartSwap) ya apuntaba siempre (v240).
+//  ⚠️ Antes del saque inicial (1ª parte con el reloj a 0) y con el partido
+//  TERMINADO no se apunta nada: colocar la alineación o recoger al final no
+//  son cambios.
+function _cronosApuntaCambios() {
+    if (typeof isRunning !== 'undefined' && isRunning) return true;
+    const fase = (typeof matchPhase !== 'undefined') ? matchPhase : '1st_half';
+    if (fase === 'finished') return false;
+    if (fase === 'break' || fase === '2nd_half') return true;
+    return (typeof masterTimeH1 !== 'undefined' && Number(masterTimeH1) > 0);
+}
+if (typeof window !== 'undefined') window._cronosApuntaCambios = _cronosApuntaCambios;
 
 // `prevStatus`: el estado del jugador ANTES del movimiento que se está
 // registrando. Opcional por compatibilidad con las llamadas que no lo pasan.

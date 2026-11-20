@@ -79,12 +79,20 @@ console.log('\n── PARTE 1 · 🔑 el DESCANSO no es un cambio (ejecutado) �
 
     // (DESCANSO) y (FIN) son inequívocas: sólo las escribe la propia app al
     // cerrar la primera parte y al terminar el partido.
-    ok('1b · descarta el "Sale (DESCANSO)" automático',
-       nombres([ev('sub_out', 45, 'Sale a las 45:00 (DESCANSO)')]).length === 0);
+    // 🔁 v856 · el «Sale (DESCANSO)» es contabilidad cuando el jugador VUELVE
+    // (su «Entra (2ªP)» del mismo sello, 1e) o cuando la salida está apuntada
+    // aparte en ese instante; SUELTO es la única huella de un cambio de
+    // descanso hecho con el reloj parado, y se conserva (capturas 11892-11894).
+    ok('1b · descarta el "Sale (DESCANSO)" cuando la salida real va apuntada aparte',
+       nombres([ev('sub_out', 45, 'Sale a las 45:00 (DESCANSO)'),
+                ev('sub_out', 45, 'Sale a las 45:00 (DESC) #123')]).join('|') === 'Sale a las 45:00 (DESC) #123');
+    ok('1b2 · 🔁 v856 · pero un "Sale (DESCANSO)" SUELTO (no vuelve en la 2ª) es una salida real',
+       nombres([ev('sub_out', 45, 'Sale a las 45:00 (DESCANSO)')]).length === 1);
     ok('1c · y el "Sale (FIN)"',
        nombres([ev('sub_out', 90, 'Sale a las 90:00 (FIN)')]).length === 0);
     ok('1d · y reconoce también el campo `phase` que marca el parseador',
-       soloCambiosReales([{ type:'sub_out', minute:45, second:0, phase:true }]).length === 0);
+       soloCambiosReales([{ type:'sub_out', minute:45, second:0, phase:true },
+                          { type:'sub_in',  minute:45, second:0, note:'Entra a las 45:00 (2ªP)' }]).length === 0);
 
     // 🔑 LA TRAMPA: "(2ªP)" es AMBIGUA. logMovement la escribe en los cambios
     // reales de la segunda parte, así que descartarla a ciegas se comería
@@ -167,8 +175,11 @@ console.log('\n── PARTE 1 · 🔑 el DESCANSO no es un cambio (ejecutado) �
     ok('1l · 🔑 buildSubs (el emparejador) también los descarta',
        /const evs = soloCambiosReales\(p\.history\);/.test(REPOC),
        'si no, el descanso emparejaría a todos con todos y gastaría cambios');
-    ok('1m · y buildIvs usa el mismo filtro',
-       /const rawHist = soloCambiosReales\(player\.history\);/.test(REPOC));
+    // 🔁 v856 · buildIvs ya NO usa el filtro: las marcas de fase no son
+    // cambios, pero sí dicen dónde estaba el jugador (ver report-engine.js).
+    ok('1m · 🔁 v856 · buildIvs construye los tramos con TODO el historial (marcas de fase incluidas)',
+       /const rawHist = \(player\.history \|\| \[\]\)/.test(REPOC) &&
+       !/const rawHist = soloCambiosReales\(player\.history\);/.test(REPOC));
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
