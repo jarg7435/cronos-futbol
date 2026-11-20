@@ -926,24 +926,33 @@ const _PLAZO_LATIDO_MS = 12000;
 let _latidoEnVuelo   = null;
 let _latidoRepetir   = false;
 let _latidoStatusPend = null;   // el status más reciente que pidió repetir
+let _latidoTerminado = null;    // v854 · la pasada en curso + sus acuses
 
 async function pushLiveSnapshot(status = 'active') {
     if (_latidoEnVuelo) {
         _latidoRepetir = true;
         _latidoStatusPend = status;
-        return _latidoEnVuelo;
+        return _latidoTerminado || _latidoEnVuelo;
     }
+    // 🚀 v854 · `_latidoEnVuelo` cubre ya sólo CONSTRUIR Y LANZAR cada pasada
+    // (el orden lo garantiza el SDK); los acuses se juntan en `_acuses` y se
+    // esperan al final. Quien se sume a una pasada en curso espera
+    // `_latidoTerminado`, que sí incluye los acuses (v718 lo necesita).
+    const _acuses = [];
     _latidoEnVuelo = (async () => {
         let s = status;
         // El bucle es acotado por construcción: cada vuelta consume la bandera
         // y sólo la vuelve a levantar un llamante NUEVO durante esa vuelta.
         for (let vuelta = 0; vuelta < 3; vuelta++) {
             _latidoRepetir = false;
-            await _emiteLatido(s);
+            const r = await _emiteLatido(s);
+            if (r && r.acuse) _acuses.push(r.acuse);
             if (!_latidoRepetir) break;
             s = _latidoStatusPend || s;
         }
     })();
+    const _miTerminado = _latidoEnVuelo.then(() => Promise.all(_acuses)).then(() => {});
+    _latidoTerminado = _miTerminado;
     let _quedaPendiente = false, _statusPendiente = null;
     try { await _latidoEnVuelo; }
     finally {
@@ -960,6 +969,10 @@ async function pushLiveSnapshot(status = 'active') {
     if (_quedaPendiente) {
         setTimeout(() => { pushLiveSnapshot(_statusPendiente || status); }, 0);
     }
+    // Los acuses, al final: el llamante (p. ej. cronosEmiteEstadoAhora, v718)
+    // sigue resolviendo cuando el servidor ha confirmado, como antes.
+    try { await _miTerminado; }
+    finally { if (_latidoTerminado === _miTerminado) _latidoTerminado = null; }
 }
 
 async function _emiteLatido(status = 'active') {
@@ -1497,10 +1510,40 @@ async function _emiteLatido(status = 'active') {
         const _conPlazo = (window.CronosOutbox && typeof window.CronosOutbox.conPlazo === 'function')
             ? window.CronosOutbox.conPlazo
             : ((p) => p);
-        await _conPlazo(
-            setDoc(doc(fa.db, 'live_matches', liveMatchId), snapshot, { merge: true }),
-            _PLAZO_LATIDO_MS, 'latido');
+        // 🚀 v854 · LA ESCRITURA SE LANZA AQUÍ Y EL ACUSE SE ESPERA APARTE.
+        // Antes, la pasada siguiente del latido (la que pide el 2º suceso de
+        // una ráfaga) no se construía hasta tener DOS acuses de esta: gordo e
+        // índice. El SDK de Firestore aplica las escrituras de un mismo
+        // cliente EN EL ORDEN EN QUE SE LANZAN, así que basta con que ésta
+        // esté LANZADA para que la siguiente no pueda adelantarla. Se devuelve
+        // `{ acuse }` (un objeto, no la promesa: un async que devuelve una
+        // promesa la esperaría) y `pushLiveSnapshot` espera los acuses al
+        // final, sin retener la construcción de la pasada siguiente.
+        const _matchDelLatido = liveMatchId;
+        const _acuse = _conPlazo(
+            setDoc(doc(fa.db, 'live_matches', _matchDelLatido), snapshot, { merge: true }),
+            _PLAZO_LATIDO_MS, 'latido').then(() => _trasAcuseLatido(snapshot, setDoc, doc, fa.db, _matchDelLatido))
+            .catch(_errorDeLatido);
+        return { acuse: _acuse };
+    } catch (err) {
+        _errorDeLatido(err);
+    }
+}
 
+function _errorDeLatido(err) {
+    console.warn('Error sync live:', err && err.message);
+    // v467 · Si el cliente de Firestore está TERMINADO, esto no es un fallo
+    // pasajero: no se recupera solo y el latido lo repetiría cada 5 s para
+    // siempre, sin sincronizar ni un suceso y sin decírselo a nadie. Era la
+    // emergencia de v466. La única salida es recargar, y desde v465 la
+    // pestaña recupera su partido entero al volver.
+    if (typeof window._cronosRecuperaSiClienteMuerto === 'function') {
+        window._cronosRecuperaSiClienteMuerto(err, 'pushLiveSnapshot');
+    }
+}
+
+function _trasAcuseLatido(snapshot, setDoc, doc, db, matchId) {
+    {
         // 🔴 v714 · SELLO DEL ÚLTIMO LATIDO BUENO. Lo lee el reloj
         // (js/match/timer/core.js, `_mandaLaPulsacionLocal`) para saber si el
         // documento del servidor es un espejo VIVO —y entonces manda, como en
@@ -1521,18 +1564,11 @@ async function _emiteLatido(status = 'active') {
         // gordo a propósito: si algo tuviera que fallar por cuota o por reglas,
         // que falle lo prescindible y no el partido. `snapshot.players` ya está
         // construido, así que contar los que hay en campo no cuesta nada.
-        await _pushLiveIndex(setDoc, doc, fa.db, liveMatchId,
-                             _buildLiveIndexDoc(snapshot, snapshot.players));
-    } catch (err) {
-        console.warn('Error sync live:', err.message);
-        // v467 · Si el cliente de Firestore está TERMINADO, esto no es un fallo
-        // pasajero: no se recupera solo y el latido lo repetiría cada 5 s para
-        // siempre, sin sincronizar ni un suceso y sin decírselo a nadie. Era la
-        // emergencia de v466. La única salida es recargar, y desde v465 la
-        // pestaña recupera su partido entero al volver.
-        if (typeof window._cronosRecuperaSiClienteMuerto === 'function') {
-            window._cronosRecuperaSiClienteMuerto(err, 'pushLiveSnapshot');
-        }
+        // 🚀 v854 · lanzado pero SIN esperar su acuse: el índice es lo
+        // prescindible y no puede retener al gordo de la pasada siguiente.
+        Promise.resolve(_pushLiveIndex(setDoc, doc, db, matchId,
+                             _buildLiveIndexDoc(snapshot, snapshot.players)))
+            .catch(e => console.warn('[v854] índice del latido no enviado:', e && e.message));
     }
 }
 

@@ -134,7 +134,11 @@
         esperaTope:       20000,   // ms · tope del reintento
         topeCola:         600,     // sucesos retenidos por partido
         avisoAtascoMs:    60000,   // ms sin acuse con cola pendiente → se avisa
-        conciliaCadaMs:   90000    // ms entre comprobaciones de «¿llegó de verdad?»
+        conciliaCadaMs:   90000,   // ms entre comprobaciones de «¿llegó de verdad?»
+        // 🚀 v854 · escrituras simultáneas por partido CON LA RED SANA. Con
+        // fallos se vuelve a 1 (fila india): reintentar en paralelo sin red
+        // multiplicaría la carga en vez de repararla.
+        vuelosMax:        3
     };
 
     // Los que NO se anuncian nunca y por tanto no gastan escritura en el
@@ -211,7 +215,9 @@
         colas[id] = {
             id:            id,
             pendientes:    _hidrata(id),
-            enVuelo:       false,
+            vuelos:        0,                     // v854 · escrituras en curso
+            enCamino:      Object.create(null),   // v854 · eventId → ya en una escritura
+            esperasVuelo:  [],                    // v854 · promesas de las escrituras en curso
             temporizador:  null,
             fallos:        0,
             enviados:      0,
@@ -266,15 +272,45 @@
         _log('cola de ' + cola.id + ' desbordada: ' + cola.descartados + ' descartados');
     }
 
+    // v854 · lo pendiente que NO va ya en una escritura en curso.
+    function _libres(cola) {
+        return cola.pendientes.filter(function (e) { return !cola.enCamino[e.eventId]; });
+    }
+
+    // v854 · cuántas escrituras puede haber a la vez: varias con la red sana,
+    // una sola en cuanto algo falla.
+    function _hayHueco(cola) {
+        return cola.vuelos < (cola.fallos > 0 ? 1 : Math.max(1, T.vuelosMax));
+    }
+
     function _hayUrgente(cola) {
         for (var i = 0; i < cola.pendientes.length; i++) {
-            if (!NO_ANUNCIABLES[cola.pendientes[i].type]) return true;
+            var e = cola.pendientes[i];
+            if (!cola.enCamino[e.eventId] && !NO_ANUNCIABLES[e.type]) return true;
         }
         return false;
     }
 
+    // ══════════════════════════════════════════════════════════════════
+    //  🚀 v854 · LA RÁFAGA YA NO ESPERA AL ACUSE DEL SUCESO ANTERIOR
+    // ══════════════════════════════════════════════════════════════════
+    //  Encargo del autor (2026-11-20): el primer suceso llegaba al visor en
+    //  1-2 s, pero en una ráfaga (gol + cambio + tarjeta) el 2º y el 3º
+    //  tardaban 3-4 s MÁS. Causa medida en este fichero: había UNA escritura
+    //  en vuelo por partido, y el vuelo no terminaba hasta DOS acuses en fila
+    //  (el documento gordo y después `live_index`). El 2º suceso esperaba
+    //  ventana (350 ms) + acuse gordo + acuse índice + otra ventana (350 ms)
+    //  antes de salir siquiera.
+    //  🔑 Ahora: (1) cada suceso sale tras SU ventana aunque haya otra
+    //  escritura en curso (hasta `vuelosMax`, cada una con un lote DISJUNTO,
+    //  marcado en `enCamino`); (2) el vuelo termina con el acuse del GORDO, el
+    //  índice va detrás sin retener a nadie. La integridad no cambia: se
+    //  retira por `eventId` tras el acuse, `arrayUnion` de un objeto idéntico
+    //  es nulo, el SDK aplica las escrituras de un mismo cliente EN ORDEN, y
+    //  con un solo fallo se vuelve a la fila india con espera creciente.
     function _programa(cola) {
-        if (cola.enVuelo || cola.temporizador || !cola.pendientes.length) return;
+        if (cola.temporizador || !_hayHueco(cola)) return;
+        if (!_libres(cola).length) return;
         var ms = cola.fallos > 0 ? _espera(cola.fallos)
                : (_hayUrgente(cola) ? T.ventanaUrgente : T.ventanaTactica);
         cola.temporizador = setTimeout(function () {
@@ -289,16 +325,19 @@
     }
 
     // ── El drenaje ──────────────────────────────────────────────────────
-    //  🔑 UNA SOLA ESCRITURA EN VUELO POR PARTIDO. Es lo que impide la pila de
-    //  llamadas solapadas que causaba el defecto 3. Y es POR PARTIDO: el
-    //  atasco de uno no bloquea a los demás.
+    //  🔑 v854 · VARIAS ESCRITURAS POR PARTIDO, PERO CON LOTES DISJUNTOS. El
+    //  defecto 3 de v724 (llamadas solapadas recortando por posición) no puede
+    //  volver: cada vuelo se lleva SÓLO lo que nadie lleva (`enCamino`) y
+    //  retira por `eventId`. Y es POR PARTIDO: el atasco de uno no bloquea a
+    //  los demás.
     function _drena(cola) {
-        if (cola.enVuelo || !cola.pendientes.length) return Promise.resolve(false);
-        cola.enVuelo = true;
+        if (!_hayHueco(cola)) return Promise.resolve(false);
+        var lote = _libres(cola).slice(0, T.loteMax);
+        if (!lote.length) return Promise.resolve(false);
+        cola.vuelos++;
+        lote.forEach(function (e) { cola.enCamino[e.eventId] = 1; });
 
-        var lote = cola.pendientes.slice(0, T.loteMax);
-
-        return _escribe(cola.id, lote).then(function () {
+        var vuelo = _escribe(cola.id, lote).then(function () {
             // ✅ ACUSE RECIBIDO. Sólo AHORA se retira, y POR `eventId`: si
             // mientras tanto entraron sucesos nuevos, siguen donde estaban.
             var enviados = Object.create(null);
@@ -320,10 +359,15 @@
             _avisaSiAtascada(cola);
             return false;
         }).then(function (ok) {
-            cola.enVuelo = false;
+            cola.vuelos--;
+            lote.forEach(function (e) { delete cola.enCamino[e.eventId]; });
+            var i = cola.esperasVuelo.indexOf(vuelo);
+            if (i >= 0) cola.esperasVuelo.splice(i, 1);
             if (cola.pendientes.length) _programa(cola);
             return ok;
         });
+        cola.esperasVuelo.push(vuelo);
+        return vuelo;
     }
 
     // Un canal mudo es lo que costó veinte minutos de partido el 16/09 sin que
@@ -387,7 +431,10 @@
                     if (r) recortados.push(r);
                 });
                 if (!recortados.length) return;
-                return conPlazo(
+                // 🚀 v854 · SIN `return`: el vuelo termina con el acuse del
+                // GORDO. Esperar también al del índice retenía al suceso
+                // siguiente un viaje de ida y vuelta entero (ráfagas lentas).
+                conPlazo(
                     fs.setDoc(
                         fs.doc(fa.db, 'live_index', matchId),
                         {
@@ -440,6 +487,12 @@
         var quedan = (typeof vueltas === 'number' && vueltas > 0) ? vueltas : 1;
         var paso = function () {
             if (!cola.pendientes.length) return Promise.resolve(true);
+            // v854 · si lo que queda ya va en escrituras en curso (o no hay
+            // hueco), se espera a que acaben en vez de rendirse: el fin de
+            // partido tiene que salir con TODO dentro. No gasta vuelta.
+            if ((!_libres(cola).length || !_hayHueco(cola)) && cola.esperasVuelo.length) {
+                return Promise.all(cola.esperasVuelo.slice()).then(paso);
+            }
             if (quedan-- <= 0) return Promise.resolve(false);
             return _drena(cola).then(function (ok) { return ok ? paso() : false; });
         };
@@ -645,7 +698,8 @@
             var c = colas[id];
             resumen[id] = {
                 pendientes:    c.pendientes.length,
-                enVuelo:       c.enVuelo,
+                enVuelo:       c.vuelos > 0,
+                vuelos:        c.vuelos,
                 fallos:        c.fallos,
                 enviados:      c.enviados,
                 descartados:   c.descartados,
