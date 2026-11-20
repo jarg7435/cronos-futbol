@@ -71,14 +71,17 @@ console.log('\n── PARTE 1 · el modal "Registrar Evento Perdido" ──');
 
     await w.openRetroactiveEventModal();
     const html = (els['cronos-retroactive-modal'] || {}).innerHTML || '';
-    // 🔓 v797 · Sin partido elegido NO se guarda nada (encargo 2026-10-11):
-    // antes el modal caía solo en `liveMatchId`. Se elige el partido en curso.
+    // ⚽ v855 · Con un partido EN CURSO en la pestaña, el modal lo trae ya
+    // fijado (encargo 2026-11-20, IMG_0759): se guarda sin elegir nada. El
+    // caso «sin partido no se guarda» (v797) sigue cubierto, sin partido en
+    // curso, en test_desbloqueo_partido.js 2c y test_evento_perdido_en_directo_v855.js 4a.
     w._setRetroEventType('comment');
     el('retro-minute-input').value = '67';
-    el('retro-comment-input').value = 'sin partido elegido';
+    el('retro-comment-input').value = 'partido en curso ya fijado';
     await w.submitRetroactiveEvent();
-    ok('1z · 🔓 v797 · sin elegir partido no se registra nada y se avisa',
-       registrados.length === 0 && /Elige primero el partido/.test(toasts.join('|')));
+    ok('1z · ⚽ v855 · con partido en curso se registra sin elegirlo',
+       registrados.length === 1 && !/Elige primero el partido/.test(toasts.join('|')), toasts);
+    registrados.length = 0;
     toasts.length = 0;
     w._setRetroEventType('goal');
     await w._retroElegirPartido('m_live');

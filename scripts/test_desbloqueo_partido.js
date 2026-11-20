@@ -117,14 +117,16 @@ const partido = (horas, extra) => Object.assign({
 
 (async () => {
     {
-        // 2a-2c · SIN partido: el desplegable está, y no se guarda nada.
-        const E = entornoModal({ enCurso: 'en_curso_1' });
+        // 2a-2c · SIN partido (ni explícito ni en curso): el desplegable
+        // está, y no se guarda nada. ⚽ v855 · con un partido EN CURSO en la
+        // pestaña, éste viene ya fijado: lo cubre test_evento_perdido_en_directo_v855.js.
+        const E = entornoModal({ enCurso: null });
         await E.sb.openRetroactiveEventModal();
         const html = (E.els['cronos-retroactive-modal'] || {}).innerHTML || '';
         ok('2a · 🔑 el desplegable de partido va el PRIMERO del formulario',
            html.indexOf('id="retro-match-select"') > 0 &&
            html.indexOf('id="retro-match-select"') < html.indexOf('id="retro-half-select"'));
-        ok('2b · y arranca en «— Elige el partido —» (sin caer en el partido en curso)',
+        ok('2b · sin partido en curso arranca en «— Elige el partido —»',
            /<option value="" selected>— Elige el partido —<\/option>/.test(html));
         E.el('retro-player-select').value = '1';
         await E.sb.submitRetroactiveEvent();

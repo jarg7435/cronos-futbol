@@ -278,6 +278,34 @@
         return fase === 'finished' ? null : id;
     }
 
+    // ── ⏱️ v855 · La parte y el minuto del partido EN CURSO, según su reloj ──
+    //  Misma regla que el directo (player-actions.js · _registerMatchEvent):
+    //  en la 2ª parte (o terminado) el minuto es el ACUMULADO de las dos y la
+    //  parte es 2T; en la 1ª y en el descanso, 1T con el tiempo de la 1ª.
+    //  Encargo del autor (implementar.txt 2026-11-20, IMG_0759): el partido
+    //  iba por la 2ª parte y el modal proponía «1ª Parte» y el minuto 30.
+    function _relojEnCurso() {
+        try {
+            const h1 = (typeof masterTimeH1 !== 'undefined') ? (Number(masterTimeH1) || 0) : 0;
+            const h2 = (typeof masterTimeH2 !== 'undefined') ? (Number(masterTimeH2) || 0) : 0;
+            const fase = (typeof matchPhase !== 'undefined') ? matchPhase : '1st_half';
+            const segunda = (fase === '2nd_half' || fase === 'finished');
+            const total = segunda ? (h1 + h2) : h1;
+            const minuto = Math.min(120, Math.max(1, Math.floor(total / 60) || 1));
+            return { half: segunda ? '2T' : '1T', minute: minuto };
+        } catch (e) { return null; }
+    }
+
+    // Pone parte y minuto del reloj en el formulario ya pintado.
+    function _aplicaRelojEnCurso() {
+        const r = _relojEnCurso();
+        if (!r) return;
+        const h = document.getElementById('retro-half-select');
+        const m = document.getElementById('retro-minute-input');
+        if (h) h.value = r.half;
+        if (m) m.value = String(r.minute);
+    }
+
     function _fechaCorta(iso) {
         const t = Date.parse(iso || '');
         if (isNaN(t)) return '';
@@ -585,6 +613,8 @@
         _calculaListo();
         _jugadoresModal = _jugadoresDestino();
         _repintaSelectores(_selectedEventType);
+        // ⏱️ v855 · elegir el partido en curso pone parte y minuto del reloj.
+        if (_targetMatchId && _targetMatchId === _idEnCurso()) _aplicaRelojEnCurso();
         _pintaEstadoYFormulario();
         _pintaOpcionClip();   // 🎬 v804 · «también familias» sólo en adultos
         _pintaAvisoSalud();   // 🧒 v832 · aviso de menores sólo en base
@@ -650,15 +680,27 @@
     }
 
     window.openRetroactiveEventModal = async function(matchId, matchData) {
-        // 🔓 v797 · SIN partido explícito NO se elige ninguno: antes caía en
-        // la global `liveMatchId`. Ahora lo elige el entrenador en el
-        // desplegable (encargo del autor). Los listados de Partidos Terminados
-        // sí lo pasan, y llega ya seleccionado.
+        // 🔓 v797 · Los listados de Partidos Terminados pasan el partido y
+        // llega ya seleccionado.
+        // ⚽ v855 · SIN partido explícito Y CON UN PARTIDO JUGÁNDOSE EN ESTA
+        // PESTAÑA, el destino es ESE, al instante. Encargo del autor
+        // (implementar.txt 2026-11-20, IMG_0759): desde el panel del directo
+        // el modal abría en «— Elige el partido —» con el formulario apagado y
+        // el partido en curso sólo aparecía cuando acababa de cargar la lista
+        // de informes (con mala cobertura, nunca). v797 lo dejaba en blanco
+        // para no caer en un `liveMatchId` AJENO; `_idEnCurso()` sólo devuelve
+        // el de ESTA pestaña y nunca uno terminado, así que no hay ajeno en el
+        // que caer. Sin partido en curso sigue abriendo sin elegir (v797).
         const tokAbrir = ++_tokEleccion;
-        _targetMatchId = matchId ? String(matchId) : null;
+        const _enCursoAhora = _idEnCurso();
+        _targetMatchId = matchId ? String(matchId) : (_enCursoAhora || null);
         _targetMatchData = matchData || null;
         _soloInformes = !!(_targetMatchData && _targetMatchData._soloInformes);
-        _partidosLista = [];
+        // El partido en curso va en la lista DESDE YA, con su rótulo: la carga
+        // de los informes sólo añade los anteriores detrás.
+        _partidosLista = _enCursoAhora
+            ? [{ id: _enCursoAhora, enCurso: true, etiqueta: '🟢 Partido en curso (el que estás jugando)' }]
+            : [];
 
         // 🧊 v836 · EL MODAL SALE EN EL ACTO. Antes no aparecía hasta que
         // respondía la red: con cobertura mala el toque «no hacía nada» durante
@@ -709,6 +751,10 @@
         _jugadoresModal = _targetMatchId ? _jugadoresDestino() : [];
         const playerOptions    = _opcionesJugadores(_jugadoresModal, 'todos');
         const playerOptionsIn  = _opcionesJugadores(_jugadoresModal, 'banquillo');
+        // ⏱️ v855 · con el partido en curso, parte y minuto salen del reloj;
+        // para cualquier otro, lo de siempre (1T, 30').
+        const _relojIni = (_targetMatchId && _targetMatchId === _enCursoAhora && _relojEnCurso())
+            || { half: '1T', minute: 30 };
 
         modal.innerHTML = `
             <div class="modal-content" style="width:min(94vw, 580px); max-height:92vh; overflow-y:auto; box-sizing:border-box; background:#0d1117; border:1px solid rgba(88,166,255,0.3); border-radius:14px; padding:1.2rem; display:flex; flex-direction:column; gap:1rem; box-shadow:0 10px 30px rgba(0,0,0,0.8);">
@@ -740,13 +786,13 @@
                     <div>
                         <label style="font-size:0.75rem; font-weight:700; color:#58a6ff; display:block; margin-bottom:0.3rem;">Parte del Partido:</label>
                         <select id="retro-half-select" style="width:100%; background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.15); color:white; padding:0.5rem; border-radius:8px; font-weight:700;">
-                            <option value="1T">1ª Parte (1T)</option>
-                            <option value="2T">2ª Parte (2T)</option>
+                            <option value="1T"${_relojIni.half === '1T' ? ' selected' : ''}>1ª Parte (1T)</option>
+                            <option value="2T"${_relojIni.half === '2T' ? ' selected' : ''}>2ª Parte (2T)</option>
                         </select>
                     </div>
                     <div>
                         <label style="font-size:0.75rem; font-weight:700; color:#58a6ff; display:block; margin-bottom:0.3rem;">Minuto Exacto (1' - 90'):</label>
-                        <input type="number" id="retro-minute-input" min="1" max="120" value="30" style="width:100%; box-sizing:border-box; background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.15); color:white; padding:0.5rem; border-radius:8px; font-weight:700; font-family:monospace;">
+                        <input type="number" id="retro-minute-input" min="1" max="120" value="${_relojIni.minute}" style="width:100%; box-sizing:border-box; background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.15); color:white; padding:0.5rem; border-radius:8px; font-weight:700; font-family:monospace;">
                     </div>
                 </div>
 
