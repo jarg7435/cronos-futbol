@@ -75,7 +75,12 @@ service firebase.storage {
         && (esStaff() || esDirectivo()
             || (resource.metadata.get('audiencia', '') == 'familias' && esFamilia()));
 
+      // 🚨 v858 · `resource == null`: sólo se sube a una ruta VACÍA. Subir encima
+      // de un clip existente se evalúa con `create` (no con `update: false`) y
+      // el E2E del 22-11 (N10) lo vio aceptado: cualquier miembro del cuerpo
+      // técnico podía sustituir el vídeo de otro y reiniciar sus 24 h.
       allow create: if request.auth != null
+        && resource == null
         && request.resource.size < 50 * 1024 * 1024
         && request.resource.contentType.matches('video/.*')
         && request.resource.metadata.get('uploader', '') == request.auth.uid

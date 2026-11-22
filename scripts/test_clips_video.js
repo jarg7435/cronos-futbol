@@ -153,8 +153,8 @@ const iso = (ms) => new Date(ms).toISOString();
 const U = (role, club, extra) => Object.assign({ role, clubId: club || 'clubA', isAuthorized: true }, extra || {});
 const CLUB = { adminUid: 'adm', extras: { modulo_videos: true } };
 
-async function lote(tk, nombre, fichero, casos, mocksDe) {
-    const source = { files: [{ name: nombre, content: leer(fichero) }] };
+async function lote(tk, nombre, fichero, casos, mocksDe, contenido) {
+    const source = { files: [{ name: nombre, content: contenido != null ? contenido : leer(fichero) }] };
     const testCases = casos.map(c => {
         const tc = { expectation: c.exp, request: Object.assign({ time: iso(AHORA) }, c.req), functionMocks: mocksDe(c), pathEncoding: 'PLAIN' };
         if (c.existing) tc.resource = c.existing;
@@ -269,6 +269,22 @@ async function lote(tk, nombre, fichero, casos, mocksDe) {
                resource: Object.assign({ size: 5 * 1024 * 1024, contentType: 'video/mp4', metadata: META(uid) }, res || {}) } });
     const borra = (n, exp, uid, user, club) => ({ n, exp, user, club, existing: OBJ(),
         req: { auth: A(uid), path: SP, method: 'delete' } });
+    // 🚨 v858 · El banco `:test` NO representa «el fichero aún no existe»: con
+    // `resource == null` en la regla, toda subida a una ruta nueva da «Null value
+    // error» (la misma limitación anotada en v717 para Firestore). Por eso:
+    //   · las subidas a ruta NUEVA se evalúan con una copia SIN esa línea;
+    //   · la sobrescritura (3zb) se evalúa con la regla REAL;
+    //   · 3zc exige que la línea siga en la regla de crear;
+    //   · y lo que el banco no puede, lo prueba DE VERDAD contra el bucket de
+    //     testeo `scripts/ops/e2e_storage_testeo.js` (casos P1 y N10).
+    const ST_REAL = leer('storage.rules');
+    const LINEA_VACIA = /\n\s*&& resource == null/;
+    ok('3zc · 🔑🔑 la regla de crear exige ruta vacía (resource == null)',
+       /allow create: if request\.auth != null\s*\n\s*&& resource == null/.test(ST_REAL));
+    const ST_SIN_VACIA = ST_REAL.replace(LINEA_VACIA, '');
+    await lote(tk, 'storage.rules', 'storage.rules', [
+        Object.assign(sube('3zb · 🔑🔑 NO se sobrescribe un clip que ya existe', 'DENY', 'coach', U('user')), { existing: OBJ() }),
+    ], stMocks);
     await lote(tk, 'storage.rules', 'storage.rules', [
         lee('3a · 🔑 el cuerpo técnico descarga el clip (primera vez)', 'ALLOW', 'dir', U('director'), OBJ(), false),
         lee('3b · 🔑🔑 VISTA ÚNICA: tras su vista ya NO lo descarga', 'DENY', 'dir', U('director'), OBJ(), true),
@@ -299,7 +315,7 @@ async function lote(tk, nombre, fichero, casos, mocksDe) {
         lee('3y · ⚠️ ni el de otro club', 'DENY', 'dv', U('directivo', 'clubB'), OBJ(), false),
         sube('3z · 🔑🔑 el directivo NO sube', 'DENY', 'dv', U('directivo')),
         borra('3za · 🔑🔑 ni borra', 'DENY', 'dv', U('directivo')),
-    ], stMocks);
+    ], stMocks, ST_SIN_VACIA);
 
     fin();
 })();
