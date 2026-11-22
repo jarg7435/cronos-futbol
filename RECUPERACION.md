@@ -8,7 +8,7 @@ este fichero):
 | PITR | ✅ encendido desde el 2026-09-22 (ventana de 7 días) |
 | Copia diaria gestionada | ✅ programada (retención 7 días); 6 copias READY, la última de hace 1 día |
 | Exportación de cuentas de Auth | ✅ 2026-11-22: 12 cuentas, 8 con *custom claims* (la anterior tenía 61 días) |
-| Simulacro de restauración | ❌ **nunca hecho**: ver Parte 3 y el registro final |
+| Simulacro de restauración | ✅ primero hecho y anotado (registro final): 47/47 colecciones, RTO ~14 min. Se repite cada seis meses |
 | Cloud Storage (vídeos de jugadas, v804) | ⚠️ **sin copia**: la copia de Firestore no lo incluye (ver Parte 0, punto 5) |
 
 Hay clubes reales en producción, con datos de menores. La Parte 2 ya se activó el
@@ -303,4 +303,20 @@ Ficha por simulacro (plantilla, copiar debajo y rellenar):
 | RTO medido | desde lanzar `restore` hasta pasar la comprobación 4 |
 | Incidencias | |
 
-_(todavía no hay ningún simulacro anotado)_
+### Simulacro 1
+
+| Campo | Valor |
+|---|---|
+| Fecha del simulacro | 2026-11-22 |
+| Responsable | José Alberto (Cloud Shell: listar, restaurar, borrar) · Claude (verificación) |
+| Copia usada | `6ccb35c6-40dc-46e7-8d5b-0da2edb90259` (`eur3`, copia diaria gestionada) · foto de las 19:32:50 UTC |
+| Base destino | `simulacro` · **borrada al terminar: sí** (después sólo queda `(default)`, comprobado) |
+| Exportación de Auth usada | `auth_users_…-19-42-18.json` en `CRONOS_RESPALDOS_PRIVADOS` (10 cuentas, 8 con claims) |
+| 1 · Base creada | ✓ restauración `SUCCESSFUL` al 100 %; base creada a las 20:14:16 UTC |
+| 2 · Recuentos | ✓ **47/47 colecciones idénticas a producción** (40 de la raíz + 7 subcolecciones por *collection group*) · 0 irremplazables vacías · p. ej. 8 717 informes, 4 clubes, 10 perfiles, 144 + 11 de asistencia, 18 plantillas, 124 semanas |
+| 3 · uids de `users` que casan con Auth | 9/10 · el que no casa es un perfil ANTIGUO de SuperAdmin (marzo) que ya no tenía cuenta en producción antes de la copia: resto previo, no fallo de la restauración |
+| 4 · Cuentas con claims en `customAttributes` | 8/10 · sin claims: un coordinador pendiente de aprobación del Admin del Club (los recibe al aprobarse) y una cuenta familiar sin perfil |
+| RPO medido | ~40 min (foto de la copia diaria frente al inicio); con PITR serían minutos |
+| RTO medido | ~14 min, de las 20:13 (listar copias) a las 20:27 (fin de la comprobación 4). **No incluye** volcar a `(default)` ni cambiar de base ni reimportar Auth, que una recuperación real añadiría |
+| Incidencias | Ninguna en la restauración. Herramienta de verificación de sólo lectura (REST, recuentos e ids). Antes se retiraron de Auth dos cuentas de prueba `@ejemplo.invalid` (con permiso del titular) |
+| Próximo | a los seis meses (Parte 3) |
