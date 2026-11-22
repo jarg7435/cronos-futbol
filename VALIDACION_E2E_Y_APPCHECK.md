@@ -156,6 +156,7 @@ node scripts/lee_reglas_vivas.js firestore.rules # 0 diferencias de código
 |---|---|---|---|---|---|
 | 2026-11-18 | v853 · `c86b940` (antes de desplegar) | — (medición de partida) | ENFORCED / ENFORCED | 403 ✅ | ✅ |
 | 2026-11-18 23:33 UTC | v853 · `6460a1e` (fast-xml-parser 5.12.1) · paquete `cronos-futbol_6460a1e.zip` sha256 `19dd829e…2051d2` | hosting + 22 functions | ENFORCED / ENFORCED · 0 tokens debug | 403 ✅ (1 `MISSING_UNKNOWN_ORIGIN` → DENY = la propia sonda) | ✅ Firestore 0 dif. · Storage idénticas |
+| 2026-11-22 18:36 UTC (despliegue del 20-11, fila que faltaba) | v856 · `c4b61c6` (v854-v856) · paquete `cronos-futbol_c4b61c6.zip` sha256 `d1df562d…7c7d8e5e` (`package:verificar` desde cero ✅: 581 ficheros idénticos, `npm ci` + build 9/9 + lint 0 + 359/359) | hosting (backend sin cambios desde `6460a1e`: `functions/`, reglas, índices y lockfiles con 0 diferencias) | ENFORCED / ENFORCED · 0 tokens debug · dominios sólo `.web.app`/`.firebaseapp.com` | 403 ✅ · 15→22 nov: 17 232 `VALID` → ALLOW, 4 `MISSING_UNKNOWN_ORIGIN` → DENY | ✅ Firestore 0 dif. · Storage idénticas (release 12-10, prod y testeo) · hosting `index.html`/`live.html`/`sw.js` = repo por sha256 |
 
 ---
 

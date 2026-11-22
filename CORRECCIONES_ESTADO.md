@@ -1397,3 +1397,37 @@ un commit limpio y lleva el sha256 de cada fichero.
 **Despliegue de esta corrección:** el lockfile de Functions sólo llega a producción
 desplegando **las functions** (`deploy:prod` sube únicamente hosting). Testeo no las
 recibe con `deploy:staging` (proyecto sin coste).
+
+## 🛡️ Reauditoría del 19-11 · paquete formal y evidencia postdespliegue (2026-11-22)
+
+Nota del auditor: 8,5 para publicar y 9,7 técnica. No pide cambios de código. Pide dos
+pruebas: el paquete formal y App Check revalidado tras desplegar. Las dos quedan hechas
+sobre **v856 · `c4b61c6`**, que es exactamente lo que hay en producción (hosting del
+20-11; el backend no cambia desde `6460a1e`, 0 diferencias en `functions/`, reglas,
+índices y lockfiles).
+
+- **Paquete formal:** `npm run package` → `dist/cronos-futbol_c4b61c6.zip`, sha256
+  `d1df562d4ca653ce21521e8a2a77b426aa4d99a2ff323dd1b90d89df7c7d8e5e`, con
+  `PAQUETE.json`. `npm run package:verificar` en verde desde cero: 581 ficheros idénticos
+  por sha256, nada prohibido, `npm ci` en raíz y Functions, build 9/9, lint 0 y
+  359/359. **La entrega al auditor es este ZIP, no uno hecho a mano.**
+- **Dependencias:** `npm audit --omit=dev` da **0** en raíz y en `functions/`
+  (`fast-xml-parser` 5.12.1 en los dos).
+- **`npm run verify`:** build 9/9 · lint 0 avisos · **359/359**. Hay 3 tests más que en
+  la auditoría (356) por los guards de v854-v856, sin regresiones.
+- **Evidencia postdespliegue:** está en `VALIDACION_E2E_Y_APPCHECK.md` §3.3, en la fila
+  que faltaba del despliegue del 20-11. Producción con Firestore y Auth **ENFORCED**, 0
+  tokens de depuración y sonda sin token **403**. Del 15 al 22-11 hubo 17 232 peticiones
+  válidas permitidas y 4 sin origen denegadas. `firestore.rules` tiene 0 diferencias,
+  `storage.rules` es idéntica en producción y testeo, y el hosting sirve `index.html`,
+  `live.html` y `sw.js` byte a byte iguales que el repo.
+
+**Fuera del código (operativo y jurídico, sin tocar):**
+- primer simulacro de restauración fechado (`RECUPERACION.md`);
+- alertas automáticas (App Check, Functions, correo, copias, accesos);
+- retención de Cloud Logging y revisión de la consola del navegador;
+- E2E real de Storage en navegador y prueba de campo con pérdida de red;
+- pentest independiente;
+- DPIA tipo con asesor;
+- aceptación del contrato por los clubes existentes;
+- registro de solicitudes de derechos e `INCIDENTES.md`.
