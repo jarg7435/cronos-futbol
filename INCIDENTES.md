@@ -135,3 +135,24 @@ Copiar debajo del último registro y rellenar.
 | Causa | `confirmSetup()` se llamaba a sí misma (bandera de reentrada liberada antes de tiempo) |
 | Corrección y guard | v732 (hotfix) · guard que ejecuta la función y cuenta las pasadas |
 | Estado | **cerrada** 2026-09-17 |
+
+### INC-2026-004 · Solicitudes de alta legibles y modificables por cualquier miembro del club
+
+| Campo | Valor |
+|---|---|
+| Detectado | 2026-11-22 · análisis en sólo lectura de las reglas de `platform_requests` a raíz del E2E de Storage (caso N5), confirmado con una **prueba real en testeo** con cuentas ficticias |
+| Periodo afectado | **al menos desde el 2026-08-04** (la regla ya estaba así en la reorganización v435-v438; con este texto exacto desde v687, 10-09) **hasta el 2026-11-22**, corrección v859 desplegada en producción. Clubes reales en producción desde mediados de septiembre |
+| Tipo | **confidencialidad** e **integridad** (vulnerabilidad de reglas; no consta explotación) |
+| Qué permitía | Dentro de un mismo club o ente, **cualquier miembro autorizado —familias incluidas—** podía: **leer** todas las solicitudes de alta del club, y **crear** la suya ya aprobada, **aprobarse** la propia, **rechazar o modificar** la de otros (rol, categoría). Entre clubes distintos sí estaba aislado |
+| Datos afectados | correo y nombre de quienes pidieron el alta (entrenadores, directivos, familias), club y rol pedido. **Medido en producción el 22-11: 29 solicitudes de 7 clubes/entes, todas con correo o nombre; ninguna con alias de jugador** (no había nombres de menores en esta colección) |
+| Personas afectadas | quienes figuran en esas 29 solicitudes, sin nombres aquí · 7 clubes/entes |
+| Acceso real constatado | **Lectura: no se puede saber** (los registros de acceso a datos de Firestore están desactivados, decisión de la Parte 6 de `RECUPERACION.md`). **Integridad: revisado el 2026-11-22, sin anomalías**: las 21 solicitudes aprobadas de producción las aprobó el SuperAdmin; ninguna se autoaprobó; las 20 reenviadas lo fueron por la Dirección de su club; ninguna se modificó después de aprobarse; y en las 15 cuentas que siguen existiendo el rol aprobado coincide con el que tienen |
+| Alcance de la parte de integridad | una solicitud falsamente aprobada hacía que la **sesión** mostrara el panel de ese rol (`auth.js` la usaba como rol verificado), pero los **datos** los siguen protegiendo las reglas por el perfil raíz y los claims: no daba acceso a datos que el miembro no pudiera ya leer. Riesgo de ingeniería social ante el SuperAdmin |
+| Contención | 2026-11-22: reglas v859 en testeo (prueba real 16/16) y en producción (`deploy:prod:rules`, vivas = repo) |
+| Valoración de riesgo | ⏳ **pendiente del titular**. Propuesta: **bajo** — datos de contacto de adultos visibles sólo para miembros autorizados del mismo club, sin datos de menores ni credenciales, y sin indicios de uso |
+| Aviso a clubes (48 h) | ⏳ pendiente del titular (si la valoración es «improbable que suponga un riesgo», no procede, pero se deja motivado aquí) |
+| Notificación AEPD (72 h) | ⏳ decisión de los clubes responsables, con asistencia de Chronos |
+| Comunicación a afectados | ⏳ pendiente del titular |
+| Causa | las reglas usaban `sameClubAsDoc` («es del mismo club») para leer y modificar, pensando en la Dirección; el código daba por hecho que el estado «sólo lo escribe el SA» (comentario de `auth.js`), y no era así |
+| Corrección y guard | v859 · `firestore.rules` (leer y modificar: SA, Dirección del club/ente e interesado; la propia nace `pending*`) · `test_platform_requests_rules.js` parte 3 (rojo 19/26 con la regla anterior, 26/26 ahora) · commit `99c5e54` · fila en `VALIDACION_E2E_Y_APPCHECK.md` §3.3 |
+| Estado | **abierta**: corregida; faltan la valoración de riesgo y la decisión de aviso del titular |
