@@ -295,7 +295,7 @@ producción con dos líneas de log marcadas `[PRUEBA]` (A1 y A2 llegaron).
 |---|---|---|---|
 | A1 | 🔴 Purga o borrado incompletos | log de error con `PURGA INCOMPLETA` (`deleteUserData`) o `VERIFICACIÓN FALLIDA` (`archiveAndDeleteCoach`) | Es una **baja RGPD sin completar**. Mirar `auth_deletion_failures` y el log; terminar la purga. Si quedaron datos visibles, abrir ficha en `INCIDENTES.md` |
 | A2 | 🔴 Fallo de correo | log de error de `sendInviteEmail` con `Error Nodemailer` | Las invitaciones no llegan. Revisar los secretos `EMAIL_*` (Secret Manager) y el proveedor SMTP. Avisar a los clubes que estén dando altas |
-| A3 | 🟠 Errores en funciones | más de 5 logs de nivel ERROR de las Cloud Functions en 10 min (métrica `chronos_funciones_errores`) | Logs Explorer con `severity>=ERROR`, ver qué función falla y desde cuándo. Si coincide con un despliegue, valorar volver atrás |
+| A3 | 🟠 Error en una función | **cualquier** log de nivel ERROR de las Cloud Functions (como mucho un aviso por hora) | Logs Explorer con `severity>=ERROR` y `resource.type="cloud_function"`, ver qué función falla y desde cuándo. Si coincide con un despliegue, valorar volver atrás |
 | A4 | 🟠 Rechazos de App Check | más de 50 peticiones **rechazadas** (`result="DENY"`) en 1 h. Lo normal son unas pocas por semana | Posible abuso, cliente roto o reCAPTCHA caído. `node scripts/ops/evidencia_appcheck.js` para ver el reparto. Si es abuso: `INCIDENTES.md` |
 | A5 | 🟠 La app no responde | la comprobación de `https://cronos-futbol-app.web.app/` (cada 5 min, desde Europa, EE. UU. y Sudamérica) falla desde más de una región | Abrir la web. Mirar la consola de Hosting y el último despliegue; si lo rompió un despliegue, volver a la versión anterior desde la consola |
 
@@ -311,6 +311,14 @@ producción con dos líneas de log marcadas `[PRUEBA]` (A1 y A2 llegaron).
   avisaría cada hora.
 - Una métrica de logs recién creada tarda **hasta 10 min** en poder usarse en una alerta
   (la API responde 404 mientras tanto).
+- 🚨 **Las funciones registran como `resource.type="cloud_function"`, no
+  `cloud_run_revision`.** La primera A3 («más de 5 errores en 10 min») sólo miraba
+  `cloud_run_revision` y **nunca habría saltado** con errores reales; la prueba pasó
+  porque las líneas `[PRUEBA]` se escribieron con el tipo equivocado. Corregida el mismo
+  22-11 (ahora salta con cualquier error). **Las pruebas se escriben como
+  `cloud_function`.** Al corregirla salió un fallo real: `cleanupExpiredRequests` falla
+  cada noche por falta de un índice (ver `INCIDENTES.md` si llega a tratarse como
+  incidente; arreglo pendiente).
 
 ### Lo que estas alertas NO cubren (decidido así)
 
@@ -328,8 +336,11 @@ producción con dos líneas de log marcadas `[PRUEBA]` (A1 y A2 llegaron).
 
 - Ver que siguen activas: consola de Google Cloud → Monitoring → Alerting (cinco
   políticas «Chronos · A1…A5», todas activas, un canal de correo).
-- **Probar** A1 o A2 sin tocar nada: escribir en los logs una línea de nivel ERROR con
-  el texto de la alerta y la marca `[PRUEBA]`. Se hizo así el 2026-11-22.
+- **Probar** A1 o A2 sin tocar nada: escribir en los logs una línea de nivel ERROR,
+  con `resource.type="cloud_function"`, el texto de la alerta y la marca `[PRUEBA]`. Se
+  hizo así el 2026-11-22 (entonces como `cloud_run_revision`, ver la trampa de arriba).
+- **Retención de los logs** (`_Default`): **180 días** desde el 2026-11-22 (antes 30).
+  La auditoría de administración (`_Required`) se guarda 400 días, fijo.
 - **Recrearlas**: `node scripts/ops/alertas_crea.js cronos-futbol-app cronos-futbol-app.web.app`
   (sin `--crear` enseña lo que haría; con `--crear` crea sólo lo que falte).
 

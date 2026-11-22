@@ -15,9 +15,11 @@
 //  🚨 Trampas medidas el 2026-11-22 al montarlas:
 //   · `result` en la métrica de App Check vale ALLOW / DENY (no VALID). Con
 //     `result!="VALID"` se cuentan también las permitidas y A4 avisaría cada hora.
-//   · Una alerta sobre una métrica de logs exige `resource.type` en el filtro.
-//   · Una métrica de logs recién creada tarda hasta 10 min en poder usarse en una
-//     alerta: la API responde 404. Basta con volver a lanzar el script.
+//   · Las Cloud Functions de este proyecto registran como resource.type
+//     `cloud_function`, NO `cloud_run_revision`: los filtros aceptan los dos y las
+//     líneas de [PRUEBA] deben escribirse como `cloud_function`.
+//   · (Histórico) A3 usaba una métrica de logs `chronos_funciones_errores`; ya no se
+//     usa. Si existe en el proyecto, es un resto inofensivo.
 // ═══════════════════════════════════════════════════════════════════════════
 'use strict';
 
@@ -116,19 +118,18 @@ async function crea(desc, host, p, body) {
             filter: `${FUNC} AND severity>=ERROR AND "sendInviteEmail" AND "Error Nodemailer"` } }],
         alertStrategy: rate });
 
-    // A3 · errores en funciones: métrica de logs + umbral
-    const METRICA = 'chronos_funciones_errores';
-    const met = await api('GET', L, `/v2/projects/${P}/metrics/${METRICA}`);
-    if (met.st === 200) console.log('  = métrica ya existe', METRICA);
-    else await crea('métrica de logs ' + METRICA, L, `/v2/projects/${P}/metrics`,
-        { name: METRICA, description: 'Logs de nivel ERROR o superior de las Cloud Functions', filter: `${FUNC} AND severity>=ERROR` });
-    await politica('Chronos · A3 · Errores en funciones (>5 en 10 min)', {
-        documentation: doc('Más de 5 errores en 10 minutos en las Cloud Functions. Abrir Logs Explorer con severity>=ERROR y ver qué función falla.'),
-        conditions: [{ displayName: 'Errores > 5 / 10 min', conditionThreshold: {
-            filter: `metric.type="logging.googleapis.com/user/${METRICA}" AND resource.type="cloud_run_revision"`,
-            aggregations: [{ alignmentPeriod: '600s', perSeriesAligner: 'ALIGN_SUM', crossSeriesReducer: 'REDUCE_SUM' }],
-            comparison: 'COMPARISON_GT', thresholdValue: 5, duration: '0s', trigger: { count: 1 } } }],
-        alertStrategy: { autoClose: '1800s' } });
+    // A3 · cualquier error en funciones (log-match, como mucho un aviso por hora).
+    // 🚨 2026-11-22: la primera versión era «>5 errores en 10 min» sobre una métrica
+    //    de logs filtrada por resource.type="cloud_run_revision". Las funciones de
+    //    este proyecto registran como `cloud_function`, así que NUNCA habría saltado
+    //    (la prueba pasó porque las líneas [PRUEBA] se escribieron como
+    //    cloud_run_revision). Además, un fallo diario (cleanupExpiredRequests sin
+    //    índice) no llegaba al umbral. Las pruebas deben escribir como `cloud_function`.
+    await politica('Chronos · A3 · Error en una función', {
+        documentation: doc('Una Cloud Function ha registrado un error (como mucho un aviso por hora). Abrir Logs Explorer con severity>=ERROR y resource.type="cloud_function", ver qué función falla y desde cuándo. Si coincide con un despliegue, valorar volver atrás.'),
+        conditions: [{ displayName: 'Log de error en funciones', conditionMatchedLog: {
+            filter: `${FUNC} AND severity>=ERROR` } }],
+        alertStrategy: { notificationRateLimit: { period: '3600s' }, autoClose: '1800s' } });
 
     // A4 · App Check (sólo rechazos: result="DENY")
     await politica('Chronos · A4 · Rechazos anómalos de App Check (>50 en 1 h)', {

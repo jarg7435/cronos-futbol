@@ -1,6 +1,20 @@
 {
   "indexes": [
     {
+      "collectionGroup": "slot_requests",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "createdAt",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
       "collectionGroup": "live_matches",
       "queryScope": "COLLECTION",
       "fields": [
