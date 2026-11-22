@@ -99,6 +99,16 @@
     function esAdultos(cat) {
         return /^(regional|regional-fem|nacional|senior)(-[a-z0-9-]*)?$/.test(categoriaSlug(cat));
     }
+    // 🎬 v860 · N5: compartir con familias exige ADEMÁS figurar en
+    // `clubs/{id}.plazasAdultas` (lo exigen las reglas de Storage y de la
+    // ficha). Sin la lista cargada → false: el clip va al cuerpo técnico, nunca
+    // a las familias por defecto, y no se pierde por un 403.
+    function puedeFamilias(cat, me) {
+        me = me || _yo();
+        if (!me || !esAdultos(cat)) return false;
+        const lista = (window._cronosPlazasAdultas || {})[_clubId(me)];
+        return Array.isArray(lista) && lista.indexOf(String(me.uid)) >= 0;
+    }
 
     // ── Comprobar un fichero antes de aceptarlo ──────────────────────
     //  Peso (también lo exige el servidor) y duración (sólo aquí: es un
@@ -177,7 +187,7 @@
         const clubId = _clubId(me);
         const clipId = 'clip_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 8);
         const categoria = categoriaSlug(d.category);
-        const audiencia = (d.paraFamilias && esAdultos(d.category)) ? 'familias' : 'staff';
+        const audiencia = (d.paraFamilias && puedeFamilias(d.category, me)) ? 'familias' : 'staff';
         try {
             const st = await import(ST_URL);
             const storage = st.getStorage(db.app);
@@ -523,7 +533,7 @@
 
     window.CronosClips = {
         EXTRA, MAX_BYTES, MAX_SEG, VIDA_MS,
-        activo, esStaff, esFamilia, esDirectivo, esAdultos, categoriaSlug,
+        activo, esStaff, esFamilia, esDirectivo, esAdultos, puedeFamilias, categoriaSlug,
         compruebaFichero, tipoVideo, subir, listar, borrar, puedeBorrar, abrirLista, cerrarLista, ver, cerrarVisor,
         _sesion: () => _sesion,
     };

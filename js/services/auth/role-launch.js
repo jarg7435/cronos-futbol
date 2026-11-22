@@ -77,6 +77,17 @@ function _entidadDeLaPlaza(r) {
     return String((r && (r.clubId || r.individualEntityId)) || '');
 }
 
+// 🎬 v860 · N5 del E2E de Storage. Quién del cuerpo técnico puede compartir
+// clips de adultos con las familias lo decide `clubs/{id}.plazasAdultas` (uids),
+// que sólo escriben el SuperAdmin y la administración del club o del ente: la
+// categoría que declara quien sube ya no basta (las reglas exigen la lista).
+// Se guarda aparte de `me.extras` para no tocar nada de lo que ya decide.
+function _guardaPlazasAdultas(entityId, datos) {
+    const mapa = window._cronosPlazasAdultas || (window._cronosPlazasAdultas = {});
+    const lista = datos && Array.isArray(datos.plazasAdultas) ? datos.plazasAdultas.map(String) : [];
+    mapa[String(entityId)] = lista;
+}
+
 async function _cargarExtrasEntidad(entityId) {
     if (!entityId) return null;
     const cache = window._cronosExtrasEntidad || (window._cronosExtrasEntidad = {});
@@ -88,6 +99,7 @@ async function _cargarExtrasEntidad(entityId) {
         let snap = await getDoc(doc(_db, 'clubs', entityId));
         if (!snap.exists()) snap = await getDoc(doc(_db, 'individuals', entityId));
         cache[entityId] = snap.exists() ? (snap.data().extras || {}) : {};
+        _guardaPlazasAdultas(entityId, snap.exists() ? snap.data() : null);
         return cache[entityId];
     } catch (e) {
         // ⚠️ NO se cachea el fallo: se falla hacia el "sí" y se reintenta luego.
@@ -208,6 +220,7 @@ async function _escuchaExtras() {
                 }
                 return;
             }
+            _guardaPlazasAdultas(id, snap.data() || {});
             _aplicaExtras(id, (snap.data() || {}).extras || {});
         }, err => {
             console.warn('[extras] escucha de', id, 'cerrada:', err && err.message);

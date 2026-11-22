@@ -1272,7 +1272,7 @@
             item.clipNombre = String(_clipElegido.file.name || 'vídeo');
             item.clipMB = (_clipElegido.file.size || 0) / 1048576;
             const fam = document.getElementById('retro-clip-familias');
-            item.clipFamilias = !!(fam && fam.checked && _partidoDeAdultos());
+            item.clipFamilias = !!(fam && fam.checked && _puedeCompartirFamilias());
         }
         return item;
     }
@@ -1299,11 +1299,18 @@
     function _partidoDeAdultos() {
         return !!(window.CronosClips && window.CronosClips.esAdultos(_equipoDelPartido().category));
     }
+    // 🎬 v860 · N5: la casilla sólo a quien PUEDE compartir con familias
+    // (partido de adultos Y figurar en clubs/{id}.plazasAdultas). El aviso de
+    // salud sigue mirando sólo la categoría (_partidoDeAdultos).
+    function _puedeCompartirFamilias() {
+        return !!(window.CronosClips && typeof window.CronosClips.puedeFamilias === 'function'
+                  && window.CronosClips.puedeFamilias(_equipoDelPartido().category));
+    }
     function _pintaOpcionClip() {
         const box = document.getElementById('retro-clip-familias-box');
-        if (box) box.style.display = _partidoDeAdultos() ? 'flex' : 'none';
+        if (box) box.style.display = _puedeCompartirFamilias() ? 'flex' : 'none';
         const fam = document.getElementById('retro-clip-familias');
-        if (fam && !_partidoDeAdultos()) fam.checked = false;
+        if (fam && !_puedeCompartirFamilias()) fam.checked = false;
     }
     // 🧒 v832 · El aviso del comentario según la categoría del partido ELEGIDO
     // (no la del perfil): base = el de menores; adultos = genérico, sin

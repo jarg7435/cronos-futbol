@@ -87,7 +87,13 @@ service firebase.storage {
         && request.resource.metadata.get('clipId', '') == clipId
         && request.resource.metadata.get('audiencia', '') in ['staff', 'familias']
         && (request.resource.metadata.get('audiencia', '') == 'staff'
-            || adultos(request.resource.metadata.get('categoria', '')))
+            // 🚨 v860 · N5 del E2E: la categoría la DECLARA quien sube; un
+          // entrenador de Alevín podía poner «senior» y abrirlo a las familias.
+          // Ahora además tiene que figurar en clubs/{id}.plazasAdultas, que
+          // sólo escriben el SA y la administración del club (mismo documento
+          // que ya se lee para el extra: siguen siendo 2 documentos).
+          || (adultos(request.resource.metadata.get('categoria', ''))
+              && request.auth.uid in firestore.get(/databases/(default)/documents/clubs/$(clubId)).data.get('plazasAdultas', [])))
         && esStaff()
         && extraActivo();
 

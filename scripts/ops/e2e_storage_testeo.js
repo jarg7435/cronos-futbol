@@ -94,6 +94,8 @@ const CASOS = [
     ['N12', 'Sin sesión: lee y sube', 'denegado'],
     ['N13', 'Entrenador Norte escribe fuera de clips/', 'denegado'],
     ['P4', 'Director Norte borra el clip (no es suyo)', 'permitido'],
+    // v860 · el lado PERMITIDO de N5: quien figura en clubs/{id}.plazasAdultas.
+    ['P5', 'Entrenador Norte EN plazasAdultas sube para familias (regional) y la Familia lo ve', 'permitido'],
 ];
 
 if (!EJECUTAR) {
@@ -111,6 +113,13 @@ if (!EJECUTAR) {
     const ST = `https://firebasestorage.googleapis.com/v0/b/${BUCKET}/o`;
     const resultados = [];
     let debugName = null, surApagado = false;
+    let listaNortePrevia;            // v860 · undefined = no se ha tocado
+    const leerLista = async () => {
+        const r = await req(`${FS}/clubs/${NORTE}?mask.fieldPaths=plazasAdultas`, { headers: A });
+        return (((r.j || {}).fields || {}).plazasAdultas || {}).arrayValue ? (r.j.fields.plazasAdultas.arrayValue.values || []).map((x) => x.stringValue) : [];
+    };
+    const ponerLista = (uids) => req(`${FS}/clubs/${NORTE}?updateMask.fieldPaths=plazasAdultas`, { method: 'PATCH', headers: A,
+        body: J({ fields: { plazasAdultas: { arrayValue: { values: uids.map((u) => ({ stringValue: u })) } } } }) });
     const subidos = new Set();
 
     try {
@@ -216,6 +225,16 @@ if (!EJECUTAR) {
         apunta('N12', false, [await leer(null, rutaA), await subir(null, `clips/${NORTE}/${I_}`, { meta: { uploader: 'x', clipId: I_, audiencia: 'staff', categoria: 'alevin' } })]);
         apunta('N13', false, [await subir(S.n_coach, `otros/${SELLO}.mp4`, { meta: meta(S.n_coach, SELLO, 'staff', 'alevin') })]);
         apunta('P4', true, [await borrar(S.n_dir, rutaA)]);
+        // v860 · P5: con el entrenador EN la lista del club, el clip de adultos
+        // para familias se acepta (fichero + ficha) y la familia lo ve.
+        listaNortePrevia = await leerLista();
+        await ponerLista([...new Set([...listaNortePrevia, S.n_coach.uid])]);
+        const J_ = SELLO + '_j', rutaJ = `clips/${NORTE}/${J_}`;
+        const p5s = await subir(S.n_coach, rutaJ, { meta: meta(S.n_coach, J_, 'familias', 'regional') });
+        const p5f = await ficha(S.n_coach, J_, NORTE, 'familias', 'regional');
+        const p5l = await leer(S.n_familia, rutaJ);
+        apunta('P5', true, [p5s, p5f, p5l], 'subida/ficha/familia ve');
+        await borrar(S.n_coach, rutaJ);
     } catch (e) {
         console.error('\n✗ La prueba se interrumpió: ' + e.message);
         process.exitCode = 1;
@@ -223,6 +242,10 @@ if (!EJECUTAR) {
         // ── deshacer SIEMPRE ───────────────────────────────────────────────
         console.log('\nLimpieza:');
         try {
+            if (listaNortePrevia !== undefined) {
+                const r = await ponerLista(listaNortePrevia);
+                console.log('  · plazasAdultas de Norte restaurada (' + listaNortePrevia.length + ' uids): HTTP ' + r.st);
+            }
             if (surApagado) {
                 const r = await req(`${FS}/clubs/${SUR}?updateMask.fieldPaths=extras.modulo_videos`, { method: 'PATCH', headers: A,
                     body: J({ fields: { extras: { mapValue: { fields: { modulo_videos: { booleanValue: true } } } } } }) });
@@ -240,7 +263,7 @@ if (!EJECUTAR) {
             console.log('  · ficheros e2e restantes borrados: ' + borrados);
             // fichas y vistas e2e_
             let fichas = 0;
-            for (const suf of ['_a', '_b', '_c', '_d', '_e', '_f', '_g', '_h', '_i']) {
+            for (const suf of ['_a', '_b', '_c', '_d', '_e', '_f', '_g', '_h', '_i', '_j']) {
                 const id = SELLO + suf;
                 const vs = await req(`${FS}/cronos_clips/${id}/vistas`, { headers: A });
                 for (const v of (vs.j && vs.j.documents) || []) await req(`https://firestore.googleapis.com/v1/${v.name}`, { method: 'DELETE', headers: A });

@@ -23,7 +23,9 @@ const path = require('path');
 const vm = require('vm');
 
 const ROOT = path.join(__dirname, '..');
-const leer = (p) => fs.readFileSync(path.join(ROOT, p), 'utf8');
+// RULES_DIR: evalúa los .rules de OTRA carpeta (p. ej. los del commit anterior,
+// para ver el guard en rojo) sin tocar los del repo.
+const leer = (p) => fs.readFileSync(path.join((process.env.RULES_DIR && /\.rules$/.test(p)) ? process.env.RULES_DIR : ROOT, p), 'utf8');
 
 let fail = 0, pass = 0;
 const ok = (name, cond, extra) => {
@@ -127,6 +129,21 @@ const parte1 = (async () => {   // async: 1f3 espera al reloj de 5 s
         docs.size === 3 && [...docs].every(d => PERMITIDOS.includes(d)), [...docs]);
     ok('1r · 🔑 el fichero sube con su audiencia y categoría en los metadatos',
         /customMetadata:\s*\{[^}]*audiencia[^}]*categoria/.test(leer('js/match/events/match-clips.js')));
+    // 🚨 v860 · N5: compartir con familias exige figurar en clubs/{id}.plazasAdultas.
+    const MCv = leer('js/match/events/match-clips.js'), RMv = leer('js/match/events/retroactive-modal.js'),
+          RLv = leer('js/services/auth/role-launch.js');
+    ok('1s · 🔑🔑 la audiencia «familias» sale de puedeFamilias (lista del club), no de la categoría a secas',
+        /const audiencia = \(d\.paraFamilias && puedeFamilias\(d\.category, me\)\) \? 'familias' : 'staff'/.test(MCv));
+    ok('1t · puedeFamilias exige adultos Y el uid en _cronosPlazasAdultas[club] (sin lista → staff)',
+        /function puedeFamilias\(cat, me\)[\s\S]{0,260}esAdultos\(cat\)[\s\S]{0,200}_cronosPlazasAdultas[\s\S]{0,120}indexOf\(String\(me\.uid\)\) >= 0/.test(MCv));
+    ok('1u · la casilla de familias sólo se pinta a quien puede compartir',
+        /box\.style\.display = _puedeCompartirFamilias\(\) \? 'flex' : 'none'/.test(RMv) &&
+        /item\.clipFamilias = !!\(fam && fam\.checked && _puedeCompartirFamilias\(\)\)/.test(RMv));
+    ok('1v · la lista se guarda en las DOS lecturas del club (carga inicial y escucha en vivo)',
+        (RLv.match(/_guardaPlazasAdultas\(/g) || []).length === 3);
+    ok('1w · 🔑🔑 storage.rules y la ficha exigen plazasAdultas para abrir a familias',
+        /adultos\(request\.resource\.metadata\.get\('categoria', ''\)\)\s*&& request\.auth\.uid in firestore\.get\(\/databases\/\(default\)\/documents\/clubs\/\$\(clubId\)\)\.data\.get\('plazasAdultas', \[\]\)/.test(leer('storage.rules')) &&
+        /clAdultos\(request\.resource\.data\.get\('categoria', null\)\)\s*&& request\.auth\.uid in get\(\/databases\/\$\(database\)\/documents\/clubs\/\$\(request\.resource\.data\.get\('clubId', ''\)\)\)\.data\.get\('plazasAdultas', \[\]\)/.test(leer('firestore.rules')));
 })();
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -198,7 +215,10 @@ async function lote(tk, nombre, fichero, casos, mocksDe, contenido) {
     await lote(tk, 'firestore.rules', 'firestore.rules', [
         cr('2a · el entrenador sube un clip de su club (menores, sólo staff)', 'ALLOW', 'coach', U('user'), FICHA()),
         cr('2b · 🔑🔑 NO puede abrirlo a familias en una categoría de MENORES', 'DENY', 'coach', U('user'), FICHA({ audiencia: 'familias' })),
-        cr('2c · 🔑 en categoría de adultos SÍ puede abrirlo a familias', 'ALLOW', 'coach', U('user'), FICHA({ audiencia: 'familias', categoria: 'regional' })),
+        cr('2c · 🔑 en categoría de adultos y EN la lista del club SÍ puede abrirlo a familias', 'ALLOW', 'coach', U('user'), FICHA({ audiencia: 'familias', categoria: 'regional' }), Object.assign({}, CLUB, { plazasAdultas: ['coach'] })),
+        // 🚨 v860 · N5 del E2E: declarar «senior» sin figurar en clubs/{id}.plazasAdultas.
+        cr('2c2 · 🔑🔑 declarar adultos SIN estar en plazasAdultas NO abre a familias', 'DENY', 'coach', U('user'), FICHA({ audiencia: 'familias', categoria: 'senior' })),
+        cr('2c3 · 🔑 en la lista pero categoría de MENORES tampoco', 'DENY', 'coach', U('user'), FICHA({ audiencia: 'familias', categoria: 'alevin' }), Object.assign({}, CLUB, { plazasAdultas: ['coach'] })),
         cr('2d · 🔑 sin el extra en el club no se crea nada', 'DENY', 'coach', U('user'), FICHA(), { extras: {} }),
         cr('2e · una familia no sube vídeos', 'DENY', 'fam', U('parent'), FICHA({ uploaderUid: 'fam' })),
         cr('2f · ni se firma con el uid de otro', 'DENY', 'coach', U('user'), FICHA({ uploaderUid: 'otro' })),
@@ -298,7 +318,10 @@ async function lote(tk, nombre, fichero, casos, mocksDe, contenido) {
         sube('3j · ⚠️ ni algo que no sea vídeo', 'DENY', 'coach', U('user'), { contentType: 'image/png' }),
         sube('3k · 🔑 sin el extra del club no', 'DENY', 'coach', U('user'), null, { extras: {} }),
         sube('3l · una familia no sube', 'DENY', 'fam', U('parent')),
-        sube('3m · el de adultos abierto a familias sí', 'ALLOW', 'coach', U('user'), { metadata: META('coach', { audiencia: 'familias', categoria: 'regional' }) }),
+        sube('3m · el de adultos abierto a familias sí (quien sube está en plazasAdultas)', 'ALLOW', 'coach', U('user'), { metadata: META('coach', { audiencia: 'familias', categoria: 'regional' }) }, Object.assign({}, CLUB, { plazasAdultas: ['coach'] })),
+        // 🚨 v860 · N5 del E2E: el fichero, igual que la ficha.
+        sube('3m2 · 🔑🔑 declarar «senior» SIN estar en plazasAdultas NO', 'DENY', 'coach', U('user'), { metadata: META('coach', { audiencia: 'familias', categoria: 'senior' }) }),
+        sube('3m3 · 🔑 en la lista pero de MENORES tampoco', 'DENY', 'coach', U('user'), { metadata: META('coach', { audiencia: 'familias', categoria: 'alevin' }) }, Object.assign({}, CLUB, { plazasAdultas: ['coach'] })),
         sube('3n · 🔑🔑 uno de MENORES marcado para familias NO', 'DENY', 'coach', U('user'), { metadata: META('coach', { audiencia: 'familias', categoria: 'alevin' }) }),
         sube('3o · ⚠️ sin audiencia no', 'DENY', 'coach', U('user'), { metadata: { uploader: 'coach', clipId: 'c1' } }),
         sube('3p · ⚠️ firmado con otro uid no', 'DENY', 'coach', U('user'), { metadata: META('otro') }),
