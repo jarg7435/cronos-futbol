@@ -285,6 +285,56 @@ sin verificador es un comentario que avisa, y los comentarios no comprueban nada
 
 ---
 
+## Parte 6 · Alertas automáticas
+
+Activas en producción (`cronos-futbol-app`) desde el 2026-11-22, en **Cloud Monitoring**.
+Avisan por correo al titular. Se probaron en testeo (A1-A4 llegaron, A5 no debía) y en
+producción con dos líneas de log marcadas `[PRUEBA]` (A1 y A2 llegaron).
+
+| # | Alerta | Salta cuando | Qué hacer |
+|---|---|---|---|
+| A1 | 🔴 Purga o borrado incompletos | log de error con `PURGA INCOMPLETA` (`deleteUserData`) o `VERIFICACIÓN FALLIDA` (`archiveAndDeleteCoach`) | Es una **baja RGPD sin completar**. Mirar `auth_deletion_failures` y el log; terminar la purga. Si quedaron datos visibles, abrir ficha en `INCIDENTES.md` |
+| A2 | 🔴 Fallo de correo | log de error de `sendInviteEmail` con `Error Nodemailer` | Las invitaciones no llegan. Revisar los secretos `EMAIL_*` (Secret Manager) y el proveedor SMTP. Avisar a los clubes que estén dando altas |
+| A3 | 🟠 Errores en funciones | más de 5 logs de nivel ERROR de las Cloud Functions en 10 min (métrica `chronos_funciones_errores`) | Logs Explorer con `severity>=ERROR`, ver qué función falla y desde cuándo. Si coincide con un despliegue, valorar volver atrás |
+| A4 | 🟠 Rechazos de App Check | más de 50 peticiones **rechazadas** (`result="DENY"`) en 1 h. Lo normal son unas pocas por semana | Posible abuso, cliente roto o reCAPTCHA caído. `node scripts/ops/evidencia_appcheck.js` para ver el reparto. Si es abuso: `INCIDENTES.md` |
+| A5 | 🟠 La app no responde | la comprobación de `https://cronos-futbol-app.web.app/` (cada 5 min, desde Europa, EE. UU. y Sudamérica) falla desde más de una región | Abrir la web. Mirar la consola de Hosting y el último despliegue; si lo rompió un despliegue, volver a la versión anterior desde la consola |
+
+- **Canal:** un correo al titular. Los avisos de una misma alerta se agrupan (como mucho
+  uno cada 5 min), y llega otro correo cuando se resuelve.
+- **Cada correo trae su «qué hacer»**: la columna de arriba va también en la
+  documentación de cada alerta.
+
+### ⚠️ Trampas medidas al montarlas
+
+- La etiqueta `result` de la métrica de App Check vale **`ALLOW` / `DENY`**, no `VALID`.
+  Un filtro `result!="VALID"` cuenta también las permitidas (~100/h en producción) y
+  avisaría cada hora.
+- Una métrica de logs recién creada tarda **hasta 10 min** en poder usarse en una alerta
+  (la API responde 404 mientras tanto).
+
+### Lo que estas alertas NO cubren (decidido así)
+
+- **Que la copia diaria no se haga**: no hay alerta. **Recordatorio semanal** del titular
+  (los lunes, en su calendario): `npm run backup:estado`, que sale en rojo si falta algo.
+  Automatizarlo en la CI exigiría guardar en GitHub una credencial de producción:
+  descartado.
+- **Intentos repetidos de inicio de sesión**: Firebase Auth ya los frena por su cuenta;
+  alertar exigiría activar los registros de acceso a datos (volumen y coste). Descartado
+  por ahora.
+- **Gasto anómalo**: no hay alerta de presupuesto (pendiente, requiere la cuenta de
+  facturación).
+
+### Comprobarlas o recrearlas
+
+- Ver que siguen activas: consola de Google Cloud → Monitoring → Alerting (cinco
+  políticas «Chronos · A1…A5», todas activas, un canal de correo).
+- **Probar** A1 o A2 sin tocar nada: escribir en los logs una línea de nivel ERROR con
+  el texto de la alerta y la marca `[PRUEBA]`. Se hizo así el 2026-11-22.
+- **Recrearlas**: `node scripts/ops/alertas_crea.js cronos-futbol-app cronos-futbol-app.web.app`
+  (sin `--crear` enseña lo que haría; con `--crear` crea sólo lo que falte).
+
+---
+
 ## Registro de simulacros
 
 > ⚠️ **En esta sección sólo puede aparecer con formato de fecha la fecha del propio
