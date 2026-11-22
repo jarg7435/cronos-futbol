@@ -223,7 +223,11 @@ recrean al moverlas, así que hay que planificarlo.
   - revocar sesiones;
   - cerrar la regla;
   - desplegar.
-- **Registro de cada brecha, se notifique o no.**
+- **Registro de cada brecha, se notifique o no:** `INCIDENTES.md` (tipos, plazos,
+  procedimiento, plantilla de ficha y registro). Desde el 2026-11-22 recoge tres
+  incidentes; **INC-2026-002** (respaldos publicados en el hosting hasta el 02-10)
+  sigue **abierta**, pendiente de la valoración de riesgo y de la decisión de
+  notificación del titular y los clubes.
 - **Recuperación:** `RECUPERACION.md`.
 
 ---
@@ -249,8 +253,8 @@ club pueda adoptar. Para ello sirve el material de este documento.
 | 2 | `privacy.html` veraz: transferencias, retención, identificación | ✅ v1.1 (23-09) → v2.0 (19-10, modelo club responsable) |
 | 3 | Contrato de encargado como requisito del alta | ✅ `encargo.html` + casilla obligatoria (v830). ⏳ **Recabar la aceptación de los clubes existentes** |
 | 4 | Aviso «no anotes datos de salud» | ✅ |
-| 5 | Procedimiento de derechos | ✅ definido (Parte 7). ⏳ Registro de solicitudes atendidas |
-| 6 | `INCIDENTES.md` con plantilla de registro | ⏳ |
+| 5 | Procedimiento de derechos | ✅ definido (Parte 7) · ✅ registro de solicitudes en `REGISTRO_DERECHOS.md` (2026-11-22) |
+| 6 | `INCIDENTES.md` con plantilla de registro | ✅ 2026-11-22. ⏳ Cerrar INC-2026-002 (decisión del titular) |
 | 7 | `us-central1` | ✅ declarado. Mover a `europe-west1` es opcional |
 | 8 | DPIA tipo para los clubes | ⏳ con asesor |
 | 9 | Información a familias / autorización | Responsabilidad del club (`encargo.html` §6) |
