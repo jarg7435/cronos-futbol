@@ -51,14 +51,10 @@ window._cronosLoadClubUsers = async function() {
             });
         });
         window._cronosClubUsersCache = users;
-        // FIX (Error #14): log DETALLADO para ver exactamente qué roles tienen
-        console.log('[_cronosLoadClubUsers] cargados', users.length, 'usuarios del club:');
-        users.forEach((u, i) => {
-            const allRolesStr = Array.isArray(u.allRoles)
-                ? u.allRoles.map(r => r.role || JSON.stringify(r)).join(', ')
-                : '(sin allRoles)';
-            console.log(`  [${i}] name="${u.name}" | email="${u.email}" | rootRole="${u.role}" | type="${u.type}" | allRoles=[${allRolesStr}]`);
-        });
+        // v857: sólo el recuento. Antes (FIX Error #14) se escribía nombre +
+        // correo + roles de CADA usuario del club en la consola del navegador
+        // (reauditoría 19-11). Lo fija scripts/test_consola_sin_pii.js.
+        console.log('[_cronosLoadClubUsers] cargados', users.length, 'usuarios del club');
         return users;
     } catch(e) {
         console.warn('[_cronosLoadClubUsers] ERROR:', e.code || e.message);
@@ -1174,9 +1170,9 @@ function _cronosResolvePlayersArr() {
 
     // 1) Fuente de verdad: _savedConvokedPlayers
     if (window._savedConvokedPlayers && window._savedConvokedPlayers.length) {
-        console.log('[_cronosResolvePlayersArr] primer jugador raw:', JSON.stringify(window._savedConvokedPlayers[0]));
+        // v857: sin volcar jugadores (menores) en la consola; sólo recuentos.
         playersArr = window._savedConvokedPlayers.map(_cronosConvLabel).filter(s => s.length > 0);
-        console.log('[_cronosResolvePlayersArr] jugadores desde _savedConvokedPlayers:', playersArr.length, playersArr);
+        console.log('[_cronosResolvePlayersArr] jugadores desde _savedConvokedPlayers:', playersArr.length);
         // Si el mapeo dio 0 pero había elementos, usar cualquier clave con texto
         if (!playersArr.length && window._savedConvokedPlayers.length) {
             playersArr = window._savedConvokedPlayers.map((p, i) => {
@@ -1187,7 +1183,7 @@ function _cronosResolvePlayersArr() {
                 }
                 return 'Jugador ' + (i + 1);
             });
-            console.log('[_cronosResolvePlayersArr] jugadores (fallback keys):', playersArr.length, playersArr);
+            console.log('[_cronosResolvePlayersArr] jugadores (fallback keys):', playersArr.length);
         }
     }
 
@@ -1406,8 +1402,8 @@ async function publishConvocationToApp() {
 // ── V2: Enviar convocatoria usando el nuevo flujo simplificado ──
 window.publishConvocationToAppV2 = async function() {
     console.log('[publishConvocationToAppV2] ====== INICIO ======');
-    console.log('[publishConvocationToAppV2] _savedConvokedPlayers:', window._savedConvokedPlayers ? window._savedConvokedPlayers.length : 'UNDEFINED', window._savedConvokedPlayers);
-    console.log('[publishConvocationToAppV2] _savedConvData:', window._savedConvData);
+    console.log('[publishConvocationToAppV2] _savedConvokedPlayers:', window._savedConvokedPlayers ? window._savedConvokedPlayers.length : 'UNDEFINED');
+    if (window._CRONOS_DEBUG) console.log('[publishConvocationToAppV2] _savedConvData:', window._savedConvData);
     const me = window._cronosCurrentUser;
     const fa = window._cronos_auth;
     if (!me || !fa) { console.warn('[publishConvocationToAppV2] no me/fa'); return; }
@@ -1518,7 +1514,7 @@ window.publishConvocationToAppV2 = async function() {
             count++;
             debugLog.push(`[✓ ${r.label}] enviado a uid=${uid}`);
         }
-        console.log('[publishConvocationToAppV2] Debug:', debugLog);
+        if (window._CRONOS_DEBUG) console.log('[publishConvocationToAppV2] Debug:', debugLog);
 
         if (typeof hideSpinner === 'function') hideSpinner();
 

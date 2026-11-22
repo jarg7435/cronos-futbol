@@ -101,8 +101,7 @@ async function autoDispatchMatchReports() {
         const homePlayers = window.players.filter(p => p.team === _cMyTeamKey());
         console.log('autoDispatch ejecutándose | teamKey:', _cMyTeamKey(),
             '| total players:', (window.players||[]).length,
-            '| homePlayers (mi equipo):', homePlayers.length,
-            homePlayers.map(p => '#'+p.number+' '+p.name).join(', ') || '(NINGUNO)');
+            '| homePlayers (mi equipo):', homePlayers.length || '(NINGUNO)');  // v857: sin nombres (test_consola_sin_pii)
 
         // 1. Obtener links y contactos
         const linksSnap = await getDocs(query(collection(db, 'cronos_player_links'), where('clubId', '==', me.clubId || '')));

@@ -1081,8 +1081,7 @@ function saveConvPlayers() {
     // FIX (Error #15c): log para depurar
     console.log('[saveConvPlayers] convRows encontradas:', convRows.length,
         '| myPlayers:', myPlayers.length,
-        '| _savedConvokedPlayers:', window._savedConvokedPlayers.length,
-        window._savedConvokedPlayers.map(p => p.alias || p.name));
+        '| _savedConvokedPlayers:', window._savedConvokedPlayers.length);  // v857: sin nombres (test_consola_sin_pii)
 }
 
 // ── 🖨️ v753 · IMPRIMIR / PDF DE LA CONVOCATORIA EN PANTALLA ──
