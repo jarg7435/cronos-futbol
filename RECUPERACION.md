@@ -9,7 +9,7 @@ este fichero):
 | Copia diaria gestionada | ✅ programada (retención 7 días); 6 copias READY, la última de hace 1 día |
 | Exportación de cuentas de Auth | ✅ 2026-11-22: 12 cuentas, 8 con *custom claims* (la anterior tenía 61 días) |
 | Simulacro de restauración | ✅ primero hecho y anotado (registro final): 47/47 colecciones, RTO ~14 min. Se repite cada seis meses |
-| Cloud Storage (vídeos de jugadas, v804) | ⚠️ **sin copia**: la copia de Firestore no lo incluye (ver Parte 0, punto 5) |
+| Cloud Storage (vídeos de jugadas, v804) | ✅ **sin copia a propósito**: los clips son efímeros (24 h) por diseño (ver Parte 0, punto 5) |
 
 Hay clubes reales en producción, con datos de menores. La Parte 2 ya se activó el
 2026-09-22 y se deja como referencia. El verificador (`scripts/ops/copias_estado.js`)
@@ -68,8 +68,15 @@ que los comandos:
 5. **Cloud Storage**: desde la v804 (vídeos de jugadas) **sí hay bucket**
    (`cronos-futbol-app.firebasestorage.app`, reglas publicadas el 2026-10-12). La copia
    de Firestore **no incluye** los ficheros, sólo los documentos que los referencian.
-   ⏳ Pendiente: medir su tamaño y decidir si necesita copia propia o si se acepta como
-   dato que se puede perder. (Hasta la v804 no existía: 404.)
+   **Decisión (2026-11-22): Storage NO se copia, a propósito.** Los clips de jugadas son
+   efímeros por diseño: se ven una vez por cuenta y **se borran a las 24 h** (regla de
+   ciclo de vida `Delete` a 1 día en `clips/` + TTL `expiresAt` de sus fichas). La app
+   lo promete así a clubes y familias, y en categorías de menores son imágenes de niños:
+   copiarlos contradiría esa promesa y la minimización de datos. Medido ese día:
+   **0 objetos**. El *soft delete* que Google pone por defecto (7 días) se **desactivó**
+   el mismo día (`retentionDurationSeconds: 0`, con autorización del titular) para que
+   «24 h» sea cierto: con él, un clip borrado seguía recuperable hasta 8 días.
+   (Hasta la v804 el bucket no existía: 404.)
 
 > 📏 **Recuento real del 2026-11-22** (`(default)`): `individuals`, `matches`,
 > `players`, `teams` y `trainingPlans` tienen **0 documentos** en la raíz. Hoy lo
