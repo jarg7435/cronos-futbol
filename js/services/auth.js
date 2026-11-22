@@ -1391,7 +1391,11 @@ export async function checkAuthorization(user) {
         // un rol REALMENTE autorizado si su clave está en _verifiedRoleKeys,
         // sembrado desde fuentes que el usuario NO puede falsificar:
         //   1. RAÍZ del doc (data.isAuthorized/role/clubId) — protegida por reglas.
-        //   2. platform_requests aprobadas (status solo escribible por el SA).
+        //   2. platform_requests aprobadas. ⚠️ v859: HASTA el 22-11 esto NO era
+        //      cierto — cualquier miembro del club podía crearse una ya
+        //      aprobada o aprobarse la suya (probado en testeo). Desde v859 el
+        //      estado sólo lo cambian el SA y la Dirección del club o del ente,
+        //      y la propia nace `pending*` (test_platform_requests_rules, parte 3).
         const _roleKey = (role, clubId, indivId) =>
             (role || '') + '|' + (clubId || indivId || '');
         const _verifiedRoleKeys = new Set();

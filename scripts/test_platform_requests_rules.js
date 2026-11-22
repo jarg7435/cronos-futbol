@@ -92,8 +92,18 @@ function mocks(uid, data) {
     ]
     // clubA lo administra ADMIN; clubB es de otra persona.
     .concat(club(CLUB, { adminUid: ADMIN, adminEmail: ADMIN + '@x.es' }))
-    .concat(club(OTRO, { adminUid: 'uid_admin_ajeno', adminEmail: 'ajeno@x.es' }));
+    .concat(club(OTRO, { adminUid: 'uid_admin_ajeno', adminEmail: 'ajeno@x.es' }))
+    // v859 · el ente individual (sus solicitudes llevan individualOwnerId).
+    .concat(club('ente1', { adminUid: 'uid_admin_ente', isIndividual: true }));
 }
+// v859 · miembros del club que NO son su Dirección.
+const FAM = 'uid_familia', COACH = 'uid_entrenador', DIR = 'uid_director';
+const DOC_FAM = { clubId: CLUB, isAuthorized: true, status: 'active', role: 'parent' };
+const DOC_COACH = { clubId: CLUB, isAuthorized: true, status: 'active', role: 'user' };
+const DOC_DIR = { clubId: CLUB, isAuthorized: true, status: 'active', role: 'director' };
+const SOL = (over) => ({ data: Object.assign({ type: 'self_registration', clubId: CLUB, userUid: 'uid_de_otro',
+    requestedRole: 'user', requestedEmail: 'otro@x.es', requestedName: 'Otra Persona',
+    status: 'pending_club_admin' }, over || {}) });
 const DOC_NUEVO = { clubId: CLUB, isAuthorized: false, status: 'pending_sa', role: 'user' };
 const DOC_ADMIN = { clubId: CLUB, isAuthorized: true, status: 'active', role: 'club_admin' };
 
@@ -175,6 +185,63 @@ function casos() {
           exp: 'DENY',
           req: { auth: null, path: P, method: 'create', resource: { data: {
               type: 'self_registration', userUid: NUEVO, clubId: CLUB } } } },
+
+        // ══ (3) v859 · DENTRO DEL CLUB, SÓLO LA DIRECCIÓN Y EL INTERESADO ══
+        //  Prueba real en testeo (22-11): con `sameClubAsDoc` una FAMILIA
+        //  listaba las solicitudes de todo el club y un entrenador se aprobaba
+        //  la suya, rechazaba la de otro o se cambiaba a director.
+        { n: '3a · 🔴🔴 una familia NO lee la solicitud de otra persona de su club',
+          exp: 'DENY', existing: SOL(),
+          req: { auth: auth(FAM, { role: 'parent', clubId: CLUB }), path: P, method: 'get' },
+          mocks: mocks(FAM, DOC_FAM), nota: 'correo, nombre y alias del jugador de otros' },
+        { n: '3b · 🔴 un entrenador NO rechaza la solicitud de otro',
+          exp: 'DENY', existing: SOL(),
+          req: { auth: auth(COACH, { role: 'user', clubId: CLUB }), path: P, method: 'update',
+                 resource: SOL({ status: 'rejected' }) },
+          mocks: mocks(COACH, DOC_COACH) },
+        { n: '3c · 🔴🔴 un entrenador NO se aprueba su propia solicitud',
+          exp: 'DENY', existing: SOL({ userUid: COACH }),
+          req: { auth: auth(COACH, { role: 'user', clubId: CLUB }), path: P, method: 'update',
+                 resource: SOL({ userUid: COACH, status: 'sa_approved' }) },
+          mocks: mocks(COACH, DOC_COACH), nota: 'auth.js toma las aprobadas como roles verificados' },
+        { n: '3d · 🔴 ni se cambia el rol a director',
+          exp: 'DENY', existing: SOL({ userUid: COACH }),
+          req: { auth: auth(COACH, { role: 'user', clubId: CLUB }), path: P, method: 'update',
+                 resource: SOL({ userUid: COACH, requestedRole: 'director', category: 'senior' }) },
+          mocks: mocks(COACH, DOC_COACH) },
+        { n: '3e · 🔴🔴 NO se crea la propia ya «sa_approved»',
+          exp: 'DENY',
+          req: { auth: auth(COACH, { role: 'user', clubId: CLUB }), path: P, method: 'create',
+                 resource: SOL({ userUid: COACH, requestedRole: 'director', status: 'sa_approved' }) },
+          mocks: mocks(COACH, DOC_COACH) },
+        { n: '3f · 🔴 ni la propia sin estado',
+          exp: 'DENY',
+          req: { auth: auth(NUEVO), path: P, method: 'create', resource: { data: {
+              type: 'self_registration', clubId: CLUB, userUid: NUEVO, requestedRole: 'user' } } },
+          mocks: mocks(NUEVO, DOC_NUEVO) },
+        { n: '3g · 🔴 un miembro de un ENTE no lee las solicitudes del ente',
+          exp: 'DENY', existing: { data: { type: 'ind_sub_registration', individualOwnerId: 'ente1',
+              userUid: 'uid_de_otro', userEmail: 'otro@x.es', status: 'pending_individual' } },
+          req: { auth: auth(FAM, { role: 'parent', clubId: 'ente1' }), path: P, method: 'get' },
+          mocks: mocks(FAM, { clubId: 'ente1', isAuthorized: true, status: 'active', role: 'parent' }) },
+        { n: '3h · 🔑 el interesado SÍ lee la suya',
+          exp: 'ALLOW', existing: SOL({ userUid: COACH }),
+          req: { auth: auth(COACH, { role: 'user', clubId: CLUB }), path: P, method: 'get' },
+          mocks: mocks(COACH, DOC_COACH) },
+        { n: '3i · 🔑 el Director del club SÍ las lee (panel)',
+          exp: 'ALLOW', existing: SOL(),
+          req: { auth: auth(DIR, { role: 'director', clubId: CLUB }), path: P, method: 'get' },
+          mocks: mocks(DIR, DOC_DIR) },
+        { n: '3j · 🔑 el Admin del club SÍ la aprueba (fwd_ → approved)',
+          exp: 'ALLOW', existing: SOL({ status: 'pending_sa' }),
+          req: { auth: auth(ADMIN, { role: 'club_admin', clubId: CLUB }), path: P, method: 'update',
+                 resource: SOL({ status: 'approved' }) },
+          mocks: mocks(ADMIN, DOC_ADMIN) },
+        { n: '3k · 🔑 el admin del ENTE SÍ lee las de su ente',
+          exp: 'ALLOW', existing: { data: { type: 'ind_sub_registration', individualOwnerId: 'ente1',
+              userUid: 'uid_de_otro', status: 'pending_individual' } },
+          req: { auth: auth('uid_admin_ente', { role: 'individual_admin', clubId: 'ente1' }), path: P, method: 'get' },
+          mocks: mocks('uid_admin_ente', { clubId: 'ente1', isAuthorized: true, status: 'active', role: 'individual_admin' }) },
     ];
 }
 
@@ -192,8 +259,10 @@ function casos() {
     }
     ok('0a · sesion del CLI valida', !!token);
 
+    // RULES_FILE permite evaluar OTRO fichero (p. ej. la versión anterior,
+    // para ver el guard en rojo) sin tocar el del repo.
     const source = { files: [{ name: 'firestore.rules',
-        content: fs.readFileSync(path.join(ROOT, 'firestore.rules'), 'utf8') }] };
+        content: fs.readFileSync(process.env.RULES_FILE || path.join(ROOT, 'firestore.rules'), 'utf8') }] };
 
     const cs = casos();
     const testCases = cs.map(c => ({
@@ -203,6 +272,7 @@ function casos() {
         //    sin haber probado nada. Ya se pago dos veces (v434 y v633).
         request: Object.assign({ time: new Date().toISOString() }, c.req),
         functionMocks: c.mocks || [], pathEncoding: 'PLAIN',
+        ...(c.existing ? { resource: c.existing } : {}),
     }));
 
     const r = await post(`https://firebaserules.googleapis.com/v1/projects/${PROJECT}:test`,

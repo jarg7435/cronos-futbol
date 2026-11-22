@@ -1206,9 +1206,14 @@ service cloud.firestore {
       // rama puede darse por cierta. La cura es del lado del CLIENTE — filtrar
       // tambien por clubId—, no de aqui: relajar esta regla para que cualquier
       // consulta valiera significaria abrir la coleccion entera.
+      // 🔒 v859 · prueba real en testeo (22-11): con `sameClubAsDoc` CUALQUIER
+      //    miembro del club —familias incluidas— listaba las solicitudes de
+      //    todos (correo, nombre, alias del jugador). Nadie más que la Dirección
+      //    del club, el ente o el propio solicitante las necesita (mapa de los
+      //    12 ficheros que usan la colección). Igual con la rama del ente: la
+      //    lee su ADMINISTRADOR, no cualquiera con ese clubId en el token.
       allow read: if isSuperAdmin() ||
                      (isAuth() && (
-                       sameClubAsDoc(resource.data.get('clubId', null)) ||
                        isAdminOfClub(resource.data.get('clubId', null)) ||
                        request.auth.uid == resource.data.get('requestedBy', null) ||
                        request.auth.uid == resource.data.get('userId', null) ||
@@ -1217,7 +1222,7 @@ service cloud.firestore {
                        // asi que la rama "el propio solicitante lee su solicitud"
                        // nunca se cumplia. Se deja la vieja por si hay docs legacy.
                        request.auth.uid == resource.data.get('userUid', null) ||
-                       (('clubId' in request.auth.token) && request.auth.token.clubId == resource.data.get('individualOwnerId', null))
+                       isAdminOfClub(resource.data.get('individualOwnerId', null))
                      ));
       // ══════════════════════════════════════════════════════════════
       //  🔐 v636 · LA SOLICITUD TIENE QUE SER TUYA (o de los tuyos)
@@ -1246,11 +1251,18 @@ service cloud.firestore {
       //  ⚠️ Lo que esto NO pretende impedir: que alguien pida para SI MISMO un
       //  rol alto. Eso es el alta normal, y el control es la aprobacion.
       // ══════════════════════════════════════════════════════════════
+      //  🔒 v859 · Y LA PROPIA NACE PENDIENTE. Los 14 sitios de alta escriben
+      //  pending_club_admin / pending_individual / pending_sa (revisado el
+      //  22-11). La prueba real en testeo creó una ya «sa_approved» como
+      //  director, y auth.js toma las aprobadas como fuente de roles
+      //  verificados: el estado de una solicitud PROPIA no lo pone su autor.
       allow create: if isAuth() && (
         isSuperAdmin() ||
-        // El propio interesado (los 14 sitios de alta)
-        request.resource.data.get('userUid', null) == request.auth.uid ||
-        request.resource.data.get('requestedBy', null) == request.auth.uid ||
+        // El propio interesado (los 14 sitios de alta), siempre en pending*
+        ((request.resource.data.get('userUid', null) == request.auth.uid ||
+          request.resource.data.get('requestedBy', null) == request.auth.uid)
+         && request.resource.data.get('status', '') is string
+         && request.resource.data.get('status', '').matches('^pending.*')) ||
         // El admin del club reenvia la de uno de los suyos
         isAdminOfClub(request.resource.data.get('clubId', null)) ||
         isIndividualAdmin(request.resource.data.get('individualOwnerId', null))
@@ -1283,8 +1295,11 @@ service cloud.firestore {
       //     (entrenador o familiar): no se sube a nadie a administrador;
       //   · `forwardedBy` tiene que ser quien firma.
       // ══════════════════════════════════════════════════════════════
+      // 🔒 v859 · antes `sameClubAsDoc`: cualquier miembro aprobaba, rechazaba
+      //    o cambiaba el rol de cualquier solicitud de su club (probado en
+      //    testeo). Sólo la Dirección del club las tramita (club/panel.js).
       allow update: if isSuperAdmin() ||
-                       (isAuth() && sameClubAsDoc(resource.data.get('clubId', null))) ||
+                       isAdminOfClub(resource.data.get('clubId', null)) ||
                        (isAdminOfClub(resource.data.get('individualOwnerId', null))
                         && esReenvioDelEnteAlSA());
       // v474 · El administrador del club (o de la entidad individual) RETIRA
