@@ -218,8 +218,14 @@ console.log('\n3) 📄 El runbook cubre lo que la copia NO trae');
     ok('3e · declara RPO y RTO (si no, no se puede medir si se cumple)',
        /RPO/.test(DOC) && /RTO/.test(DOC));
 
-    ok('3f · ⚠️ dice CLARAMENTE que todavía no está activado',
-       /NO HAY NINGUNA COPIA DE SEGURIDAD/.test(DOC),
+    // 2026-11-22: PITR y la copia diaria ya están activos (medido con backup:estado),
+    // así que exigir «NO HAY NINGUNA COPIA» obligaba a mentir. La intención sigue: el
+    // runbook no puede aparentar más de lo hecho. Mientras el registro no tenga ningún
+    // simulacro fechado, la cabecera tiene que decir que NUNCA se ha hecho.
+    const _registro = DOC.slice(DOC.indexOf('## Registro de simulacros'));
+    const _haySimulacro = /\d{4}-\d{2}-\d{2}/.test(_registro);
+    ok('3f · ⚠️ no aparenta más de lo hecho: sin simulacro fechado, dice que nunca se hizo',
+       _haySimulacro || /Simulacro de restauración\s*\|\s*❌\s*\*\*nunca hecho\*\*/.test(DOC),
        'un runbook que suena a que ya funciona es peor que no tenerlo');
 }
 

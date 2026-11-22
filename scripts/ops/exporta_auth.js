@@ -77,15 +77,29 @@ const r = cp.spawnSync(process.execPath,
                        [BIN, 'auth:export', destino, '--format=json', '--project', PROJECT],
                        { cwd: ROOT, encoding: 'utf8', stdio: 'inherit' });
 
+// 🚨 2026-11-22: con Node 24 en Windows la CLI EXPORTA BIEN («Exported N
+//    account(s) successfully») y DESPUÉS se cae al cerrarse
+//    (`Assertion failed: !(handle->flags & UV_HANDLE_CLOSING) … async.c`,
+//    código 3221226505 = 0xC0000409). Antes esto se daba por fallo sin mirar el
+//    fichero, y el reintento dejó dos copias idénticas con hashes de contraseña.
+//    Ahora, si hay código de error PERO el fichero existe, se verifica igual:
+//    lo que decide es el contenido (JSON legible con cuentas), no el código.
+let cierreAnomalo = false;
 if (r.status !== 0) {
-    // ⚠️ NO SE ADIVINA LA CAUSA. La primera version decia siempre «¿Sesión del
-    //    CLI? Prueba firebase login», y la causa real era un problema de
-    //    ARGUMENTOS: mandaba a mirar donde no estaba el fallo. El motivo de
-    //    verdad ya lo ha impreso la CLI justo arriba (stdio heredado).
-    console.error('\n❌ La exportación falló (código ' + r.status + ').');
-    console.error('   El motivo lo ha dicho la CLI ahí arriba. Si habla de');
-    console.error('   credenciales o de sesión, prueba `firebase login`.\n');
-    process.exit(1);
+    if (!fs.existsSync(destino)) {
+        // ⚠️ NO SE ADIVINA LA CAUSA. La primera version decia siempre «¿Sesión del
+        //    CLI? Prueba firebase login», y la causa real era un problema de
+        //    ARGUMENTOS: mandaba a mirar donde no estaba el fallo. El motivo de
+        //    verdad ya lo ha impreso la CLI justo arriba (stdio heredado).
+        console.error('\n❌ La exportación falló (código ' + r.status + ') y no escribió el fichero.');
+        console.error('   El motivo lo ha dicho la CLI ahí arriba. Si habla de');
+        console.error('   credenciales o de sesión, prueba `firebase login`.\n');
+        process.exit(1);
+    }
+    cierreAnomalo = true;
+    console.log('\n⚠️ La CLI terminó con código ' + r.status + ', pero el fichero existe: se verifica su contenido.');
+    console.log('   (Con Node 24 en Windows la CLI se cae AL CERRARSE tras exportar bien.)');
+    console.log('   No repitas la exportación si la verificación de abajo sale bien.');
 }
 
 // ── Verificar lo que se acaba de escribir ───────────────────────────────
@@ -107,6 +121,7 @@ console.log('\n' + '─'.repeat(64));
 console.log('  cuentas exportadas ....... ' + usuarios.length);
 console.log('  con custom claims ........ ' + conClaims.length);
 console.log('  tamaño ................... ' + tam + ' KB');
+if (cierreAnomalo) console.log('  cierre de la CLI ......... anómalo (código ' + r.status + '), contenido verificado abajo');
 
 let fallos = 0;
 if (!usuarios.length) {

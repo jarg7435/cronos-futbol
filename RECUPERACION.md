@@ -1,17 +1,19 @@
 # 🛟 Copias de seguridad y recuperación — Chronos Fútbol
 
-**Estado a 2026-09-22: NO HAY NINGUNA COPIA DE SEGURIDAD.** Ni PITR, ni copias
-programadas, ni exportación de cuentas. Lo único que existe son respaldos *ad hoc* que
-algunos scripts de `scripts/ops/` escriben en local antes de purgar, y eso cubre
-exactamente el documento que ese script iba a tocar: nada más.
+**Estado medido el 2026-11-22 con `npm run backup:estado`** (pregunta a Google, no a
+este fichero):
 
-Hay clubes reales en producción, con datos de menores. Este documento es el plan para
-cerrar eso, y el procedimiento para usarlo cuando haga falta.
+| | Estado |
+|---|---|
+| PITR | ✅ encendido desde el 2026-09-22 (ventana de 7 días) |
+| Copia diaria gestionada | ✅ programada (retención 7 días); 6 copias READY, la última de hace 1 día |
+| Exportación de cuentas de Auth | ✅ 2026-11-22: 12 cuentas, 8 con *custom claims* (la anterior tenía 61 días) |
+| Simulacro de restauración | ❌ **nunca hecho**: ver Parte 3 y el registro final |
+| Cloud Storage (vídeos de jugadas, v804) | ⚠️ **sin copia**: la copia de Firestore no lo incluye (ver Parte 0, punto 5) |
 
-> ⚠️ **Nada de lo que hay aquí está activado todavía.** Los comandos de la Parte 2 hay
-> que lanzarlos una vez; hasta entonces, este fichero describe un plan, no una defensa.
-> El verificador (`scripts/ops/copias_estado.js`) existe justamente para que la
-> diferencia entre las dos cosas no dependa de la memoria de nadie.
+Hay clubes reales en producción, con datos de menores. La Parte 2 ya se activó el
+2026-09-22 y se deja como referencia. El verificador (`scripts/ops/copias_estado.js`)
+existe para que «activado» y «comprobado» no dependan de la memoria de nadie.
 
 ---
 
@@ -63,7 +65,17 @@ que los comandos:
 4. **Las reglas, los índices y las funciones.** Están en este repositorio, que es su
    copia de seguridad — siempre que esté *pusheado*. Son **tres despliegues distintos**
    (`deploy:prod`, `deploy:prod:rules`, índices): restaurar datos no los restaura.
-5. **Cloud Storage**: no hay bucket (comprobado, 404). Nada que copiar — por ahora.
+5. **Cloud Storage**: desde la v804 (vídeos de jugadas) **sí hay bucket**
+   (`cronos-futbol-app.firebasestorage.app`, reglas publicadas el 2026-10-12). La copia
+   de Firestore **no incluye** los ficheros, sólo los documentos que los referencian.
+   ⏳ Pendiente: medir su tamaño y decidir si necesita copia propia o si se acepta como
+   dato que se puede perder. (Hasta la v804 no existía: 404.)
+
+> 📏 **Recuento real del 2026-11-22** (`(default)`): `individuals`, `matches`,
+> `players`, `teams` y `trainingPlans` tienen **0 documentos** en la raíz. Hoy lo
+> irremplazable vive en `clubs` y sus subcolecciones (`attendance*`, `team_rosters`,
+> `team_archives`), en `cronos_player_reports` (8 717), en `trainingPlans/*/weeks` (124,
+> con padres sin documento) y en `users/*/cronos_data`. El simulacro cuenta todas.
 
 ---
 
@@ -268,6 +280,27 @@ sin verificador es un comentario que avisa, y los comentarios no comprueban nada
 
 ## Registro de simulacros
 
-| Fecha | Quién | Copia usada | Resultado |
-|---|---|---|---|
-| _(pendiente: el primero, al activar la Parte 2)_ | | | |
+> ⚠️ **En esta sección sólo puede aparecer con formato de fecha la fecha del propio
+> simulacro.** `copias_estado.js` toma la fecha más reciente que encuentre aquí: una
+> fecha de copia o de «próximo simulacro» le haría creer que hay un simulacro reciente.
+> La hora de la copia se anota como hora, no como fecha (p. ej. «copia de la víspera,
+> 19:23 UTC»), y el id de la copia sin fecha.
+
+Ficha por simulacro (plantilla, copiar debajo y rellenar):
+
+| Campo | Valor |
+|---|---|
+| Fecha del simulacro | AAAA-MM-DD |
+| Responsable | |
+| Copia usada | id de la copia · hora de la foto (`snapshotTime`, sólo hora) |
+| Base destino | `simulacro` (borrada al terminar: sí/no) |
+| Exportación de Auth usada | nombre del fichero (en `CRONOS_RESPALDOS_PRIVADOS`) |
+| 1 · Base creada | ✓/✗ |
+| 2 · Recuentos | colecciones irremplazables vacías: N · diferencias significativas |
+| 3 · uids de `users` que casan con Auth | x/y · huérfanos explicados |
+| 4 · Cuentas con claims en `customAttributes` | x/y · las que no los tienen, explicadas |
+| RPO medido | antigüedad de la foto al empezar |
+| RTO medido | desde lanzar `restore` hasta pasar la comprobación 4 |
+| Incidencias | |
+
+_(todavía no hay ningún simulacro anotado)_
