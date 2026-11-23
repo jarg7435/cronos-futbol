@@ -2994,3 +2994,164 @@ exports.saPendingCount = functions.https.onCall(async (data, context) => {
   }
   return { count: await _contarPendientesSA() };
 });
+
+/* ══════════════════════════════════════════════════════════════════════
+   🎬 v861 · syncPlazasAdultas — LA LISTA `clubs/{id}.plazasAdultas` SE
+   MANTIENE SOLA (fase 2 de N5 del E2E de Storage, 2026-11-23)
+
+   Las reglas v860 exigen figurar en `plazasAdultas` para abrir un clip de
+   adultos a las familias. Esta function la mantiene al cambiar `users/{uid}`:
+     · QUITA siempre (baja, revocación, paso a menores, cuenta bloqueada,
+       perfil borrado): es el lado seguro, lo provoque quien lo provoque.
+     · AÑADE sólo si el cambio lo hizo alguien con AUTORIDAD sobre ese club
+       (SuperAdmin, Admin/Director/Coordinador del club, admin del ente, o el
+       servidor). 🔑 El propio usuario no: `allRoles` es autoescribible
+       (INC-2026-004).
+   ⚠️ MODO SOMBRA por defecto: sólo registra lo que haría. Escribe únicamente
+      si `cronos_config/plazasAdultasSync.escribir === true` (se activa sin
+      redesplegar). Guard: scripts/test_sync_plazas_adultas.js.
+   📍 2ª generación en europe-west1: los disparadores de Firestore con
+      contexto de autor son de 2ª gen y van con la región de la base (eur3).
+   ⚠️ `authType` (firebase-functions 7.4): service_account | api_key | system
+      | unauthenticated | unknown. No hay un valor propio del usuario final:
+      el modo sombra registra el real; la autoridad se decide por `authId`.
+   ══════════════════════════════════════════════════════════════════════ */
+const { onDocumentWrittenWithAuthContext } = require('firebase-functions/v2/firestore');
+
+// ⟦plazasAdultas⟧ inicio — funciones PURAS (el guard las ejecuta en un vm)
+function _plazasAdultasClubes(d) {
+  const STAFF = ['user', 'coach', 'director', 'coordinator', 'club_admin',
+                 'individual', 'admin_individual', 'individual_admin', 'entrenador_individual'];
+  const ADULTOS = /^(regional|regional-fem|nacional|senior)(-[a-z0-9-]*)?$/;
+  const slug = (c) => String(c || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').replace(/^(f7|f11)-/, '');
+  const fuera = ['removed', 'revoked', 'rejected', 'blocked'];
+  const out = new Set();
+  if (!d || d.isAuthorized !== true || fuera.indexOf(d.status) >= 0) return out;
+  const plazas = Array.isArray(d.allRoles) ? d.allRoles.slice() : [];
+  if (d.role && d.category) {
+    plazas.push({ role: d.role, category: d.category, clubId: d.clubId,
+                  individualEntityId: d.individualEntityId, isAuthorized: true, status: d.status });
+  }
+  for (const r of plazas) {
+    if (!r || STAFF.indexOf(r.role) < 0) continue;
+    if (!(r.isAuthorized === true || r.authorized === true) || fuera.indexOf(r.status) >= 0) continue;
+    if (!ADULTOS.test(slug(r.category))) continue;
+    const club = r.clubId || r.individualEntityId || d.clubId || d.individualEntityId;
+    if (club) out.add(String(club));
+  }
+  return out;
+}
+function _plazasAdultasDecide(antes, despues) {
+  const a = _plazasAdultasClubes(antes), b = _plazasAdultasClubes(despues);
+  return { anadir: [...b].filter((c) => !a.has(c)), quitar: [...a].filter((c) => !b.has(c)) };
+}
+// ctx = { authType, authId, uid, club, claims, esSA, clubDoc, autorDoc }
+function _autoridadPlazasAdultas(ctx) {
+  const c = ctx || {};
+  if (c.authType === 'service_account' || c.authType === 'system') return { ok: true, como: 'servidor' };
+  if (!c.authId || c.authType === 'unauthenticated') return { ok: false, como: 'sin autor' };
+  if (c.authId === c.uid) return { ok: false, como: 'el propio usuario' };
+  if (c.esSA === true) return { ok: true, como: 'SuperAdmin' };
+  const cl = c.claims || {};
+  const club = String(c.club || '');
+  const cd = c.clubDoc || {};
+  if (cl.role === 'club_admin' && cl.clubId === club) return { ok: true, como: 'Admin del club (claim)' };
+  if (['individual', 'individual_admin', 'admin_individual'].indexOf(cl.role) >= 0 && cl.clubId === club) {
+    return { ok: true, como: 'admin del ente' };
+  }
+  if (cd.adminUid && cd.adminUid === c.authId) return { ok: true, como: 'Admin del club' };
+  if (Array.isArray(cd.directorUids) && cd.directorUids.indexOf(c.authId) >= 0) return { ok: true, como: 'Director del club' };
+  if (Array.isArray(cd.coordinatorUids) && cd.coordinatorUids.indexOf(c.authId) >= 0) return { ok: true, como: 'Coordinador del club' };
+  const ad = c.autorDoc || {};
+  if (['director', 'coordinator'].indexOf(ad.role) >= 0 && ad.clubId === club &&
+      ad.isAuthorized === true && ad.status === 'active') {
+    return { ok: true, como: ad.role + ' (perfil raíz)' };
+  }
+  return { ok: false, como: 'sin autoridad sobre el club' };
+}
+// ⟦plazasAdultas⟧ fin
+
+exports.syncPlazasAdultas = onDocumentWrittenWithAuthContext({ document: 'users/{uid}', region: 'europe-west1' }, async (event) => {
+  const uid = event.params.uid;
+  const ch = event.data;
+  const antes = ch && ch.before && ch.before.exists ? ch.before.data() : null;
+  const despues = ch && ch.after && ch.after.exists ? ch.after.data() : null;
+  const { anadir, quitar } = _plazasAdultasDecide(antes, despues);
+  if (!anadir.length && !quitar.length) return;
+
+  const db = admin.firestore();
+  let escribir = false;
+  try {
+    const s = await db.doc('cronos_config/plazasAdultasSync').get();
+    escribir = s.exists && s.data().escribir === true;
+  } catch (e) {
+    console.warn('[plazasAdultas] sin configuración (modo sombra):', e.message);
+  }
+  const modo = escribir ? '' : '[SOMBRA] ';
+  const corto = String(uid).slice(0, 6) + '…';
+  const autor = String(event.authType || '?') + ':' + (event.authId ? String(event.authId).slice(0, 6) + '…' : '-');
+
+  for (const club of quitar) {
+    if (!escribir) {
+      console.log('[plazasAdultas][SOMBRA] quitaría ' + corto + ' de ' + club + ' (autor ' + autor + ')');
+      continue;
+    }
+    try {
+      const ref = db.collection('clubs').doc(club);
+      if ((await ref.get()).exists) {
+        await ref.update({ plazasAdultas: admin.firestore.FieldValue.arrayRemove(String(uid)) });
+      }
+      console.log('[plazasAdultas] quitado ' + corto + ' de ' + club + ' (autor ' + autor + ')');
+    } catch (e) {
+      console.error('[plazasAdultas] no se pudo quitar ' + corto + ' de ' + club + ':', e.message);
+    }
+  }
+
+  if (!anadir.length) return;
+  let claims = {};
+  let esSA = false;
+  let autorDoc = null;
+  if (event.authId && event.authType !== 'service_account' && event.authType !== 'system') {
+    try {
+      const rec = await admin.auth().getUser(String(event.authId));
+      claims = rec.customClaims || {};
+      esSA = claims.role === 'superadmin';
+      if (!esSA && rec.email) {
+        const s = await db.doc('cronos_config/superadmins').get();
+        esSA = s.exists && Array.isArray(s.data().emails) && s.data().emails.indexOf(rec.email) >= 0;
+      }
+    } catch (e) {
+      console.warn('[plazasAdultas] autor ' + autor + ' no resoluble en Auth:', e.message);
+    }
+    try {
+      const s = await db.collection('users').doc(String(event.authId)).get();
+      autorDoc = s.exists ? s.data() : null;
+    } catch (e) {
+      /* sin perfil del autor: decide con lo demás */
+    }
+  }
+  for (const club of anadir) {
+    const a = _autoridadPlazasAdultas({ authType: event.authType, authId: event.authId, uid, club,
+      claims, esSA, clubDoc: await _leerClub(club), autorDoc });
+    if (!a.ok) {
+      console.log('[plazasAdultas] ' + modo + 'NO se añade ' + corto + ' a ' + club + ' (autor ' + autor + ': ' + a.como + ')');
+      continue;
+    }
+    if (!escribir) {
+      console.log('[plazasAdultas][SOMBRA] añadiría ' + corto + ' a ' + club + ' (autor ' + autor + ': ' + a.como + ')');
+      continue;
+    }
+    try {
+      const ref = db.collection('clubs').doc(club);
+      if (!(await ref.get()).exists) {
+        console.log('[plazasAdultas] ' + club + ' no está en clubs: no se añade');
+        continue;
+      }
+      await ref.update({ plazasAdultas: admin.firestore.FieldValue.arrayUnion(String(uid)) });
+      console.log('[plazasAdultas] añadido ' + corto + ' a ' + club + ' (autor ' + autor + ': ' + a.como + ')');
+    } catch (e) {
+      console.error('[plazasAdultas] no se pudo añadir ' + corto + ' a ' + club + ':', e.message);
+    }
+  }
+});

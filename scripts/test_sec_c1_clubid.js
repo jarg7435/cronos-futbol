@@ -99,6 +99,8 @@ function loadFunctions(store, authUsers) {
     const sandboxModule = { exports: {} };
     const requireShim = (name) => {
         if (name === 'firebase-functions/v1' || name === 'firebase-functions') return functionsMock;
+        // v861 · syncPlazasAdultas es de 2ª gen (contexto de autor): su doble.
+        if (name === 'firebase-functions/v2/firestore') return { onDocumentWrittenWithAuthContext: (opts, fn) => ({ __v2: fn }) };
         if (name === 'firebase-admin') return adminMock;
         if (name === 'nodemailer') return { createTransport: () => ({ sendMail: async () => ({}) }) };
         return require(name);
