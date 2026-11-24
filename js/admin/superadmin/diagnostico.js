@@ -927,10 +927,19 @@
                 if (msg) { msg.style.color = '#8b949e'; msg.textContent = '⏳ Comprobando…'; }
                 try {
                     var cred = fa.EmailAuthProvider.credential(user.email, pwd);
-                    await fa.reauthenticateWithCredential(user, cred);
+                    try {
+                        await fa.reauthenticateWithCredential(user, cred);
+                    } catch (eMfa) {
+                        // 🔐 v862 · con segundo factor (TOTP) también se pide el
+                        // código. Sin factor, esta rama no se ejecuta.
+                        if (!(window.CronosMFA && window.CronosMFA.esReto(eMfa))) throw eMfa;
+                        if (msg) { msg.style.color = '#8b949e'; msg.textContent = '🔐 Escribe el código de tu app de autenticación…'; }
+                        await window.CronosMFA.resolver(eMfa, fa);
+                    }
                     cerrar(true);
                 } catch (e) {
-                    if (msg) { msg.style.color = '#ff5858'; msg.textContent = '⚠️ Contraseña incorrecta.'; }
+                    var esMfa = e && (/^cronos\/mfa-/.test(e.code || '') || e.code === 'auth/invalid-verification-code');
+                    if (msg) { msg.style.color = '#ff5858'; msg.textContent = esMfa ? '⚠️ ' + window.CronosMFA.legible(e) : '⚠️ Contraseña incorrecta.'; }
                 }
             }
             document.getElementById('sa-diag-pwd-si').onclick = intentar;

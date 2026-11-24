@@ -1835,24 +1835,27 @@
      así los envoltorios lo resuelven en cada llamada y no al cargar, para que
      un cambio de orden no los deje mirando a `undefined` para siempre.
      ══════════════════════════════════════════════════════════════════ -->
-<script src="js/shared/live-feed.js?v=v860"></script>
+<script src="js/shared/live-feed.js?v=v862"></script>
 <!-- 🔊 v709 · Las melodías de cada suceso (gol, amarilla, roja, cambio,
      lesión), compartidas con el panel en vivo del Área de Familias. Este visor
      le presta su AudioContext, que es el que lleva el keep-alive de iOS. -->
-<script src="js/shared/live-sound.js?v=v860"></script>
+<script src="js/shared/live-sound.js?v=v862"></script>
 <!-- 🔴🔴🔴 v721 · El caché en disco de Firestore es de UNA sola cuenta (ver
      js/shared/fs-cache-mode.js). El visor lo comparte con la app, así que
      tiene que decidir con la MISMA regla y antes de crear su instancia. -->
-<script src="js/shared/fs-cache-mode.js?v=v860"></script>
+<script src="js/shared/fs-cache-mode.js?v=v862"></script>
 <!-- 📈 v778 · Las reglas de categoría de las estadísticas avanzadas, las
      MISMAS que usa el panel del entrenador (una lista, no dos). -->
-<script src="js/shared/advanced-stats-report.js?v=v860"></script>
+<script src="js/shared/advanced-stats-report.js?v=v862"></script>
+<!-- 🔐 v862 · segundo factor (TOTP) del SuperAdmin: lo usa doLiveAuth. -->
+<script src="js/services/auth/mfa.js?v=v862"></script>
 
 <!-- ══ FIREBASE ══════════════════════════════════════════════════ -->
 <script type="module">
 import { initializeApp }
     from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
-import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged, browserSessionPersistence, setPersistence }
+import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged, browserSessionPersistence, setPersistence,
+         getMultiFactorResolver, TotpMultiFactorGenerator /* 🔐 v862 · segundo factor del SuperAdmin */ }
     from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
 import { getFirestore, initializeFirestore, persistentLocalCache,
          persistentMultipleTabManager, memoryLocalCache, doc, getDoc, collection,
@@ -1996,10 +1999,20 @@ window.doLiveAuth = async () => {
     const errEl    = document.getElementById('auth-error');
     errEl.textContent = 'Verificando…';
     try {
-        const cred = await signInWithEmailAndPassword(auth, email, password);
+        let cred;
+        try {
+            cred = await signInWithEmailAndPassword(auth, email, password);
+        } catch (eMfa) {
+            // 🔐 v862 · segundo factor (TOTP) del SuperAdmin (js/services/auth/mfa.js).
+            // Sin factor dado de alta esta rama no se ejecuta nunca.
+            if (!(window.CronosMFA && window.CronosMFA.esReto(eMfa))) throw eMfa;
+            errEl.textContent = 'Escribe el código de tu app de autenticación…';
+            cred = await window.CronosMFA.resolver(eMfa, { auth, getMultiFactorResolver, TotpMultiFactorGenerator });
+        }
         await checkUserAccess(cred.user);
     } catch(e) {
-        errEl.textContent = 'Email o contraseña incorrectos.';
+        const esMfa = e && (/^cronos\/mfa-/.test(e.code || '') || e.code === 'auth/invalid-verification-code');
+        errEl.textContent = esMfa ? window.CronosMFA.legible(e) : 'Email o contraseña incorrectos.';
     }
 };
 
@@ -7954,9 +7967,9 @@ setInterval(function() {
 }
 </style>
 <!-- v434 · Inmutabilidad: antes de retroactive-modal.js, que la consulta. -->
-<script src="js/match/immutability.js?v=v860"></script>
-<script src="js/match/replay/replay-player.js?v=v860"></script>
-<script src="js/match/events/retroactive-modal.js?v=v860"></script>
+<script src="js/match/immutability.js?v=v862"></script>
+<script src="js/match/replay/replay-player.js?v=v862"></script>
+<script src="js/match/events/retroactive-modal.js?v=v862"></script>
 
 <!-- ══════════════════════════════════════════════════════════════════
      🟩 v577 · FRANJA DE VERSIÓN TAMBIÉN EN EL VISOR
@@ -7969,7 +7982,7 @@ setInterval(function() {
      El sello lo escribe `scripts/cache-bust.js` a partir del CACHE_NAME de
      sw.js, nunca a mano: un número puesto a mano miente en cuanto alguien
      olvida cambiarlo (v527 lo encontró mintiendo 185 versiones seguidas). -->
-<div id="cronos-version-badge" data-version="v860" style="position:fixed;bottom:calc(4px + env(safe-area-inset-bottom, 0px));right:6px;z-index:2147483000;pointer-events:none;background:rgba(0,0,0,0.55);color:#2ea043;font-family:monospace;font-size:0.6rem;font-weight:700;letter-spacing:0.5px;padding:2px 6px;border-radius:4px;">CHRONOS v860</div>
+<div id="cronos-version-badge" data-version="v862" style="position:fixed;bottom:calc(4px + env(safe-area-inset-bottom, 0px));right:6px;z-index:2147483000;pointer-events:none;background:rgba(0,0,0,0.55);color:#2ea043;font-family:monospace;font-size:0.6rem;font-weight:700;letter-spacing:0.5px;padding:2px 6px;border-radius:4px;">CHRONOS v862</div>
 <script>
 /* 🧪 v577 · Y DE QUÉ ENTORNO ES ESA VERSIÓN.
    El problema real del autor no era no ver la versión: era no saber si la

@@ -145,6 +145,12 @@
                 return 'Por seguridad, vuelve a iniciar sesión antes de cambiar la contraseña.';
             case 'auth/user-disabled':
                 return 'Esta cuenta está deshabilitada. Contacta con el administrador.';
+            // 🔐 v862 · segundo factor (TOTP)
+            case 'cronos/mfa-cancelado':
+            case 'cronos/mfa-sin-totp':
+            case 'cronos/mfa-no-disponible':
+            case 'auth/invalid-verification-code':
+                return (window.CronosMFA && window.CronosMFA.legible(err)) || 'Falta el código de verificación.';
             default:
                 return 'No se ha podido completar la operación. ' +
                        ((err && err.message) ? _esc(err.message) : 'Inténtalo de nuevo.');
@@ -281,7 +287,14 @@
               '🛡️ <strong>Cuenta de SuperAdmin.</strong> Cámbiala en cuanto sospeches que alguien la ' +
               'conoce (una fuga, un aviso de seguridad, un equipo ajeno). Al cambiarla, las sesiones ' +
               'abiertas en otros dispositivos se cierran solas en menos de una hora. Si no recuerdas ' +
-              'la actual, usa el enlace por correo de debajo.</span>'
+              'la actual, usa el enlace por correo de debajo.' +
+              // 🔐 v862 · alta del segundo factor (TOTP), sólo aquí: es la
+              // única cuenta que lo usa (PROPUESTA_MFA_SA.md).
+              '<br><button type="button" id="pwd-mfa-alta"' +
+              ' onclick="window.closePasswordModal();if(window.CronosMFA)window.CronosMFA.abrirAlta();"' +
+              ' style="margin-top:0.5rem;background:none;border:1px solid rgba(88,166,255,0.45);border-radius:6px;' +
+              'padding:0.3rem 0.6rem;cursor:pointer;color:#58a6ff;font-size:0.74rem;font-weight:700;">' +
+              '🔐 Verificación en dos pasos (código del móvil)</button></span>'
             : '';
         const ov = _abrir(
             '🔒 Cambiar contraseña',
@@ -357,7 +370,14 @@
             // 🔑 REAUTENTICAR SIEMPRE, no sólo cuando Firebase lo exija: es lo
             // que comprueba que quien cambia la contraseña conoce la actual.
             const cred = fa.EmailAuthProvider.credential(user.email, actual);
-            await fa.reauthenticateWithCredential(user, cred);
+            try {
+                await fa.reauthenticateWithCredential(user, cred);
+            } catch (_eMfa) {
+                // 🔐 v862 · con segundo factor (TOTP), la reautenticación pide
+                // también el código. Sin factor, esta rama no se ejecuta.
+                if (!(window.CronosMFA && window.CronosMFA.esReto(_eMfa))) throw _eMfa;
+                await window.CronosMFA.resolver(_eMfa, fa);
+            }
 
             await fa.updatePassword(user, nueva);
 

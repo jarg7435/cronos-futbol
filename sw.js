@@ -2838,8 +2838,12 @@
 //        sube EN VIVO, cuenta el primer mensaje de una conversación nueva y
 //        sigue hasta ABRIRLA (entrar en la bandeja ya no la pone a cero); y
 //        ninguna aprobación activa a un familiar sin Familias contratado.
-const VERSION = 'v860';
-const CACHE_NAME = 'cronos-cache-v860';
+// v862 · SEGUNDO FACTOR (TOTP) DEL SUPERADMIN: js/services/auth/mfa.js y una
+//        rama en los 5 caminos de acceso (login, registro con correo
+//        existente, visor, cambio de contraseña y credencial maestra). Sin
+//        factor dado de alta nada cambia para nadie (PROPUESTA_MFA_SA.md).
+const VERSION = 'v862';
+const CACHE_NAME = 'cronos-cache-v862';
 
 const ASSETS = [
     './',
@@ -2882,6 +2886,9 @@ const ASSETS = [
     './js/services/auth/role-launch.js',
     './js/services/auth-improvements.js',
     './js/services/auth/password.js',
+    // 🔐 v862 · segundo factor (TOTP) del SuperAdmin. El fichero existe:
+    // un 404 aquí tumbaría la precarga ENTERA (v452).
+    './js/services/auth/mfa.js',
     './js/services/auth/invite-prefill.js',
     './js/services/firestore-sync.js',
     './js/services/firestore-storage.js',

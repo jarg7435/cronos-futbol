@@ -2262,6 +2262,15 @@ export async function doAuth() {
                     fa.signInWithEmailAndPassword(fa.auth, email, password),
                     _signInTimeout
                 ]);
+            } catch (_eLogin) {
+                // 🔐 v862 · SEGUNDO FACTOR (TOTP). Con un aparato dado de alta
+                // la contraseña sola no abre sesión. La espera del código va
+                // FUERA del tope de 6 s de arriba: teclearlo lleva su tiempo.
+                // Sin factor dado de alta esta rama no se ejecuta nunca.
+                if (!(window.CronosMFA && window.CronosMFA.esReto(_eLogin))) throw _eLogin;
+                clearTimeout(_signInTimer);
+                showAuthError('🔐 Escribe el código de tu app de autenticación…');
+                await window.CronosMFA.resolver(_eLogin, fa);
             } finally {
                 clearTimeout(_signInTimer);
             }
@@ -2447,12 +2456,24 @@ export async function doAuth() {
         } catch (createErr) {
             if (createErr.code === 'auth/email-already-in-use') {
                 try {
-                    cred = await fa.signInWithEmailAndPassword(fa.auth, email, password);
+                    try {
+                        cred = await fa.signInWithEmailAndPassword(fa.auth, email, password);
+                    } catch (_eMfa) {
+                        // 🔐 v862 · segundo factor (TOTP): ver el login.
+                        if (!(window.CronosMFA && window.CronosMFA.esReto(_eMfa))) throw _eMfa;
+                        cred = await window.CronosMFA.resolver(_eMfa, fa);
+                    }
                     isAddingRole = true;
                 } catch (signInErr) {
                     window._addingRole = false;
                     window._loginThisSession = false;
 
+                    // 🔐 v862 · el código del segundo factor se canceló o no era bueno.
+                    if (window.CronosMFA && (/^cronos\/mfa-/.test(signInErr.code || '') ||
+                                             signInErr.code === 'auth/invalid-verification-code')) {
+                        showAuthError('⚠️ ' + window.CronosMFA.legible(signInErr));
+                        return;
+                    }
                     // Distinguir entre errores de contraseña y otros
                     if (signInErr.code === 'auth/wrong-password' || signInErr.code === 'auth/invalid-credential') {
                         // ⚠️ v540 · AQUÍ NO HAY NINGÚN ERROR DEL SISTEMA, y el
@@ -4152,6 +4173,9 @@ export async function doAuth() {
             'auth/wrong-password':        'Contraseña incorrecta.',
             'auth/invalid-credential':    'Email o contraseña incorrectos.',
             'auth/weak-password':         'Contraseña demasiado corta (mínimo 6 caracteres).',
+            // 🔐 v862 · segundo factor (TOTP)
+            'cronos/mfa-cancelado':       'Acceso cancelado: hace falta el código de 6 dígitos de tu app de autenticación.',
+            'auth/invalid-verification-code': 'Código de verificación incorrecto. Vuelve a intentarlo.',
         };
         showAuthError(msgs[e.code] || ('Error: ' + e.message));
         window._loginThisSession = false;

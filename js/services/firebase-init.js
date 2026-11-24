@@ -52,7 +52,9 @@
             // la contraseña actual: de paso se comprueba que quien la cambia
             // es el dueño y no alguien que pilló el móvil desbloqueado.
             sendPasswordResetEmail, updatePassword,
-            reauthenticateWithCredential, EmailAuthProvider } =
+            reauthenticateWithCredential, EmailAuthProvider,
+            // 🔐 v862 · segundo factor TOTP del SuperAdmin (js/services/auth/mfa.js).
+            getMultiFactorResolver, TotpMultiFactorGenerator, multiFactor } =
         await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js');
     // v468 · ⚠️ `terminate` y `clearIndexedDbPersistence` YA NO SE IMPORTAN, y
     // no es limpieza cosmética: es la barrera. Con ellas a mano, el arreglo de
@@ -523,6 +525,8 @@
         // cuelga de window (la trampa de v383).
         sendPasswordResetEmail, updatePassword,
         reauthenticateWithCredential, EmailAuthProvider,
+        // 🔐 v862 · para js/services/auth/mfa.js (script CLÁSICO, mismo motivo).
+        getMultiFactorResolver, TotpMultiFactorGenerator, multiFactor,
         // 🎟️ v633 · Lo necesita invite-prefill.js para marcar la invitación
         // como usada en cuanto aparece la sesión. Mismo motivo que arriba: es
         // un script CLÁSICO y no puede importar el SDK por su cuenta.
