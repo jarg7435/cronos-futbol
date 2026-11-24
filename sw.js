@@ -2842,8 +2842,11 @@
 //        rama en los 5 caminos de acceso (login, registro con correo
 //        existente, visor, cambio de contraseña y credencial maestra). Sin
 //        factor dado de alta nada cambia para nadie (PROPUESTA_MFA_SA.md).
-const VERSION = 'v862';
-const CACHE_NAME = 'cronos-cache-v862';
+// v863 · Firebase admite UN solo factor TOTP por cuenta (medido en testeo):
+//        los avisos del alta explican que la reserva es la MISMA clave en
+//        dos aparatos; el de «máximo» ya no dice sólo «máximo de aparatos».
+const VERSION = 'v863';
+const CACHE_NAME = 'cronos-cache-v863';
 
 const ASSETS = [
     './',

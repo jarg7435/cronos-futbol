@@ -69,7 +69,9 @@
             case 'auth/wrong-password':            return 'La contraseña no es correcta.';
             case 'auth/too-many-requests':         return 'Demasiados intentos seguidos. Espera unos minutos.';
             case 'auth/network-request-failed':    return 'Sin conexión. Comprueba tu internet.';
-            case 'auth/maximum-second-factor-count-exceeded': return 'Ya tienes el máximo de aparatos dados de alta.';
+            case 'auth/maximum-second-factor-count-exceeded': return 'Sólo se admite un aparato de verificación por cuenta y ya tienes uno. ' +
+                'Para tener otro de reserva hay que quitar el actual (procedimiento de recuperación) y, al darlo de alta otra vez, ' +
+                'escribir la misma clave en los dos aparatos.';
             case 'auth/requires-recent-login':     return 'Por seguridad, cierra sesión, vuelve a entrar y repite el alta.';
             default:                               return 'No se ha podido completar. Inténtalo de nuevo.';
         }
@@ -237,7 +239,8 @@
         pedirContrasena(o) {
             const lista = (o.inscritos || []).length
                 ? '<p style="margin:0 0 0.8rem;font-size:0.78rem;color:#3fb950;">Ya tienes ' + o.inscritos.length +
-                  ' aparato(s): ' + o.inscritos.map(_esc).join(', ') + '. Vas a añadir otro.</p>'
+                  ' aparato(s): ' + o.inscritos.map(_esc).join(', ') + '. Sólo se admite uno por cuenta: para tener reserva hay que ' +
+                  'quitar el actual (procedimiento de recuperación) y darlo de alta con la misma clave en los dos aparatos.</p>'
                 : '';
             return _formulario(
                 '<h3 style="margin:0 0 0.4rem;font-size:1.02rem;color:#58a6ff;">🔐 Verificación en dos pasos</h3>' +
@@ -254,6 +257,8 @@
                 '<p style="margin:0 0 0.6rem;font-size:0.8rem;color:#8b949e;line-height:1.45;">En la app de autenticación, ' +
                     'elige «Introducir clave de configuración» y escribe esta clave (tipo «basada en tiempo»). ' +
                     'No la compartas ni le hagas captura.</p>' +
+                '<p style="margin:0 0 0.6rem;font-size:0.8rem;color:#d29922;line-height:1.45;">Sólo se admite un aparato por cuenta. ' +
+                    'Para tener reserva, escribe ahora esta misma clave también en tu segundo aparato: los dos darán el mismo código.</p>' +
                 '<div style="font-family:monospace;font-size:1.05rem;letter-spacing:1px;text-align:center;padding:0.7rem;' +
                     'background:rgba(88,166,255,0.08);border:1px solid rgba(88,166,255,0.3);border-radius:8px;' +
                     'user-select:all;word-break:break-all;">' + _esc(grupos) + '</div>' +
@@ -278,6 +283,6 @@
         },
     };
 
-    const api = { VERSION: 'v862', esReto, resolver, abrirAlta, legible, _ui: ui };
+    const api = { VERSION: 'v863', esReto, resolver, abrirAlta, legible, _ui: ui };
     window.CronosMFA = api;
 })();

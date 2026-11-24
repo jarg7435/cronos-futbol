@@ -201,7 +201,15 @@ function uiFalsa(m, guion) {
         }
         ok('A12 · ni el código ni la clave secreta llegan a la consola',
            !consola.some((l) => /123456|654321|JBSWY3DPEHPK3PXP/.test(l)), consola.join(' | '));
+        // A13 · v863: Firebase admite UN solo factor TOTP por cuenta (medido en
+        // testeo 24-11: con 1 dado de alta, el 2º da maximum-second-factor-count-exceeded).
+        // La reserva = la MISMA clave en dos aparatos; los avisos lo tienen que decir.
+        ok('A13 · el aviso de «máximo» explica que sólo cabe uno y cómo tener reserva',
+           /misma clave/i.test(M.legible(errCode('auth/maximum-second-factor-count-exceeded'))));
     }
+    ok('A13b · la pantalla de la clave invita a escribirla también en el 2º aparato',
+       /misma clave[^']*segundo aparato|segundo aparato[^']*misma clave/i.test(MFA_SRC.slice(MFA_SRC.indexOf('mostrarSecreto(o)'))));
+    ok('A13c · con un aparato ya dado de alta no se anuncia «Vas a añadir otro»', !/Vas a añadir otro/.test(MFA_SRC));
 
     // ═════════════════════ B · los caminos de acceso ═════════════════
     ok('B1 · mfa.js es un script CLÁSICO (sin import/export)', MFA_SRC && !/^\s*(import|export)\s/m.test(sinCom(MFA_SRC)));

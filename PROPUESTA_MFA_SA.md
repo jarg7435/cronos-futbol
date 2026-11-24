@@ -38,7 +38,15 @@ Authy…).
    - Activarlo **no obliga a nadie**: sólo usa segundo factor quien lo da de alta.
    - Clubes, familias, entrenadores y Dirección **no notan nada**.
 3. **Alta del factor**: la hace **sólo el SuperAdmin**, desde su propia sesión.
-4. **Dar de alta 2 aparatos** (móvil y otro de reserva).
+4. **Un solo factor TOTP por cuenta, con la misma clave en 2 aparatos** (móvil y reserva).
+   - ⚠️ **Medido en testeo el 24-11:** con un factor dado de alta, el segundo lo rechaza el
+     servidor con `auth/maximum-second-factor-count-exceeded`. Firebase admite **un solo
+     factor TOTP** por cuenta. El plan inicial de 2 factores separados no es posible.
+   - **Reserva (opción 1, aprobada por el titular el 24-11):** en la pantalla de alta, la
+     **misma clave secreta** se escribe en los dos aparatos antes de confirmar. Los dos dan el
+     mismo código. La pantalla de alta y el aviso de «máximo» lo explican (v863).
+   - Para añadir la reserva a un factor ya dado de alta: quitar el factor
+     (`scripts/ops/mfa_quitar_factor.js`) y volver a darlo de alta con la clave en los dos.
    - Firebase **no da códigos de recuperación**.
    - Si se pierden todos los aparatos, el factor se quita con un script que usa la cuenta de
      servicio (Admin SDK, `updateUser(uid, { multiFactor: { enrolledFactors: [] } })`).
@@ -103,7 +111,7 @@ Así, ni siquiera una sesión antigua sin segundo factor conserva los poderes de
 | T2 | Pasar `cronos-futbol-test` a Identity Platform y activar TOTP | **Escritura en nube 🔐** |
 | T3 | Programar `mfa.js`, las 5 ramas y la pantalla de alta, con sus guards (`npm run verify` en verde) | **Código 🔐** |
 | T4 | `npm run deploy:staging` | **Despliegue a testeo 🔐** |
-| T5 | Con el SuperAdmin de testeo: dar de alta 2 aparatos y probar los 5 caminos | Prueba del titular |
+| T5 | Con el SuperAdmin de testeo: dar de alta el factor con la misma clave en 2 aparatos y probar los 5 caminos | Prueba del titular |
 | T6 | Casos negativos: código erróneo; código caducado; quitar el factor por script (simula perder el móvil) y volver a darlo de alta; una cuenta de otro rol sin MFA entra igual que hoy | Prueba del titular (+ script 🔐) |
 | T7 | Documentar la recuperación en `RECUPERACION.md` | **Documentación 🔐** |
 
@@ -112,7 +120,7 @@ Así, ni siquiera una sesión antigua sin segundo factor conserva los poderes de
 1. **Hosting** con el código de MFA (`deploy:prod` 🔐). No cambia nada para nadie mientras no
    haya factores dados de alta.
 2. **Identity Platform + TOTP** en `cronos-futbol-app` 🔐.
-3. **Alta de los 2 aparatos** del SuperAdmin real y prueba de los 5 caminos.
+3. **Alta del factor** del SuperAdmin real, con la misma clave en los 2 aparatos, y prueba de los 5 caminos.
 4. **Fila en `VALIDACION_E2E_Y_APPCHECK.md` §3.3**, con la medición de App Check y de las
    reglas.
 
@@ -120,7 +128,8 @@ Así, ni siquiera una sesión antigua sin segundo factor conserva los poderes de
 
 | Riesgo | Cobertura |
 |---|---|
-| El SuperAdmin pierde el móvil | 2 aparatos dados de alta + script de recuperación probado en T6 |
+| El SuperAdmin pierde el móvil | Misma clave en un 2.º aparato + script de recuperación probado en T6 |
+| Quien tenga la clave secreta genera códigos | La clave sólo se escribe en los 2 aparatos propios, sin captura ni copia. Si se sospecha que se ha filtrado, se quita el factor y se da de alta con una clave nueva |
 | Identity Platform no tiene vuelta atrás | Primero en testeo. Mientras se quede en el plan gratuito, no cambia nada para el resto de cuentas |
 | Un camino de acceso olvidado deja fuera al SuperAdmin | Los 5 puntos se han localizado por búsqueda en todo el repositorio. Un guard fija que cada uno trate el error |
 | App Check rechaza las llamadas de MFA | Se comprueba en testeo (T5), antes de tocar producción |
