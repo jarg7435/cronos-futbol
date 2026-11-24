@@ -316,9 +316,11 @@ producción con dos líneas de log marcadas `[PRUEBA]` (A1 y A2 llegaron).
   `cloud_run_revision` y **nunca habría saltado** con errores reales; la prueba pasó
   porque las líneas `[PRUEBA]` se escribieron con el tipo equivocado. Corregida el mismo
   22-11 (ahora salta con cualquier error). **Las pruebas se escriben como
-  `cloud_function`.** Al corregirla salió un fallo real: `cleanupExpiredRequests` falla
-  cada noche por falta de un índice (ver `INCIDENTES.md` si llega a tratarse como
-  incidente; arreglo pendiente).
+  `cloud_function`.** Al corregirla salió un fallo real: `cleanupExpiredRequests` fallaba
+  cada noche por falta de un índice (`slot_requests`: `status` + `createdAt`). Como la
+  colección estaba vacía, no afectaba a ningún dato. **Arreglado el mismo 22-11**
+  (`145edb6`): índice en `firestore.indexes.json`, desplegado sólo como índice en testeo
+  y en producción, donde quedó READY a las 22:02 UTC.
 
 ### Lo que estas alertas NO cubren (decidido así)
 

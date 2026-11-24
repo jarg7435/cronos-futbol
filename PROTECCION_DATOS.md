@@ -217,8 +217,12 @@ recrean al moverlas, así que hay que planificarlo.
 
 - **Plazos:** el encargado avisa al club en **48 h**, y el club notifica a la AEPD en
   **72 h** si hay riesgo.
-- **Detección hoy:** `error_logs`, `audit_logs`, Cloud Logging y avisos de usuarios.
-  No hay alertas automáticas; es una carencia conocida (P1 de la reauditoría).
+- **Detección:** `error_logs`, `audit_logs`, Cloud Logging (con retención de 180 días
+  desde el 2026-11-22) y avisos de usuarios. Además, desde el 2026-11-22 hay **alertas
+  automáticas** en producción, que avisan por correo al titular (`RECUPERACION.md`
+  Parte 6): purga o borrado incompletos, fallo de correo, errores de functions, rechazos
+  de App Check y caída de la web. No alertan de intentos repetidos de inicio de sesión
+  (Firebase Auth los frena por su cuenta) ni de gasto anómalo (pendiente).
 - **Primero se contiene, sin destruir el rastro:**
   - revocar sesiones;
   - cerrar la regla;

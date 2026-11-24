@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Fecha del informe** | 2026-10-19 · **re-medido el 2026-11-18** (ver 3.2) |
+| **Fecha del informe** | 2026-10-19 · **re-medido el 2026-11-18** (ver 3.2) · última fila de §3.3: 2026-11-24 (v863) · §4 actualizado el 2026-11-24 |
 | **Versiones** | E2E sobre v824–v828 (18-19 oct) · App Check medido con v830 en testeo y v828 en producción · re-medición con **v853** en los dos |
 | **Validado por** | José Alberto Romero García (titular), con el asistente de desarrollo |
 | **Datos** | sólo **ficticios**: dos clubes de prueba y cuentas `jarg7435+e2e…@gmail.com` |
@@ -22,7 +22,9 @@
 - **Testeo ejecuta lo mismo que producción:**
   - el mismo código;
   - el mismo `firestore.rules`;
-  - las mismas 22 Cloud Functions (desplegadas en testeo el 18-10);
+  - las Cloud Functions, con una salvedad medida el 23-11: las 22 de testeo son del 18/19-10.
+    Producción tiene 23 (con `syncPlazasAdultas`) y código posterior de `functions/`.
+    Igualarlas es el paso P3 de `PENTEST_ALCANCE.md`, pendiente;
   - **App Check ENFORCED** en los mismos servicios desde el 19-10.
 - **En producción no se hacen pruebas con datos.** Es una norma expresa del titular
   desde el 24-09, porque una prueba escribe en datos reales de clubes.
@@ -167,16 +169,17 @@ node scripts/lee_reglas_vivas.js firestore.rules # 0 diferencias de código
 
 ---
 
-## 4. Lo que este informe NO cubre todavía
+## 4. Estado de los puntos del auditor (actualizado el 2026-11-24)
 
-Se dice para no afirmar más de lo hecho. Son los puntos de la lista del auditor sin
-prueba E2E fechada:
+Se dice para no afirmar más de lo hecho. Puntos de la reauditoría del 19-11, con lo que
+está hecho y lo que sigue abierto:
 
 | Punto del auditor | Estado |
 |---|---|
-| Storage rechaza club, audiencia o uploader incorrectos | Cubierto por reglas y guards (`test_clips_video`, `scripts/ops/testeo_rol_storage_firestore.js`). **Sin E2E en navegador**: en P3 testeo no tenía clips |
-| Partido completo con pérdida de red y recuperación | Cubierto por la batería (reloj, cola de sucesos, *replay*). **Sin prueba de campo continuada** con dispositivos reales |
-| Restauración de Firestore y Auth desde copias externas | PITR y copia diaria activos. **Simulacro de restauración pendiente** (Fase 5) |
-| Logs sin datos personales innecesarios | **v848 · Backend revisado** (66 llamadas de `functions/`): `sendInviteEmail` escribía el correo del invitado y la URL con el token de invitación; ahora correo enmascarado (`a***@dominio`), sin URL, y el error SMTP filtrado. Lo fija `test_logs_sin_pii.js` sobre TODAS las llamadas. **Pendiente**: fijar la retención de Cloud Logging y revisar la consola del navegador (no se almacena en servidor) |
-| Monitorización y alertas (App Check, errores, correo) | **Pendiente** (P1 de la reauditoría) |
-| Pentest independiente | Fuera del alcance de este informe |
+| Storage rechaza club, audiencia o uploader incorrectos | ✅ **E2E real en testeo (22-11)**: `scripts/ops/e2e_storage_testeo.js` hace peticiones reales a Storage y Firestore con cuentas de los clubes E2E y un token temporal de App Check, que se borra al terminar. La primera pasada encontró dos agujeros: **N10**, sobrescribir un clip (cerrado en v858), y **N5**, compartir con familias sin estar en `plazasAdultas` (cerrado en v860). Resultado final: **18/18** (filas v858 y v860 de §3.3). Lo mantienen los guards `test_clips_video` (99/99) y `testeo_rol_storage_firestore.js`. No se ha repetido a través de la interfaz con clips grabados en un aparato |
+| Partido completo con pérdida de red y recuperación | Cubierto por la batería (reloj, cola de sucesos, *replay*). Guion de prueba de campo escrito en `PRUEBA_PERDIDA_RED.md` (`daeb97f`). ⏳ **Falta ejecutarlo** en iPad y móvil reales |
+| Restauración de Firestore y Auth desde copias externas | ✅ **Primer simulacro hecho el 22-11** (`RECUPERACION.md`, registro de simulacros): 47/47 colecciones idénticas, uids de `users` que casan con Auth 9/10 y claims 8/10, con los huérfanos explicados; RTO unos 14 min, sin contar el volcado a `(default)` ni la reimportación de Auth. Se repite cada seis meses; `npm run backup:estado` avisa. ⏳ Qué hace `auth:export/import` con el factor TOTP del SuperAdmin está **sin medir** (`RECUPERACION.md` 7.4) |
+| Logs sin datos personales innecesarios | ✅ **Backend (v848)**: 66 llamadas de `functions/` revisadas; correo enmascarado, sin URL con token y error SMTP filtrado (`test_logs_sin_pii.js`). ✅ **Consola del navegador (v857, en producción el 22-11)**: 638 llamadas `console.*` revisadas y 6 fugas corregidas (`test_consola_sin_pii.js`). ✅ **Retención de Cloud Logging** fijada en **180 días** desde el 22-11 (`RECUPERACION.md` Parte 6) |
+| Monitorización y alertas (App Check, errores, correo) | ✅ **Alertas A1–A5 activas en producción desde el 22-11** (`RECUPERACION.md` Parte 6): A1 purga o borrado incompletos, A2 fallo de correo, A3 errores de functions, A4 rechazos de App Check (más de 50 por hora), A5 disponibilidad de la web. Avisan por correo al titular; probadas en testeo y, en producción, con líneas `[PRUEBA]`. No cubren, por decisión documentada allí: el fallo de la copia diaria (lo cubre un recordatorio semanal), los intentos repetidos de inicio de sesión y el gasto anómalo (⏳ alerta de presupuesto pendiente) |
+| Pentest independiente | Alcance escrito en `PENTEST_ALCANCE.md` (sólo testeo). P1 y P2 hechos; ⏳ P3–P8 y la elección del proveedor, pendientes de decisión del titular |
+| Segundo factor del SuperAdmin (no estaba en la lista; se añade) | ✅ TOTP activo en testeo y producción (24-11, `PROPUESTA_MFA_SA.md`, fila de §3.3). ⏳ Fase 2 (exigir el factor en reglas y functions), sin decidir |
