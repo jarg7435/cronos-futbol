@@ -156,3 +156,20 @@ Copiar debajo del último registro y rellenar.
 | Causa | las reglas usaban `sameClubAsDoc` («es del mismo club») para leer y modificar, pensando en la Dirección; el código daba por hecho que el estado «sólo lo escribe el SA» (comentario de `auth.js`), y no era así |
 | Corrección y guard | v859 · `firestore.rules` (leer y modificar: SA, Dirección del club/ente e interesado; la propia nace `pending*`) · `test_platform_requests_rules.js` parte 3 (rojo 19/26 con la regla anterior, 26/26 ahora) · commit `99c5e54` · fila en `VALIDACION_E2E_Y_APPCHECK.md` §3.3 |
 | Estado | **abierta**: corregida; faltan la valoración de riesgo y la decisión de aviso del titular |
+
+### INC-2026-005 · Retirada planificada del segundo factor del SuperAdmin (testeo)
+
+| Campo | Valor |
+|---|---|
+| Detectado | 2026-11-24 · operación **planificada**, no un incidente sobrevenido. Se registra porque `scripts/ops/mfa_quitar_factor.js` exige anotar cada retirada de factor |
+| Periodo afectado | desde la retirada del factor «Móvil» anterior (**2026-11-24 hacia las 01:40 UTC**, paso 3 de testeo) hasta el **2026-11-24 13:28:38 UTC**, alta del nuevo (~11 h 50 min). En ese intervalo la cuenta SA **de testeo** sólo estaba protegida por la contraseña |
+| Tipo | **sin datos personales** (cambio de configuración de seguridad de una cuenta) |
+| Datos afectados | ninguno. Se retiró un factor TOTP; el secreto no se expone en ningún momento (el script sólo muestra nombre y fecha) |
+| Personas afectadas | 1 cuenta (SuperAdmin), sólo en `cronos-futbol-test` · ningún club. **Producción sin tocar** |
+| Acceso real constatado | no aplica |
+| Contención | retirada con `mfa_quitar_factor.js --proyecto test --quitar`; factor nuevo dado de alta por el titular el 2026-11-24 13:28 UTC; comprobado en sólo lectura (13:35 UTC) con el mismo script en seco: **1 factor «Móvil» TOTP** |
+| Valoración de riesgo | **improbable**: proyecto de testeo sin datos reales y cuenta protegida por contraseña durante el intervalo |
+| Aviso a clubes / AEPD / afectados | no procede (motivo anterior) |
+| Causa | Firebase sólo admite **un factor TOTP por cuenta** (`auth/maximum-second-factor-count-exceeded` al añadir el segundo aparato). El titular eligió guardar la **misma clave secreta en dos aparatos**, lo que obliga a retirar el factor y darlo de alta otra vez para cargar la clave en los dos |
+| Corrección y guard | v863 (avisos del alta en `js/services/auth/mfa.js`) · `test_mfa_superadmin.js` A13-A13c · commit `2825a9b` |
+| Estado | **cerrada** 2026-11-24 |
