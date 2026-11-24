@@ -346,6 +346,78 @@ producción con dos líneas de log marcadas `[PRUEBA]` (A1 y A2 llegaron).
 
 ---
 
+## Parte 7 · Segundo factor del SuperAdmin: si se pierden los aparatos
+
+**Estado:** el segundo factor (TOTP) está activo **sólo en testeo** (`cronos-futbol-test`,
+v863). En producción se aplicará al hacer el paso a producción de `PROPUESTA_MFA_SA.md` §5;
+hasta entonces esta parte vale para testeo y queda escrita para producción.
+
+### 7.1 · Cómo está montado
+
+- La cuenta de SuperAdmin tiene **un solo factor TOTP**: Firebase no admite más de uno por
+  cuenta (`auth/maximum-second-factor-count-exceeded`).
+- La **misma clave secreta** está guardada en **dos aparatos** (iPad y móvil), que generan
+  el mismo código. Perder uno no deja fuera: se entra con el otro.
+- **Firebase no da códigos de recuperación.** Si se pierden los dos aparatos, la única
+  salida es quitar el factor desde la administración (7.3).
+- El resto de cuentas no tiene segundo factor y no se ve afectado.
+
+### 7.2 · Qué caso es
+
+| Situación | Qué hacer |
+|---|---|
+| Se pierde **un** aparato | Entrar con el otro. Como la clave pudo quedar expuesta en el perdido, **quitar el factor (7.3) y darlo de alta con una clave NUEVA** en el aparato que queda y en uno de reposición |
+| Se pierden **los dos** | 7.3 completo |
+| Se sospecha que alguien tiene la clave | Igual que perder un aparato: quitar el factor y dar de alta una clave nueva |
+| Se olvida **la contraseña** (los aparatos siguen) | «¿Olvidaste tu contraseña?» de siempre. Después de cambiarla, el código se sigue pidiendo |
+
+### 7.3 · Quitar el factor y volver a darlo de alta
+
+Requisito: una máquina con `firebase login` hecho con **la cuenta de Google titular del
+proyecto**. El script usa esa sesión; sin ella no puede hacer nada. Si este ordenador se
+ha perdido, vale cualquier otro donde se instale `firebase-tools`, se haga `firebase login`
+y se tenga una copia del repositorio (`scripts/ops/` está en `.gitignore`: el script se
+sube con `git add -f`, así que viene con el repositorio).
+
+```bash
+# 1. EN SECO: ver los factores (nombre y fecha; nunca el secreto). No cambia nada
+node scripts/ops/mfa_quitar_factor.js --proyecto test --correo <correo del SA>
+
+# 2. Quitarlos (TODOS los de la cuenta)
+node scripts/ops/mfa_quitar_factor.js --proyecto test --correo <correo del SA> --quitar
+
+# En producción hace falta además el indicador:
+node scripts/ops/mfa_quitar_factor.js --proyecto prod --correo <correo del SA> --quitar --confirmo-produccion
+```
+
+3. Entrar en la app **sólo con la contraseña** y dar de alta otra vez: «🔒 Contraseña» →
+   «🔐 Verificación en dos pasos», con la clave en los dos aparatos antes de confirmar.
+4. **Comprobar** con el paso 1 (en seco) que vuelve a haber 1 factor.
+5. **Anotarlo en `INCIDENTES.md`** (como INC-2026-005): desde cuándo hasta cuándo la cuenta
+   estuvo sólo con contraseña, y por qué.
+
+🚨 Entre el paso 2 y el 3 la cuenta de SuperAdmin queda protegida **sólo por la
+contraseña**. Hacerlo de seguido, no dejarlo a medias.
+
+### 7.4 · Lo que esta recuperación da por hecho
+
+- 🔑 **La cuenta de Google titular es la llave de todo.** Quien la tenga puede quitar el
+  factor del SuperAdmin con este script. Debe tener su propia verificación en dos pasos,
+  y con medios distintos de los aparatos del TOTP.
+- **La exportación de Auth (Parte 2.3) no guarda el secreto TOTP.** Si algún día hay que
+  reimportar las cuentas (Parte 4, paso 7), el SuperAdmin entrará sin factor o con un
+  factor inservible: se aplica 7.3 nada más terminar. Qué deja exactamente
+  `auth:export` / `auth:import` con un factor TOTP **no está medido**: se comprueba en el
+  próximo simulacro, con la exportación hecha ya con el factor activo.
+
+### 7.5 · Probado
+
+En testeo, el 24-11 (v863): se quitó el factor con `--quitar`, se dio de alta otra vez con
+la misma clave en los dos aparatos, y se probaron los caminos de acceso con código bueno,
+código malo y Cancelar (detalle en `PROPUESTA_MFA_SA.md` §4, INC-2026-005).
+
+---
+
 ## Registro de simulacros
 
 > ⚠️ **En esta sección sólo puede aparecer con formato de fecha la fecha del propio
