@@ -3,9 +3,9 @@
 | | |
 |---|---|
 | **Fecha** | 2026-11-23 |
-| **Estado** | **PROPUESTA** — no se ha aplicado nada en Auth, código ni despliegues |
+| **Estado** | **APLICADA** — testeo T1–T7 ✅; producción pasos 1–4 de §5 ✅ (24-11-2026, ver «Resultado en producción»). Fase 2 sin decidir |
 | **Titular / autoriza** | José Alberto Romero García |
-| **Situación actual** | MFA **desactivado** en producción y testeo. Auth sólo con correo + contraseña. App Check **ENFORCED** en Auth |
+| **Situación actual** | Identity Platform + TOTP activo en producción y testeo (SMS desactivado). El SuperAdmin tiene 1 factor TOTP en cada proyecto; el resto de cuentas entra solo con contraseña. App Check **ENFORCED** en Auth |
 | **Relacionado** | `PENTEST_ALCANCE.md` (S2, S7), `RECUPERACION.md`, `VALIDACION_E2E_Y_APPCHECK.md` §3.3 |
 
 > El SuperAdmin puede leer y purgar datos de todos los clubes. Hoy basta su contraseña para
@@ -142,6 +142,19 @@ Producción sin tocar (hosting v860, Identity Platform sin activar).
 3. **Alta del factor** del SuperAdmin real, con la misma clave en los 2 aparatos, y prueba de los 5 caminos.
 4. **Fila en `VALIDACION_E2E_Y_APPCHECK.md` §3.3**, con la medición de App Check y de las
    reglas.
+
+### Resultado en producción (24-11-2026) — ✅ pasos 1–4 completos
+
+| Paso | Resultado |
+|---|---|
+| 1 | Hosting v863 (~15:10 UTC), código inerte; el SA y otra cuenta entran sin código (fila §3.3) |
+| 2a | Copia previa de la configuración de Auth (`FIREBASE_AUTH`, `mfa DISABLED`) → el titular pasa a **Identity Platform** en la consola, con SMS inhabilitado → comparada con la copia previa, solo cambia `subtype IDENTITY_PLATFORM` |
+| 2b | `PATCH config?updateMask=mfa` ~23:00 UTC, con comprobación previa del estado: HTTP 200, `providerConfigs: [{TOTP ENABLED, adjacentIntervals 5}]`, `mfa.state` sigue `DISABLED` (sin SMS). Deshacer = el mismo PATCH con `DISABLED` |
+| 3 | Factor «Móvil» TOTP dado de alta a las 23:10:38 UTC, con la misma clave en 2 aparatos (1 factor según `mfa_quitar_factor.js --proyecto prod`, en seco). El titular probó los caminos en producción (login desde cero con cada aparato, código malo y Cancelar, `live.html`, otra cuenta sin código) con resultado correcto |
+| 4 | Medición 23:17 UTC: App Check ENFORCED ×2, 0 tokens debug, sonda 403, reglas de Firestore 0 dif.; fila en §3.3 |
+
+Queda pendiente: Fase 2 (decisión 3 de §7) y comprobar `auth:export/import` con TOTP en el
+próximo simulacro (`RECUPERACION.md` 7.4).
 
 ## 6. Riesgos y cómo se cubren
 
