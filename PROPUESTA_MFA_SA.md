@@ -115,6 +115,25 @@ Así, ni siquiera una sesión antigua sin segundo factor conserva los poderes de
 | T6 | Casos negativos: código erróneo; código caducado; quitar el factor por script (simula perder el móvil) y volver a darlo de alta; una cuenta de otro rol sin MFA entra igual que hoy | Prueba del titular (+ script 🔐) |
 | T7 | Documentar la recuperación en `RECUPERACION.md` | **Documentación 🔐** |
 
+### Resultado de T5–T6 en testeo (v863, 24-11-2026) — ✅ cerrados
+
+Factor retirado con `mfa_quitar_factor.js --proyecto test --quitar` (~01:40 UTC) y dado de
+alta de nuevo con la **misma clave en los 2 aparatos** (13:28:38 UTC); ficha INC-2026-005.
+
+| Camino | Resultado |
+|---|---|
+| Login desde cero | código malo no entra ✅ · Cancelar vuelve atrás ✅ · código bueno entra, **con cada uno de los 2 aparatos** ✅ |
+| Cambio de contraseña (reautenticación) | ✅ (24-11, antes de la nueva alta) |
+| `live.html` | ✅ (24-11) |
+| Clave maestra de Diagnóstico (usuario del club de prueba) | código malo ✅ · Cancelar ✅ · código bueno ✅ |
+| Registro con el mismo correo | código malo ✅ · Cancelar ✅ · **positivo no probado a propósito**: añadiría un rol o una solicitud a la cuenta SA, y el código lo resuelve la misma `CronosMFA.resolver` que el login |
+| Otra cuenta sin factor (entrenador) | entra sin código, igual que antes ✅ |
+| Quitar el factor por script y volver a darlo de alta | ✅ (paso anterior) |
+| Código caducado | no probado por separado (Firebase lo rechaza como un código malo) |
+| Comprobaciones de lectura (14:13 UTC) | `test_mfa_superadmin.js` 45/45 · `npm run verify` 361/362 (el que falló, `test_ocultar_coordinador_rules.js`, fue un `ECONNRESET` de red y dio 14/14 al repetirlo) · 1 factor «Móvil» TOTP en testeo |
+
+Producción sin tocar (hosting v860, Identity Platform sin activar).
+
 ## 5. Paso a producción (sólo después de T5–T6 aprobados por el titular)
 
 1. **Hosting** con el código de MFA (`deploy:prod` 🔐). No cambia nada para nadie mientras no
