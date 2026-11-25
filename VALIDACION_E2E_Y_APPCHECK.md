@@ -22,9 +22,9 @@
 - **Testeo ejecuta lo mismo que producción:**
   - el mismo código;
   - el mismo `firestore.rules`;
-  - las Cloud Functions, con una salvedad medida el 23-11: las 22 de testeo son del 18/19-10.
-    Producción tiene 23 (con `syncPlazasAdultas`) y código posterior de `functions/`.
-    Igualarlas es el paso P3 de `PENTEST_ALCANCE.md`, pendiente;
+  - las mismas 23 Cloud Functions, incluida `syncPlazasAdultas`, desplegadas en testeo
+    desde `HEAD` el 25-11 (paso P3 de `PENTEST_ALCANCE.md`, §1.4). Hasta ese día, testeo
+    tenía 22 functions del 18/19-10;
   - **App Check ENFORCED** en los mismos servicios desde el 19-10.
 - **En producción no se hacen pruebas con datos.** Es una norma expresa del titular
   desde el 24-09, porque una prueba escribe en datos reales de clubes.
@@ -181,5 +181,5 @@ está hecho y lo que sigue abierto:
 | Restauración de Firestore y Auth desde copias externas | ✅ **Primer simulacro hecho el 22-11** (`RECUPERACION.md`, registro de simulacros): 47/47 colecciones idénticas, uids de `users` que casan con Auth 9/10 y claims 8/10, con los huérfanos explicados; RTO unos 14 min, sin contar el volcado a `(default)` ni la reimportación de Auth. Se repite cada seis meses; `npm run backup:estado` avisa. ⏳ Qué hace `auth:export/import` con el factor TOTP del SuperAdmin está **sin medir** (`RECUPERACION.md` 7.4) |
 | Logs sin datos personales innecesarios | ✅ **Backend (v848)**: 66 llamadas de `functions/` revisadas; correo enmascarado, sin URL con token y error SMTP filtrado (`test_logs_sin_pii.js`). ✅ **Consola del navegador (v857, en producción el 22-11)**: 638 llamadas `console.*` revisadas y 6 fugas corregidas (`test_consola_sin_pii.js`). ✅ **Retención de Cloud Logging** fijada en **180 días** desde el 22-11 (`RECUPERACION.md` Parte 6) |
 | Monitorización y alertas (App Check, errores, correo) | ✅ **Alertas A1–A5 activas en producción desde el 22-11** (`RECUPERACION.md` Parte 6): A1 purga o borrado incompletos, A2 fallo de correo, A3 errores de functions, A4 rechazos de App Check (más de 50 por hora), A5 disponibilidad de la web. Avisan por correo al titular; probadas en testeo y, en producción, con líneas `[PRUEBA]`. No cubren, por decisión documentada allí: el fallo de la copia diaria (lo cubre un recordatorio semanal), los intentos repetidos de inicio de sesión y el gasto anómalo (⏳ alerta de presupuesto pendiente) |
-| Pentest independiente | Alcance escrito en `PENTEST_ALCANCE.md` (sólo testeo). P1 y P2 hechos; ⏳ P3–P8 y la elección del proveedor, pendientes de decisión del titular |
+| Pentest independiente | Alcance escrito en `PENTEST_ALCANCE.md` (sólo testeo). P1 a P4 hechos (functions de testeo iguales a `HEAD` desde el 25-11); ⏳ P5–P8 y la elección del proveedor, pendientes de decisión del titular |
 | Segundo factor del SuperAdmin (no estaba en la lista; se añade) | ✅ TOTP activo en testeo y producción (24-11, `PROPUESTA_MFA_SA.md`, fila de §3.3). ⏳ Fase 2 (exigir el factor en reglas y functions), sin decidir |
