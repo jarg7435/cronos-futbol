@@ -194,6 +194,9 @@ contraseña de todas las familias. **Guárdalo cifrado y fuera de este ordenador
 
 ⚠️ Hazlo **cada vez que se aprueben altas nuevas**, y como mínimo una vez al mes.
 
+🔐 **El segundo factor del SuperAdmin no se puede restaurar desde esta exportación**
+(medido el 2026-11-25, ver 7.4): queda constancia de que existía, pero no del secreto.
+
 ---
 
 ## Parte 3 · El simulacro (obligatorio, y con fecha)
@@ -263,6 +266,11 @@ indistinguible de un simulacro que no se hizo.
 7. **Cuentas**: si el incidente tocó Auth, reimportar desde el JSON de la Parte 2.3
    (`firebase auth:import`). ⚠️ Con el **mismo algoritmo de hash** que exportó, o las
    contraseñas no valdrán.
+   🔐 **Antes de importar, quitar el campo `mfaInfo`** de la cuenta del SuperAdmin en una
+   copia del JSON (la original no se toca). Ese campo viene con `totpInfo` vacío, sin
+   secreto (7.4): importado tal cual, o falla o deja un factor que ningún aparato puede
+   cumplir. Sin él, el SA entra sólo con contraseña, y **en ese mismo momento** vuelve a
+   dar de alta su factor (7.3, pasos 3 a 5, con la anotación en `INCIDENTES.md`).
 8. **Escribirlo.** Qué pasó, a qué hora, qué se restauró, qué se perdió. Sin esto, la
    Parte 6 del paquete de protección de datos (notificación de brechas) no se puede
    cumplir.
@@ -406,11 +414,19 @@ contraseña**. Hacerlo de seguido, no dejarlo a medias.
 - 🔑 **La cuenta de Google titular es la llave de todo.** Quien la tenga puede quitar el
   factor del SuperAdmin con este script. Debe tener su propia verificación en dos pasos,
   y con medios distintos de los aparatos del TOTP.
-- **La exportación de Auth (Parte 2.3) no guarda el secreto TOTP.** Si algún día hay que
-  reimportar las cuentas (Parte 4, paso 7), el SuperAdmin entrará sin factor o con un
-  factor inservible: se aplica 7.3 nada más terminar. Qué deja exactamente
-  `auth:export` / `auth:import` con un factor TOTP **no está medido**: se comprueba en el
-  próximo simulacro, con la exportación hecha ya con el factor activo.
+- **La exportación de Auth (Parte 2.3) no guarda el secreto TOTP.** **Medido el
+  2026-11-25 en testeo** (`firebase auth:export --format=json`, firebase-tools 15.32.1,
+  22 cuentas; el fichero se borró después de mirarlo):
+  - sólo la cuenta del SA trae `mfaInfo`: `mfaEnrollmentId`, `displayName` («Móvil»),
+    `enrolledAt` y **`totpInfo: {}` vacío**;
+  - el resto de cuentas no traen nada de segundo factor.
+- **`auth:import`, leído en su código y NO probado:** el importador acepta `mfaInfo`
+  (`ALLOWED_JSON_KEYS` en `accountImporter.js`) y lo manda tal cual a `uploadAccount`.
+  Con `totpInfo` vacío, el servidor puede rechazar la cuenta o crear un factor sin
+  secreto, que pediría un código imposible. Para no depender de cuál de las dos pase, la
+  Parte 4 (paso 7) **quita `mfaInfo` antes de importar** y el SA vuelve a dar de alta su
+  factor al momento. Sigue pendiente, si se quiere cerrar del todo, una medición
+  controlada en testeo con una cuenta ficticia.
 
 ### 7.5 · Probado
 
