@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Fecha** | 2026-11-23 |
-| **Estado** | **APLICADA** — testeo T1–T7 ✅; producción pasos 1–4 de §5 ✅ (24-11-2026, ver «Resultado en producción»). Fase 2 sin decidir |
+| **Estado** | **APLICADA** — testeo T1–T7 ✅; producción pasos 1–4 de §5 ✅ (24-11-2026, ver «Resultado en producción»). **Fase 2 APLICADA** en testeo (25-11) y producción (26-11-2026, v864, `4335ee3`) |
 | **Titular / autoriza** | José Alberto Romero García |
 | **Situación actual** | Identity Platform + TOTP activo en producción y testeo (SMS desactivado). El SuperAdmin tiene 1 factor TOTP en cada proyecto; el resto de cuentas entra solo con contraseña. App Check **ENFORCED** en Auth |
 | **Relacionado** | `PENTEST_ALCANCE.md` (S2, S7), `RECUPERACION.md`, `VALIDACION_E2E_Y_APPCHECK.md` §3.3 |
@@ -101,6 +101,14 @@ Exigir en `firestore.rules`, `storage.rules` y en las *callables* de SuperAdmin 
 se haya abierto con segundo factor (`request.auth.token.firebase.sign_in_second_factor`).
 Así, ni siquiera una sesión antigua sin segundo factor conserva los poderes de SuperAdmin.
 
+**✅ Aplicada (v864, `4335ee3`).** `firestore.rules`: `isSuperAdmin()` exige `_conSegundoFactor()`
+(`request.auth.token.firebase.get('sign_in_second_factor', '') == 'totp'`). `functions/index.js`:
+`_esSuperAdmin` exige el factor; `getMatchForSpectator` pasa por `_esSuperAdmin` (antes miraba
+`token.role` directamente) y `deleteAuthUser` decide el alcance de SA una sola vez. `syncPlazasAdultas`
+es un disparador sin token de sesión y sigue con el claim. Guard `scripts/test_mfa_fase2.js` (28/28).
+`storage.rules` no se tocó: no da poderes propios de SuperAdmin. Despliegue y pruebas: «Resultado de la
+Fase 2» en §5 y fila de `VALIDACION_E2E_Y_APPCHECK.md` §3.3.
+
 ---
 
 ## 4. Cómo se prueba primero en testeo
@@ -153,8 +161,19 @@ Producción sin tocar (hosting v860, Identity Platform sin activar).
 | 3 | Factor «Móvil» TOTP dado de alta a las 23:10:38 UTC, con la misma clave en 2 aparatos (1 factor según `mfa_quitar_factor.js --proyecto prod`, en seco). El titular probó los caminos en producción (login desde cero con cada aparato, código malo y Cancelar, `live.html`, cambio de contraseña con reautenticación, clave maestra de Diagnóstico, otra cuenta sin código) con resultado correcto |
 | 4 | Medición 23:17 UTC: App Check ENFORCED ×2, 0 tokens debug, sonda 403, reglas de Firestore 0 dif.; fila en §3.3 |
 
-Queda pendiente: Fase 2 (decisión 3 de §7) y comprobar `auth:export/import` con TOTP en el
-próximo simulacro (`RECUPERACION.md` 7.4).
+Queda pendiente: comprobar `auth:export/import` con TOTP en el próximo simulacro
+(`RECUPERACION.md` 7.4). La Fase 2 se aplicó el 26-11 (abajo).
+
+### Resultado de la Fase 2 (25/26-11-2026) — ✅ testeo y producción
+
+| Paso | Resultado |
+|---|---|
+| Testeo | 25-11 01:25-01:29 UTC: reglas (0 dif.) + 23 functions. Guard `test_mfa_fase2` 28/28, `verify` 363/363, lint 0. El titular: login con código, sesión SA abierta más de 1 h (el factor se mantiene al renovar el token) y escritura de Extras reflejada al instante en el club de prueba |
+| Incidencia en testeo | Una 1.ª prueba con 2 pestañas de sesiones distintas y cambio de contraseña dio `FIRESTORE (10.12.2) INTERNAL ASSERTION FAILED: Unexpected state` (estado compartido entre pestañas del SDK), sin ningún `permission-denied`. No se repitió con una sola pestaña. Queda como hallazgo abierto, sin cambiar código |
+| Commit | `4335ee3`, pusheado |
+| Producción, antes | 26-11 13:20 UTC (sólo lectura): 1 cuenta SA (lista + claim), activa, con factor «Móvil» TOTP. El titular volvió a entrar con código en sus 2 aparatos |
+| Producción | 13:26 UTC 23 functions (a la primera) → el titular comprueba el panel SA → 13:35 UTC reglas de Firestore. Reglas vivas = repo (0 dif.), 23 functions, App Check ENFORCED ×2, sonda 403. Extras carga en producción |
+| Deshacer | Reglas y functions de `321e4f6` (`deploy:prod:rules` + `firebase deploy --only functions`) |
 
 ## 6. Riesgos y cómo se cubren
 
@@ -170,4 +189,4 @@ próximo simulacro (`RECUPERACION.md` 7.4).
 
 1. ¿Se aprueba TOTP como factor?
 2. Permiso para T2, T3 y T4, uno a uno.
-3. ¿Fase 2 (exigir el segundo factor en reglas y *callables*) ahora o más adelante?
+3. ~~¿Fase 2 (exigir el segundo factor en reglas y *callables*) ahora o más adelante?~~ → ✅ decidida y aplicada (26-11-2026).
