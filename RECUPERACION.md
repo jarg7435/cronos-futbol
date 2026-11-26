@@ -339,8 +339,30 @@ producción con dos líneas de log marcadas `[PRUEBA]` (A1 y A2 llegaron).
 - **Intentos repetidos de inicio de sesión**: Firebase Auth ya los frena por su cuenta;
   alertar exigiría activar los registros de acceso a datos (volumen y coste). Descartado
   por ahora.
-- **Gasto anómalo**: no hay alerta de presupuesto (pendiente, requiere la cuenta de
-  facturación).
+- **Gasto anómalo**: ✅ cubierto por **presupuestos de facturación** (no por Monitoring).
+  Revisado el 26-11-2026; la nota anterior («no hay alerta») era inexacta. Cuenta
+  `019264-81F514-796B88`, compartida por `cronos-futbol-app`, `cronos-futbol-test`,
+  `cronos-basket-app` y `cronos-basket-test`:
+  - «Firebase Project cronos-futbol-app»: 1 € sobre **toda la cuenta**, aviso al 1 %
+    (0,01 €). Con el gasto fijo de abajo salta **todos los meses**: no es una alarma.
+  - **«cronos-futbol-app»** (creado el 26-11): 1 € **sólo producción**, avisos al 50/90/100 %
+    del gasto real y al 100 % del previsto. Es el que avisa de verdad.
+  - «cronos-futbol-test» y «cronos-basket-test»: 1 € cada uno, avisos al 50/90/100 %.
+  - Todos avisan por correo a los administradores de facturación. **Sólo avisan, no
+    cortan el gasto** (cortarlo dejaría la app caída para los clubes: descartado).
+
+  **Gasto real aceptado (noviembre 2026: 0,41 € la cuenta, 0,19 € producción).** Lecturas,
+  escrituras, Auth, Storage y registros quedan dentro de lo gratuito. Lo que cobra:
+  | Concepto | Por qué | Coste aprox. |
+  |---|---|---|
+  | Cloud Scheduler | 6 tareas (2 por proyecto con functions: `cleanupExpiredRequests` y `cleanupLiveMatches`); gratis 3 por cuenta | ~0,28 €/mes |
+  | Copias diarias + PITR de Firestore | decisión de la Fase 5 | ~0,1 €/mes |
+  | Restauración del simulacro | una vez por simulacro | ~0,06 € |
+  | Secret Manager | gratis 6 versiones por cuenta; había 10 → el 26-11 se destruyeron las 4 versiones sin uso de `EMAIL_USER` en `cronos-basket-test` (allí no hay functions ni Cloud Run). Quedan 6 | 0 € |
+
+  Juntar las 2 functions programadas ahorraría ~0,18 €/mes, pero cambia código que
+  funciona: descartado. **Al añadir un secreto, una versión o una function programada
+  en cualquiera de los 4 proyectos, se sale de lo gratuito.**
 
 ### Comprobarlas o recrearlas
 
