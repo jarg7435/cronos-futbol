@@ -65,8 +65,19 @@ service cloud.firestore {
                get(/databases/$(database)/documents/cronos_config/superadmins).data.emails;
     }
 
+    // 🔐 v864 · FASE 2 DEL MFA (PROPUESTA_MFA_SA.md). Los poderes de
+    // SuperAdmin exigen una sesión abierta con segundo factor TOTP. Cubre una
+    // sesión antigua sin factor y, sobre todo, a OTRA cuenta que entre en la
+    // lista de SA (claim o correo) sin tener factor. `.get()` con valor por
+    // defecto: en una sesión sin factor el campo no existe y la evaluación no
+    // puede reventar. Guard: scripts/test_mfa_fase2.js.
+    function _conSegundoFactor() {
+      return ('firebase' in request.auth.token) &&
+             request.auth.token.firebase.get('sign_in_second_factor', '') == 'totp';
+    }
+
     function isSuperAdmin() {
-      return _conSesion() &&
+      return _conSesion() && _conSegundoFactor() &&
              ((('role' in request.auth.token) && request.auth.token.role == 'superadmin') ||
               isSuperAdminEmail());
     }

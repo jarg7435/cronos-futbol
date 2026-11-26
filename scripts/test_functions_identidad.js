@@ -87,6 +87,7 @@ function sandbox(emails, lanza) {
     };
     sb.window = sb;
     vm.createContext(sb);
+    vm.runInContext(extraer('_conSegundoFactor'), sb);   // 🔐 v864 · Fase 2 del MFA
     vm.runInContext(extraer('_esSuperAdmin'), sb);
     vm.runInContext(extraer('_cuentaHabilitada'), sb);
     vm.runInContext(extraer('_callerHasClubPermission'), sb);
@@ -104,9 +105,13 @@ console.log('1) 🔑 _esSuperAdmin — ejecutada');
     const sb = sandbox(['jefe@x.es']);
     const f = sb._esSuperAdmin;
 
-    ok('1a · el CLAIM del token concede', await f(ctx({ role: 'superadmin' })) === true);
+    // 🔐 v864 · el SA real entra siempre con segundo factor (Fase 2 del MFA).
+    const TOTP = { firebase: { sign_in_second_factor: 'totp' } };
+    ok('1a · el CLAIM del token concede', await f(ctx(Object.assign({ role: 'superadmin' }, TOTP))) === true);
     ok('1b · el correo en cronos_config/superadmins concede',
-       await f(ctx({ email: 'jefe@x.es' })) === true);
+       await f(ctx(Object.assign({ email: 'jefe@x.es' }, TOTP))) === true);
+    ok('1h · 🔐 claim o correo de SA SIN segundo factor → NO (v864)',
+       await f(ctx({ role: 'superadmin' })) === false && await f(ctx({ email: 'jefe@x.es' })) === false);
     ok('1c · 🔴🔴 un correo que NO esta en la lista NO concede',
        await f(ctx({ email: 'malo@x.es' })) === false);
     ok('1d · sin auth, no', await f({}) === false);

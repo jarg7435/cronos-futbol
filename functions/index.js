@@ -166,9 +166,18 @@ function _stripSensitiveFields(player) {
 /* documento recien creado nace con isAuthorized:false, asi que deja de   */
 /* servir para nada.                                                      */
 /* ====================================================================== */
+/* 🔐 v864 · FASE 2 DEL MFA (PROPUESTA_MFA_SA.md): los poderes de SuperAdmin
+   exigen una sesión abierta con segundo factor TOTP. Es la misma condición
+   que `_conSegundoFactor()` de firestore.rules. Guard: test_mfa_fase2.js. */
+function _conSegundoFactor(tk) {
+  const fb = (tk && tk.firebase) || {};
+  return fb.sign_in_second_factor === 'totp';
+}
+
 async function _esSuperAdmin(context) {
   if (!context || !context.auth) return false;
   const tk = context.auth.token || {};
+  if (!_conSegundoFactor(tk)) return false;          // 🔐 v864 · sin factor, sin poderes
   if (tk.role === 'superadmin') return true;          // claim: no falsificable
   const email = tk.email;
   if (!email) return false;
@@ -523,10 +532,10 @@ exports.getMatchForSpectator = functions.https.onCall(async (data, context) => {
   }
 
   const matchData = matchDoc.data();
-  const viewerRole = context.auth.token.role || null;
-
   // SEC-020: Only superadmin gets raw data; all other roles (including same-club) are pseudonymized
-  if (viewerRole === 'superadmin') return matchData;
+  // 🔐 v864 · «es SA» se decide en `_esSuperAdmin` (claim o lista, y sesión con
+  //    segundo factor), no mirando `token.role` a mano.
+  if (await _esSuperAdmin(context)) return matchData;
 
   const playersSnapshot = await admin.firestore()
     .collection('players')
@@ -758,7 +767,9 @@ exports.deleteAuthUser = functions.https.onCall(async (data, context) => {
     console.warn('[deleteAuthUser] No se pudo resolver el club del objetivo:', e && e.message);
   }
 
-  if (!_callerHasClubPermission(callerDoc, targetClubId, await _esSuperAdmin(context))) {
+  // 🔐 v864 · se resuelve UNA vez y se reutiliza abajo para el alcance de la purga.
+  const _esSA = await _esSuperAdmin(context);
+  if (!_callerHasClubPermission(callerDoc, targetClubId, _esSA)) {
     throw new functions.https.HttpsError('permission-denied', 'Permisos insuficientes');
   }
 
@@ -808,7 +819,9 @@ exports.deleteAuthUser = functions.https.onCall(async (data, context) => {
   //    que sí manda sobre todas, los purga todos.
   if (deletedFromAuth || alreadyAbsent) {
     try {
-      const esSuperadmin = (callerDoc.data() || {}).role === 'superadmin';
+      // 🔐 v864 · antes era `callerDoc.role === 'superadmin'`: el documento lo
+      //    escribe el propio usuario. Ahora sale del token (y del factor).
+      const esSuperadmin = _esSA;
       await admin.firestore().collection('users').doc(uid).delete();
       if (resolvedUid && resolvedUid !== uid) {
         await admin.firestore().collection('users').doc(resolvedUid).delete().catch(() => {});

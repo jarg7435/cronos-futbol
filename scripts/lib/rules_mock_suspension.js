@@ -10,13 +10,35 @@
 // puede probar justo la cuenta suspendida).
 //
 // Uso:  testSuite: { testCases: conSuspensionMock(testCases) }
+//
+// 🔐 v864 · FASE 2 DEL MFA: `isSuperAdmin()` exige además una sesión abierta
+// con segundo factor (`firebase.sign_in_second_factor == 'totp'`). El SA real
+// siempre la tiene (no puede entrar sin el código), así que este ayudante
+// añade el factor a TODOS los tokens de prueba que no lo traigan. A las
+// cuentas que no son SA no les cambia nada: las reglas sólo lo miran en
+// `isSuperAdmin()`. Para probar «sin factor», el caso lleva
+// `sinSegundoFactor: true` (se quita antes de enviarlo: la API no lo admite).
 // ─────────────────────────────────────────────────────────────────────────
 'use strict';
 
 const RUTA = (uid) => '/databases/(default)/documents/cronos_suspensiones/' + uid;
 
+function conFactor(tc) {
+    const sin = !!(tc && tc.sinSegundoFactor);
+    const limpio = Object.assign({}, tc);
+    delete limpio.sinSegundoFactor;
+    const a = limpio.request && limpio.request.auth;
+    if (sin || !a) return limpio;
+    const token = Object.assign({}, a.token || {});
+    const firebase = Object.assign({}, token.firebase || {});
+    if (!('sign_in_second_factor' in firebase)) firebase.sign_in_second_factor = 'totp';
+    token.firebase = firebase;
+    limpio.request = Object.assign({}, limpio.request, { auth: Object.assign({}, a, { token }) });
+    return limpio;
+}
+
 function conSuspensionMock(testCases) {
-    return (testCases || []).map((tc) => {
+    return (testCases || []).map(conFactor).map((tc) => {
         const uid = tc && tc.request && tc.request.auth && tc.request.auth.uid;
         if (!uid) return tc;
         const mocks = Array.isArray(tc.functionMocks) ? tc.functionMocks.slice() : [];
@@ -33,3 +55,4 @@ function conSuspensionMock(testCases) {
 module.exports = conSuspensionMock;
 module.exports.conSuspensionMock = conSuspensionMock;
 module.exports.rutaSuspension = RUTA;
+module.exports.conFactor = conFactor;

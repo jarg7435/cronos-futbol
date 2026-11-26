@@ -177,7 +177,8 @@ function sandbox(opts) {
     if (!token) { console.log('SKIP C · no se obtuvo token'); return fin(); }
 
     const DB = '/databases/(default)/documents';
-    const SA = { uid: 'sa_uid', token: { email: 'sa@x.com', email_verified: true } };
+    // 🔐 v864 · Fase 2 del MFA: los poderes de SA exigen sesión con segundo factor TOTP.
+    const SA = { uid: 'sa_uid', token: { email: 'sa@x.com', email_verified: true, firebase: { sign_in_second_factor: 'totp' } } };
     const mSA = [
         { function: 'exists', args: [{ exactValue: DB + '/cronos_config/superadmins' }], result: { value: true } },
         { function: 'get', args: [{ exactValue: DB + '/cronos_config/superadmins' }], result: { value: { data: { emails: ['sa@x.com'] } } } },
