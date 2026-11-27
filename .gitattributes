@@ -23,3 +23,9 @@
 # por una trampa de codificación.
 *.traineddata binary
 *.wasm binary
+
+# v866 · La copia del SDK de Firebase se guarda BYTE A BYTE: es la de gstatic
+# y scripts/test_sdk_mismo_origen.js vigila su huella sha256. firebase-app.js
+# trae algún CRLF, y el `* text=auto eol=lf` de arriba lo cambiaba al
+# guardarlo: en un clon la huella no cuadraba.
+js/vendor/firebase/** binary
