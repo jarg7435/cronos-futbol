@@ -4176,6 +4176,9 @@ export async function doAuth() {
             // 🔐 v862 · segundo factor (TOTP)
             'cronos/mfa-cancelado':       'Acceso cancelado: hace falta el código de 6 dígitos de tu app de autenticación.',
             'auth/invalid-verification-code': 'Código de verificación incorrecto. Vuelve a intentarlo.',
+            // 📶 v868 · sin red, entrar con contraseña es imposible: decirlo claro
+            // (2ª prueba de campo, 27-11: se veía el error crudo de Firebase).
+            'auth/network-request-failed': 'Sin conexión: para entrar con contraseña hace falta red. Si ya habías entrado en la app instalada, ciérrala y ábrela desde su icono.',
         };
         showAuthError(msgs[e.code] || ('Error: ' + e.message));
         window._loginThisSession = false;

@@ -688,12 +688,34 @@
                     return;
                 }
                 // SuperAdmin excluido: su sesión vuelve a sessionStorage (muere al cerrar).
+                // 📶 v868 · Y CUALQUIER OTRA PASA AL ALMACÉN PERMANENTE. 2ª prueba de
+                // campo (27-11): la sesión abierta antes de v867 seguía en
+                // sessionStorage, porque Firebase sólo migra sesiones desde
+                // persistencias permanentes; y «cerrar sesión y volver a entrar»
+                // sin reabrir tampoco servía (el almacén se elige al crear Auth).
+                // Al cerrar la app sin red murió y el formulario dio
+                // auth/network-request-failed. `setPersistence` traslada la
+                // sesión actual; sin red funciona igual (es local).
                 try {
                     const _tok = await user.getIdTokenResult();
                     if (window.cronosSesionApp.esSuperAdmin(_tok && _tok.claims)) {
                         await setPersistence(auth, browserSessionPersistence).catch(() => {});
+                    } else {
+                        await setPersistence(auth, browserLocalPersistence).catch(() => {});
                     }
-                } catch (e) { /* sin token legible: se sigue; las reglas deciden en el servidor */ }
+                } catch (e) {
+                    // Sin red y con el token caducado, `getIdTokenResult` intenta
+                    // renovarlo y falla. Los claims se leen entonces del token
+                    // GUARDADO en el aparato (caducado, pero sus claims valen
+                    // para decidir DÓNDE se guarda la sesión; los permisos los
+                    // sigue decidiendo el servidor). Si ni así se leen, no se
+                    // toca nada: nunca se hace permanente a ciegas.
+                    const _cl = window.cronosSesionApp.claimsDelToken(user.accessToken);
+                    if (_cl) {
+                        await setPersistence(auth, window.cronosSesionApp.esSuperAdmin(_cl)
+                            ? browserSessionPersistence : browserLocalPersistence).catch(() => {});
+                    }
+                }
             }
             // Verificar autorización
             await checkAuthorization(user);

@@ -52,6 +52,20 @@
         return !!(claims && claims.role === 'superadmin');
     }
 
+    // v868 · Los claims del token GUARDADO, sin red (aunque haya caducado).
+    // Sólo sirven para decidir dónde se guarda la sesión. null si no se lee.
+    function claimsDelToken(jwt) {
+        try {
+            var p = String(jwt || '').split('.')[1];
+            if (!p) return null;
+            p = p.replace(/-/g, '+').replace(/_/g, '/');
+            while (p.length % 4) p += '=';
+            if (typeof atob !== 'function') return null;
+            var o = JSON.parse(atob(p));
+            return (o && typeof o === 'object') ? o : null;
+        } catch (e) { return null; }
+    }
+
     // ¿Hay en este aparato un partido EN CURSO de esta cuenta? Lee las claves
     // REALES de localStorage (`…::<id>@<uid>`, v720), porque al arrancar aún
     // no hay perfil cargado y el envoltorio de local-uid.js no sabe el uid.
@@ -97,6 +111,7 @@
         esAppInstalada: esAppInstalada,
         caducada: caducada,
         esSuperAdmin: esSuperAdmin,
+        claimsDelToken: claimsDelToken,
         hayPartidoEnCurso: hayPartidoEnCurso,
     };
 })();

@@ -2857,8 +2857,12 @@
 //        SuperAdmin excluido) y abre sin red; el navegador sigue como v638 y ni
 //        ve esa sesión (js/services/auth/sesion-app.js). Sin red, la reserva de
 //        plaza al empezar partido ya no retiene 8-16 s (session-lock.js).
-const VERSION = 'v867';
-const CACHE_NAME = 'cronos-cache-v867';
+// v868 · 2ª prueba de campo (27-11): la sesión abierta ANTES de v867 seguía en
+//        sessionStorage (Firebase no la migra sola) y murió al cerrar la app.
+//        Ahora la app instalada la pasa al almacén permanente (SuperAdmin no);
+//        el formulario explica el «sin conexión»; el sello dice «· app».
+const VERSION = 'v868';
+const CACHE_NAME = 'cronos-cache-v868';
 
 const ASSETS = [
     './',

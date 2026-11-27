@@ -46,7 +46,8 @@ ok('1a · el módulo existe', !!MOD);
 let S = null;
 if (MOD) {
     const win = {};
-    const sb = { window: win, console: { log() {}, warn() {} }, Date, JSON, Number, String, Object, Array, isFinite };
+    const sb = { window: win, console: { log() {}, warn() {} }, Date, JSON, Number, String, Object, Array, isFinite,
+                 atob: (s) => { if (!/^[A-Za-z0-9+/=]*$/.test(s)) throw new Error('atob'); return Buffer.from(s, 'base64').toString('binary'); } };
     vm.createContext(sb);
     try { vm.runInContext(MOD, sb); S = win.cronosSesionApp; } catch (e) { console.log('       ' + e.message); }
 }
@@ -180,6 +181,42 @@ function fin() {
        /esAppInstalada\(\)[\s\S]{0,300}localStorage/.test(uCuerpo));
     ok('6b · y sigue mirando primero sessionStorage (navegador, v638)',
        uCuerpo.indexOf('sessionStorage') !== -1 && uCuerpo.indexOf('sessionStorage') < uCuerpo.indexOf('localStorage'));
+
+    // ═══════════ PARTE 7 · v868 · 2ª prueba de campo (27-11) ═══════════
+    //  La sesión abierta ANTES de v867 vivía en sessionStorage y Firebase NO
+    //  la migra sola (sólo migra desde persistencias con
+    //  `_shouldAllowMigration`, y la de sesión no lo tiene). Tampoco servía
+    //  «cerrar sesión y volver a entrar» sin reabrir: el almacén se elige al
+    //  crear Auth. Al cerrar la app sin red, la sesión murió y el formulario
+    //  dio «Firebase: Error (auth/network-request-failed)».
+    console.log('\n── PARTE 7 · v868 · la sesión que ya había pasa al almacén permanente ──');
+    const FI7 = sinCom(leer('js/services/firebase-init.js'));
+    const iObs7 = FI7.indexOf('await checkAuthorization(user);');
+    const obs7 = iObs7 !== -1 ? FI7.slice(Math.max(0, iObs7 - 4000), iObs7) : '';
+    ok('7a · 🔑 en la app instalada, una sesión que NO es de SuperAdmin se pasa a browserLocalPersistence',
+       /esSuperAdmin\s*\([\s\S]{0,400}else[\s\S]{0,200}setPersistence\(\s*auth\s*,\s*browserLocalPersistence\s*\)/.test(obs7));
+    ok('7a2 · sin token legible, los claims salen del token guardado; si no se leen, NO se hace permanente',
+       /claimsDelToken\(\s*user\.accessToken\s*\)[\s\S]{0,120}if\s*\(\s*_cl\s*\)/.test(obs7));
+    if (S && typeof S.claimsDelToken === 'function') {
+        const b64 = (o) => Buffer.from(JSON.stringify(o)).toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+        const jwt = (o) => b64({ alg: 'RS256' }) + '.' + b64(o) + '.firma';
+        ok('7a3 · claimsDelToken lee el rol del token (SuperAdmin)', S.esSuperAdmin(S.claimsDelToken(jwt({ role: 'superadmin', exp: 1 }))) === true);
+        ok('7a4 · …y el de un entrenador', S.claimsDelToken(jwt({ role: 'user', clubId: 'c' })).role === 'user');
+        ok('7a5 · token roto o vacío → null', S.claimsDelToken('basura') === null && S.claimsDelToken('') === null && S.claimsDelToken('a.@@@.b') === null);
+    } else ok('7a3 · claimsDelToken existe en el módulo', false);
+    const SDK = leer('js/vendor/firebase/10.12.2/firebase-auth.js');
+    // Medido en la copia del SDK: sólo DOS persistencias (localStorage e
+    // IndexedDB) llevan `_shouldAllowMigration=!0`; la de sesión, no.
+    ok('7b · (hecho del SDK que lo hace necesario) sólo las 2 persistencias permanentes migran sesiones',
+       (SDK.match(/_shouldAllowMigration=!0/g) || []).length === 2 && /type="SESSION"/.test(SDK));
+    const AU = sinCom(leer('js/services/auth.js'));
+    ok('7c · el formulario de entrada explica el «sin conexión» en vez del error crudo de Firebase',
+       /'auth\/network-request-failed'\s*:\s*'Sin conexión[^']*'/.test(AU));
+    const IX7 = leer('index.html');
+    const iB = IX7.indexOf("getElementById('cronos-version-badge')");
+    const badge = iB !== -1 ? IX7.slice(iB, iB + 2500) : '';
+    ok('7d · el sello dice «· app» cuando se ejecuta como app instalada',
+       /display-mode: standalone[\s\S]{0,300}navigator\.standalone[\s\S]{0,300}' · app'/.test(badge));
 
     console.log('\n' + pass + ' PASS / ' + fail + ' FAIL');
     process.exit(fail ? 1 : 0);
