@@ -96,6 +96,21 @@
                 if (u && u.uid) return String(u.uid);
             }
         } catch (e) {}
+        // 📶 v867 · En la APP INSTALADA la sesión vive en localStorage
+        // (js/services/auth/sesion-app.js). Sólo ahí se mira: en una pestaña
+        // del navegador, lo que haya en localStorage es la sesión de la app
+        // (Android/PC comparten almacenamiento) y NO es de esta pestaña.
+        try {
+            if (window.cronosSesionApp && window.cronosSesionApp.esAppInstalada()) {
+                var ls = window.localStorage;
+                var ks = Object.keys(ls);
+                for (var j = 0; j < ks.length; j++) {
+                    if (ks[j].indexOf('firebase:authUser:') !== 0) continue;
+                    var v = JSON.parse(ls.getItem(ks[j]) || 'null');
+                    if (v && v.uid) return String(v.uid);
+                }
+            }
+        } catch (e) {}
         return '';
     }
 

@@ -2845,8 +2845,20 @@
 // v863 · Firebase admite UN solo factor TOTP por cuenta (medido en testeo):
 //        los avisos del alta explican que la reserva es la MISMA clave en
 //        dos aparatos; el de «máximo» ya no dice sólo «máximo de aparatos».
-const VERSION = 'v863';
-const CACHE_NAME = 'cronos-cache-v863';
+// v865 · «Recuperar partido» ya no tira lo registrado sin red: la foto de la
+//        nube se fecha por `estadoAt` (sólo la escribe el latido completo) y no
+//        por `updatedAt`, que también lo sube la cola de sucesos al volver la
+//        red (prueba de campo del 26-11, VALIDACION §4).
+// v866 · El SDK de Firebase se sirve desde el propio dominio (copia en
+//        js/vendor/firebase/10.12.2/ + import map en index.html y live.html) y
+//        va al precache: sin red la app instalada ya tiene SDK con el que
+//        arrancar. gstatic sigue sin interceptarse (v454).
+// v867 · La app INSTALADA recuerda la sesión 12 h (o hasta acabar el partido;
+//        SuperAdmin excluido) y abre sin red; el navegador sigue como v638 y ni
+//        ve esa sesión (js/services/auth/sesion-app.js). Sin red, la reserva de
+//        plaza al empezar partido ya no retiene 8-16 s (session-lock.js).
+const VERSION = 'v867';
+const CACHE_NAME = 'cronos-cache-v867';
 
 const ASSETS = [
     './',
@@ -3005,6 +3017,19 @@ const ASSETS = [
     './js/coach/attendance/panel.js',
     './js/parent/panel.js',
     './js/directivo/panel.js',   // 🏢 v810 · Directivo / Empleado
+    // 📶 v866 · EL SDK DE FIREBASE, COPIA PROPIA (~770 KB). index.html y
+    // live.html lo redirigen aquí con un import map: es de NUESTRO origen, así
+    // que guardarlo no repite el fallo de v454 (gstatic sigue sin tocarse).
+    // Va en ASSETS y no en SHELL para no frenar la instalación (v728); además
+    // `_networkFirst` lo guarda en cuanto se usa con red.
+    './js/vendor/firebase/10.12.2/firebase-app.js',
+    './js/vendor/firebase/10.12.2/firebase-auth.js',
+    './js/vendor/firebase/10.12.2/firebase-firestore.js',
+    './js/vendor/firebase/10.12.2/firebase-functions.js',
+    './js/vendor/firebase/10.12.2/firebase-storage.js',
+    './js/vendor/firebase/10.12.2/firebase-app-check.js',
+    // 📶 v867 · decide la sesión de la app instalada antes de crear Auth.
+    './js/services/auth/sesion-app.js',
     // SPRINT 4: Iconos locales para PWA
     './public/assets/icons/chronos-192.svg',
     './public/assets/icons/chronos-512.svg',

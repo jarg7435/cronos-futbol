@@ -47,6 +47,8 @@
     const { getAuth, createUserWithEmailAndPassword,
             signInWithEmailAndPassword, onAuthStateChanged, signOut,
             setPersistence, browserSessionPersistence,
+            // 📶 v867 · sesión persistente SÓLO en la app instalada (sesion-app.js).
+            initializeAuth, browserLocalPersistence,
             // v451 · recuperación y cambio de contraseña. `updatePassword`
             // exige sesión reciente, así que reautenticamos SIEMPRE antes con
             // la contraseña actual: de paso se comprueba que quien la cambia
@@ -227,6 +229,30 @@
     //  no toca IndexedDB, que es lo que rompió v467/v468.
     const _modoCache = (window.cronosFsModo && typeof window.cronosFsModo.decide === 'function')
         ? window.cronosFsModo.decide() : 'persistente';
+
+    // ══════════════════════════════════════════════════════════════
+    //  📶 v867 · LA APP INSTALADA RECUERDA LA SESIÓN; EL NAVEGADOR NO
+    //
+    //  Prueba de campo del 26-11: cerrada sin red, la app no dejaba entrar
+    //  (la sesión de v638 vive en sessionStorage). Decisión del titular:
+    //  persistente SÓLO en la app instalada, 12 h o hasta acabar el partido,
+    //  SuperAdmin excluido (js/services/auth/sesion-app.js).
+    //
+    //  🔑 `initializeAuth` con la lista EXACTA de persistencias, y no `getAuth`
+    //  a secas: `getAuth` busca sesión en IndexedDB, localStorage y
+    //  sessionStorage. En Android y PC la app instalada y el navegador
+    //  comparten almacenamiento, y una pestaña habría adoptado la sesión de la
+    //  app y entrado sola (lo que v638 vino a quitar). En el navegador la lista
+    //  es SÓLO sessionStorage: ni la ve.
+    //  ⚠️ Va ANTES de `getAuth`, que devuelve esta misma instancia; la línea de
+    //  `getAuth` se queda pegada a la creación de `db` (guard 1b4, v469).
+    // ══════════════════════════════════════════════════════════════
+    const _enAppInstalada = !!(window.cronosSesionApp && window.cronosSesionApp.esAppInstalada());
+    try {
+        initializeAuth(app, { persistence: _enAppInstalada
+            ? [browserLocalPersistence, browserSessionPersistence]
+            : [browserSessionPersistence] });
+    } catch (e) { /* ya inicializada: getAuth devuelve la existente */ }
 
     const auth = getAuth(app);
 
@@ -575,7 +601,35 @@
     //  ⚠️ SI SE REVIERTE, revertir también la promesa del onboarding: lo que
     //  no puede volver a pasar es que digan cosas distintas.
     // ══════════════════════════════════════════════════════════════
-    setPersistence(auth, browserSessionPersistence).catch(() => {});
+    // 📶 v867 · Sólo en el navegador. En la app instalada la persistencia ya
+    // la fijó `initializeAuth` (arriba) y aquí la tiraría a sessionStorage.
+    if (!_enAppInstalada) setPersistence(auth, browserSessionPersistence).catch(() => {});
+
+    // 📶 v867 · ¿Ha caducado la sesión de la app instalada? 12 h desde el último
+    // inicio de sesión con contraseña, salvo partido en curso de esa cuenta.
+    // Se sabe sin red: la hora la guarda Firebase con la propia sesión.
+    const _sesionAppCaducada = (u) => {
+        try {
+            const S = window.cronosSesionApp;
+            if (!_enAppInstalada || !S || !u) return false;
+            return S.caducada(u.metadata && u.metadata.lastSignInTime, Date.now(),
+                              S.hayPartidoEnCurso(u.uid));
+        } catch (e) { return false; }
+    };
+    // …también al volver la app al primer plano (en iOS se queda días en
+    // segundo plano sin recargar).
+    if (_enAppInstalada) {
+        document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState !== 'visible') return;
+            const u = auth.currentUser;
+            if (!u || !window.cronosSesionApp) return;
+            if (window.cronosSesionApp.caducada(u.metadata && u.metadata.lastSignInTime, Date.now(),
+                                                window.cronosSesionApp.hayPartidoEnCurso(u.uid))) {
+                console.warn('[Chronos] La sesión de la app ha caducado (12 h). Se pide entrar de nuevo.');
+                signOut(auth).catch(() => {}).finally(() => location.reload());
+            }
+        });
+    }
 
     // 🔴 v721 · Quién es esta pestaña, para el registro del caché en disco
     // (js/shared/fs-cache-mode.js). Va en su PROPIO observador y no dentro del
@@ -620,6 +674,26 @@
                     return;
                 }
                 console.warn('[Chronos] Sin red al validar el token: se continúa con el cacheado.');
+            }
+            // 📶 v867 · La app instalada: 12 h o hasta acabar el partido.
+            if (_enAppInstalada && window.cronosSesionApp) {
+                if (_sesionAppCaducada(user)) {
+                    console.warn('[Chronos] La sesión de la app ha caducado (12 h). Se pide entrar de nuevo.');
+                    await signOut(auth).catch(() => {});
+                    const el = document.getElementById('auth-screen');
+                    if (el) {
+                        document.body.classList.remove('locked');
+                        el.style.display = 'flex';
+                    }
+                    return;
+                }
+                // SuperAdmin excluido: su sesión vuelve a sessionStorage (muere al cerrar).
+                try {
+                    const _tok = await user.getIdTokenResult();
+                    if (window.cronosSesionApp.esSuperAdmin(_tok && _tok.claims)) {
+                        await setPersistence(auth, browserSessionPersistence).catch(() => {});
+                    }
+                } catch (e) { /* sin token legible: se sigue; las reglas deciden en el servidor */ }
             }
             // Verificar autorización
             await checkAuthorization(user);

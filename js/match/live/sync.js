@@ -1202,6 +1202,12 @@ async function _emiteLatido(status = 'active') {
             id:          liveMatchId,
             status:      status,          // 'active' | 'finished'
             updatedAt:   serverTimestamp(),
+            // 📶 v865 · CUÁNDO SE TOMÓ ESTA FOTO DEL ESTADO (hora del aparato).
+            // `updatedAt` no sirve para eso: lo sube también la cola de sucesos
+            // al vaciarse, y «Recuperar» tomaba por nueva una foto de antes de
+            // un corte de red (prueba de campo del 26-11). SÓLO lo escribe esta
+            // foto completa. Lo lee `_recoveryTs` (setup-modal.js).
+            estadoAt:    Date.now(),
             createdBy:   window._cronosCurrentUser?.uid   || '',
             coachEmail:  window._cronosCurrentUser?.email || '',
             clubId:      window._cronosCurrentUser?.clubId   || null,

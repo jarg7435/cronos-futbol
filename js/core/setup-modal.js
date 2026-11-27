@@ -1663,9 +1663,24 @@ function _recoveryNorm(s) {
 
 // Momento del último guardado, en milisegundos. Es lo que decide qué fuente
 // manda cuando el mismo partido está en las dos.
+// ══════════════════════════════════════════════════════════════════════
+//  📶 v865 · LA NUBE SE FECHA POR SU FOTO (`estadoAt`), NO POR `updatedAt`
+//
+//  Prueba de campo del 26-11 (VALIDACION §4): con el iPad sin red se
+//  registraron 5 sucesos, se cerró la app y «Recuperar» devolvió el partido
+//  al estado de ANTES del corte. `updatedAt` lo sube también la cola de
+//  sucesos (outbox.js) al vaciarse cuando vuelve la red, sin tocar marcador
+//  ni alineación: la nube parecía más nueva que la ranura del aparato, ganaba
+//  la fusión y `_doResumeMatch` restauraba la foto vieja.
+//
+//  `estadoAt` sólo lo escribe el latido completo (pushLiveSnapshot) con la
+//  hora en que se tomó el estado. Un documento sin él (anterior a v865)
+//  sigue con la regla de siempre. Guard: test_recuperar_sin_perdida_offline.
+// ══════════════════════════════════════════════════════════════════════
 function _recoveryTs(c) {
     if (!c) return 0;
     if (c.isLocal) return new Date(c.savedAt || 0).getTime() || 0;
+    if (typeof c.estadoAt === 'number' && isFinite(c.estadoAt) && c.estadoAt > 0) return c.estadoAt;
     const u = c.updatedAt;
     if (u && typeof u.toMillis === 'function') return u.toMillis() || 0;
     if (u && typeof u.toDate === 'function') return u.toDate().getTime() || 0;

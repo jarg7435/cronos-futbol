@@ -94,6 +94,8 @@ console.log('── etiqueta de categoria sobre el cronometro en vivo (v463) ─
         const m = bloque.match(/<script\b([^>]*)>([\s\S]*)<\/script>/i);
         const attrs = m[1] || '', js = m[2] || '';
         if (/\bsrc\s*=/.test(attrs) || !js.trim()) return;
+        // v866 · el import map es JSON, no JS (lo valida test_sdk_mismo_origen).
+        if (/type\s*=\s*["']importmap["']/.test(attrs)) return;
         const esModulo = /type\s*=\s*["']module["']/.test(attrs);
         const tmp = path.join(os.tmpdir(),
             'cronos_chk_' + i + '_' + Date.now() + (esModulo ? '.mjs' : '.cjs'));

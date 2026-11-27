@@ -60,10 +60,19 @@
     // es «sin comprobar» (fail-open, la política del módulo); si vence la
     // ESCRITURA, la marca ya está en la cola local y sube sola: vale como hecha.
     var TOPE_RED_MS = 8000;
+    // 📶 v867 · SIN RED, el tope baja a lo que tarda leer de la caché (encargo
+    // del titular 27-11: abrir con red, llegar al campo sin ella y pulsar
+    // «empezar partido» no puede quedarse esperando). Una escritura sin red no
+    // termina nunca: con 8 s por escritura, la reserva de plaza retenía el
+    // partido 8-16 s. La marca queda en la cola local y sube sola, como ya
+    // decía v837. Guard: scripts/test_abrir_y_empezar_sin_red.js.
+    var TOPE_SIN_RED_MS = 1200;
     function _conTope(promesa, ms) {
         var reloj = null;
+        var sinRed = (typeof navigator !== 'undefined' && navigator.onLine === false);
         var tope = new Promise(function (_, rej) {
-            reloj = setTimeout(function () { rej({ code: 'cronos/tope' }); }, ms || TOPE_RED_MS);
+            reloj = setTimeout(function () { rej({ code: 'cronos/tope' }); },
+                               sinRed ? Math.min(ms || TOPE_RED_MS, TOPE_SIN_RED_MS) : (ms || TOPE_RED_MS));
         });
         return Promise.race([promesa, tope]).finally(function () { clearTimeout(reloj); });
     }

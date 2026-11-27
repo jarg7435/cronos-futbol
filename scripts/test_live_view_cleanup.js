@@ -41,7 +41,9 @@ console.log('\n── PARTE 0 · el fichero sigue parseando ──');
 // texto de un fichero que el navegador ni ejecuta.
 {
     const bloques = [...LIVE.matchAll(/<script([^>]*)>([\s\S]*?)<\/script>/g)]
-        .filter(m => !/\bsrc\s*=/.test(m[1] || '') && (m[2] || '').trim());
+        .filter(m => !/\bsrc\s*=/.test(m[1] || '') && (m[2] || '').trim())
+        // v866 · el import map es JSON, no JS (lo valida test_sdk_mismo_origen).
+        .filter(m => !/type\s*=\s*["']importmap["']/.test(m[1] || ''));
     let malos = 0;
     bloques.forEach(m => {
         try { new vm.Script((m[2] || '').replace(/^\s*import\s[^;]*;?$/gm, '')); }
