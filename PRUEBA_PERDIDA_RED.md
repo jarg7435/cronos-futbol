@@ -31,8 +31,8 @@ reauditoría del 19-11 (`VALIDACION_E2E_Y_APPCHECK.md` §4 lo marca hoy como pen
 1. **En el iPad, instala testeo como app aparte**: Safari → `https://cronos-futbol-test.web.app`
    → Compartir → «Añadir a pantalla de inicio». Así no se mezcla con la app de
    producción y **puede abrirse sin red** (escenario E3).
-2. En los dos aparatos, entra con su cuenta y **comprueba el sello «CHRONOS v860»** (o
-   superior) abajo a la derecha. Si sale uno anterior, cierra y vuelve a abrir.
+2. En los dos aparatos, entra con su cuenta y **comprueba el sello «CHRONOS v867»** (o
+   superior; desde el 27-11, por los arreglos de la 1ª prueba de campo) abajo a la derecha. Si sale uno anterior, cierra y vuelve a abrir.
 3. **iPad:** crea un **partido de prueba** de Alevín A (rival «Prueba»), elige titulares
    y llega a la pantalla del partido sin arrancar el reloj.
 4. **Móvil:** como Director Norte, abre **Partidos en vivo** y entra en ese partido.
@@ -124,6 +124,35 @@ volver la red, el suceso llega al móvil (el vídeo no: es lo esperado).
 lo ve **finalizado** y los **informes se generan y se envían** (aparecen en «Mis
 Informes» del entrenador y en el panel del Director).
 
+### E8 · Crear y empezar un partido sin red (≈ 5 min) — imprescindible (desde v867)
+
+1. iPad: abre la app de testeo **con red** y entra hasta el panel del entrenador.
+2. **Modo avión** (Wi-Fi en gris).
+3. Crea un partido nuevo de Alevín A (rival «Prueba sin red»), pulsa **CONTINUAR AL
+   PARTIDO**, elige titulares y **empieza el partido**.
+4. Arranca el reloj y registra **un gol y una tarjeta amarilla**.
+5. Espera ~1 min. **Quita el modo avión.**
+
+✅ **Esperado:** ningún paso se queda esperando (el «continuar» responde en 1-2 s como
+mucho, sin rueda de carga). El reloj corre sin red. Al volver la red, el partido
+**aparece en el móvil** (Partidos en vivo) con su marcador y los 2 sucesos, sin
+repetidos.
+
+### E9 · La sesión: navegador frente a app instalada (≈ 5 min, desde v867)
+
+1. **Navegador:** en Safari (no la app), entra en testeo con Entrenador Norte. Cierra
+   la pestaña y vuelve a abrir testeo en Safari.
+   ✅ Pide **correo y contraseña** otra vez (como siempre).
+2. **App instalada:** entra con Entrenador Norte desde el icono de testeo. Ciérrala del
+   todo (quítala de la lista de apps abiertas) y ábrela otra vez desde el icono.
+   ✅ Entra **sin pedir contraseña**.
+3. Repite el paso 2 **en modo avión**.
+   ✅ Abre igual, sin red, y deja llegar al panel.
+
+ℹ️ La sesión de la app instalada caduca a las **12 h** del último inicio de sesión con
+contraseña, salvo que haya un partido en curso de esa cuenta en el aparato: entonces
+dura hasta que acabe. El SuperAdmin no tiene sesión persistente.
+
 ---
 
 ## 4 · Qué cuenta como fallo
@@ -132,8 +161,8 @@ Cualquiera de estos: un suceso que **no llega**, uno **repetido**, un **orden ca
 un **marcador que no cuadra**, un **reloj que salta o retrocede**, la app **bloqueada**
 o un partido que **no se recupera**. Anota hora, aparato y captura.
 
-**Duración total:** unos 45 min. Si se hace en dos tandas, primero **E1, E3 y E5**
-(unos 15 min).
+**Duración total:** unos 55 min. Si se hace en dos tandas, primero **E1, E3, E5 y E8**
+(unos 20 min).
 
 ## 5 · Después: comprobación en Firestore (la hace Claude, sólo lectura en testeo)
 
@@ -155,3 +184,5 @@ Fecha: ______ · Versión (sello): ______ · iPad (modelo / iPadOS): ______ · M
 | E5 | | | | | | | |
 | E6 | | | | | | | |
 | E7 | | | | | | | |
+| E8 | | | | | | | |
+| E9 | | | | | | | |
