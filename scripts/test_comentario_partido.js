@@ -199,9 +199,13 @@ console.log('\n── PARTE 4 · los despachos: cuerpo técnico sí, familias NO
     // Cada `setDoc` de cronos_player_reports con su payload, por tipo de copia.
     const bloques = (src) => {
         const out = [];
-        const re = /setDoc\(\s*(?:fs\.)?doc\(\s*(?:fa\.)?db\s*,\s*'cronos_player_reports'\s*,\s*([^)]+?)\)\s*,\s*(\{|_reportePartido)/g;
+        // v869 · el despacho automático ya no hace `setDoc` por jugador: monta
+        // `_staffDocs.push({ id, data: {…} })` / `_coachDocs.push(…)` y los pide
+        // en lote. Se reconocen las dos formas; el cuerpo es el mismo literal.
+        const re = /(?:setDoc\(\s*(?:fs\.)?doc\(\s*(?:fa\.)?db\s*,\s*'cronos_player_reports'\s*,\s*([^)]+?)\)\s*,\s*(\{|_reportePartido)|_(?:staff|coach|familia)Docs\.push\(\{\s*id:\s*(\w+)\s*,\s*data:\s*(\{))/g;
         let m;
         while ((m = re.exec(src))) {
+            if (m[1] === undefined) { m[1] = m[3]; m[2] = m[4]; }
             let cuerpo = '';
             if (m[2] === '{') {
                 let i = re.lastIndex - 1, prof = 0;

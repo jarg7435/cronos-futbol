@@ -2861,8 +2861,17 @@
 //        sessionStorage (Firebase no la migra sola) y murió al cerrar la app.
 //        Ahora la app instalada la pasa al almacén permanente (SuperAdmin no);
 //        el formulario explica el «sin conexión»; el sello dice «· app».
-const VERSION = 'v868';
-const CACHE_NAME = 'cronos-cache-v868';
+// v869 · Informes de partido perdidos al terminar SIN RED (prod, 4 partidos de
+//        un entrenador: 1 informe de staff y 0 copias suyas). El despacho
+//        prepara TODAS las copias (entrenador primero, luego staff), las guarda
+//        en el dispositivo y las pide en lote sin esperar acuse; aviso «📴» y
+//        reintento al volver la red o reabrir (match-reports-auto.js).
+// v870 · Lo mismo para los informes de las FAMILIAS: se preparan con los
+//        demás y se piden uno a uno sin esperar acuse (antes, sin red, el
+//        primer padre dejaba sin informe a todos). Lo confirmado sale del
+//        respaldo; un rechazo definitivo (permisos) no se reintenta y avisa «⚠️».
+const VERSION = 'v870';
+const CACHE_NAME = 'cronos-cache-v870';
 
 const ASSETS = [
     './',

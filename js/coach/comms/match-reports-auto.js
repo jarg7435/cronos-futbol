@@ -69,7 +69,7 @@ async function autoDispatchMatchReports() {
     if (!me || !window.players) return;
 
     try {
-        const { setDoc, doc, getDoc, collection, getDocs, query, where, updateDoc, arrayUnion } = await import(
+        const { setDoc, doc, getDoc, collection, getDocs, query, where, updateDoc, arrayUnion, writeBatch } = await import(
             'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
         const db = window._cronos_auth.db;
 
@@ -210,13 +210,36 @@ async function autoDispatchMatchReports() {
         // FIX v177: Log SIEMPRE (no condicional) para diagnosticar por qué
         // el informe colectivo no llega al director/coordinador.
 
-        // ── Guardar documentos cronos_player_reports para el Gantt del staff ──
+        // ══════════════════════════════════════════════════════════════════
+        //  📴 v869 · LOS INFORMES SE PREPARAN DE GOLPE Y SE ENCOLAN SIN ESPERAR
+        // ══════════════════════════════════════════════════════════════════
+        //  Producción, CD Arinaga (28-11): CUATRO partidos seguidos (30-10,
+        //  13-11, 20-11, 27-11) con UN solo informe de staff y CERO copias del
+        //  entrenador. Aquí había un `await setDoc` POR JUGADOR: sin cobertura
+        //  al pitar el final, el primero no recibe acuse y la cadena se queda
+        //  parada en él; al bloquear el iPad, iOS mata la página y el resto —la
+        //  FASE C, «Mis Informes», la última— no llega a existir. El SDK subía
+        //  días después la única escritura que sí se había pedido (createdAt
+        //  27-11 22:35 → llegada 28-11 01:07; la del 30-10, el 12-11).
+        //
+        //  🔑 Ahora: (1) se construyen TODOS los documentos de staff y del
+        //  entrenador antes de escribir nada; (2) se guardan en el dispositivo
+        //  (`cronos_informes_pendientes_<matchId>`, aislada por uid como todo
+        //  localStorage); (3) se piden en DOS lotes —entrenador primero— sin
+        //  esperar al servidor más de unos segundos; (4) el respaldo se borra
+        //  sólo con el acuse, y si no llega lo reintenta
+        //  `_cronosReintentaInformesPendientes` al volver la red o al reabrir.
+        //  Mismos ids deterministas de siempre: repetir no duplica.
+        //  Los campos de cada documento NO cambian: son los mismos literales.
+        const _staffDocs = [];
+        const _coachDocs = [];
+        // ── Documentos cronos_player_reports para el Gantt del staff ──
         // Un documento por jugador con type='staff_match_report' y staffReport=true.
         // FIX: incluye staffUids para que las reglas de Firestore permitan leer
         // a directores y coordinadores (request.auth.uid in resource.data.staffUids).
         for (const p of homePlayers) {
             const srId = `${sharedMatchId}_staff_p${p.number}`;
-            await setDoc(doc(db, 'cronos_player_reports', srId), {
+            _staffDocs.push({ id: srId, data: {
                 matchId:       sharedMatchId,
                 type:          'staff_match_report',
                 staffReport:   true,          // ← filtro exclusivo del panel staff
@@ -270,9 +293,189 @@ async function autoDispatchMatchReports() {
                 // definicion; los tres escritores de informes usan esta misma.
                 wasStarter:    typeof window.cronosFueTitular === 'function' ? window.cronosFueTitular(p) : false,
                 history:       _parseHistoryForFirestore(p.history || []),
-            });
+            } });
         }
-        console.log(`[StaffReport] TOTAL informes staff escritos en cronos_player_reports: ${homePlayers.length} (matchId=${sharedMatchId}, staffToNotify=${staffToNotify.length}, staffUids=${_allStaffUids.length})`);
+
+        // ── FASE C (documentos): copia del informe para el propio entrenador ──
+        // v869 · Se CONSTRUYE aquí, junto a la del staff, y se encola PRIMERO:
+        // era la última escritura del despacho y la primera en perderse.
+        // Usa el mismo matchId que el informe del staff para agrupación coherente.
+        for (const p of homePlayers) {
+            const rptId = `${sharedMatchId}_coach_p${p.number}`;
+            _coachDocs.push({ id: rptId, data: {
+                matchId:       sharedMatchId,
+                type:          'collective_match_report',
+                staffReport:   false,         // no aparece en vista del staff (ya tiene staffReport=true)
+                _forCoach:     true,
+                // 💬 v690 · Comentarios del partido (sólo cuerpo técnico).
+                matchComments: (typeof window.cronosComentariosDelPartido === 'function')
+                                 ? window.cronosComentariosDelPartido() : [],
+                // 🔵🔴 v693 · Pérdidas/Recuperaciones (mismo criterio).
+                matchPR:       (typeof window.cronosPRDelPartido === 'function')
+                                 ? window.cronosPRDelPartido() : null,
+                // 📈 v774 · Estadísticas avanzadas (mismo criterio).
+                matchStats:    (typeof window.cronosSAvDelPartido === 'function')
+                                 ? window.cronosSAvDelPartido() : null,
+                clubId:        me.clubId || null,
+                coachUid:      me.uid,
+                coachEmail:    me.email,
+                coachName:     (typeof window._ccNombreDe === 'function' ? window._ccNombreDe(me) : '') || '',   // v755
+                matchDate:     new Date().toISOString().split('T')[0],
+                rival:         rivalName,
+                scoreHome,
+                scoreAway,
+                myTeamRole:    _cMyTeamKey(),   // 'home' | 'away' — perspectiva del entrenador (resultado V/D/E correcto)
+                // 🏆 v735 · El tipo viaja en TODAS las copias del informe:
+                // si faltara en una, esa pantalla sería la única que no
+                // sabría si el partido cuenta para la temporada.
+                matchType:     (typeof window.cronosTipoPartidoActual === 'function')
+                                 ? window.cronosTipoPartidoActual() : '',
+                category:      window._currentMatchCategory || '',
+                subcategory:   _cMatchSubcatFor(me, window._currentMatchCategory || ''),
+                // Clave de equipo: el informe es del equipo, no del autor.
+                teamId:        (typeof window.cronosTeamId === 'function')
+                                 ? window.cronosTeamId(me.clubId || '', window._currentMatchCategory || '',
+                                                       _cMatchSubcatFor(me, window._currentMatchCategory || ''))
+                                 : '',
+                createdAt:     new Date().toISOString(),
+                ...(typeof window.cronosGuestFields === 'function' ? window.cronosGuestFields(p) : {}),
+                ...(typeof window.cronosCodigoFields === 'function' ? window.cronosCodigoFields(p) : {}),   // v767 · código
+                playerNumber:  String(p.number||''),
+                playerAlias:   p.alias || p.name || '',
+                position:      p.position || p.pos || '',
+                goals:         p.goals  || 0,
+                cards:         p.cards  || null,
+                injured:       p.injured || false,
+                minutesPlayed: typeof formatTime==='function' ? formatTime(p.time||0) : String(p.time||0),
+                wasStarter:    typeof window.cronosFueTitular === 'function' ? window.cronosFueTitular(p) : false,
+                history:       _parseHistoryForFirestore(p.history||[]),
+            } });
+        }
+
+        // ── FASE B (documentos): INFORMES INDIVIDUALES A LAS FAMILIAS — v171 ──
+        // REGLA 3 (estricta): se itera por PADRES (no por jugadores). Cada padre
+        // con el checkbox INF (tag 'rpt') y un inviteCode válido (J<dorsal>)
+        // recibe EXACTAMENTE 1 informe del jugador cuyo número coincide con su
+        // dorsal, y solo si ese jugador fue convocado (homePlayers). El
+        // emparejado es SOLO por dorsal, nunca por nombre. La resolución vive en
+        // el helper compartido, idéntico al del despacho manual.
+        // FIX (v217): pasar preSelectionIds como 4o argumento para que el helper
+        // respete ESTRICTAMENTE el checkbox per-partido (modal de convocatoria).
+        // Si preSelectionIds es null (no se uso el modal), el helper cae al
+        // comportamiento legacy (tag 'rpt' global).
+        // v507 · La RESOLUCIÓN de destinatarios estaba fuera de todo try: si
+        // lanzaba (contactos o links mal formados), se llevaba por delante la
+        // FASE C. Cada padre se prepara por separado.
+        // 📴 v869 · Se PREPARA aquí y se pide con los demás informes, antes de
+        // cualquier aviso: sin red, el `await setDoc` del primer padre dejaba
+        // sin informe a todos los demás (mismo fallo que el del entrenador).
+        let _parentTargets = [];
+        // ⛔⛔ SIN ROL DE FAMILIAS, ESTA FASE NO EXISTE.
+        //  Es la más importante de cortar de las tres: no la pulsa nadie —
+        //  corre sola al terminar el partido—, así que esconder el botón del
+        //  post-partido no la habría detenido y el club habría seguido
+        //  mandando informes individuales a unas familias que su propia
+        //  configuración dice que no existen.
+        const _hayFamilias = (typeof window.cronosHayPadres !== 'function') || window.cronosHayPadres();
+        if (!_hayFamilias) {
+            console.info('[autoDispatch] Rol de familias desactivado: se omite la fase de padres.');
+        }
+        // 🔒 v764 · el EQUIPO del partido: sólo sus familias reciben (panel.js).
+        const _eqPartido = (typeof window.cronosEquipoAbierto === 'function') ? window.cronosEquipoAbierto() : '';
+        try {
+            _parentTargets = _hayFamilias
+                ? (_cronosResolveParentReportTargets(contacts, links, homePlayers, preSelectionIds, _eqPartido) || [])
+                : [];
+            if (typeof window._cronosAvisaFamiliasSinEquipo === 'function') window._cronosAvisaFamiliasSinEquipo(_parentTargets);
+        } catch (targetsErr) {
+            console.error('[autoDispatch] No se pudieron resolver los padres destinatarios ' +
+                '(se continúa con la copia del entrenador):', targetsErr && targetsErr.message, targetsErr);
+        }
+        const _familiaDocs = [];
+        const _familiaPrep = [];
+        for (const { parentUid, dorsal, player } of _parentTargets) {
+            // FIX v176: cada padre en su propio try/catch: un dato roto de uno
+            // no deja sin informe a los demás.
+            try {
+            // Texto individual de este jugador
+            const cardLbl = player.cards === 'amarilla' ? '🟨 TARJETA' : player.cards === 'roja' ? '🟥 TARJETA' : 'Sin tarjetas';
+            const stats = `⏱️ ${formatTime(player.time || 0)} min | ⚽ GOL ×${player.goals || 0} | ${cardLbl}`;
+            const indivText = `📊 *INFORME INDIVIDUAL: ${player.name}*\n` +
+                             `━━━━━━━━━━━━━━━━\n` +
+                             `📅 ${matchDate}\n` +
+                             `⚽ Partido vs ${rivalName}\n` +
+                             `📈 Rendimiento: ${stats}\n\n` +
+                             `Revisa el panel de informes para más detalles.\n` +
+                             `_Cronos Fútbol_`;
+
+            // ── Documento cronos_player_reports para el panel del padre ──
+            // ID determinista e idempotente: {matchId}_parent_{parentUid}_p{dorsal}
+            const prId = `${sharedMatchId}_parent_${parentUid}_p${dorsal}`;
+            _familiaDocs.push({ id: prId, data: {
+                matchId:       sharedMatchId,
+                type:          'parent_player_report',
+                parentUid:     parentUid,
+                clubId:        me.clubId || null,
+                coachUid:      me.uid,
+                coachEmail:    me.email,
+                coachName:     (typeof window._ccNombreDe === 'function' ? window._ccNombreDe(me) : '') || '',   // v755
+                matchDate:     new Date().toISOString().split('T')[0],
+                rival:         rivalName,
+                scoreHome,
+                scoreAway,
+                myTeamRole:    _cMyTeamKey(),   // 'home' | 'away' — perspectiva del entrenador (resultado V/D/E correcto)
+                // 🏆 v735 · También en la copia del Área de Familias: el informe
+                // del jugador lo enseña igual que el del cuerpo técnico.
+                matchType:     (typeof window.cronosTipoPartidoActual === 'function')
+                                 ? window.cronosTipoPartidoActual() : '',
+                createdAt:     new Date().toISOString(),
+                playerNumber:  String(dorsal),
+                playerAlias:   player.alias || player.name || '',
+                ...(typeof window.cronosCodigoFields === 'function' ? window.cronosCodigoFields(player) : {}),   // v767 · código
+                goals:         player.goals  || 0,
+                cards:         player.cards  || 'ninguna',
+                injured:       player.injured || false,
+                // 🔵🔴 v705 · Pérdidas y recuperaciones DE ESTE JUGADOR.
+                // ⚠️ NO viaja `matchPR`, que lleva el desglose de TODO el
+                // equipo: a la familia sólo le corresponde lo de su hijo, y
+                // esa es la misma política que ya rige el resto de su panel
+                // (la vista "pobre" de v619, justificada por RGPD).
+                prPropio:      (typeof window.cronosPRDelPartido === 'function' &&
+                                typeof window.cronosPRDeJugador === 'function')
+                                 ? window.cronosPRDeJugador(window.cronosPRDelPartido(), dorsal)
+                                 : null,
+                minutesPlayed: typeof formatTime === 'function' ? formatTime(player.time || 0) : String(player.time || 0),
+                wasStarter:    typeof window.cronosFueTitular === 'function' ? window.cronosFueTitular(player) : false,
+                history:       _parseHistoryForFirestore(player.history || []),
+            } });
+            _familiaPrep.push({ parentUid, dorsal, player, prId, indivText });
+            } catch (prepErr) {
+                console.warn('[autoDispatch] Error preparando el informe de un padre:', {
+                    parentUid, dorsal,
+                    code: prepErr && prepErr.code,
+                    message: prepErr && prepErr.message,
+                }, prepErr);
+            }
+        }
+
+        // ── Encolar: entrenador primero, luego staff, luego familias. ──
+        // Las familias van SUELTAS (un envío por familia): un lote es atómico y
+        // un rechazo de las reglas con UN padre dejaría sin informe a todos (v176).
+        const _estadoInformes = await _cronosEncolaInformesCriticos(db, sharedMatchId, me.uid,
+            [{ nombre: 'entrenador', docs: _coachDocs }, { nombre: 'staff', docs: _staffDocs },
+             { nombre: 'familias', docs: _familiaDocs, suelto: true }],
+            { writeBatch, doc });
+        if (_estadoInformes === null) {
+            // Sin acuse todavía (sin red o servidor lento): el entrenador lo
+            // tiene que saber ANTES de bloquear el iPad. Lo que sigue (avisos
+            // al staff y a las familias) puede quedarse esperando a la red.
+            showToast('📴 Informes guardados en este dispositivo: se subirán automáticamente al recuperar la conexión. ' +
+                      'No borres los datos de la app.', 8000);
+        } else if (_estadoInformes === false) {
+            showToast('⚠️ El servidor ha rechazado algún informe de este partido (permisos). ' +
+                      'Avisa al administrador del club.', 8000);
+        }
+        console.log(`[StaffReport] TOTAL informes staff escritos en cronos_player_reports: ${_staffDocs.length} (+ ${_coachDocs.length} del entrenador; pedidos en lote) (matchId=${sharedMatchId}, staffToNotify=${staffToNotify.length}, staffUids=${_allStaffUids.length}, confirmado=${_estadoInformes})`);
 
         // ── Notificar al staff (coordinador + director) ──────────────────
         // Los destinatarios ya fueron resueltos arriba (antes de los reports).
@@ -369,100 +572,14 @@ async function autoDispatchMatchReports() {
                 'para no perder la copia del entrenador):', staffLoopErr && staffLoopErr.message, staffLoopErr);
         }
 
-        // --- FASE B: INFORMES INDIVIDUALES (PADRES) — REDISEÑO v171 ---
-        // REGLA 3 (estricta): se itera por PADRES (no por jugadores). Cada padre
-        // con el checkbox INF (tag 'rpt') y un inviteCode válido (J<dorsal>)
-        // recibe EXACTAMENTE 1 informe del jugador cuyo número coincide con su
-        // dorsal, y solo si ese jugador fue convocado (homePlayers). El
-        // emparejado es SOLO por dorsal, nunca por nombre. La resolución vive en
-        // el helper compartido, idéntico al del despacho manual.
-        // FIX (v217): pasar preSelectionIds como 4o argumento para que el helper
-        // respete ESTRICTAMENTE el checkbox per-partido (modal de convocatoria).
-        // Si preSelectionIds es null (no se uso el modal), el helper cae al
-        // comportamiento legacy (tag 'rpt' global).
-        // v507 · La RESOLUCIÓN de destinatarios estaba fuera de todo try: si
-        // lanzaba (contactos o links mal formados), se llevaba por delante la
-        // FASE C. El bucle de abajo sí guarda cada padre por separado.
-        let _parentTargets = [];
-        // ⛔⛔ SIN ROL DE FAMILIAS, ESTA FASE NO EXISTE.
-        //  Es la más importante de cortar de las tres: no la pulsa nadie —
-        //  corre sola al terminar el partido—, así que esconder el botón del
-        //  post-partido no la habría detenido y el club habría seguido
-        //  mandando informes individuales a unas familias que su propia
-        //  configuración dice que no existen.
-        const _hayFamilias = (typeof window.cronosHayPadres !== 'function') || window.cronosHayPadres();
-        if (!_hayFamilias) {
-            console.info('[autoDispatch] Rol de familias desactivado: se omite la fase de padres.');
-        }
-        // 🔒 v764 · el EQUIPO del partido: sólo sus familias reciben (panel.js).
-        const _eqPartido = (typeof window.cronosEquipoAbierto === 'function') ? window.cronosEquipoAbierto() : '';
-        try {
-            _parentTargets = _hayFamilias
-                ? (_cronosResolveParentReportTargets(contacts, links, homePlayers, preSelectionIds, _eqPartido) || [])
-                : [];
-            if (typeof window._cronosAvisaFamiliasSinEquipo === 'function') window._cronosAvisaFamiliasSinEquipo(_parentTargets);
-        } catch (targetsErr) {
-            console.error('[autoDispatch] No se pudieron resolver los padres destinatarios ' +
-                '(se continúa con la copia del entrenador):', targetsErr && targetsErr.message, targetsErr);
-        }
-        for (const { parentUid, dorsal, player } of _parentTargets) {
-            // FIX v176: Cada padre se envía en su propio try/catch para que un
-            // fallo con un padre (p.ej. permission-denied) NO impida el envío
-            // al resto de padres. Antes, si setDoc de un padre fallaba, el
-            // bucle se rompía y los padres siguientes no recibían su informe.
+        // --- FASE B: AVISOS A LAS FAMILIAS (hilo + notificación) ---
+        // 📴 v869 · El INFORME de cada familia (cronos_player_reports, el que
+        // ve en su panel) ya se preparó y se pidió arriba, con los del
+        // entrenador y el staff. Aquí sólo quedan el mensaje y el aviso, que
+        // pueden esperar a la red sin arrastrar a nadie.
+        // FIX v176: cada padre en su propio try/catch (un fallo no tumba al resto).
+        for (const { parentUid, dorsal, player, prId, indivText } of _familiaPrep) {
             try {
-            // Texto individual de este jugador
-            const cardLbl = player.cards === 'amarilla' ? '🟨 TARJETA' : player.cards === 'roja' ? '🟥 TARJETA' : 'Sin tarjetas';
-            const stats = `⏱️ ${formatTime(player.time || 0)} min | ⚽ GOL ×${player.goals || 0} | ${cardLbl}`;
-            const indivText = `📊 *INFORME INDIVIDUAL: ${player.name}*\n` +
-                             `━━━━━━━━━━━━━━━━\n` +
-                             `📅 ${matchDate}\n` +
-                             `⚽ Partido vs ${rivalName}\n` +
-                             `📈 Rendimiento: ${stats}\n\n` +
-                             `Revisa el panel de informes para más detalles.\n` +
-                             `_Cronos Fútbol_`;
-
-            // ── Guardar en cronos_player_reports para el panel del padre ──
-            // ID determinista e idempotente: {matchId}_parent_{parentUid}_p{dorsal}
-            const prId = `${sharedMatchId}_parent_${parentUid}_p${dorsal}`;
-            await setDoc(doc(db, 'cronos_player_reports', prId), {
-                matchId:       sharedMatchId,
-                type:          'parent_player_report',
-                parentUid:     parentUid,
-                clubId:        me.clubId || null,
-                coachUid:      me.uid,
-                coachEmail:    me.email,
-                coachName:     (typeof window._ccNombreDe === 'function' ? window._ccNombreDe(me) : '') || '',   // v755
-                matchDate:     new Date().toISOString().split('T')[0],
-                rival:         rivalName,
-                scoreHome,
-                scoreAway,
-                myTeamRole:    _cMyTeamKey(),   // 'home' | 'away' — perspectiva del entrenador (resultado V/D/E correcto)
-                // 🏆 v735 · También en la copia del Área de Familias: el informe
-                // del jugador lo enseña igual que el del cuerpo técnico.
-                matchType:     (typeof window.cronosTipoPartidoActual === 'function')
-                                 ? window.cronosTipoPartidoActual() : '',
-                createdAt:     new Date().toISOString(),
-                playerNumber:  String(dorsal),
-                playerAlias:   player.alias || player.name || '',
-                ...(typeof window.cronosCodigoFields === 'function' ? window.cronosCodigoFields(player) : {}),   // v767 · código
-                goals:         player.goals  || 0,
-                cards:         player.cards  || 'ninguna',
-                injured:       player.injured || false,
-                // 🔵🔴 v705 · Pérdidas y recuperaciones DE ESTE JUGADOR.
-                // ⚠️ NO viaja `matchPR`, que lleva el desglose de TODO el
-                // equipo: a la familia sólo le corresponde lo de su hijo, y
-                // esa es la misma política que ya rige el resto de su panel
-                // (la vista "pobre" de v619, justificada por RGPD).
-                prPropio:      (typeof window.cronosPRDelPartido === 'function' &&
-                                typeof window.cronosPRDeJugador === 'function')
-                                 ? window.cronosPRDeJugador(window.cronosPRDelPartido(), dorsal)
-                                 : null,
-                minutesPlayed: typeof formatTime === 'function' ? formatTime(player.time || 0) : String(player.time || 0),
-                wasStarter:    typeof window.cronosFueTitular === 'function' ? window.cronosFueTitular(player) : false,
-                history:       _parseHistoryForFirestore(player.history || []),
-            });
-
             // ── Enviar mensaje al hilo de chat ───────────────────────────
             // FIX v176: Mismo patrón updateDoc→setDoc que para staff.
             // El hilo de padres usa {coachUid}_{parentUid} como threadId.
@@ -532,66 +649,10 @@ async function autoDispatchMatchReports() {
             // [DIAG TEMP] Confirmar que la FASE C se ejecuta y con qué datos.
 
 
-            // Guardar copia del informe en cronos_player_reports con coachUid = uid
-            for (const p of homePlayers) {
-                const rptId = `${matchId}_coach_p${p.number}`;
-                try {
-                await setDoc(doc(db, 'cronos_player_reports', rptId), {
-                    matchId,
-                    type:          'collective_match_report',
-                    staffReport:   false,         // no aparece en vista del staff (ya tiene staffReport=true)
-                    _forCoach:     true,
-                    // 💬 v690 · Comentarios del partido (sólo cuerpo técnico).
-                    matchComments: (typeof window.cronosComentariosDelPartido === 'function')
-                                     ? window.cronosComentariosDelPartido() : [],
-                    // 🔵🔴 v693 · Pérdidas/Recuperaciones (mismo criterio).
-                    matchPR:       (typeof window.cronosPRDelPartido === 'function')
-                                     ? window.cronosPRDelPartido() : null,
-                    // 📈 v774 · Estadísticas avanzadas (mismo criterio).
-                    matchStats:    (typeof window.cronosSAvDelPartido === 'function')
-                                     ? window.cronosSAvDelPartido() : null,
-                    clubId:        me.clubId || null,
-                    coachUid:      me.uid,
-                    coachEmail:    me.email,
-                    coachName:     (typeof window._ccNombreDe === 'function' ? window._ccNombreDe(me) : '') || '',   // v755
-                    matchDate:     new Date().toISOString().split('T')[0],
-                    rival:         rivalName,
-                    scoreHome,
-                    scoreAway,
-                    myTeamRole:    _cMyTeamKey(),   // 'home' | 'away' — perspectiva del entrenador (resultado V/D/E correcto)
-                    // 🏆 v735 · El tipo viaja en TODAS las copias del informe:
-                    // si faltara en una, esa pantalla sería la única que no
-                    // sabría si el partido cuenta para la temporada.
-                    matchType:     (typeof window.cronosTipoPartidoActual === 'function')
-                                     ? window.cronosTipoPartidoActual() : '',
-                    category:      window._currentMatchCategory || '',
-                    subcategory:   _cMatchSubcatFor(me, window._currentMatchCategory || ''),
-                    // Clave de equipo: el informe es del equipo, no del autor.
-                    teamId:        (typeof window.cronosTeamId === 'function')
-                                     ? window.cronosTeamId(me.clubId || '', window._currentMatchCategory || '',
-                                                           _cMatchSubcatFor(me, window._currentMatchCategory || ''))
-                                     : '',
-                    createdAt:     new Date().toISOString(),
-                    ...(typeof window.cronosGuestFields === 'function' ? window.cronosGuestFields(p) : {}),
-                    ...(typeof window.cronosCodigoFields === 'function' ? window.cronosCodigoFields(p) : {}),   // v767 · código
-                    playerNumber:  String(p.number||''),
-                    playerAlias:   p.alias || p.name || '',
-                    position:      p.position || p.pos || '',
-                    goals:         p.goals  || 0,
-                    cards:         p.cards  || null,
-                    injured:       p.injured || false,
-                    minutesPlayed: typeof formatTime==='function' ? formatTime(p.time||0) : String(p.time||0),
-                    wasStarter:    typeof window.cronosFueTitular === 'function' ? window.cronosFueTitular(p) : false,
-                    history:       _parseHistoryForFirestore(p.history||[]),
-                });
-                // [DIAG TEMP] setDoc del coach OK para este jugador.
-                } catch (setErr) {
-                    // [DIAG TEMP] Capturar el fallo concreto del setDoc por jugador
-                    // (típicamente permission-denied de las reglas Firestore).
-                    console.error('[FaseC][DIAG] setDoc coach FALLÓ:', rptId,
-                        '| code:', setErr.code, '| msg:', setErr.message);
-                }
-            }
+            // 📴 v869 · La copia del informe (cronos_player_reports con
+            // _forCoach) YA NO SE ESCRIBE AQUÍ: se construye y se encola al
+            // principio del despacho, antes que nada, junto a la del staff
+            // (`_cronosEncolaInformesCriticos`). Aquí quedan el índice y el aviso.
 
             // 🪶 v639 · ÍNDICE LIGERO DEL PARTIDO — UNA vez por partido, no una
             //    por jugador. Ver js/match/live/finished-index.js. Va DESPUÉS
@@ -743,3 +804,177 @@ async function saveAllMatchReportsInternal() {
         try { localStorage.removeItem(_guardKey); } catch (_) {}
     }
 }
+
+// ════════════════════════════════════════════════════════════════════
+//  📴 v869 · INFORMES CRÍTICOS: ENCOLAR SIN ESPERAR Y REINTENTAR
+// ════════════════════════════════════════════════════════════════════
+//  «Críticos» = la copia del entrenador («Mis Informes») y la del staff
+//  (Dirección/Coordinación, Gantt, acumulado). Ver el porqué en
+//  autoDispatchMatchReports (caso real del 27-11, CD Arinaga).
+//
+//  · El RESPALDO vive en localStorage `cronos_informes_pendientes_<matchId>`.
+//    La envoltura de js/core/local-uid.js le pega el uid: otra cuenta del
+//    mismo iPad no lo ve ni lo sube. Se borra SÓLO con el acuse del servidor.
+//  · Los LOTES (`writeBatch`, ≤400 por lote) se piden sin esperar el acuse
+//    más de unos segundos: sin red, el SDK los encola (y con la caché
+//    persistente los guarda en IndexedDB); el respaldo cubre la caché de
+//    memoria y la página que muere antes de pedirlos.
+//  · Un lote es atómico. Por eso van DOS (entrenador y staff): si uno lo
+//    rechazara, el otro llega igual.
+//  · Reintentar es inocuo: ids deterministas y `merge` (no pisa campos que
+//    otros hayan añadido después, p. ej. `hiddenByCoordinators`).
+//  · Devuelve true (confirmado), null (pendiente: sin red, sin acuse aún o
+//    fallo transitorio; el respaldo se queda para el reintento) o false
+//    (el servidor RECHAZÓ algo para siempre —permisos—: se registra y sale
+//    del respaldo; reintentarlo no lo arreglaría).
+//  · Las FAMILIAS van `suelto` (un envío por familia), no en lote: un lote es
+//    atómico y un rechazo con un padre dejaría sin informe a todos (v176).
+const _CRONOS_INF_PEND = 'cronos_informes_pendientes_';
+const _cronosInformesEnVuelo = new Set();   // matchIds con lotes pedidos en ESTA página
+
+function _cronosInformesHayRed() {
+    return !(typeof navigator !== 'undefined' && navigator && navigator.onLine === false);
+}
+
+async function _cronosEncolaInformesCriticos(db, matchId, uid, grupos, fns, opciones) {
+    const reintento = !!(opciones && opciones.reintento);
+    const clave = _CRONOS_INF_PEND + matchId;
+    const conDocs = (grupos || []).filter(g => g && Array.isArray(g.docs) && g.docs.length);
+    if (!conDocs.length) return true;
+
+    // 1 · Respaldo en el dispositivo ANTES de pedir nada.
+    if (!reintento) {
+        try {
+            localStorage.setItem(clave, JSON.stringify({ v: 1, matchId, uid: uid || '', guardadoEn: Date.now(), grupos: conDocs }));
+        } catch (e) {
+            console.warn('[Informes] No se pudo guardar el respaldo local (se envía igual):', e && e.message);
+        }
+    }
+
+    // 2 · Pedir los lotes, sin encadenar acuses. Un grupo `suelto` (familias)
+    //     va documento a documento: un rechazo con uno no arrastra al resto.
+    //     Cada lote que se confirma SALE del respaldo; uno que las reglas
+    //     rechazan de forma definitiva también (se registra): reintentarlo
+    //     no lo arreglaría y bloquearía el respaldo de los demás.
+    const quitaDelRespaldo = (ids) => {
+        try {
+            const p = JSON.parse(localStorage.getItem(clave) || 'null');
+            if (!p || !Array.isArray(p.grupos)) return;
+            p.grupos = p.grupos.map(g => ({ ...g, docs: g.docs.filter(d => ids.indexOf(d.id) < 0) }))
+                               .filter(g => g.docs.length);
+            if (p.grupos.length) localStorage.setItem(clave, JSON.stringify(p));
+            else localStorage.removeItem(clave);
+        } catch (_) {}
+    };
+    const DEFINITIVOS = ['permission-denied', 'invalid-argument', 'failed-precondition'];
+    const lotes = [];
+    for (const g of conDocs) {
+        const paso = g.suelto ? 1 : 400;
+        for (let i = 0; i < g.docs.length; i += paso) {
+            const trozo = g.docs.slice(i, i + paso);
+            const ids = trozo.map(d => d.id);
+            const tipoGrupo = g.nombre;   // 'entrenador' | 'staff' | 'familias' (no es dato personal)
+            let pedido;
+            try {
+                const b = fns.writeBatch(db);
+                trozo.forEach(d => {
+                    const ref = fns.doc(db, 'cronos_player_reports', d.id);
+                    if (reintento) b.set(ref, d.data, { merge: true });
+                    else b.set(ref, d.data);
+                });
+                pedido = b.commit();
+            } catch (e) {
+                pedido = Promise.reject(e);
+            }
+            lotes.push(pedido.then(() => { quitaDelRespaldo(ids); return 'ok'; }, (e) => {
+                if (e && DEFINITIVOS.indexOf(e.code) >= 0) {
+                    console.error('[Informes] Rechazado por el servidor; no se reintentará:',
+                        tipoGrupo, ids.length, 'doc(s)', e.code);
+                    quitaDelRespaldo(ids);
+                    return 'rechazado';
+                }
+                throw e;   // transitorio: se queda en el respaldo
+            }));
+        }
+    }
+    _cronosInformesEnVuelo.add(matchId);
+    // true = todo confirmado · false = algo rechazado para siempre (ya fuera
+    // del respaldo) · el rechazo de la promesa = algo transitorio pendiente.
+    const todos = Promise.all(lotes).then((rs) => {
+        try { localStorage.removeItem(clave); } catch (_) {}
+        return rs.every(r => r === 'ok');
+    });
+    todos.catch(e => {
+        console.warn('[Informes] Sin confirmar: quedan guardados en el dispositivo para reintentar.',
+            matchId, e && (e.code || e.message));
+    }).then(() => { _cronosInformesEnVuelo.delete(matchId); });
+
+    // 3 · Esperar un poco, nunca indefinidamente: el iPad puede bloquearse.
+    if (!_cronosInformesHayRed()) return null;
+    let temporizador = null;
+    const espera = new Promise(r => { temporizador = setTimeout(() => r(null), 6000); });
+    const res = await Promise.race([todos.catch(() => null), espera]);
+    try { clearTimeout(temporizador); } catch (_) {}
+    return res;
+}
+
+let _cronosReintentoInformesOcupado = false;
+async function _cronosReintentaInformesPendientes() {
+    if (_cronosReintentoInformesOcupado) return 'ocupado';
+    const me = window._cronosCurrentUser;
+    const db = window._cronos_auth && window._cronos_auth.db;
+    if (!me || !me.uid || !db) return 'sin-sesion';
+    if (!_cronosInformesHayRed()) return 'sin-red';
+    let claves = [];
+    try {
+        claves = (typeof window.cronosClavesLocales === 'function')
+            ? window.cronosClavesLocales(_CRONOS_INF_PEND)
+            : Object.keys(localStorage).filter(k => k.indexOf(_CRONOS_INF_PEND) === 0);
+    } catch (_) { return 'sin-almacen'; }
+    if (!claves.length) return 'nada';
+
+    _cronosReintentoInformesOcupado = true;
+    try {
+        const { doc, writeBatch } = await import(
+            'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
+        let subidos = 0;
+        for (const clave of claves) {
+            let p = null;
+            try { p = JSON.parse(localStorage.getItem(clave) || 'null'); } catch (_) {}
+            if (!p || !p.matchId || !Array.isArray(p.grupos)) {
+                try { localStorage.removeItem(clave); } catch (_) {}
+                continue;
+            }
+            if (p.uid && p.uid !== me.uid) continue;              // de otra cuenta
+            if (_cronosInformesEnVuelo.has(p.matchId)) continue;  // ya pedido en esta página
+            if (Date.now() - (p.guardadoEn || 0) > 30 * 864e5) {
+                console.error('[Informes] Respaldo de más de 30 días sin subir; se descarta:', p.matchId);
+                try { localStorage.removeItem(clave); } catch (_) {}
+                continue;
+            }
+            const r = await _cronosEncolaInformesCriticos(db, p.matchId, p.uid, p.grupos,
+                { writeBatch, doc }, { reintento: true });
+            if (r === true) subidos++;
+        }
+        if (subidos && typeof showToast === 'function') {
+            showToast('✅ Informes de partido pendientes subidos (' + subidos + ')', 5000);
+        }
+        return subidos;
+    } catch (e) {
+        console.warn('[Informes] Reintento fallido; se probará más tarde:', e && e.message);
+        return 'error';
+    } finally {
+        _cronosReintentoInformesOcupado = false;
+    }
+}
+window._cronosReintentaInformesPendientes = _cronosReintentaInformesPendientes;
+
+// Al volver la red y cada minuto (sólo lee localStorage si no hay nada).
+(function () {
+    if (typeof window.addEventListener === 'function') {
+        window.addEventListener('online', () => { setTimeout(_cronosReintentaInformesPendientes, 3000); });
+    }
+    if (typeof setInterval === 'function') {
+        setInterval(() => { _cronosReintentaInformesPendientes(); }, 60000);
+    }
+})();

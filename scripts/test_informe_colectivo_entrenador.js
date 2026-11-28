@@ -88,6 +88,22 @@ function nuevoFirestore(fallaSi) {
                 throw e;   // fuerza el camino setDoc del hilo, como en produccion
             },
             arrayUnion: (...i) => ({ __arrayUnion: i }),
+            // v869 · lote ATÓMICO, como el real: si las reglas rechazan un
+            // documento, no entra ninguno de ese lote.
+            writeBatch: () => {
+                const ops = [];
+                return {
+                    set: (ref, data) => ops.push({ ref, data }),
+                    commit: async () => {
+                        if (fallaSi && ops.some(o => fallaSi(o.ref, o.data))) {
+                            const e = new Error('Missing or insufficient permissions.');
+                            e.code = 'permission-denied';
+                            throw e;
+                        }
+                        ops.forEach(o => escrito.push({ col: o.ref.__col, id: o.ref.__id, data: o.data }));
+                    },
+                };
+            },
         }
     };
 }
@@ -166,7 +182,13 @@ function extraeDesde(src, ancla) {
 
 console.log('── el informe colectivo del ENTRENADOR (v507) ──\n');
 
-const SRC_AUTO = extraeDesde(AUTO_SRC, 'async function autoDispatchMatchReports()');
+// 📴 v869 · Las copias de staff y entrenador las encola
+// `_cronosEncolaInformesCriticos`, que vive al final del mismo fichero: viaja
+// con el despacho (hasta el final del archivo, sin la parte de
+// saveAllMatchReportsInternal, que aquí no se usa).
+const _iniInf = AUTO_SRC.indexOf('const _CRONOS_INF_PEND');
+const SRC_AUTO = (_iniInf === -1) ? null
+    : extraeDesde(AUTO_SRC, 'async function autoDispatchMatchReports()') + '\n' + AUTO_SRC.slice(_iniInf);
 // OJO: anclar en la DEFINICION, no en la primera mención (hay comentarios y
 // un onclick con ese mismo nombre antes).
 const SRC_COLL = extraeDesde(COLL_SRC, 'window._sendCollectiveReportNow = async function()');

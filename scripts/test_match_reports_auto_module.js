@@ -121,8 +121,19 @@ function buildSandbox({
     updateThrows = null,
     setDocThrows = null,
     resolveStaffForMatch = null,
+    // v869 · `commitHangs`: el lote se PIDE pero el servidor nunca acusa recibo
+    // (sin cobertura). `online`: valor de navigator.onLine (undefined = sin navigator).
+    commitHangs = false, online = undefined,
+    // `setDocHangs`: TODA escritura suelta se queda sin acuse (sin red de verdad).
+    // `realTimers`: setTimeout real (por defecto el arnés lo ejecuta en el acto).
+    setDocHangs = false, realTimers = false,
+    // `rechazaSi(id)`: el servidor rechaza PARA SIEMPRE (permission-denied) el
+    // lote que contenga ese documento.
+    rechazaSi = null,
+    // `cuelgaSi(id)`: el lote que contenga ese documento se queda sin acuse.
+    cuelgaSi = null,
 } = {}) {
-    const toasts = [], logs = [], written = [];
+    const toasts = [], logs = [], written = [], queued = [];
     const els = {};
     const el = (id) => (els[id] = els[id] || mkEl());
     el('score-home').textContent = scoreHome;
@@ -137,14 +148,36 @@ function buildSandbox({
         doc: (db, col, id) => ({ __col: col, __id: id }),
         getDoc: async () => ({ exists: () => false, data: () => undefined }),
         setDoc: async (ref, data) => {
+            if (setDocHangs) return new Promise(() => {});
             if (setDocThrows) throw new Error(setDocThrows);
             written.push({ op: 'set', col: ref.__col, id: ref.__id, data });
         },
         updateDoc: async (ref, data) => {
+            if (setDocHangs) return new Promise(() => {});
             if (updateThrows) throw new Error(updateThrows);
             written.push({ op: 'update', col: ref.__col, id: ref.__id, data });
         },
         arrayUnion: (...i) => ({ __arrayUnion: i }),
+        // v869 · lote: `queued` = pedido al SDK; `written` = acusado por el servidor.
+        writeBatch: () => {
+            const ops = [];
+            return {
+                set: (ref, data, opt) => ops.push({ ref, data, opt }),
+                commit: () => {
+                    const lote = ops.map(o => ({ op: (o.opt && o.opt.merge) ? 'merge' : 'set', col: o.ref.__col, id: o.ref.__id, data: o.data }));
+                    queued.push(lote);
+                    if (commitHangs) return new Promise(() => {});
+                    if (cuelgaSi && lote.some(w => cuelgaSi(w.id))) return new Promise(() => {});
+                    if (setDocThrows) return Promise.reject(new Error(setDocThrows));
+                    if (rechazaSi && lote.some(w => rechazaSi(w.id))) {
+                        const e = new Error('Missing or insufficient permissions.'); e.code = 'permission-denied';
+                        return Promise.reject(e);
+                    }
+                    lote.forEach(w => written.push(w));
+                    return Promise.resolve();
+                },
+            };
+        },
     };
 
     const sandbox = {
@@ -191,6 +224,10 @@ function buildSandbox({
         _parseHistoryForFirestore: (raw) => (Array.isArray(raw) ? raw : []),
     };
     if (resolveStaffForMatch) sandbox._cronosResolveStaffForMatch = resolveStaffForMatch;
+    if (online !== undefined) sandbox.navigator = { onLine: online };
+    if (realTimers) { sandbox.setTimeout = setTimeout; sandbox.clearTimeout = clearTimeout; }
+    // v869 · las claves de ESTE usuario (en la app las da js/core/local-uid.js).
+    sandbox.cronosClavesLocales = (pre) => Object.keys(store).filter(k => k.indexOf(pre || '') === 0);
     sandbox._cronosMatchModality = () => 'f11';
 
     // Esta mitad NO usa _cFS(): importa el SDK con import() dinamico.
@@ -202,7 +239,7 @@ function buildSandbox({
     sandbox.globalThis = sandbox;
     vm.runInContext(patched, sandbox);
 
-    return { g: sandbox, w: sandbox, toasts, logs, written, store, el: (id) => els[id] };
+    return { g: sandbox, w: sandbox, toasts, logs, written, queued, store, el: (id) => els[id] };
 }
 
 const inCol = (written, col) => written.filter(w => w.col === col);
@@ -327,8 +364,13 @@ const inCol = (written, col) => written.filter(w => w.col === col);
             t.w._cronosLastDispatchedMatch === 'live:LM3', t.w._cronosLastDispatchedMatch);
         ok('2i · ⚠️ y la clave persistente tampoco se borra: no hay reintento posible',
             !!t.store['cronos_reports_sent_LM3'], Object.keys(t.store));
-        ok('2k · el error del despacho si queda registrado en consola',
-            t.logs.some(l => l.includes('[AutoDispatch] Error')), t.logs.slice(0, 2));
+        // v869 · El fallo de los informes ya NO tumba el despacho (antes salía
+        // por el catch exterior con '[AutoDispatch] Error'): queda registrado y
+        // el respaldo se queda en el dispositivo para el reintento (parte 5).
+        ok('2k · el error del despacho si queda registrado en consola (v869: sin tumbar el despacho)',
+            t.logs.some(l => l.includes('[Informes] Sin confirmar')), t.logs.slice(0, 3));
+        ok('2l · v869 · y el respaldo de los informes se queda para reintentar',
+            Object.keys(t.store).some(k => k.startsWith('cronos_informes_pendientes_')), Object.keys(t.store));
     }
     ok('2j · la huella se reserva ANTES del await (ventana de carrera cerrada)',
         BLOCK.indexOf('window._cronosLastDispatchedMatch = _matchFingerprint;')
@@ -438,6 +480,148 @@ const inCol = (written, col) => written.filter(w => w.col === col);
         const ids = inCol(t.written, 'cronos_player_reports').map(w => w.id).join(' ');
         ok('4k · ⚠️ un padre que falla NO tumba a los demas (cada uno en su try/catch)',
             ids.includes('pBueno') && !ids.includes('pMalo'), ids);
+    }
+
+    // ═════════════════════════════════════════════════════════════════════
+    //  PARTE 5 · 📴 v869 · SIN RED AL PITAR EL FINAL (CD Arinaga, 27-11)
+    // ═════════════════════════════════════════════════════════════════════
+    //  Producción: 4 partidos seguidos con UN solo `_staff_p` y CERO copias del
+    //  entrenador. Un `await setDoc` por jugador se quedaba parado en el
+    //  primero sin acuse; iOS mataba la página y la FASE C nunca existía.
+    console.log('\n── PARTE 5 · 📴 v869 · sin red al pitar el final ──');
+    const PLANT3 = [1, 2, 3].map(n => ({ name: 'J' + n, number: String(n), team: 'home', time: 60, goals: 0, cards: 'ninguna', history: [] }));
+    const tics = () => new Promise(r => setImmediate(r));
+    {
+        // El caso real: ninguna escritura recibe acuse (ni lotes ni sueltas).
+        const t = buildSandbox({ players: PLANT3, staff: [{ uid: 'd1', role: 'director' }],
+            parentTargets: [{ parentUid: 'p7', dorsal: '1', player: PLANT3[0] }],
+            commitHangs: true, setDocHangs: true, online: true });
+        t.w.autoDispatchMatchReports();            // NO se espera: se queda colgado como en el iPad
+        for (let i = 0; i < 20; i++) await tics();
+        const coach = (t.queued[0] || []).filter(w => w.data && w.data._forCoach === true);
+        const staff = (t.queued[1] || []).filter(w => w.data && w.data.staffReport === true);
+        ok('5a · ⚠️ sin acuse, se PIDEN igualmente las 3 copias del entrenador (antes: 0)',
+            coach.length === 3 && coach.every(w => /_coach_p\d+$/.test(w.id)), t.queued.map(l => l.map(w => w.id)));
+        ok('5b · ⚠️ y las 3 del staff (antes: sólo la del primer jugador)',
+            staff.length === 3 && staff.every(w => /_staff_p\d+$/.test(w.id)), t.queued.map(l => l.length));
+        ok('5c · el lote del ENTRENADOR va primero', t.queued.length >= 2 && coach.length === t.queued[0].length);
+        const clave = Object.keys(t.store).find(k => k.startsWith('cronos_informes_pendientes_'));
+        let resp = null; try { resp = JSON.parse(t.store[clave]); } catch (_) {}
+        ok('5d · respaldo en el dispositivo: 3 entrenador + 3 staff + 1 familia, en ese orden',
+            !!resp && resp.uid === 'coach1' && resp.grupos.map(g => g.nombre).join() === 'entrenador,staff,familias'
+            && resp.grupos[0].docs.length === 3 && resp.grupos[1].docs.length === 3 && resp.grupos[2].docs.length === 1,
+            resp && resp.grupos.map(g => g.nombre + ':' + g.docs.length));
+        ok('5e · el entrenador VE el aviso de «guardado en el dispositivo»',
+            t.toasts.some(x => x.startsWith('📴')), t.toasts);
+    }
+    ok('5f · ya no queda el `await setDoc` por jugador de staff/entrenador',
+        !/await setDoc\(doc\(db, 'cronos_player_reports', (srId|rptId)\)/.test(BLOCK));
+    {
+        // Con red y acuse: se borra el respaldo y no hay aviso de pendiente.
+        const t = buildSandbox({ players: PLANT3, realTimers: true, online: true });
+        await t.w.autoDispatchMatchReports();
+        await tics();
+        ok('5g · con acuse se BORRA el respaldo',
+            !Object.keys(t.store).some(k => k.startsWith('cronos_informes_pendientes_')), Object.keys(t.store));
+        ok('5h · y no sale el aviso de pendiente', !t.toasts.some(x => x.startsWith('📴')), t.toasts);
+        ok('5i · los 6 informes llegan (3 entrenador + 3 staff)',
+            inCol(t.written, 'cronos_player_reports').length === 6, inCol(t.written, 'cronos_player_reports').length);
+    }
+    {
+        // navigator.onLine === false: no espera nada y avisa.
+        const t = buildSandbox({ players: PLANT3, commitHangs: true, setDocHangs: true, online: false, realTimers: true });
+        t.w.autoDispatchMatchReports();
+        for (let i = 0; i < 20; i++) await tics();
+        ok('5j · sin red declarada avisa al momento (sin esperar los 6 s)', t.toasts.some(x => x.startsWith('📴')), t.toasts);
+    }
+    // ── El reintento ──
+    // (Si la función no existe —código anterior a v869— las aserciones salen
+    // ROJAS sin tumbar el resto de la parte 5.)
+    const reintenta = async (t) => (typeof t.w._cronosReintentaInformesPendientes === 'function')
+        ? t.w._cronosReintentaInformesPendientes() : 'NO EXISTE';
+    const PEND = (uid, guardadoEn) => JSON.stringify({ v: 1, matchId: 'mX', uid, guardadoEn: guardadoEn || Date.now(),
+        grupos: [{ nombre: 'entrenador', docs: [{ id: 'mX_coach_p1', data: { _forCoach: true } }] },
+                 { nombre: 'staff', docs: [{ id: 'mX_staff_p1', data: { staffReport: true } }] }] });
+    {
+        const t = buildSandbox({ realTimers: true, online: true, store: { cronos_informes_pendientes_mX: PEND('coach1') } });
+        const r = await reintenta(t);
+        await tics();
+        ok('5k · el reintento sube lo pendiente con MERGE y borra el respaldo',
+            r === 1 && t.written.length === 2 && t.written.every(w => w.op === 'merge')
+            && !('cronos_informes_pendientes_mX' in t.store), { r, w: t.written.map(w => w.op + ':' + w.id) });
+        ok('5l · y lo dice', t.toasts.some(x => x.startsWith('✅ Informes de partido pendientes')), t.toasts);
+    }
+    {
+        const t = buildSandbox({ realTimers: true, online: true, store: { cronos_informes_pendientes_mX: PEND('otraCuenta') } });
+        const r = await reintenta(t);
+        ok('5m · ⚠️ NO sube el respaldo de OTRA cuenta', r === 0 && t.queued.length === 0
+            && ('cronos_informes_pendientes_mX' in t.store), { r, q: t.queued.length });
+    }
+    {
+        const t = buildSandbox({ online: false, store: { cronos_informes_pendientes_mX: PEND('coach1') } });
+        const r = await reintenta(t);
+        ok('5n · sin red no lo intenta', r === 'sin-red' && t.queued.length === 0, r);
+    }
+    {
+        const t = buildSandbox({ online: true, store: { cronos_informes_pendientes_mX: PEND('coach1', Date.now() - 31 * 864e5) } });
+        const r = await reintenta(t);
+        ok('5o · un respaldo de más de 30 días se descarta (y se registra)',
+            r === 0 && !('cronos_informes_pendientes_mX' in t.store) && t.logs.some(l => l.includes('30 días')), r);
+    }
+    {
+        // El reintento periódico NO duplica lotes mientras el del despacho sigue pendiente.
+        const t = buildSandbox({ players: PLANT3, commitHangs: true, setDocHangs: true, online: true });
+        t.w.autoDispatchMatchReports();
+        for (let i = 0; i < 20; i++) await tics();
+        const antes = t.queued.length;
+        const r = await reintenta(t);
+        ok('5p · mientras el lote sigue en vuelo, el reintento no lo vuelve a pedir',
+            r === 0 && t.queued.length === antes, { r, antes, despues: t.queued.length });
+    }
+    // ── Las familias (v869, segundo paso) ──
+    const FAM3 = PLANT3.map((p, i) => ({ parentUid: 'fam' + (i + 1), dorsal: p.number, player: p }));
+    {
+        // Sin red: antes el `await setDoc` del PRIMER padre dejaba sin informe a todos.
+        const t = buildSandbox({ players: PLANT3, parentTargets: FAM3, commitHangs: true, setDocHangs: true, online: true });
+        t.w.autoDispatchMatchReports();
+        for (let i = 0; i < 20; i++) await tics();
+        const fam = t.queued.filter(l => l.length === 1 && /_parent_/.test(l[0].id));
+        ok('5q · ⚠️ sin acuse se piden los informes de las TRES familias (antes: sólo el primero)',
+            fam.length === 3 && fam.every(l => l[0].data.type === 'parent_player_report'), t.queued.map(l => l.map(w => w.id)));
+        ok('5r · cada familia en su PROPIO envío (un lote es atómico)', fam.every(l => l.length === 1));
+        const resp = JSON.parse(t.store[Object.keys(t.store).find(k => k.startsWith('cronos_informes_pendientes_'))] || 'null');
+        ok('5s · el respaldo lleva el grupo de familias, marcado suelto',
+            !!resp && resp.grupos.some(g => g.nombre === 'familias' && g.suelto === true && g.docs.length === 3),
+            resp && resp.grupos.map(g => g.nombre + ':' + g.docs.length));
+        ok('5t · ⚠️ las familias NO llevan los comentarios ni el P/R de todo el equipo',
+            fam.every(l => !('matchComments' in l[0].data) && !('matchPR' in l[0].data)));
+    }
+    {
+        // Las reglas rechazan PARA SIEMPRE el informe de UNA familia.
+        const t = buildSandbox({ players: PLANT3, parentTargets: FAM3, realTimers: true, online: true,
+            rechazaSi: (id) => /_parent_fam2_/.test(id) });
+        await t.w.autoDispatchMatchReports();
+        await tics();
+        const ids = inCol(t.written, 'cronos_player_reports').map(w => w.id).join(' ');
+        ok('5u · ⚠️ un padre rechazado NO deja sin informe a los otros dos',
+            /_parent_fam1_/.test(ids) && /_parent_fam3_/.test(ids) && !/_parent_fam2_/.test(ids), ids);
+        ok('5v · y el entrenador y el staff llegan igual',
+            inCol(t.written, 'cronos_player_reports').filter(w => w.data._forCoach || w.data.staffReport).length === 6);
+        ok('5w · el rechazo definitivo NO se queda reintentándose (sale del respaldo)',
+            !Object.keys(t.store).some(k => k.startsWith('cronos_informes_pendientes_')), Object.keys(t.store));
+        ok('5x · y se avisa (no con «se subirán»): ⚠️ rechazado',
+            t.toasts.some(x => x.startsWith('⚠️ El servidor ha rechazado')) && !t.toasts.some(x => x.startsWith('📴')), t.toasts);
+    }
+    {
+        // Sin acuse SÓLO para una familia: en el respaldo queda únicamente ella.
+        const t = buildSandbox({ players: PLANT3, parentTargets: FAM3, online: true,
+            cuelgaSi: (id) => /_parent_fam3_/.test(id) });
+        t.w.autoDispatchMatchReports();
+        for (let i = 0; i < 20; i++) await tics();
+        const resp = JSON.parse(t.store[Object.keys(t.store).find(k => k.startsWith('cronos_informes_pendientes_'))] || 'null');
+        const quedan = resp ? resp.grupos.flatMap(g => g.docs.map(d => d.id)) : [];
+        ok('5y · lo confirmado SALE del respaldo; sólo queda lo pendiente (la familia 3)',
+            quedan.length === 1 && /_parent_fam3_/.test(quedan[0]), quedan);
     }
 
     console.log('\n────────────────────────────────────────────');
